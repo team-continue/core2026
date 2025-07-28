@@ -38,7 +38,7 @@ jobs:
         run: |
           rosdep update &&
           apt-get update &&
-          rosdep install --from-path . -i -y --rosdistro ${{ matrix.rosdistro }}
+          rosdep install --from-path ros2_ws/src -i -y --rosdistro ${{ matrix.rosdistro }}
 
       - name: Install diagnostic-updater
         run: apt-get install ros-${{ matrix.rosdistro }}-diagnostic-updater
