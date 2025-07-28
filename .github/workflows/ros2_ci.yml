@@ -2,9 +2,9 @@ name: build and test
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
@@ -28,7 +28,7 @@ jobs:
     steps:
       - name: Setup directories
         run: mkdir -p ros2_ws/src
-        
+
       - name: Check out repository
         uses: actions/checkout@v3
         with:
@@ -36,8 +36,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          rosdep update && 
-          apt-get update && 
+          rosdep update &&
+          apt-get update &&
           rosdep install --from-path . -i -y --rosdistro ${{ matrix.rosdistro }}
 
       - name: Install diagnostic-updater
@@ -46,7 +46,7 @@ jobs:
       - name: Build tests
         id: build_test
         run: |
-          . /opt/ros/${{ matrix.rosdistro }}/setup.sh && 
+          . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
           colcon build
         continue-on-error: true
 
@@ -62,7 +62,7 @@ jobs:
         id: run_test
         run: |
           . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
-          colcon test && 
+          colcon test &&
           colcon test-result
         continue-on-error: true
 
