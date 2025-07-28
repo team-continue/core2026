@@ -20,7 +20,7 @@ jobs:
         rosdistro:
           - humble
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     container:
       image: ros:${{ matrix.rosdistro }}-ros-base
