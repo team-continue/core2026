@@ -1,0 +1,8 @@
+/**:
+  ros__parameters:
+    sensitivity: 0.40000000000000002
+    max_vel: 0.5
+    max_omega: 0.59999999999999998
+    max_roller_speed: 0.69999999999999996
+    team: 0
+    enable_auto_aim: false

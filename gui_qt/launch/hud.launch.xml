@@ -1,0 +1,46 @@
+<launch>
+    <node pkg="gui_qt" exec="gui_qt" name="gui_qt_node" output="screen">
+        <param from="$(find-pkg-share gui_qt)/config/gui_qt.param.yaml"/>
+        <param from="$(find-pkg-share gui_qt)/config/global_battle.param.yaml"/>
+
+        <!-- wrong -->
+        <remap from="~/input/log" to="/gui_debug/log"/>
+        <!-- wrong -->
+
+        <remap from="~/input/hp" to="/hp"/>
+        <remap from="~/input/ammo" to="/mecha/shooter/remaining_disk"/>
+        <remap from="~/input/compass" to="/ui/yaw_degree"/>
+        <remap from="~/input/speed" to="/ui/speed_mps"/>
+        <remap from="~/input/qe" to="/ui/qe_degree"/>
+
+        <remap from="~/input/camera" to="/camera1/image_raw/compressed"/>
+        <remap from="~/input/camera_sub" to="/camera2/image_raw/compressed"/>
+
+        
+        <remap from="~/input/enemy_poses" to="/enemy_poses"/>
+        <remap from="~/input/hazard" to="/system/emergency/hazard_status"/>
+
+        <remap from="~/input/camera_change_1" to="/pad/up"/>
+        <remap from="~/input/camera_change_2" to="/pad/down"/>
+        <remap from="~/input/cursor_prev" to="/pad/up"/>
+        <remap from="~/input/cursor_next" to="/pad/down"/>
+        <remap from="~/input/value_down" to="/pad/left"/>
+        <remap from="~/input/value_up" to="/pad/up"/>
+        <remap from="~/input/cursor_ok" to="/pad/cross"/>
+        <remap from="~/input/cursor_back" to="/pad/circle"/>
+        
+        <!-- WIP -->
+        <remap from="~/input/max_hp" to="set/max_hp"/>
+        <!-- WIP -->
+
+        <remap from="~/input/max_ammo" to="/mecha/shooter/loading_disk"/>
+
+    </node>
+
+    <node pkg="gui_qt" exec="hardware_ui_converter_node" name="hardware_ui_converter_node" output="screen">
+        <remap from="~/input/imu" to="/imu"/>
+        <remap from="~/output/yaw_degree" to="/ui/yaw_degree"/>
+        <remap from="~/output/qe_degree" to="/ui/qe_degree"/>
+        <remap from="~/output/speed_mps" to="/ui/speed_mps"/>
+    </node>
+</launch>
