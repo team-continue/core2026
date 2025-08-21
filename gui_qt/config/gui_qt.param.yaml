@@ -1,0 +1,9 @@
+/**:
+    ros__parameters:
+        range_aim_sensitivity: [0.0, 1.0]
+        range_max_velocity: [0.0, 1.0]
+        range_max_omega: [0.0, 1.0]
+        range_max_shooter: [0.0, 1.0]
+
+        # Set the destination node for parameter setting
+        parameter_set_destination: [""]

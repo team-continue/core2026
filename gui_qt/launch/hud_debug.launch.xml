@@ -1,0 +1,38 @@
+<launch>
+    <node pkg="gui_qt" exec="gui_qt" name="gui_qt_node" output="screen">
+        <param from="$(find-pkg-share gui_qt)/config/gui_qt.param.yaml"/>
+        <param from="$(find-pkg-share gui_qt)/config/global_battle.param.yaml"/>
+
+        
+        <remap from="~/input/hp" to="gui_debug/hp"/>
+        <remap from="~/input/ammo" to="gui_debug/ammo"/>
+        <remap from="~/input/compass" to="gui_debug/compass"/>
+        <remap from="~/input/speed" to="gui_debug/speed"/>
+        <remap from="~/input/qe" to="/gui_debug/qe"/>
+        <remap from="~/input/log" to="/gui_debug/log"/>
+        <remap from="~/input/camera" to="/camera/color/image/compressed"/>
+        <remap from="~/input/camera_sub" to="/camera/color/image/compressed_sub"/>
+        <remap from="~/input/enemy_poses" to="/gui_debug/enemy_poses"/>
+        <remap from="~/input/hazard" to="/gui_debug/hazard"/>
+        <remap from="~/input/camera_change_1" to="/gui_debug/input/camera1"/>
+        <remap from="~/input/camera_change_2" to="/gui_debug/input/camera2"/>
+        <remap from="~/input/cursor_prev" to="/gui_debug/input/up"/>
+        <remap from="~/input/cursor_next" to="/gui_debug/input/down"/>
+        <remap from="~/input/value_down" to="/gui_debug/input/left"/>
+        <remap from="~/input/value_up" to="/gui_debug/input/right"/>
+        <remap from="~/input/cursor_ok" to="/gui_debug/input/ok"/>
+        <remap from="~/input/cursor_back" to="/gui_debug/input/back"/>
+        
+        <!-- WIP -->
+        <remap from="~/input/max_hp" to="set/max_hp"/>
+        <remap from="~/input/max_ammo" to="set/max_ammo"/>
+
+    </node>
+
+    <node pkg="gui_qt" exec="hardware_ui_converter_node" name="hardware_ui_converter_node" output="screen">
+        <remap from="~/input/imu" to="/imu"/>
+        <remap from="~/output/yaw_degree" to="/gui_debug/compass"/>
+        <remap from="~/output/qe_degree" to="/gui_debug/qe"/>
+        <remap from="~/output/speed_mps" to="/ui/speed_mps"/>
+    </node>
+</launch>
