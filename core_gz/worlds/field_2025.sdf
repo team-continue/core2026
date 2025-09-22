@@ -38,7 +38,7 @@
         <collision name="field_collision">
           <geometry>
             <mesh>
-              <uri>package://core2026/worlds/CoRE2025_Field.dae</uri>
+              <uri>package://core_gz/worlds/CoRE2025_Field.dae</uri>
               <scale>1 1 1</scale>
             </mesh>
           </geometry>
@@ -46,7 +46,7 @@
         <visual name="field_visual">
           <geometry>
             <mesh>
-              <uri>package://core2026/worlds/CoRE2025_Field.dae</uri>
+              <uri>package://core_gz/worlds/CoRE2025_Field.dae</uri>
               <scale>1 1 1</scale>
             </mesh>
           </geometry>

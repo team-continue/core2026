@@ -2,12 +2,12 @@
     <link name="base_link">
         <visual>
             <geometry>
-                <mesh filename="package://core2026/urdf/mesh/Attacker_Shooter.dae"/>
+                <mesh filename="package://core_gz/urdf/mesh/Attacker_Shooter.dae"/>
             </geometry>
         </visual>
         <collision>
             <geometry>
-                <mesh filename="package://core2026/urdf/mesh/Attacker_Shooter.dae"/>
+                <mesh filename="package://core_gz/urdf/mesh/Attacker_Shooter.dae"/>
             </geometry>
         </collision>
         <inertial>
@@ -19,12 +19,12 @@
     <link name="chassis_link">
         <visual>
             <geometry>
-                <mesh filename="package://core2026/urdf/mesh/Attacker_Chassis.dae"/>
+                <mesh filename="package://core_gz/urdf/mesh/Attacker_Chassis.dae"/>
             </geometry>
         </visual>
         <collision>
             <geometry>
-                <mesh filename="package://core2026/urdf/mesh/Attacker_Chassis.dae"/>
+                <mesh filename="package://core_gz/urdf/mesh/Attacker_Chassis.dae"/>
             </geometry>
         </collision>
         <inertial>
@@ -36,12 +36,12 @@
     <link name="upperwing_link">
         <visual>
             <geometry>
-                <mesh filename="package://core2026/urdf/mesh/Attacker_UpperWing.dae"/>
+                <mesh filename="package://core_gz/urdf/mesh/Attacker_UpperWing.dae"/>
             </geometry>
         </visual>
         <collision>
             <geometry>
-                <mesh filename="package://core2026/urdf/mesh/Attacker_UpperWing.dae"/>
+                <mesh filename="package://core_gz/urdf/mesh/Attacker_UpperWing.dae"/>
             </geometry>
         </collision>
         <inertial>

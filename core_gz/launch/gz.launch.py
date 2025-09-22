@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    pkg_core2026 = get_package_share_directory('core2026')
+    pkg_core_gz = get_package_share_directory('core_gz')
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
 
     robot_name_arg = DeclareLaunchArgument(
@@ -21,7 +21,7 @@ def generate_launch_description():
 
     world_arg = DeclareLaunchArgument(
         'world',
-        default_value=os.path.join(pkg_core2026, 'worlds', 'field_2025.sdf'),
+        default_value=os.path.join(pkg_core_gz, 'worlds', 'field_2025.sdf'),
         description='Path to the world file'
     )
 
@@ -35,11 +35,11 @@ def generate_launch_description():
         name='GZ_SIM_RESOURCE_PATH',
         value=os.pathsep.join([
             os.environ.get('GZ_SIM_RESOURCE_PATH', ''),
-            pkg_core2026
+            pkg_core_gz
         ]).strip(os.pathsep)
     )
 
-    urdf_file = os.path.join(pkg_core2026, 'urdf', 'core2025_attacker.urdf')
+    urdf_file = os.path.join(pkg_core_gz, 'urdf', 'core2025_attacker.urdf')
 
     with open(urdf_file, 'r') as infp:
         robot_desc = infp.read()
