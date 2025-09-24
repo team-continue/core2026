@@ -1,0 +1,1 @@
+core2025_msgs/CAN[] array
