@@ -23,6 +23,10 @@ ament_auto_find_build_dependencies()
 #   include
 # )
 
+ament_auto_add_executable(shooter_cmd_gate
+  src/shooter_cmd_gate.cpp
+)
+
 ament_auto_add_executable(shooter_controller
   src/shooter_controller.cpp
 )

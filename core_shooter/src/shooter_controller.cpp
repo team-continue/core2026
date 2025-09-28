@@ -9,11 +9,22 @@
 #include "core_msgs/msg/can_array.hpp"
 
 
-class ShootController : public rclcpp::Node
+class ShooterController : public rclcpp::Node
 {
 public:
-    ShootController() : Node("shooter_controller")
+    ShooterController() : Node("shooter_controller")
     {
+        //========================================
+        // shoot id parameters
+        //========================================
+        declare_parameter("shoot_motor_id", 10);
+        declare_parameter("loading_motor_id", 7);
+
+        shoot_motor_id_ = this->get_parameter("shoot_motor_id").as_int();
+        loading_motor_id_ = this->get_parameter("loading_motor_id").as_int();
+
+        RCLCPP_INFO(this->get_logger(), "< shoot config >\nshoot_motor_id: %d, loading_motor_id: %d", shoot_motor_id_, loading_motor_id_);
+
         //========================================
         // shoot parameters
         //========================================
@@ -27,7 +38,7 @@ public:
         burst_interval_ms_ = this->get_parameter("burst_interval_ms").as_int();
         fullauto_interval_ms_ = this->get_parameter("fullauto_interval_ms").as_int();
 
-        RCLCPP_INFO(this->get_logger(), "< shoot config >\n burst: %d, burst_interval_ms: %d, burst_interval_ms: %d, fullauto_interval_ms: %d", burst_count_, shoot_interval_ms_, burst_interval_ms_, fullauto_interval_ms_);
+        RCLCPP_INFO(this->get_logger(), "burst: %d, burst_interval_ms: %d, burst_interval_ms: %d, fullauto_interval_ms: %d", burst_count_, shoot_interval_ms_, burst_interval_ms_, fullauto_interval_ms_);
 
         //========================================
         // panel limit parameters
@@ -92,47 +103,27 @@ public:
         //========================================
         joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
             "/joint_states", 10,
-            std::bind(&ShootController::jointStateCallback, this, std::placeholders::_1));
+            std::bind(&ShooterController::jointStateCallback, this, std::placeholders::_1));
         target_omega_sub_ = this->create_subscription<std_msgs::msg::Float32>(
             "/target_omega", 10,
-            std::bind(&ShootController::targetOmegaCallback, this, std::placeholders::_1));
+            std::bind(&ShooterController::targetOmegaCallback, this, std::placeholders::_1));
         jam_sensor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "jam", 10,
-            std::bind(&ShootController::jamSensorCallback, this, std::placeholders::_1));
+            std::bind(&ShooterController::jamSensorCallback, this, std::placeholders::_1));
         hazard_status_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "/system/emergency/hazard_status", 10,
-            std::bind(&ShootController::hazardStatusCallback, this, std::placeholders::_1));
+            std::bind(&ShooterController::hazardStatusCallback, this, std::placeholders::_1));
 
         //========================================
         // subscribers ui
         //========================================
-        shoot_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "shoot", 1, 
-            std::bind(&ShootController::shootCallback, this, std::placeholders::_1));
-        shoot_burst_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "shoot_burst", 1, 
-            std::bind(&ShootController::shootBurstCallback, this, std::placeholders::_1));
-        shoot_fullauto_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "shoot_fullauto", 1, 
-            std::bind(&ShootController::shootFullautoCallback, this, std::placeholders::_1));
-        // shoot_fullburst_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-        //     "shoot_fullburst", 1, 
-        //     std::bind(&ShootController::shootFullburstCallback, this, std::placeholders::_1));
-
-        shoot_right_shoulder_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "shoot_right_shoulder", 1, 
-            std::bind(&ShootController::shootCallback, this, std::placeholders::_1));
-        shoot_left_shoulder_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "shoot_right_shoulder", 1, 
-            std::bind(&ShootController::shootCallback, this, std::placeholders::_1));
-
-        discharge_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "discharge", 1,
-            std::bind(&ShootController::dischargeCallback, this, std::placeholders::_1));
+        shoot_cmd_sub_ = this->create_subscription<std_msgs::msg::Int32>(
+            "shoot_cmd", 1, 
+            std::bind(&ShooterController::shootCmdCallback, this, std::placeholders::_1));
 
         shoot_motor_sub_ = this->create_subscription<std_msgs::msg::Float32>(
             "/ui/shoot_motor", 1,
-            std::bind(&ShootController::shootMotorCallback, this, std::placeholders::_1));
+            std::bind(&ShooterController::shootMotorCallback, this, std::placeholders::_1));
 
         //========================================
         // publishers
@@ -143,13 +134,16 @@ public:
             "/can/tx", 10);
         jam_state_pub_ = this->create_publisher<std_msgs::msg::Bool>(
             "~/jam_state", 10);
-        loading_error_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-            "~/loading_motor_error", 10);
-        shooting_error_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-            "~/shooting_motor_error", 10);
+        loading_error_state_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+            "~/loading_motor_error_state", 10);
+        shooting_error_state_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+            "~/shooting_motor_error_state", 10);
 
+        //========================================
+        // timer callback
+        //========================================
         timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(10), std::bind(&ShootController::timerCallback, this));
+            std::chrono::milliseconds(10), std::bind(&ShooterController::timerCallback, this));
     }
 
 private:
@@ -158,9 +152,8 @@ private:
     //========================================
     void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
     {
-        motor1_rad_ = msg->position[7];
-        motor2_rad_ = - msg->position[8];
-        motor3_rad_ = - msg->position[9];
+        loading_motor_rad_ = msg->position[loading_motor_id_];
+        shoot_motor_rad_ = msg->velocity[shoot_motor_id_];
     }
 
     void targetOmegaCallback(const std_msgs::msg::Float32::SharedPtr msg) 
@@ -207,51 +200,9 @@ private:
     //========================================
     // ui callbacks
     //========================================
-    void shootCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    void shootCmdCallback(const std_msgs::msg::Int32::SharedPtr msg)
     {
-        if (msg->data && canShoot()) {
-            shoot_repeat_count = 1;
-        } else if (msg->data) {
-            RCLCPP_INFO(this->get_logger(), "On trigger: 'Shoot' - Not ready.");
-        }
-    }
-
-    void shootBurstCallback(const std_msgs::msg::Bool::SharedPtr msg)
-    {
-        if (msg->data && canShoot()) {
-            shoot_repeat_count = 3;
-        } else if (msg->data) {
-            RCLCPP_INFO(this->get_logger(), "On trigger: 'Burst' - Not ready.");
-        }
-    }
-
-    void shootFullautoCallback(const std_msgs::msg::Bool::SharedPtr msg)
-    {
-        if (msg->data) {
-            // Flip: ON
-            if (msg->data && canShoot()) {
-                shoot_repeat_count = -1;
-            } else if (msg->data) {
-                RCLCPP_INFO(this->get_logger(), "On trigger: 'Fullauto' - Not ready.");
-            }
-        } else if(!msg->data) {
-            // Flip: OFF
-            if (shoot_repeat_count == -1) {
-                shoot_repeat_count = 0;
-                return;
-            }
-        }
-    }
-
-    // void shootFullburstCallback(const std_msgs::msg::Bool::SharedPtr msg){}
-
-    void dischargeCallback(const std_msgs::msg::Bool::SharedPtr msg)
-    {
-        if (msg->data){
-            // state = DISCHARGE;
-            // RCLCPP_INFO(get_logger(), "change DISCHARGE");
-            RCLCPP_INFO(get_logger(), "DISCHARGE not enable");
-        }
+        shoot_repeat_count = msg->data;
     }
 
     void shootMotorCallback(const std_msgs::msg::Float32::SharedPtr msg)
@@ -259,18 +210,18 @@ private:
         switch (state)
         {
             case EMERGENCY:
-                setSpeed(CENTER_TURRET_SHOOTING_MOTOR, 0.0);
+                setSpeed(shoot_motor_id_, 0.0);
                 break;
 
             default:
                 if (msg->data > 0.7) {
-                    setSpeed(CENTER_TURRET_SHOOTING_MOTOR, shoot_motor_target_speed_[0]);
+                    setSpeed(shoot_motor_id_, shoot_motor_target_speed_[0]);
                 } else if (msg->data > 0.4){
-                    setSpeed(CENTER_TURRET_SHOOTING_MOTOR, shoot_motor_target_speed_[1]);
+                    setSpeed(shoot_motor_id_, shoot_motor_target_speed_[1]);
                 } else if (msg->data > 0.1){
-                    setSpeed(CENTER_TURRET_SHOOTING_MOTOR, shoot_motor_target_speed_[2]);
+                    setSpeed(shoot_motor_id_, shoot_motor_target_speed_[2]);
                 } else {
-                    setSpeed(CENTER_TURRET_SHOOTING_MOTOR, 0.0);
+                    setSpeed(shoot_motor_id_, 0.0);
                 }
                 break;
         }
@@ -280,6 +231,8 @@ private:
     // main loop
     //========================================
     void timerCallback() {
+        jamStatePublish(is_jam_detected_);
+
         switch (state)
         {
         case CMD_WAIT:
@@ -300,11 +253,11 @@ private:
                 shoot_cnt++;
                 RCLCPP_INFO(get_logger(), "internal cnt = %d, %f", shoot_cnt, M_PI + shoot_cnt * M_PI);
 
-                float rotate = (motor1_rad_ - std::fmod(motor1_rad_, M_PI)) / M_PI;
-                if (std::fmod(motor1_rad_, M_PI) > M_PI_2) {
+                float rotate = (shoot_motor_rad_ - std::fmod(shoot_motor_rad_, M_PI)) / M_PI;
+                if (std::fmod(shoot_motor_rad_, M_PI) > M_PI_2) {
                     rotate += 1;
                 }
-                setAngle(CENTER_TURRET_LOADING_MOTOR, rotate * M_PI + M_PI);
+                setAngle(loading_motor_id_, rotate * M_PI + M_PI);
 
                 shoot_completed_ = false;
                 state = SHOOT;
@@ -321,9 +274,9 @@ private:
             }
 
             // target_angleの95%を超えたら遷移
-            RCLCPP_INFO_THROTTLE(get_logger(), *this->get_clock(), 1000, "target: %f, current: %f", target_angle, motor1_rad_);
+            RCLCPP_INFO_THROTTLE(get_logger(), *this->get_clock(), 1000, "target: %f, current: %f", target_angle, shoot_motor_rad_);
 
-            if (target_angle - (M_PI * 0.05) < motor1_rad_) {
+            if (target_angle - (M_PI * 0.05) < shoot_motor_rad_) {
                 shoot_completed_ = true;
                 if (shoot_repeat_count >= 1) {
                     shoot_repeat_count--;
@@ -333,22 +286,9 @@ private:
             }
             break;
 
-        case DISCHARGE:
-        {
-            float rotate = (motor1_rad_ - std::fmod(motor1_rad_, M_PI)) / M_PI;
-            if (std::fmod(motor1_rad_, M_PI) > M_PI_2) {
-                rotate += 1;
-            }
-            setAngle(CENTER_TURRET_LOADING_MOTOR, rotate * M_PI + M_PI * 2); // 1回転する
-
-            shoot_completed_ = false;
-            state = SHOOT;
-            RCLCPP_INFO(get_logger(), "change SHOOT");
-            break;
-        }
-
         case EMERGENCY:
             shoot_completed_ = false;
+            shoot_repeat_count = 0;
 
             if (!is_emergency_unlock) {
                 state = CMD_WAIT;
@@ -436,15 +376,6 @@ private:
     //========================================
     // motorPub
     //========================================
-    enum MOTOR{
-        CENTER_TURRET_LOADING_MOTOR = 7,
-        LEFT_TURRET_LOADING_MOTOR = 8,
-        RIGHT_TURRET_LOADING_MOTOR = 9,
-        CENTER_TURRET_SHOOTING_MOTOR = 10,
-        LEFT_TURRET_SHOOTING_MOTOR = 11,
-        RIGHT_TURRET_SHOOTING_MOTOR = 12,
-    };
-
     // モータの目標角度を設定
     void setAngle(int motor, float angle)
     {
@@ -474,12 +405,23 @@ private:
     //========================================
     bool isJamDetected()
     {
+        bool jam_state;
         if (is_jam_detected_) {
-            return true;
+            jam_state = true;
         } else if (jam_photo_reflector_raw_) {
-            return true;
+            jam_state = true;
+        } else {
+            jam_state = false;
         }
-        return false;
+        jamStatePublish(jam_state);
+        return jam_state;
+    }
+
+    void jamStatePublish(bool state)
+    {
+        auto message = std_msgs::msg::Bool();
+        message.data = state;
+        jam_state_pub_->publish(message);
     }
 
     //========================================
@@ -490,23 +432,21 @@ private:
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr jam_sensor_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_status_sub_;
 
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_sub_;
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_burst_sub_;
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_fullauto_sub_;
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_fullburst_sub_;
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_right_shoulder_sub_;
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_left_shoulder_sub_;
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr discharge_sub_;
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr shoot_cmd_sub_;
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr shoot_motor_sub_;
  
     //========================================
     // publisher valids
     //========================================
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr shoot_status_pub_ ;    
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr shoot_status_pub_;
     rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr jam_state_pub_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr loading_error_pub_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr shooting_error_pub_;    
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr loading_error_state_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr shooting_error_state_pub_;
+ 
+    //========================================
+    // timer callback valids
+    //========================================
     rclcpp::TimerBase::SharedPtr timer_;
 
     rclcpp::Time last_shoot_time_ = now();
@@ -515,10 +455,8 @@ private:
     //========================================
     // subscription valids
     //========================================
-
-    double motor1_rad_;
-    double motor2_rad_;
-    double motor3_rad_;
+    double loading_motor_rad_;
+    double shoot_motor_rad_;
     double turret_angle_from_chassis_;
 
     double target_omega_ = 0.0;
@@ -529,6 +467,10 @@ private:
     //========================================
     // parameter valids
     //========================================
+    std::string shoot_cmd_topic_;
+    int shoot_motor_id_;
+    int loading_motor_id_;
+
     int burst_count_;
     int shoot_interval_ms_;
     int burst_interval_ms_;
@@ -585,14 +527,14 @@ private:
 int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<ShootController>());
+    rclcpp::spin(std::make_shared<ShooterController>());
 
     // SingleThreadedExecutor の作成
     // rclcpp::executors::SingleThreadedExecutor executor;
     // rclcpp::executors::MultiThreadedExecutor executor;
     
     // ノードをExecutorに追加
-    // auto shoot_controller = std::make_shared<ShootController>();
+    // auto shoot_controller = std::make_shared<ShooterController>();
     // auto shoot_subscriber = std::make_shared<ShootSubscriber>();
     // executor.add_node(shoot_controller);
     // executor.add_node(shoot_subscriber);

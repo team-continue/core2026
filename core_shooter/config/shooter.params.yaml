@@ -1,6 +1,10 @@
 /**:
   ros__parameters:
 # ShootController:
+    # shoot id
+    # shoot_motor_id: -> launch
+    # loading_motor_id: -> launch
+
     # shoot parameters
     burst_count: 3                  #バーストモードのバースト数 # 3
     shoot_interval_ms: 500          #発射のクールタイム         # 500
