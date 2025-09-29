@@ -157,6 +157,7 @@ private:
     {
         loading_motor_rad_ = msg->position[loading_motor_id_];
         shoot_motor_rad_ = msg->velocity[shoot_motor_id_];
+        turret_angle_from_chassis_ = msg->position[4];
     }
 
     void targetOmegaCallback(const std_msgs::msg::Float32::SharedPtr msg) 
@@ -239,21 +240,23 @@ private:
         switch (state)
         {
         case INIT:
-            if (result) {
-                // shoot指令
-                RCLCPP_INFO(get_logger(), "Initilize, %f", shoot_motor_rad_);
-                
-                float rotate = (shoot_motor_rad_ - std::fmod(shoot_motor_rad_, M_PI)) / M_PI;
+        {
+            // shoot指令
+            RCLCPP_INFO(get_logger(), "Initilize, %f", shoot_motor_rad_);
+            
+            float rotate = (shoot_motor_rad_ - std::fmod(shoot_motor_rad_, M_PI)) / M_PI;
 
-                if (std::fmod(shoot_motor_rad_, M_PI) > M_PI_2){
-                    rotate += 1;
-                }
-                setAngle(loading_motor_id_, rotate * M_PI);
-
-                shoot_completed_ = false;
-                state = SHOOT;
-                RCLCPP_INFO(get_logger(), "change SHOOT (Initilize)");
+            if (std::fmod(shoot_motor_rad_, M_PI) > M_PI_2) {
+                rotate += 1;
             }
+
+            setAngle(loading_motor_id_, rotate * M_PI);
+
+            shoot_completed_ = false;
+            state = SHOOT;
+            RCLCPP_INFO(get_logger(), "change SHOOT (Initilize)");
+            break;
+        }
         case CMD_WAIT:
         {
             if (is_emergency_unlock) {
@@ -366,36 +369,26 @@ private:
         //　　／　　　limit_rad_[3]
         // 　limit_rad_[2]
 
-        // yaw_reflect_に応じてfalse区間をシフト
-        double shift = yaw_reflect_ * turret_angle_from_chassis_;
-
-        double limits[4] = limit_rad_;
+        double shift = yaw_reflect_ * target_omega_;
         
-        // シフト適用
-        for (int i = 0; i < 4; i++) {
-            limits[i] += shift;
-            // [0, 2π) に正規化
-            limits[i] = fmod(limits[i], 2 * M_PI);
-            if (limits[i] < 0) limits[i] += 2 * M_PI;
+        // theta を逆方向にシフト + 正規化
+        double rad = turret_angle_from_chassis_ - shift;
+        rad = fmod(rad, 2*M_PI);
+        if (rad < 0)
+            rad += 2*M_PI;
+
+        // 2つの区間をループで判定
+        for (int i = 0; i < 4; i += 2) {
+            double start = limit_rad_[i];
+            double end   = limit_rad_[i+1];
+
+            if ((start <= end && rad >= start && rad <= end) ||
+                (start >  end && (rad >= start || rad <= end))) {
+                return false;
+            }
         }
 
-        // theta を [0,2π) に正規化
-        double angle = fmod(theta, 2 * M_PI);
-        if (angle < 0) angle += 2 * M_PI;
-
-        // 区間1: [limits[0], limits[1]]
-        if (limits[0] <= limits[1]) {
-            if (angle >= limits[0] && angle <= limits[1]) return false;
-        } else { // wrap-around
-            if (angle >= limits[0] || angle <= limits[1]) return false;
-        }
-
-        // 区間2: [limits[2], limits[3]]
-        if (limits[2] <= limits[3]) {
-            if (angle >= limits[2] && angle <= limits[3]) return false;
-        } else {
-            if (angle >= limits[2] || angle <= limits[3]) return false;
-        }
+        return true;
 
         /*
         bool ret = false;
@@ -421,7 +414,7 @@ private:
 
         return ret;
         */    
-       }
+    }
 
     bool isShootIntervalElapsed()
     {
