@@ -23,7 +23,7 @@ public:
         // subscribers ui
         //======================================== 
         once_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "shoot_Once", 1, 
+            "shoot_once", 1, 
             std::bind(&ShooterCmdGate::onceCallback, this, std::placeholders::_1));
         burst_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "shoot_burst", 1, 
@@ -34,13 +34,12 @@ public:
         fullburst_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "shoot_fullburst", 1, 
             std::bind(&ShooterCmdGate::fullburstCallback, this, std::placeholders::_1));
-
+        left_shoulder_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "shoot_left_shoulder", 1, 
+            std::bind(&ShooterCmdGate::shootLeftCallback, this, std::placeholders::_1));
         right_shoulder_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "shoot_right_shoulder", 1, 
             std::bind(&ShooterCmdGate::shootRightCallback, this, std::placeholders::_1));
-        left_shoulder_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "shoot_right_shoulder", 1, 
-            std::bind(&ShooterCmdGate::shootLeftCallback, this, std::placeholders::_1));
 
         //========================================
         // publishers
@@ -156,7 +155,7 @@ public:
 
     rclcpp::Time last_shoot_time_ = now();
     rclcpp::Clock system_clock(rcl_clock_type_t RCL_SYSTEM_TIME);
-    
+
     //========================================
     // valids
     //========================================

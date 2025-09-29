@@ -115,12 +115,15 @@ public:
             std::bind(&ShooterController::hazardStatusCallback, this, std::placeholders::_1));
 
         //========================================
-        // subscribers ui
+        // subscribers shoot cmd
         //========================================
         shoot_cmd_sub_ = this->create_subscription<std_msgs::msg::Int32>(
             "shoot_cmd", 1, 
             std::bind(&ShooterController::shootCmdCallback, this, std::placeholders::_1));
 
+        //========================================
+        // subscribers ui
+        //========================================
         shoot_motor_sub_ = this->create_subscription<std_msgs::msg::Float32>(
             "/ui/shoot_motor", 1,
             std::bind(&ShooterController::shootMotorCallback, this, std::placeholders::_1));
@@ -235,6 +238,22 @@ private:
 
         switch (state)
         {
+        case INIT:
+            if (result) {
+                // shoot指令
+                RCLCPP_INFO(get_logger(), "Initilize, %f", shoot_motor_rad_);
+                
+                float rotate = (shoot_motor_rad_ - std::fmod(shoot_motor_rad_, M_PI)) / M_PI;
+
+                if (std::fmod(shoot_motor_rad_, M_PI) > M_PI_2){
+                    rotate += 1;
+                }
+                setAngle(loading_motor_id_, rotate * M_PI);
+
+                shoot_completed_ = false;
+                state = SHOOT;
+                RCLCPP_INFO(get_logger(), "change SHOOT (Initilize)");
+            }
         case CMD_WAIT:
         {
             if (is_emergency_unlock) {
@@ -269,6 +288,8 @@ private:
         case SHOOT:
             if (is_emergency_unlock) {
                 state = EMERGENCY;
+                setAngle(loading_motor_id_, shoot_motor_rad_);
+                
                 RCLCPP_INFO(get_logger(), "Set EMERGENCY in SHOOT");
                 break;
             }
@@ -291,7 +312,8 @@ private:
             shoot_repeat_count = 0;
 
             if (!is_emergency_unlock) {
-                state = CMD_WAIT;
+                // state = CMD_WAIT;
+                state = INIT;
                 RCLCPP_INFO(get_logger(), "Clear emergency, change CMD_WAIT");
             }
             break;
@@ -311,6 +333,11 @@ private:
         } else {
             // Output logs every second.
             RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Shoot condition not met");
+
+            // 打てなかった場合はそのタスクを削除する
+            if (shoot_repeat_count >= 1) {
+                shoot_repeat_count = 0;
+            }
             return false;
         }
     }
@@ -322,6 +349,7 @@ private:
         return hazerd_state_ && isValidAngle() && isShootIntervalElapsed() && !isJamDetected();
     }
 
+    /**/
     bool isValidAngle()
     {
         // ロジック直そうね！
@@ -337,6 +365,39 @@ private:
         //　　　／　＼
         //　　／　　　limit_rad_[3]
         // 　limit_rad_[2]
+
+        // yaw_reflect_に応じてfalse区間をシフト
+        double shift = yaw_reflect_ * turret_angle_from_chassis_;
+
+        double limits[4] = limit_rad_;
+        
+        // シフト適用
+        for (int i = 0; i < 4; i++) {
+            limits[i] += shift;
+            // [0, 2π) に正規化
+            limits[i] = fmod(limits[i], 2 * M_PI);
+            if (limits[i] < 0) limits[i] += 2 * M_PI;
+        }
+
+        // theta を [0,2π) に正規化
+        double angle = fmod(theta, 2 * M_PI);
+        if (angle < 0) angle += 2 * M_PI;
+
+        // 区間1: [limits[0], limits[1]]
+        if (limits[0] <= limits[1]) {
+            if (angle >= limits[0] && angle <= limits[1]) return false;
+        } else { // wrap-around
+            if (angle >= limits[0] || angle <= limits[1]) return false;
+        }
+
+        // 区間2: [limits[2], limits[3]]
+        if (limits[2] <= limits[3]) {
+            if (angle >= limits[2] && angle <= limits[3]) return false;
+        } else {
+            if (angle >= limits[2] || angle <= limits[3]) return false;
+        }
+
+        /*
         bool ret = false;
         float front_rad_offset = 1.9 - target_omega_ * yaw_reflect_; // [rad]
         float rad = turret_angle_from_chassis_ + front_rad_offset;
@@ -359,7 +420,8 @@ private:
         }
 
         return ret;
-    }
+        */    
+       }
 
     bool isShootIntervalElapsed()
     {
@@ -501,9 +563,9 @@ private:
     int shoot_repeat_count = 0;
 
     enum STATE{
+        INIT,
         CMD_WAIT,
         SHOOT,
-        DISCHARGE,
         EMERGENCY
     };
     STATE state = CMD_WAIT;
