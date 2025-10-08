@@ -63,7 +63,7 @@ jobs:
         run: |
           . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
           colcon test --base-paths ros2_ws &&
-          colcon test-result
+          colcon test-result --verbose
         continue-on-error: true
 
       - name: run_test command success
