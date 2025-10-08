@@ -21,7 +21,7 @@
         # 　　／　　　limit_rad_[3]
         # 　limit_rad_[2]
     enable_panel_synchronizer: true                 #パネルの制限をオンにするか #true
-    yaw_reflect: 0.25                               # ??
+    yaw_reflect: 0.25                               # 隙間撃ちの角速度変化の係数
 
     # loading motor parameters
     loading_motor_speed: 6.5                        #モータ速度         # 3.0

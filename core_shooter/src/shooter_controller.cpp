@@ -23,7 +23,7 @@ public:
         shoot_motor_id_ = this->get_parameter("shoot_motor_id").as_int();
         loading_motor_id_ = this->get_parameter("loading_motor_id").as_int();
 
-        RCLCPP_INFO(this->get_logger(), "< shoot config >\nshoot_motor_id: %d, loading_motor_id: %d", shoot_motor_id_, loading_motor_id_);
+        RCLCPP_INFO(this->get_logger(), "shoot_motor_id: %d, loading_motor_id: %d", shoot_motor_id_, loading_motor_id_);
 
         //========================================
         // shoot parameters
@@ -57,11 +57,11 @@ public:
         //========================================
         // loading motor parameters
         //========================================
-        loading_motor_speed_ = this->get_parameter("loading_motor_speed").as_double();
-        loading_motor_initial_angle_ = this->get_parameter("loading_motor_initial_angle").as_double_array();
-
         declare_parameter("loading_motor_speed", 3.0);
         declare_parameter("loading_motor_initial_angle",std::vector<double>(4,0.0));
+        
+        loading_motor_speed_ = this->get_parameter("loading_motor_speed").as_double();
+        loading_motor_initial_angle_ = this->get_parameter("loading_motor_initial_angle").as_double_array();
 
         RCLCPP_INFO(this->get_logger(), "loading_motor_speed: %f, loading_motor1_initial_angle: %f, loading_motor2_initial_angle: %f, loading_motor3_initial_angle: %f", 
         loading_motor_speed_, loading_motor_initial_angle_[0], loading_motor_initial_angle_[1], loading_motor_initial_angle_[2]);
@@ -108,7 +108,7 @@ public:
             "/target_omega", 10,
             std::bind(&ShooterController::targetOmegaCallback, this, std::placeholders::_1));
         jam_sensor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "jam", 10,
+            "~/jam", 10,
             std::bind(&ShooterController::jamSensorCallback, this, std::placeholders::_1));
         hazard_status_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "/system/emergency/hazard_status", 10,
@@ -118,14 +118,14 @@ public:
         // subscribers shoot cmd
         //========================================
         shoot_cmd_sub_ = this->create_subscription<std_msgs::msg::Int32>(
-            "shoot_cmd", 1, 
+            "~/shoot_cmd", 1, 
             std::bind(&ShooterController::shootCmdCallback, this, std::placeholders::_1));
 
         //========================================
         // subscribers ui
         //========================================
         shoot_motor_sub_ = this->create_subscription<std_msgs::msg::Float32>(
-            "/ui/shoot_motor", 1,
+            "~/shoot_motor", 1,
             std::bind(&ShooterController::shootMotorCallback, this, std::placeholders::_1));
 
         //========================================
@@ -282,6 +282,8 @@ private:
                 setAngle(loading_motor_id_, rotate * M_PI + M_PI);
 
                 shoot_completed_ = false;
+                shootStatePublish(shoot_completed_);
+                
                 state = SHOOT;
                 RCLCPP_INFO(get_logger(), "change SHOOT");
             }
@@ -302,6 +304,8 @@ private:
 
             if (target_angle - (M_PI * 0.05) < shoot_motor_rad_) {
                 shoot_completed_ = true;
+                shootStatePublish(shoot_completed_);
+
                 if (shoot_repeat_count >= 1) {
                     shoot_repeat_count--;
                 }
@@ -477,6 +481,17 @@ private:
         auto message = std_msgs::msg::Bool();
         message.data = state;
         jam_state_pub_->publish(message);
+    }
+
+    //========================================
+    // shoot status
+    //========================================
+
+    void shootStatePublish(bool state)
+    {
+        auto message = std_msgs::msg::Bool();
+        message.data = state;
+        shoot_status_pub_->publish(message);
     }
 
     //========================================
