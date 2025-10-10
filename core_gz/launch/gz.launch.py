@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import os
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_share_directory, get_package_prefix
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, SetEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -31,12 +31,9 @@ def generate_launch_description():
         description='Use simulation time'
     )
 
-    gz_resource_path = SetEnvironmentVariable(
-        name='GZ_SIM_RESOURCE_PATH',
-        value=os.pathsep.join([
-            os.environ.get('GZ_SIM_RESOURCE_PATH', ''),
-            pkg_core_gz
-        ]).strip(os.pathsep)
+    ign_gazebo_resource_path = SetEnvironmentVariable(
+        name='IGN_GAZEBO_RESOURCE_PATH',
+        value=os.path.join(get_package_prefix('core_gz'), 'share')
     )
 
     urdf_file = os.path.join(pkg_core_gz, 'urdf', 'core2025_attacker.urdf')
@@ -85,7 +82,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        gz_resource_path,
+        ign_gazebo_resource_path,
         robot_name_arg,
         world_arg,
         use_sim_time_arg,
