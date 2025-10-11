@@ -362,7 +362,7 @@ private:
     float rotate = (loading_motor_rad_ - std::fmod(loading_motor_rad_, M_PI)) / M_PI;
 
     if (std::fmod(loading_motor_rad_, M_PI) > M_PI_2) {
-    rotate += 1;
+      rotate += 1;
     }
     return rotate;
   }
