@@ -1,4 +1,10 @@
 <robot name="core2025_attacker">
+    <gazebo>
+        <plugin name="CoreOmniDrive" filename="libcore_gz_omnidrive_plugin.so">
+        <!-- パラメータをここに記述 -->
+        <!-- <param_name>param_value</param_name> -->
+        </plugin>
+    </gazebo>
     <link name="base_link">
         <visual>
             <geometry>
