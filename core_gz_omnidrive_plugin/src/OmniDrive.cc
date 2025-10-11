@@ -170,4 +170,4 @@ IGNITION_ADD_PLUGIN(OmniDrive,
               OmniDrive::ISystemPreUpdate,
               OmniDrive::ISystemPostUpdate)
 
-IGNITION_ADD_PLUGIN_ALIAS(OmniDrive, "OmniDrive")
+IGNITION_ADD_PLUGIN_ALIAS(OmniDrive, "CoreOmniDrive")

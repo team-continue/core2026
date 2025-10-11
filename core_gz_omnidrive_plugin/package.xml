@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>gz_omnidrive_plugin</name>
+  <name>core_gz_omnidrive_plugin</name>
   <version>0.0.1</version>
   <description>
     Ignition Gazebo Fortress model plugin that subscribes to /cmd_vel
