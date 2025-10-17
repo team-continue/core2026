@@ -9,6 +9,8 @@
 #include <gz/msgs/pose_v.pb.h>
 #include <gz/msgs/time.pb.h>
 #include <gz/msgs/twist.pb.h>
+#include <gz/sim/components/LinearVelocityCmd.hh>
+#include <gz/sim/components/AngularVelocityCmd.hh>
 
 #include <limits>
 #include <mutex>
@@ -131,7 +133,35 @@ void OmniDrive::Configure(const Entity &_entity,
 void OmniDrive::PreUpdate(const UpdateInfo &_info,
                           EntityComponentManager &_ecm)
 {
-    printf("pre update hello world\n");
+    std::lock_guard<std::mutex> lock(this->dataPtr->mutex);
+    if (!this->dataPtr->enabled)
+        return;
+
+    auto linear = math::Vector3d(
+        this->dataPtr->targetVel.linear().x(),
+        this->dataPtr->targetVel.linear().y(),
+        this->dataPtr->targetVel.linear().z());
+
+    auto angular = math::Vector3d(
+        this->dataPtr->targetVel.angular().x(),
+        this->dataPtr->targetVel.angular().y(),
+        this->dataPtr->targetVel.angular().z());
+
+    auto modelEntity = this->dataPtr->model.Entity();
+    auto baseLinkEntity = this->dataPtr->model.LinkByName(_ecm, "base_link");
+
+    auto linCmd = _ecm.Component<gz::sim::components::LinearVelocityCmd>(baseLinkEntity);
+    if (linCmd == nullptr)
+        _ecm.CreateComponent(baseLinkEntity, gz::sim::components::LinearVelocityCmd(linear));
+    else
+        *linCmd = gz::sim::components::LinearVelocityCmd(linear);
+
+    // Angular velocity command
+    auto angCmd = _ecm.Component<gz::sim::components::AngularVelocityCmd>(baseLinkEntity);
+    if (angCmd == nullptr)
+        _ecm.CreateComponent(baseLinkEntity, gz::sim::components::AngularVelocityCmd(angular));
+    else
+        *angCmd = gz::sim::components::AngularVelocityCmd(angular);
 }
 
 //////////////////////////////////////////////////
@@ -148,6 +178,8 @@ void OmniDrivePrivate::OnCmdVel(const msgs::Twist &_msg)
     if (this->enabled)
     {
         this->targetVel = _msg;
+        printf("On cmd_vel: linear=%.2f, angular=%.2f\n",
+               _msg.linear().x(), _msg.angular().z());
     }
 }
 
