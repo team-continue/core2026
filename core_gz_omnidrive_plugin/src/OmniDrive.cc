@@ -174,6 +174,7 @@ void OmniDrive::PostUpdate(const UpdateInfo &_info,
 //////////////////////////////////////////////////
 void OmniDrivePrivate::OnCmdVel(const msgs::Twist &_msg)
 {
+    // test
     std::lock_guard<std::mutex> lock(this->mutex);
     if (this->enabled)
     {
