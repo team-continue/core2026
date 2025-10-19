@@ -77,6 +77,7 @@ public:
     /// \brief Model interface
 public:
     Model model{kNullEntity};
+    Link baseLink{kNullEntity};
 
     /// \brief Last target velocity requested.
 public:
@@ -127,6 +128,17 @@ void OmniDrive::Configure(const Entity &_entity,
         this->dataPtr->node.Subscribe(enableTopic, &OmniDrivePrivate::OnEnable,this->dataPtr.get());
     }
     this->dataPtr->enabled = true;
+
+    // base_link を取得
+    auto baseLinkEntity = this->dataPtr->model.LinkByName(_ecm, "base_link");
+
+    if (baseLinkEntity == kNullEntity)
+    {
+        return;
+    }
+
+    // Link オブジェクトを作成
+    this->dataPtr->baseLink = Link(baseLinkEntity);
 }
 
 //////////////////////////////////////////////////
@@ -147,21 +159,26 @@ void OmniDrive::PreUpdate(const UpdateInfo &_info,
         this->dataPtr->targetVel.angular().y(),
         this->dataPtr->targetVel.angular().z());
 
-    auto modelEntity = this->dataPtr->model.Entity();
-    auto baseLinkEntity = this->dataPtr->model.LinkByName(_ecm, "base_link");
+        
+        // 直接速度を設定
+        this->dataPtr->baseLink.SetLinearVelocity(_ecm, linear);
+        this->dataPtr->baseLink.SetAngularVelocity(_ecm, angular);
+        
+    // auto modelEntity = this->dataPtr->model.Entity();
+    // auto baseLinkEntity = this->dataPtr->model.LinkByName(_ecm, "base_link");
 
-    auto linCmd = _ecm.Component<gz::sim::components::LinearVelocityCmd>(baseLinkEntity);
-    if (linCmd == nullptr)
-        _ecm.CreateComponent(baseLinkEntity, gz::sim::components::LinearVelocityCmd(linear));
-    else
-        *linCmd = gz::sim::components::LinearVelocityCmd(linear);
+    // auto linCmd = _ecm.Component<gz::sim::components::LinearVelocityCmd>(baseLinkEntity);
+    // if (linCmd == nullptr)
+    //     _ecm.CreateComponent(baseLinkEntity, gz::sim::components::LinearVelocityCmd(linear));
+    // else
+    //     *linCmd = gz::sim::components::LinearVelocityCmd(linear);
 
-    // Angular velocity command
-    auto angCmd = _ecm.Component<gz::sim::components::AngularVelocityCmd>(baseLinkEntity);
-    if (angCmd == nullptr)
-        _ecm.CreateComponent(baseLinkEntity, gz::sim::components::AngularVelocityCmd(angular));
-    else
-        *angCmd = gz::sim::components::AngularVelocityCmd(angular);
+    // // Angular velocity command
+    // auto angCmd = _ecm.Component<gz::sim::components::AngularVelocityCmd>(baseLinkEntity);
+    // if (angCmd == nullptr)
+    //     _ecm.CreateComponent(baseLinkEntity, gz::sim::components::AngularVelocityCmd(angular));
+    // else
+    //     *angCmd = gz::sim::components::AngularVelocityCmd(angular);
 }
 
 //////////////////////////////////////////////////
@@ -179,8 +196,8 @@ void OmniDrivePrivate::OnCmdVel(const msgs::Twist &_msg)
     if (this->enabled)
     {
         this->targetVel = _msg;
-        printf("On cmd_vel: linear=%.2f, angular=%.2f\n",
-               _msg.linear().x(), _msg.angular().z());
+        // printf("On cmd_vel: linear=%.2f, angular=%.2f\n",
+        //        _msg.linear().x(), _msg.angular().z());
     }
 }
 
