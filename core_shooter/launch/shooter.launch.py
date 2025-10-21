@@ -124,7 +124,7 @@ def generate_launch_description():
             center_shooter_controller_node,
             center_magazine_manager_node,
         ]),
-        
+
         GroupAction([
             PushRosNamespace("left"),
             left_shooter_controller_node,
