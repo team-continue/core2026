@@ -31,6 +31,10 @@ ament_auto_add_executable(shooter_controller
   src/shooter_controller.cpp
 )
 
+ament_auto_add_executable(magazine_manager
+  src/magazine_manager.cpp
+)
+
 install(
   DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}/

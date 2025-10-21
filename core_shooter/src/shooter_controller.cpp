@@ -122,7 +122,7 @@ public:
       "/target_omega", 10,
       std::bind(&ShooterController::targetOmegaCallback, this, std::placeholders::_1));
     jam_sensor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "~/jam", 10,
+      "jam", 10,
       std::bind(&ShooterController::jamSensorCallback, this, std::placeholders::_1));
     hazard_status_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "/system/emergency/hazard_status", 10,
@@ -132,29 +132,29 @@ public:
     // subscribers shoot cmd
     //========================================
     shoot_cmd_sub_ = this->create_subscription<std_msgs::msg::Int32>(
-      "~/shoot_cmd", 1,
+      "shoot_cmd", 1,
       std::bind(&ShooterController::shootCmdCallback, this, std::placeholders::_1));
 
     //========================================
     // subscribers ui
     //========================================
     shoot_motor_sub_ = this->create_subscription<std_msgs::msg::Float32>(
-      "~/shoot_motor", 1,
+      "shoot_motor", 1,
       std::bind(&ShooterController::shootMotorCallback, this, std::placeholders::_1));
 
     //========================================
     // publishers
     //========================================
     shoot_status_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-      "~/shoot_status", 10);
+      "shoot_status", 10);
     can_pub_ = this->create_publisher<core_msgs::msg::CANArray>(
       "/can/tx", 10);
     jam_state_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-      "~/jam_state", 10);
+      "jam_state", 10);
     loading_error_state_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-      "~/loading_motor_error_state", 10);
+      "loading_motor_error_state", 10);
     shooting_error_state_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-      "~/shoot_motor_error_state", 10);
+      "shoot_motor_error_state", 10);
 
     //========================================
     // timer callback

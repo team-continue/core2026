@@ -1,42 +1,46 @@
 /**:
-  ros__parameters:
-# ShootController:
-    # shoot id
-    # shoot_motor_id: -> launch
-    # loading_motor_id: -> launch
+    ros__parameters:
+        # ShootController:
+        # shoot id
+        # shoot_motor_id: -> launch
+        # loading_motor_id: -> launch
 
-    # shoot parameters
-    burst_count: 3                  #バーストモードのバースト数 # 3
-    shoot_interval_ms: 500          #発射のクールタイム         # 500
-    burst_interval_ms: 500          #バーストのクールタイム     # 500
-    fullauto_interval_ms: 500       #フルオートのクールタイム   # 500
+        # shoot parameters
+        burst_count: 3 #バーストモードのバースト数 # 3
+        shoot_interval_ms: 500 #発射のクールタイム         # 500
+        burst_interval_ms: 500 #バーストのクールタイム     # 500
+        fullauto_interval_ms: 500 #フルオートのクールタイム   # 500
 
-    # panel limit parameters
-    limit_rad: [0.349, 2.443,  3.490, 5.585]        #パネルの制限
-        # 　limit_rad_[1]
-        # 　　＼　　　limit_rad_[0]
-        # 　　　＼　／
-        # 　true ◯  true  ---- 0 [rad]
-        # 　　　／　＼
-        # 　　／　　　limit_rad_[3]
-        # 　limit_rad_[2]
-    enable_panel_synchronizer: true                 #パネルの制限をオンにするか #true
-    yaw_reflect: 0.25                               # 隙間撃ちの角速度変化の係数
+        # panel limit parameters
+        limit_rad:
+            [0.349, 2.443, 3.490, 5.585] #パネルの制限
+            # 　limit_rad_[1]
+            # 　　＼　　　limit_rad_[0]
+            # 　　　＼　／
+            # 　true ◯  true  ---- 0 [rad]
+            # 　　　／　＼
+            # 　　／　　　limit_rad_[3]
+            # 　limit_rad_[2]
+        enable_panel_synchronizer: true #パネルの制限をオンにするか #true
+        yaw_reflect: 0.25 # 隙間撃ちの角速度変化の係数
 
-    # loading motor parameters
-    loading_motor_speed: 6.5                        #モータ速度         # 3.0
-    loading_motor_initial_angle: [0.0, 0.0, 0.0]    #モータの初期角度
+        # loading motor parameters
+        loading_motor_speed: 6.5 #モータ速度         # 3.0
+        loading_motor_initial_angle: [0.0, 0.0, 0.0] #モータの初期角度
 
-    # shoot motor parameters
-    min_speed: 1200.0                               #モータ速度0と判断するための閾値  # 1200.0
-    target_speed: [2000.0, 1750.0, 1500.0]          #モータスピードの可変値
-    motor_target_threshold: 0.95                    #モータ速度が達したと判断する閾値 # 0.95
+        # shoot motor parameters
+        min_speed: 1200.0 #モータ速度0と判断するための閾値  # 1200.0
+        target_speed: [2000.0, 1750.0, 1500.0] #モータスピードの可変値
+        motor_target_threshold: 0.95 #モータ速度が達したと判断する閾値 # 0.95
 
-    # jam parameters
-    jam_detect_time_sec: 0.1                        #ジャム検出時間  # 0.1
+        # jam parameters
+        jam_detect_time_sec: 0.1 #ジャム検出時間  # 0.1
 
-    #debug parameters
-    set_initial_rad: 0.0                            #初期角度設定用
+        #debug parameters
+        set_initial_rad: 0.0 #初期角度設定用
 
-# remaining_disk_management:
-    remaining_disks: 0 #マガジン弾数 <-初期値は "27 - loading_disk" を入れる  # 0
+        # magazine_manager:
+        remaining_disks: 0 #マガジン弾数 <-初期値は "27 - loading_disk" を入れる
+        disk_thickness: 20.0 #ディスクの厚さ [mm] double
+        sensor_height: 500.0 #センサの高さ [mm] double
+        window_size: 3 #移動平均の窓サイズ
