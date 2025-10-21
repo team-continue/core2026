@@ -47,10 +47,10 @@ public:
     // publishers
     //========================================
     remaining_disk_pub_ = this->create_publisher<std_msgs::msg::Int8>("remaining_disk", 10);
-    
+
     //========================================
     // initialize
-    //========================================   
+    //========================================
     remainingDiskEstimator();
   }
 
@@ -98,7 +98,7 @@ private:
     if (estimated_disks < 0) {
       estimated_disks = 0;
     }
-    
+
     remainingDisksPublish(estimated_disks);
   }
 
