@@ -15,8 +15,6 @@ RUN echo '. /opt/ros/humble/setup.bash' >> /root/.bashrc && \
 # ワークスペースの作成とパッケージのコピー
 WORKDIR /ros2_ws
 
-RUN apt update && apt install zip -y
-
 COPY . /ros2_ws/src/
 
 # 依存関係のインストール

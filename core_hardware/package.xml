@@ -13,7 +13,7 @@
   <depend>std_msgs</depend>
   <depend>soem</depend>
   <depend>core_msgs</depend>
-
+  <depend>unzip</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
