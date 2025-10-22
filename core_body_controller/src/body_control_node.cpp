@@ -143,7 +143,7 @@ std::vector<float> BodyControlNode::invert_kinematics_calc(
   // Standard mecanum wheel inverse kinematics
   // Wheel arrangement (looking from top):
   //   0 [/]  [\] 1
-  //   2 [\]  [/] 3
+  //   3 [\]  [/] 2
   // Wheels at 45 degrees, using proper mecanum formulas
 
   wheel_velocities[0] = (vx_body - vy_body - BODY_WIDTH * omega) / WHEEL_RADIUS;
