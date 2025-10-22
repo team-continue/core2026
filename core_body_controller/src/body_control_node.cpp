@@ -122,7 +122,7 @@ void BodyControlNode::emergency_stop() {
 }
 
 std::vector<float> BodyControlNode::invert_kinematics_calc(
-    const geometry_msgs::msg::Twist &cmd_vel, const float &body_angle) {
+    const geometry_msgs::msg::Twist& cmd_vel, const float& body_angle) {
   std::vector<float> wheel_velocities(4);
   // Calculate inverse kinematics
   constexpr float WHEEL_RADIUS = 0.13 / 2;
@@ -133,29 +133,29 @@ std::vector<float> BodyControlNode::invert_kinematics_calc(
               "Got cmd_vel: linear.x=%f, linear.y=%f, angular.z=%f",
               cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z);
 
-  // Calculate wheel velocities in rad/s
-  wheel_velocities[0] = (cmd_vel.linear.x / sin(M_PI / 4 - body_angle) -
-                         cmd_vel.linear.y / cos(M_PI / 4 - body_angle) -
-                         BODY_WIDTH * cmd_vel.angular.z) /
-                        WHEEL_RADIUS;
-  wheel_velocities[1] = (cmd_vel.linear.x / sin(3 * M_PI / 4 - body_angle) -
-                         cmd_vel.linear.y / cos(3 * M_PI / 4 - body_angle) -
-                         BODY_WIDTH * cmd_vel.angular.z) /
-                        WHEEL_RADIUS;
-  wheel_velocities[2] = (cmd_vel.linear.x / sin(5 * M_PI / 4 - body_angle) -
-                         cmd_vel.linear.y / cos(5 * M_PI / 4 - body_angle) -
-                         BODY_WIDTH * cmd_vel.angular.z) /
-                        WHEEL_RADIUS;
-  wheel_velocities[3] = (cmd_vel.linear.x / sin(7 * M_PI / 4 - body_angle) -
-                         cmd_vel.linear.y / cos(7 * M_PI / 4 - body_angle) -
-                         BODY_WIDTH * cmd_vel.angular.z) /
-                        WHEEL_RADIUS;
+  // Rotate velocity vector to body frame
+  float vx_body =
+      cmd_vel.linear.x * cos(body_angle) + cmd_vel.linear.y * sin(body_angle);
+  float vy_body =
+      -cmd_vel.linear.x * sin(body_angle) + cmd_vel.linear.y * cos(body_angle);
+  float omega = cmd_vel.angular.z;
+
+  // Standard mecanum wheel inverse kinematics
+  // Wheel arrangement (looking from top):
+  //   0 [/]  [\] 1
+  //   2 [\]  [/] 3
+  // Wheels at 45 degrees, using proper mecanum formulas
+
+  wheel_velocities[0] = (vx_body - vy_body - BODY_WIDTH * omega) / WHEEL_RADIUS;
+  wheel_velocities[1] = (vx_body + vy_body - BODY_WIDTH * omega) / WHEEL_RADIUS;
+  wheel_velocities[2] = (vx_body + vy_body - BODY_WIDTH * omega) / WHEEL_RADIUS;
+  wheel_velocities[3] = (vx_body - vy_body - BODY_WIDTH * omega) / WHEEL_RADIUS;
 
   return wheel_velocities;
 }
 
 core_msgs::msg::CANArray BodyControlNode::gen_body_control_command(
-    const std::vector<float> &wheel_vel) {
+    const std::vector<float>& wheel_vel) {
   core_msgs::msg::CANArray body_control_commands;
   for (size_t i = 0; i < 4; i++) {
     core_msgs::msg::CAN body_control_command;
@@ -167,7 +167,7 @@ core_msgs::msg::CANArray BodyControlNode::gen_body_control_command(
   return body_control_commands;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<BodyControlNode>());
   rclcpp::shutdown();
