@@ -10,9 +10,12 @@
   <buildtool_depend>ament_cmake_auto</buildtool_depend>
 
   <depend>rclcpp</depend>
+  <depend>boost</depend>
   <depend>std_msgs</depend>
   <depend>core_msgs</depend>
+  <depend>tf2_geometry_msgs</depend>
   <depend>unzip</depend>
+  <depend>nav_msgs</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
