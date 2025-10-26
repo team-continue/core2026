@@ -14,6 +14,10 @@ def generate_launch_description():
         "shooter.params.yaml"
     )
 
+    hazard_remaps = [
+        ("hazard_status", "/system/emergency/hazard_status")
+    ]
+
     shooter_cmd_gate_node = Node(
         package="core_shooter",
         executable="shooter_cmd_gate",
@@ -39,9 +43,10 @@ def generate_launch_description():
                 "loading_motor_id": 7
             }
         ],
-        # remappings=[
+        remappings=[
+            hazard_remaps,
         #     ("shoot_cmd", "/center_shoot_cmd")
-        # ]
+        ]
     )
 
     left_shooter_controller_node = Node(
@@ -56,9 +61,10 @@ def generate_launch_description():
                 "loading_motor_id": 8
             }
         ],
-        # remappings=[
+        remappings=[
+            hazard_remaps,
         #     ("shoot_cmd", "/left_shoot_cmd")
-        # ]
+        ]
     )
 
     right_shooter_controller_node = Node(
@@ -73,9 +79,10 @@ def generate_launch_description():
                 "loading_motor_id": 9
             }
         ],
-        # remappings=[
+        remappings=[
+            hazard_remaps,
         #     ("shoot_cmd", "/right_shoot_cmd")
-        # ]
+        ]
     )
 
     center_magazine_manager_node = Node(
@@ -86,9 +93,9 @@ def generate_launch_description():
         parameters=[
             shooter_params,
         ],
-        # remappings=[
-        #     ("~/disk_distance_sensor", "distance")
-        # ]
+        remappings=[
+            ("disk_distance_sensor", "distance1")
+        ]
     )
 
     left_magazine_manager_node = Node(
@@ -99,9 +106,9 @@ def generate_launch_description():
         parameters=[
             shooter_params,
         ],
-        # remappings=[
-        #     ("~/disk_distance_sensor", "distance")
-        # ]
+        remappings=[
+            ("disk_distance_sensor", "distance2")
+        ]
     )
 
     right_magazine_manager_node = Node(
@@ -112,9 +119,9 @@ def generate_launch_description():
         parameters=[
             shooter_params,
         ],
-        # remappings=[
-        #     ("~/disk_distance_sensor", "distance")
-        # ]
+        remappings=[
+            ("disk_distance_sensor", "distance3")
+        ]
     )
 
     return LaunchDescription([

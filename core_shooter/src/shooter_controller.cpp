@@ -86,7 +86,7 @@ public:
     declare_parameter("motor_target_threshold", 0.95);
 
     min_speed_ = this->get_parameter("min_speed").as_double();
-    shoot_motor_target_speed_ = this->get_parameter("limit_rad").as_double_array();
+    shoot_motor_target_speed_ = this->get_parameter("target_speed").as_double_array();
     motor_target_threshold_ = this->get_parameter("motor_target_threshold").as_double();
 
     RCLCPP_INFO(
@@ -125,7 +125,7 @@ public:
       "jam", 10,
       std::bind(&ShooterController::jamSensorCallback, this, std::placeholders::_1));
     hazard_status_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "/system/emergency/hazard_status", 10,
+      "hazard_status", 10,
       std::bind(&ShooterController::hazardStatusCallback, this, std::placeholders::_1));
 
     //========================================
@@ -207,12 +207,12 @@ private:
 
   void hazardStatusCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    if (hazerd_state_ && msg->data) {
+    if (hazard_state_ && msg->data) {
       // キンテイ解除時にショット完了をtrueにする
       shoot_completed_ = true;
       RCLCPP_INFO(get_logger(), "Clear Emergency, Set shoot_completed_ TRUE");
     }
-    hazerd_state_ = msg->data;
+    hazard_state_ = msg->data;
   }
 
   //========================================
@@ -372,14 +372,12 @@ private:
   //========================================
   bool canShoot()
   {
-    return hazerd_state_ && isValidAngle() && isShootIntervalElapsed() && !isJamDetected();
+    return hazard_state_ && isValidAngle() && isShootIntervalElapsed() && !isJamDetected();
   }
 
-  /**/
   bool isValidAngle()
   {
-    // ロジック直そうね！
-    // If the angle limit is disabled, always return true.
+    // 隙間撃ちの設定がfalseの場合は常にtrueを返す
     if (!enable_panel_synchronizer_) {
       return true;
     }
@@ -414,31 +412,6 @@ private:
     }
 
     return true;
-
-    /*
-    bool ret = false;
-    float front_rad_offset = 1.9 - target_omega_ * yaw_reflect_; // [rad]
-    float rad = turret_angle_from_chassis_ + front_rad_offset;
-
-    // ラジアンを0 ~ 2PIに変換する。
-    rad = std::fmod(rad, 2 * M_PI);
-    // 変換した際に負の値の場合、ポジティブ方向で絶対角度にする。
-    if (rad < 0) {
-        rad = M_PI * 2 - rad;
-    }
-
-    RCLCPP_INFO(get_logger(), "raw: %f, rad: %f, front: %f", turret_angle_from_chassis_, rad, front_rad_offset);
-
-    if (0 < rad && rad < limit_rad_[0]) {
-        ret = true;
-    } else if (limit_rad_[1] < rad && rad < limit_rad_[2]) {
-        ret = true;
-    } else if (limit_rad_[3] < rad && rad < 2 * M_PI) {
-        ret = true;
-    }
-
-    return ret;
-    */
   }
 
   bool isShootIntervalElapsed()
@@ -542,6 +515,7 @@ private:
 
   rclcpp::Time last_shoot_time_ = now();
   rclcpp::Clock system_clock(rcl_clock_type_t RCL_SYSTEM_TIME);
+  // rclcpp::Clock system_clock(RCL_SYSTEM_TIME);
 
   //========================================
   // subscription valids
@@ -553,7 +527,7 @@ private:
   double target_omega_ = 0.0;
   double jam_photo_reflector_raw_;
 
-  bool hazerd_state_ = true;
+  bool hazard_state_ = true;
 
   //========================================
   // parameter valids
@@ -588,6 +562,7 @@ private:
   // valids
   //========================================
   bool shoot_completed_ = true;
+
   // the count of repeated shots. (x < -1: fullauto, x = 0: none, x > 1: burst )
   int shoot_repeat_count = 0;
 
@@ -601,7 +576,7 @@ private:
   STATE state = CMD_WAIT;
   int shoot_cnt = 0;
 
-  bool is_emergency_unlock;
+  bool is_emergency_unlock = false;
   float target_angle = M_PI;
 
   rclcpp::Time start_time_;
@@ -620,20 +595,6 @@ int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<ShooterController>());
-
-  // SingleThreadedExecutor の作成
-  // rclcpp::executors::SingleThreadedExecutor executor;
-  // rclcpp::executors::MultiThreadedExecutor executor;
-
-  // ノードをExecutorに追加
-  // auto shoot_controller = std::make_shared<ShooterController>();
-  // auto shoot_subscriber = std::make_shared<ShootSubscriber>();
-  // executor.add_node(shoot_controller);
-  // executor.add_node(shoot_subscriber);
-
-  // 実行（この関数はブロッキングする）
-  // executor.spin();
-
   rclcpp::shutdown();
   return 0;
 }

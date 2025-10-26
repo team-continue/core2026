@@ -79,10 +79,8 @@ public:
   {
     if (msg->data) {
       // Flip: ON
-      if (msg->data) {
-        center_shoot_repeat_count_ = -1;
-        RCLCPP_INFO(this->get_logger(), "On trigger: Fullauto");
-      }
+      center_shoot_repeat_count_ = -1;
+      RCLCPP_INFO(this->get_logger(), "On trigger: Fullauto");
     } else if (!msg->data) {
       // Flip: OFF
       if (center_shoot_repeat_count_ == -1) {
@@ -106,7 +104,7 @@ public:
   {
     if (msg->data) {
       left_shoot_repeat_count_ = 1;
-      RCLCPP_INFO(this->get_logger(), "On trigger: Right Shoot");
+      RCLCPP_INFO(this->get_logger(), "On trigger: Left Shoot");
     }
   }
 
@@ -154,9 +152,6 @@ public:
   // timer callback valids
   //========================================
   rclcpp::TimerBase::SharedPtr timer_;
-
-  rclcpp::Time last_shoot_time_ = now();
-  rclcpp::Clock system_clock(rcl_clock_type_t RCL_SYSTEM_TIME);
 
   //========================================
   // valids
