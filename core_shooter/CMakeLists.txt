@@ -35,6 +35,10 @@ ament_auto_add_executable(magazine_manager
   src/magazine_manager.cpp
 )
 
+ament_auto_add_executable(aim_bot
+  src/aim_bot.cpp
+)
+
 install(
   DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}/

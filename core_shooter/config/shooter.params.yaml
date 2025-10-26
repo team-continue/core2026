@@ -1,5 +1,6 @@
 /**:
     ros__parameters:
+        # ========================================
         # ShootController:
         # shoot id
         # shoot_motor_id: -> launch
@@ -21,6 +22,7 @@
             # 　　　／　＼
             # 　　／　　　limit_rad_[3]
             # 　limit_rad_[2]
+
         enable_panel_synchronizer: true #パネルの制限をオンにするか #true
         yaw_reflect: 0.25 # 隙間撃ちの角速度変化の係数
 
@@ -36,11 +38,32 @@
         # jam parameters
         jam_detect_time_sec: 0.1 #ジャム検出時間  # 0.1
 
-        #debug parameters
+        # debug parameters
         set_initial_rad: 0.0 #初期角度設定用
 
-        # magazine_manager:
+        # ========================================
+        # MagazineManager
         remaining_disks: 0 #マガジン弾数 <-初期値は "27 - loading_disk" を入れる
         disk_thickness: 20.0 #ディスクの厚さ [mm] double
         sensor_height: 500.0 #センサの高さ [mm] double
         window_size: 3 #移動平均の窓サイズ
+
+        # ========================================
+        # aim_bot:
+        # frame
+        source_frame: "base_link" # 自分側のフレーム
+        target_frame: "enemy_tf" # 敵のフレーム名
+
+        # periodic rate
+        rate: 30.0
+
+        # yaw control parameters
+        yaw_kp: 1.2 # 比例ゲイン
+        yaw_max_output: 1.0 # 出力上限 (rad/s)
+        yaw_tolerance: 0.02 # 偏差がこの値以下なら停止
+
+        # Pitch control parameters
+        pitch_kp: 1.0 # 比例ゲイン
+        pitch_max_output: 1.0 # 出力上限
+        pitch_tolerance: 0.02 # 許容誤差
+        pitch_offset: 0.0 # サーボ取り付け角などの補正 (rad)

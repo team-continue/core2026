@@ -45,7 +45,6 @@ def generate_launch_description():
         ],
         remappings=[
             hazard_remaps,
-        #     ("shoot_cmd", "/center_shoot_cmd")
         ]
     )
 
@@ -63,7 +62,6 @@ def generate_launch_description():
         ],
         remappings=[
             hazard_remaps,
-        #     ("shoot_cmd", "/left_shoot_cmd")
         ]
     )
 
@@ -81,7 +79,6 @@ def generate_launch_description():
         ],
         remappings=[
             hazard_remaps,
-        #     ("shoot_cmd", "/right_shoot_cmd")
         ]
     )
 
