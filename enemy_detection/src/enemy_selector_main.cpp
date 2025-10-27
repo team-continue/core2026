@@ -1,0 +1,12 @@
+#include <memory>
+
+#include "rclcpp/rclcpp.hpp"
+#include "enemy_selector.hpp"
+
+int main(int argc, char * argv[])
+{
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<enemy_selector::enemySelector>());
+    rclcpp::shutdown();
+    return 0;
+}
