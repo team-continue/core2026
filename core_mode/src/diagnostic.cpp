@@ -10,7 +10,7 @@ public:
   : Node("diagnostic")
   {
     //========================================
-    // shoot parameters
+    // parameters
     //========================================
     microcontroller_diagnostic_time_ = this->declare_parameter(
       "microcontroller_diagnostic_time",
@@ -81,19 +81,19 @@ private:
   }
 
   //========================================
-  // Subscription valids
+  // Subscription members
   //========================================
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr microcontroller_subscription_;
   rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr receive_module_subscription_;
 
   //========================================
-  // publisher valids
+  // publisher members
   //========================================
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr microcontroller_diagnostic_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr receiver_diagnostic_publisher_;
 
   //========================================
-  // timer callback valids
+  // timer callback member variable
   //========================================
   rclcpp::TimerBase::SharedPtr timer_;
 
@@ -101,7 +101,7 @@ private:
   rclcpp::Time receiver_lasttime_;
 
   //========================================
-  // valids
+  // parameter variables
   //========================================
   int microcontroller_diagnostic_time_;
   int receiver_diagnostic_time_;

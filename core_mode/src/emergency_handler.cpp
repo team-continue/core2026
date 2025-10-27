@@ -60,6 +60,7 @@ private:
   void emergencySwitchCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     emergency_switch_state_ = msg->data;
+    high_emergency_level_ = true;
     evaluateHazardStates();
   }
 
@@ -68,6 +69,7 @@ private:
     if (msg->data) {
       software_emergency_state_ = true;
     }
+    high_emergency_level_ = true;
     evaluateHazardStates();
   }
 
@@ -76,6 +78,7 @@ private:
     if (msg->data) {
       if (!isEmergency()) {
         software_emergency_state_ = false;
+        high_emergency_level_ = false;
       } else {
         RCLCPP_WARN(
           this->get_logger(),
@@ -88,12 +91,14 @@ private:
   void destroyCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     destroy_state_ = msg->data;
+    high_emergency_level_ = true;
     evaluateHazardStates();
   }
 
   void microcontrollerDiagCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     microcontroller_emergency_state_ = msg->data;
+    high_emergency_level_ = true;
     evaluateHazardStates();
   }
 
@@ -109,41 +114,19 @@ private:
   void evaluateHazardStates()
   {
     evaluateIndividualStates();
-    applyRecoveryLogic();
     publishHazardState();
   }
 
   void evaluateIndividualStates()
   {
-    // 優先順位でhazard_code設定（高い数値 = 高優先度）
-    if (emergency_switch_state_) {
-      hazard_code_ = 45;
-    } else if (microcontroller_emergency_state_) {
-      hazard_code_ = 23;
-    } else if (receiver_emergency_state_) {
-      hazard_code_ = 12;
-    } else if (destroy_state_) {
-      hazard_code_ = 11;
-    } else if (software_emergency_state_) {
-      hazard_code_ = 34;
-    } else {
-      hazard_code_ = 0;
-    }
-
     // 他のHazardがある場合、Software Emergencyは強制ON
-    if (hazard_code_ > 20 && hazard_code_ != 34) {
+    if (isEmergency()) {
       software_emergency_state_ = true;
     }
-  }
 
-  void applyRecoveryLogic()
-  {
-    // 軽微なエラー（hazard_code <20）は自動復帰
-    if (hazard_code_ > 0 && hazard_code_ < 20) {
-      if (!isEmergency()) {
-        software_emergency_state_ = false;
-        hazard_code_ = 0;
-      }
+    // 軽微なエラーは自動復帰
+    if (!isEmergency() && !high_emergency_level_) {
+      software_emergency_state_ = false;
     }
   }
 
@@ -231,6 +214,7 @@ private:
   bool receiver_emergency_state_ = false;
 
   int hazard_code_ = 0;
+  bool high_emergency_level_ = false;
 };
 
 int main(int argc, char * argv[])

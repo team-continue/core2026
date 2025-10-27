@@ -22,7 +22,7 @@ def generate_launch_description():
         parameters=[mode_params],
         remappings=[
             ("emergency_switch", "/emergency"),
-            ("destroy", "/destoroy"),
+            ("destroy", "/destroy"),
             ("emergency_button_on", "/left/shoot_cmd"),
             ("emergency_button_off", "/right/shoot_cmd"),
         ]
