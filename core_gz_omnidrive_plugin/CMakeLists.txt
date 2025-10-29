@@ -3,7 +3,7 @@ project(core_gz_omnidrive_plugin)
 
 find_package(ament_cmake REQUIRED)
 find_package(ignition-gazebo6 REQUIRED)
-find_package(ignition-transport8 REQUIRED)
+find_package(ignition-transport11 REQUIRED)
 find_package(ignition-msgs8 REQUIRED)
 
 add_library(core_gz_omnidrive_plugin SHARED
@@ -12,7 +12,7 @@ add_library(core_gz_omnidrive_plugin SHARED
 
 ament_target_dependencies(core_gz_omnidrive_plugin
   ignition-gazebo6
-  ignition-transport8
+  ignition-transport11
   ignition-msgs8
 )
 
