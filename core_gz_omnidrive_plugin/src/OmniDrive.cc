@@ -33,188 +33,200 @@ using namespace systems;
 /// \brief Velocity command.
 struct Commands
 {
-    /// \brief Linear velocity.
-    double lin;
+  /// \brief Linear velocity.
+  double lin;
 
-    /// \brief Angular velocity.
-    double ang;
+  /// \brief Angular velocity.
+  double ang;
 
-    Commands() : lin(0.0), ang(0.0) {}
+  Commands() : lin(0.0), ang(0.0) {
+  }
 };
 
 class OmniDrivePrivate
 {
-    /// \brief Callback for velocity subscription
-    /// \param[in] _msg Velocity message
-public:
-    void OnCmdVel(const msgs::Twist &_msg);
+  /// \brief Callback for velocity subscription
+  /// \param[in] _msg Velocity message
 
-    /// \brief Callback for enable/disable subscription
-    /// \param[in] _msg Boolean message
 public:
-    void OnEnable(const msgs::Boolean &_msg);
+  void OnCmdVel(const msgs::Twist & _msg);
 
-    /// \brief Update odometry and publish an odometry message.
-    /// \param[in] _info System update information.
-    /// \param[in] _ecm The EntityComponentManager of the given simulation
-    /// instance.
-public:
-    void UpdateOdometry(const UpdateInfo &_info,
-                        const EntityComponentManager &_ecm);
+  /// \brief Callback for enable/disable subscription
+  /// \param[in] _msg Boolean message
 
-    /// \brief Update the linear and angular velocities.
-    /// \param[in] _info System update information.
-    /// \param[in] _ecm The EntityComponentManager of the given simulation
-    /// instance.
 public:
-    void UpdateVelocity(const UpdateInfo &_info,
-                        const EntityComponentManager &_ecm);
+  void OnEnable(const msgs::Boolean & _msg);
 
-    /// \brief Gazebo communication node.
-public:
-    transport::Node node;
+  /// \brief Update odometry and publish an odometry message.
+  /// \param[in] _info System update information.
+  /// \param[in] _ecm The EntityComponentManager of the given simulation
+  /// instance.
 
-    /// \brief Model interface
 public:
-    Model model{kNullEntity};
-    Link baseLink{kNullEntity};
+  void UpdateOdometry(
+    const UpdateInfo & _info,
+    const EntityComponentManager & _ecm);
 
-    /// \brief Last target velocity requested.
-public:
-    msgs::Twist targetVel;
+  /// \brief Update the linear and angular velocities.
+  /// \param[in] _info System update information.
+  /// \param[in] _ecm The EntityComponentManager of the given simulation
+  /// instance.
 
-    /// \brief Enable/disable state of the controller.
 public:
-    bool enabled;
+  void UpdateVelocity(
+    const UpdateInfo & _info,
+    const EntityComponentManager & _ecm);
 
-    /// \brief A mutex to protect the target velocity command.
+  /// \brief Gazebo communication node.
+
 public:
-    std::mutex mutex;
+  transport::Node node;
+
+  /// \brief Model interface
+
+public:
+  Model model {kNullEntity};
+  Link baseLink {kNullEntity};
+
+  /// \brief Last target velocity requested.
+
+public:
+  msgs::Twist targetVel;
+
+  /// \brief Enable/disable state of the controller.
+
+public:
+  bool enabled;
+
+  /// \brief A mutex to protect the target velocity command.
+
+public:
+  std::mutex mutex;
 };
 
 //////////////////////////////////////////////////
 OmniDrive::OmniDrive()
-    : dataPtr(std::make_unique<OmniDrivePrivate>())
+: dataPtr(std::make_unique < OmniDrivePrivate > ())
 {
 }
 
 //////////////////////////////////////////////////
-void OmniDrive::Configure(const Entity &_entity,
-                          const std::shared_ptr<const sdf::Element> &_sdf,
-                          EntityComponentManager &_ecm,
-                          EventManager &eventMgr)
+void OmniDrive::Configure(
+  const Entity & _entity,
+  const std::shared_ptr < const sdf::Element > & _sdf,
+  EntityComponentManager & _ecm,
+  EventManager & eventMgr)
 {
-    this->dataPtr->model = Model(_entity);
+  this->dataPtr->model = Model(_entity);
 
-    // Subscribe to commands
-    std::vector<std::string> topics;
-    if (_sdf->HasElement("topic"))
-    {
-        topics.push_back(_sdf->Get<std::string>("topic"));
-    }
-    topics.push_back("/cmd_vel");
-    auto topic = validTopic(topics);
+  // Subscribe to commands
+  std::vector < std::string > topics;
+  if (_sdf->HasElement("topic")) {
+    topics.push_back(_sdf->Get < std::string > ("topic"));
+  }
+  topics.push_back("/cmd_vel");
+  auto topic = validTopic(topics);
 
-    this->dataPtr->node.Subscribe(topic, &OmniDrivePrivate::OnCmdVel, this->dataPtr.get());
+  this->dataPtr->node.Subscribe(topic, &OmniDrivePrivate::OnCmdVel, this->dataPtr.get());
 
-    // Subscribe to enable/disable
-    std::vector<std::string> enableTopics;
-    enableTopics.push_back("/enable");
-    auto enableTopic = validTopic(enableTopics);
+  // Subscribe to enable/disable
+  std::vector < std::string > enableTopics;
+  enableTopics.push_back("/enable");
+  auto enableTopic = validTopic(enableTopics);
 
-    if (!enableTopic.empty())
-    {
-        this->dataPtr->node.Subscribe(enableTopic, &OmniDrivePrivate::OnEnable, this->dataPtr.get());
-    }
-    this->dataPtr->enabled = true;
+  if (!enableTopic.empty()) {
+    this->dataPtr->node.Subscribe(enableTopic, &OmniDrivePrivate::OnEnable, this->dataPtr.get());
+  }
+  this->dataPtr->enabled = true;
 
-    // base_link を取得
-    auto baseLinkEntity = this->dataPtr->model.LinkByName(_ecm, "base_link");
+  // base_link を取得
+  auto baseLinkEntity = this->dataPtr->model.LinkByName(_ecm, "base_link");
 
-    if (baseLinkEntity == kNullEntity)
-    {
-        return;
-    }
+  if (baseLinkEntity == kNullEntity) {
+    return;
+  }
 
-    // Link オブジェクトを作成
-    this->dataPtr->baseLink = Link(baseLinkEntity);
+  // Link オブジェクトを作成
+  this->dataPtr->baseLink = Link(baseLinkEntity);
 }
 
 //////////////////////////////////////////////////
-void OmniDrive::PreUpdate(const UpdateInfo &_info,
-                          EntityComponentManager &_ecm)
+void OmniDrive::PreUpdate(
+  const UpdateInfo & _info,
+  EntityComponentManager & _ecm)
 {
-    std::lock_guard<std::mutex> lock(this->dataPtr->mutex);
-    if (!this->dataPtr->enabled)
-        return;
+  std::lock_guard < std::mutex > lock(this->dataPtr->mutex);
+  if (!this->dataPtr->enabled) {
+    return;
+  }
 
-    auto linear = math::Vector3d(
-        this->dataPtr->targetVel.linear().x(),
-        this->dataPtr->targetVel.linear().y(),
-        this->dataPtr->targetVel.linear().z());
+  auto linear = math::Vector3d(
+    this->dataPtr->targetVel.linear().x(),
+    this->dataPtr->targetVel.linear().y(),
+    this->dataPtr->targetVel.linear().z());
 
-    auto angular = math::Vector3d(
-        this->dataPtr->targetVel.angular().x(),
-        this->dataPtr->targetVel.angular().y(),
-        this->dataPtr->targetVel.angular().z());
+  auto angular = math::Vector3d(
+    this->dataPtr->targetVel.angular().x(),
+    this->dataPtr->targetVel.angular().y(),
+    this->dataPtr->targetVel.angular().z());
 
-    // 直接速度を設定
-    this->dataPtr->baseLink.SetLinearVelocity(_ecm, linear);
-    this->dataPtr->baseLink.SetAngularVelocity(_ecm, angular);
+  // 直接速度を設定
+  this->dataPtr->baseLink.SetLinearVelocity(_ecm, linear);
+  this->dataPtr->baseLink.SetAngularVelocity(_ecm, angular);
 
-    // auto modelEntity = this->dataPtr->model.Entity();
-    // auto baseLinkEntity = this->dataPtr->model.LinkByName(_ecm, "base_link");
+  // auto modelEntity = this->dataPtr->model.Entity();
+  // auto baseLinkEntity = this->dataPtr->model.LinkByName(_ecm, "base_link");
 
-    // auto linCmd = _ecm.Component<gz::sim::components::LinearVelocityCmd>(baseLinkEntity);
-    // if (linCmd == nullptr)
-    //     _ecm.CreateComponent(baseLinkEntity, gz::sim::components::LinearVelocityCmd(linear));
-    // else
-    //     *linCmd = gz::sim::components::LinearVelocityCmd(linear);
+  // auto linCmd = _ecm.Component<gz::sim::components::LinearVelocityCmd>(baseLinkEntity);
+  // if (linCmd == nullptr)
+  //     _ecm.CreateComponent(baseLinkEntity, gz::sim::components::LinearVelocityCmd(linear));
+  // else
+  //     *linCmd = gz::sim::components::LinearVelocityCmd(linear);
 
-    // // Angular velocity command
-    // auto angCmd = _ecm.Component<gz::sim::components::AngularVelocityCmd>(baseLinkEntity);
-    // if (angCmd == nullptr)
-    //     _ecm.CreateComponent(baseLinkEntity, gz::sim::components::AngularVelocityCmd(angular));
-    // else
-    //     *angCmd = gz::sim::components::AngularVelocityCmd(angular);
+  // // Angular velocity command
+  // auto angCmd = _ecm.Component<gz::sim::components::AngularVelocityCmd>(baseLinkEntity);
+  // if (angCmd == nullptr)
+  //     _ecm.CreateComponent(baseLinkEntity, gz::sim::components::AngularVelocityCmd(angular));
+  // else
+  //     *angCmd = gz::sim::components::AngularVelocityCmd(angular);
 }
 
 //////////////////////////////////////////////////
-void OmniDrive::PostUpdate(const UpdateInfo &_info,
-                           const EntityComponentManager &_ecm)
+void OmniDrive::PostUpdate(
+  const UpdateInfo & _info,
+  const EntityComponentManager & _ecm)
 {
 }
 
 //////////////////////////////////////////////////
-void OmniDrivePrivate::OnCmdVel(const msgs::Twist &_msg)
+void OmniDrivePrivate::OnCmdVel(const msgs::Twist & _msg)
 {
-    // test
-    std::lock_guard<std::mutex> lock(this->mutex);
-    if (this->enabled)
-    {
-        this->targetVel = _msg;
-        // printf("On cmd_vel: linear=%.2f, angular=%.2f\n",
-        //        _msg.linear().x(), _msg.angular().z());
-    }
+  // test
+  std::lock_guard < std::mutex > lock(this->mutex);
+  if (this->enabled) {
+    this->targetVel = _msg;
+    // printf("On cmd_vel: linear=%.2f, angular=%.2f\n",
+    //        _msg.linear().x(), _msg.angular().z());
+  }
 }
 
 //////////////////////////////////////////////////
-void OmniDrivePrivate::OnEnable(const msgs::Boolean &_msg)
+void OmniDrivePrivate::OnEnable(const msgs::Boolean & _msg)
 {
-    std::lock_guard<std::mutex> lock(this->mutex);
-    this->enabled = _msg.data();
-    if (!this->enabled)
-    {
-        math::Vector3d zeroVector{0, 0, 0};
-        msgs::Set(this->targetVel.mutable_linear(), zeroVector);
-        msgs::Set(this->targetVel.mutable_angular(), zeroVector);
-    }
+  std::lock_guard < std::mutex > lock(this->mutex);
+  this->enabled = _msg.data();
+  if (!this->enabled) {
+    math::Vector3d zeroVector {0, 0, 0};
+    msgs::Set(this->targetVel.mutable_linear(), zeroVector);
+    msgs::Set(this->targetVel.mutable_angular(), zeroVector);
+  }
 }
 
-IGNITION_ADD_PLUGIN(OmniDrive,
-                    gz::sim::System,
-                    OmniDrive::ISystemConfigure,
-                    OmniDrive::ISystemPreUpdate,
-                    OmniDrive::ISystemPostUpdate)
+IGNITION_ADD_PLUGIN(
+  OmniDrive,
+  gz::sim::System,
+  OmniDrive::ISystemConfigure,
+  OmniDrive::ISystemPreUpdate,
+  OmniDrive::ISystemPostUpdate)
 
 IGNITION_ADD_PLUGIN_ALIAS(OmniDrive, "CoreOmniDrive")
