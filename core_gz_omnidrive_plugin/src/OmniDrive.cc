@@ -90,7 +90,6 @@ public:
     /// \brief A mutex to protect the target velocity command.
 public:
     std::mutex mutex;
-
 };
 
 //////////////////////////////////////////////////
@@ -103,7 +102,7 @@ OmniDrive::OmniDrive()
 void OmniDrive::Configure(const Entity &_entity,
                           const std::shared_ptr<const sdf::Element> &_sdf,
                           EntityComponentManager &_ecm,
-                          EventManager & eventMgr)
+                          EventManager &eventMgr)
 {
     this->dataPtr->model = Model(_entity);
 
@@ -125,7 +124,7 @@ void OmniDrive::Configure(const Entity &_entity,
 
     if (!enableTopic.empty())
     {
-        this->dataPtr->node.Subscribe(enableTopic, &OmniDrivePrivate::OnEnable,this->dataPtr.get());
+        this->dataPtr->node.Subscribe(enableTopic, &OmniDrivePrivate::OnEnable, this->dataPtr.get());
     }
     this->dataPtr->enabled = true;
 
@@ -159,11 +158,10 @@ void OmniDrive::PreUpdate(const UpdateInfo &_info,
         this->dataPtr->targetVel.angular().y(),
         this->dataPtr->targetVel.angular().z());
 
-        
-        // 直接速度を設定
-        this->dataPtr->baseLink.SetLinearVelocity(_ecm, linear);
-        this->dataPtr->baseLink.SetAngularVelocity(_ecm, angular);
-        
+    // 直接速度を設定
+    this->dataPtr->baseLink.SetLinearVelocity(_ecm, linear);
+    this->dataPtr->baseLink.SetAngularVelocity(_ecm, angular);
+
     // auto modelEntity = this->dataPtr->model.Entity();
     // auto baseLinkEntity = this->dataPtr->model.LinkByName(_ecm, "base_link");
 
@@ -185,7 +183,6 @@ void OmniDrive::PreUpdate(const UpdateInfo &_info,
 void OmniDrive::PostUpdate(const UpdateInfo &_info,
                            const EntityComponentManager &_ecm)
 {
-
 }
 
 //////////////////////////////////////////////////
@@ -215,9 +212,9 @@ void OmniDrivePrivate::OnEnable(const msgs::Boolean &_msg)
 }
 
 IGNITION_ADD_PLUGIN(OmniDrive,
-              gz::sim::System,
-              OmniDrive::ISystemConfigure,
-              OmniDrive::ISystemPreUpdate,
-              OmniDrive::ISystemPostUpdate)
+                    gz::sim::System,
+                    OmniDrive::ISystemConfigure,
+                    OmniDrive::ISystemPreUpdate,
+                    OmniDrive::ISystemPostUpdate)
 
 IGNITION_ADD_PLUGIN_ALIAS(OmniDrive, "CoreOmniDrive")
