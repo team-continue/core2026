@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>core_gz_omnidrive_plugin</name>
+  <version>0.0.1</version>
+  <description>
+    Ignition Gazebo Fortress model plugin that subscribes to /cmd_vel
+    (via ros_ign_bridge) and applies velocity commands to a model link.
+  </description>
+
+  <maintainer email="you@example.com">Your Name</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- Build system -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Ignition Fortress dependencies -->
+  <depend>ignition-gazebo6</depend>
+  <depend>ignition-transport11</depend>
+  <depend>ignition-msgs8</depend>
+  <depend>ignition-math6</depend>
+
+  <!-- ROS 2 dependencies -->
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>ros_ign_bridge</depend>
+
+  <!-- For linting (optional) -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <!-- Export information -->
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

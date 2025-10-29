@@ -55,7 +55,12 @@ def generate_launch_description():
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': [LaunchConfiguration('world')]}.items(),
+        launch_arguments={
+            'gz_args': [
+                '-r ',
+                LaunchConfiguration('world')
+            ]
+        }.items(),
     )
 
     spawn_robot = Node(
@@ -75,8 +80,9 @@ def generate_launch_description():
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
-            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'
-            'joint_state@sensor_msgs/msg/JointState[gz.msgs.Model'
+            '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock',
+            '/joint_states@sensor_msgs/msg/JointState@gz.msgs.Model',
+            '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist'
         ],
         output='screen'
     )
