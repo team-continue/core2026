@@ -47,7 +47,7 @@ public:
       "hazard_label", 10);
 
     //========================================
-    // Initialized
+    // Initialization
     //========================================
     RCLCPP_INFO(this->get_logger(), "EmergencyHandlerNode initialized");
     evaluateHazardStates();
@@ -60,7 +60,9 @@ private:
   void emergencySwitchCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     emergency_switch_state_ = msg->data;
-    high_emergency_level_ = true;
+    if(msg->data){
+      high_emergency_level_ = true;
+    }
     evaluateHazardStates();
   }
 
@@ -68,8 +70,8 @@ private:
   {
     if (msg->data) {
       software_emergency_state_ = true;
+      high_emergency_level_ = true;
     }
-    high_emergency_level_ = true;
     evaluateHazardStates();
   }
 
@@ -91,14 +93,18 @@ private:
   void destroyCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     destroy_state_ = msg->data;
-    high_emergency_level_ = true;
+    if(msg->data){
+      high_emergency_level_ = true;
+    }
     evaluateHazardStates();
   }
 
   void microcontrollerDiagCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     microcontroller_emergency_state_ = msg->data;
-    high_emergency_level_ = true;
+    if(msg->data){
+      high_emergency_level_ = true;
+    }
     evaluateHazardStates();
   }
 
@@ -188,7 +194,7 @@ private:
   }
 
   //========================================
-  // Subscription valids
+  // Subscription variables
   //========================================
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_switch_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr software_emergency_on_sub_;
@@ -198,14 +204,14 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr receiver_emergency_sub_;
 
   //========================================
-  // publisher valids
+  // publisher variables
   //========================================
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr hazard_status_pub_;
   rclcpp::Publisher<std_msgs::msg::Int8MultiArray>::SharedPtr hazard_states_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr hazard_label_pub_;
 
   //========================================
-  // valids
+  // variables
   //========================================
   bool emergency_switch_state_ = false;
   bool software_emergency_state_ = false;
@@ -213,7 +219,6 @@ private:
   bool microcontroller_emergency_state_ = false;
   bool receiver_emergency_state_ = false;
 
-  int hazard_code_ = 0;
   bool high_emergency_level_ = false;
 };
 

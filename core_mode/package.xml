@@ -3,9 +3,9 @@
 <package format="3">
   <name>core_mode</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>This package manages the robot's modes and provides an emergency stop function.</description>
   <maintainer email="tyousinnsei.zangai01@gmail.com">ytk-wsl</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
