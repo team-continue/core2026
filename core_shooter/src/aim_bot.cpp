@@ -7,9 +7,9 @@
 #include "std_msgs/msg/float32.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
-#include "tf2_ros/transform_listener.h"
-#include "tf2_ros/buffer.h"
 #include "tf2/exceptions.h"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 
 using namespace std::chrono_literals;
 
@@ -22,76 +22,72 @@ public:
     // ----------------------------
     // パラメータ宣言
     // ----------------------------
-    this->declare_parameter<std::string>("source_frame", "base_link");
-    this->declare_parameter<std::string>("target_frame", "enemy_tf");
-    this->declare_parameter<double>("rate", 30.0);
-
-    // ジョイント名
-    this->declare_parameter<std::string>("yaw_joint_name", "yaw_joint");
-    this->declare_parameter<std::string>("pitch_joint_name", "pitch_joint");
+    declare_parameter<std::string>("source_frame", "base_link");
+    declare_parameter<std::string>("target_frame", "enemy_tf");
+    declare_parameter<double>("rate", 30.0);
+    declare_parameter<int>("pitch_motor_id", 10);
+    declare_parameter<int>("yaw_motor_id", 7);
 
     // Yaw制御パラメータ
-    this->declare_parameter<double>("yaw_kp", 1.2);
-    this->declare_parameter<double>("yaw_max_output", 1.0);
-    this->declare_parameter<double>("yaw_tolerance", 0.02);
+    declare_parameter<double>("yaw_kp", 1.2);
+    declare_parameter<double>("yaw_max_output", 1.0);
+    declare_parameter<double>("yaw_tolerance", 0.02);
 
     // Pitch制御パラメータ
-    this->declare_parameter<double>("pitch_kp", 1.0);
-    this->declare_parameter<double>("pitch_max_output", 1.0);
-    this->declare_parameter<double>("pitch_tolerance", 0.02);
-    this->declare_parameter<double>("pitch_offset", 0.0);
+    declare_parameter<double>("pitch_kp", 1.0);
+    declare_parameter<double>("pitch_max_output", 1.0);
+    declare_parameter<double>("pitch_tolerance", 0.02);
+    declare_parameter<double>("pitch_offset", 0.0);
 
+    // ----------------------------
     // パラメータ取得
-    this->get_parameter("source_frame", source_frame_);
-    this->get_parameter("target_frame", target_frame_);
-    this->get_parameter("rate", rate_);
-    this->get_parameter("yaw_joint_name", yaw_joint_name_);
-    this->get_parameter("pitch_joint_name", pitch_joint_name_);
-    this->get_parameter("yaw_kp", yaw_kp_);
-    this->get_parameter("yaw_max_output", yaw_max_output_);
-    this->get_parameter("yaw_tolerance", yaw_tolerance_);
-    this->get_parameter("pitch_kp", pitch_kp_);
-    this->get_parameter("pitch_max_output", pitch_max_output_);
-    this->get_parameter("pitch_tolerance", pitch_tolerance_);
-    this->get_parameter("pitch_offset", pitch_offset_);
-
     // ----------------------------
-    // Publisher
-    // ----------------------------
-    turret_dev_pub_ = this->create_publisher<std_msgs::msg::Float32>("turret_deviation", 10);
-    turret_motor_pub_ = this->create_publisher<std_msgs::msg::Float32>(
-      "/can/tx/turret_motor_angle",
-      10);
-    pitch_motor_pub_ = this->create_publisher<std_msgs::msg::Float32>(
-      "/can/tx/pitch_motor_angle",
-      10);
+    get_parameter("source_frame", source_frame_);
+    get_parameter("target_frame", target_frame_);
+    get_parameter("rate", rate_);
+    get_parameter("yaw_kp", yaw_kp_);
+    get_parameter("yaw_max_output", yaw_max_output_);
+    get_parameter("yaw_tolerance", yaw_tolerance_);
+    get_parameter("pitch_kp", pitch_kp_);
+    get_parameter("pitch_max_output", pitch_max_output_);
+    get_parameter("pitch_tolerance", pitch_tolerance_);
+    get_parameter("pitch_offset", pitch_offset_);
+    get_parameter("pitch_motor_id", pitch_motor_id_);
+    get_parameter("yaw_motor_id", yaw_motor_id_);
 
     // ----------------------------
     // Subscriber
     // ----------------------------
-    aimbot_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+    aimbot_state_sub_ = create_subscription<std_msgs::msg::Bool>(
       "aimbot_state", 10, std::bind(&AimBot::aimbotStateCallback, this, std::placeholders::_1));
 
-    hazard_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+    hazard_state_sub_ = create_subscription<std_msgs::msg::Bool>(
       "hazard_status", 10, std::bind(&AimBot::hazardCallback, this, std::placeholders::_1));
 
-    joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
+    joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
       "/joint_states", 10, std::bind(&AimBot::jointStateCallback, this, std::placeholders::_1));
+
+    // ----------------------------
+    // Publisher
+    // ----------------------------
+    turret_dev_pub_ = create_publisher<std_msgs::msg::Float32>("turret_deviation", 10);
+    turret_motor_pub_ = create_publisher<std_msgs::msg::Float32>("/can/tx/turret_motor_angle", 10);
+    pitch_motor_pub_ = create_publisher<std_msgs::msg::Float32>("/can/tx/pitch_motor_angle", 10);
 
     // ----------------------------
     // TF
     // ----------------------------
-    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // ----------------------------
     // Timer
     // ----------------------------
-    auto period = std::chrono::duration<double>(1.0 / rate_);
-    timer_ = this->create_wall_timer(period, std::bind(&AimBot::timerCallback, this));
+    const auto period = std::chrono::duration<double>(1.0 / rate_);
+    timer_ = create_wall_timer(period, std::bind(&AimBot::timerCallback, this));
 
     RCLCPP_INFO(
-      this->get_logger(), "AimBot started. TF: %s -> %s",
+      get_logger(), "AimBot started. TF: %s -> %s",
       source_frame_.c_str(), target_frame_.c_str());
   }
 
@@ -109,14 +105,8 @@ private:
 
   void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
   {
-    for (size_t i = 0; i < msg->name.size(); ++i) {
-      if (msg->name[i] == yaw_joint_name_) {
-        if (i < msg->position.size()) {yaw_angle_ = msg->position[i];}
-      }
-      if (msg->name[i] == pitch_joint_name_) {
-        if (i < msg->position.size()) {pitch_angle_ = msg->position[i];}
-      }
-    }
+    yaw_angle_ = msg->position[yaw_motor_id_];
+    pitch_angle_ = msg->position[pitch_motor_id_];
   }
 
   void timerCallback()
@@ -202,6 +192,8 @@ private:
   double rate_;
   double yaw_kp_, yaw_max_output_, yaw_tolerance_;
   double pitch_kp_, pitch_max_output_, pitch_tolerance_, pitch_offset_;
+  int pitch_motor_id_;
+  int yaw_motor_id_;
 
   // ROS通信
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr turret_dev_pub_;

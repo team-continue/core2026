@@ -57,6 +57,10 @@
         # periodic rate
         rate: 30.0
 
+        # motor ids
+        pitch_motor_id: 10
+        yaw_motor_id: 7
+
         # yaw control parameters
         yaw_kp: 1.2 # 比例ゲイン
         yaw_max_output: 1.0 # 出力上限 (rad/s)
