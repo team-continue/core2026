@@ -60,7 +60,7 @@ private:
   void emergencySwitchCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     emergency_switch_state_ = msg->data;
-    if(msg->data){
+    if (msg->data) {
       high_emergency_level_ = true;
     }
     evaluateHazardStates();
@@ -93,7 +93,7 @@ private:
   void destroyCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     destroy_state_ = msg->data;
-    if(msg->data){
+    if (msg->data) {
       high_emergency_level_ = true;
     }
     evaluateHazardStates();
@@ -102,7 +102,7 @@ private:
   void microcontrollerDiagCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     microcontroller_emergency_state_ = msg->data;
-    if(msg->data){
+    if (msg->data) {
       high_emergency_level_ = true;
     }
     evaluateHazardStates();
