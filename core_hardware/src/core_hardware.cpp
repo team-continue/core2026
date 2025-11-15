@@ -6,7 +6,7 @@ using namespace std::chrono_literals;
 CoreHardware::CoreHardware()
     : rclcpp::Node("core_hardware"){
     // パラメータの宣言と取得
-    this->declare_parameter("if_name", "eth0");
+    this->declare_parameter("if_name", "enp2s0");
     this->declare_parameter("cycle_time_us", 1000); // デフォルト1000us = 1ms
 
     this->get_parameter("if_name", if_name_);
@@ -55,6 +55,9 @@ void CoreHardware::cyclic_task(){
         // マッピング完了を待つか、エラーをログに出す
         return; 
     }
+    
+    counter_++;
+    RCLCPP_INFO(this->get_logger(), "Position Commanded: %u", counter_);
 
     if (dorun_) 
     {
@@ -79,8 +82,17 @@ void CoreHardware::cyclic_task(){
         // メッセージング処理
         ecx_mbxhandler(&ctx_, 0, 4);
 
+        uint8_t *output_ptr = ctx_.slavelist[1].outputs;
+        memcpy(output_ptr, &counter_, sizeof(counter_));
+
         // データの送信 (次のサイクルの出力)
         ecx_send_processdata(&ctx_);
+
+        // 
+        uint8_t *input_ptr = ctx_.slavelist[1].inputs;
+        uint32_t actual_pos = *(uint32_t*)input_ptr;
+
+        RCLCPP_INFO(this->get_logger(), "Position Actual: %u", actual_pos);
     }
 }
 
@@ -111,70 +123,63 @@ bool CoreHardware::ecat_bringup(){
         return false;
     }
 
-    if (ctx_.slavecount > 0)
-    {
-        // ネットワーク構成の初期化とI/Oマッピング
-        ecx_config_init(&ctx_);
-        ec_groupt *group = &ctx_.grouplist[0];
-        ecx_config_map_group(&ctx_, IOmap_, 0);
-
-        expectedWKC_ = (group->outputsWKC * 2) + group->inputsWKC;
-        RCLCPP_INFO(this->get_logger(), "%d slaves found and configured. Expected WKC: %d", ctx_.slavecount, expectedWKC_);
-
-        // DC設定 (Distributed Clocks)
-        mapping_done_ = true;
-        ecx_configdc(&ctx_);
-
-        // CoEスレーブをサイクリックMBXハンドラに追加
-        for (int si = 1; si <= ctx_.slavecount; si++)
-        {
-            if (ctx_.slavelist[si].CoEdetails > 0)
-            {
-                ecx_slavembxcyclic(&ctx_, si);
-                RCLCPP_INFO(this->get_logger(), "Slave %d added to cyclic mailbox handler", si);
-            }
-        }
-
-        // --- OP状態への遷移 ---
-        
-        // ネットワークがクロックに同期するのを待つ (サンプルでは1秒)
-        dorun_ = true;
-        osal_usleep(1000000); 
-
-        // 状態をOPに設定し、待機
-        ctx_.slavelist[0].state = EC_STATE_OPERATIONAL;
-        ecx_writestate(&ctx_, 0);
-        ecx_statecheck(&ctx_, 0, EC_STATE_OPERATIONAL, EC_TIMEOUTSTATE);
-
-        if (ctx_.slavelist[0].state != EC_STATE_OPERATIONAL)
-        {
-            RCLCPP_ERROR(this->get_logger(), "Failed to reach OPERATIONAL state.");
-            // 失敗したスレーブの詳細を表示
-            for (int si = 1; si <= ctx_.slavecount; si++)
-            {
-                ec_slavet *slave = &ctx_.slavelist[si];
-                if (slave->state != EC_STATE_OPERATIONAL)
-                {
-                    RCLCPP_ERROR(this->get_logger(), "Slave %d State=0x%2.2x StatusCode=0x%4.4x : %s",
-                                 si, slave->state, slave->ALstatuscode, ec_ALstatuscode2string(slave->ALstatuscode));
-                }
-            }
-            // 失敗時はクリーンアップして終了する方が安全だが、ここではfalseを返す
-            dorun_ = false;
-            return false;
-        }
-        else
-        {
-            RCLCPP_INFO(this->get_logger(), "EtherCAT OP state reached.");
-            in_op_ = true;
-            return true;
-        }
-    }
-    else
-    {
+    if (ecx_config_init(&ctx_) == 0){
         RCLCPP_FATAL(this->get_logger(), "No slaves found.");
         return false;
     }
+    // ネットワーク構成の初期化とI/Oマッピング
+    ec_groupt *group = &ctx_.grouplist[0];
+    ecx_config_map_group(&ctx_, IOmap_, 0);
+
+    ecx_configdc(&ctx_);
+    while (ctx_.ecaterror)
+        RCLCPP_INFO(this->get_logger(), "%s", ecx_elist2string(&ctx_));
+    RCLCPP_INFO(this->get_logger(), "%d slaves found and configured.", ctx_.slavecount);
+    expectedWKC_ = (group->outputsWKC * 2) + group->inputsWKC;
+    RCLCPP_INFO(this->get_logger(), "Calculated workcounter %d", expectedWKC_);
+    /* wait for all slaves to reach SAFE_OP state */
+    ecx_statecheck(&ctx_, 0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 3);
+
+    mapping_done_ = true;
+
+    // CoEスレーブをサイクリックMBXハンドラに追加
+    for (int si = 1; si <= ctx_.slavecount; si++){
+        ec_slavet *slave = &ctx_.slavelist[si];
+        if (slave->CoEdetails > 0)
+        {
+            ecx_slavembxcyclic(&ctx_, si);
+            RCLCPP_INFO(this->get_logger(), " Slave %d added to cyclic mailbox handler", si);
+        }
+    }
+
+    // ネットワークがクロックに同期するのを待つ (サンプルでは1秒)
+    dorun_ = true;
+    osal_usleep(1000000); 
+
+    // 状態をOPに設定
+    ctx_.slavelist[0].state = EC_STATE_OPERATIONAL;
+    ecx_writestate(&ctx_, 0);
+    ecx_statecheck(&ctx_, 0, EC_STATE_OPERATIONAL, EC_TIMEOUTSTATE);
+
+    // check
+    in_op_ = true;
+    for (int si = 0; si < ctx_.slavecount; si++){
+        ec_slavet *slave = &ctx_.slavelist[si];
+        if (slave->state != EC_STATE_OPERATIONAL){
+            RCLCPP_ERROR(this->get_logger(), "Slave %d State=0x%2.2x StatusCode=0x%4.4x : %s",
+                            si+1, slave->state, slave->ALstatuscode, ec_ALstatuscode2string(slave->ALstatuscode));
+            in_op_ = false;
+        }
+    }
+    if(!in_op_){
+        RCLCPP_FATAL(this->get_logger(), "Not all slaves reached OP state.");
+        dorun_ = false;
+        return false;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "EtherCAT OP state reached.");
+    in_op_ = true;
+    return true;
 }
 
 void CoreHardware::ecat_check_state(){

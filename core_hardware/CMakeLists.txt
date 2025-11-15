@@ -38,4 +38,10 @@ target_link_libraries(core_hardware_usb
   ${core_msgs_LIBRARIES}
 )
 
+install(
+  DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+
 ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR)

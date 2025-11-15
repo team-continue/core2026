@@ -40,6 +40,7 @@ private:
     std::string if_name_;
     
     // --- メンバ関数 ---
+    uint32_t counter_ = 0;
     
     // 周期実行されるコールバック (ecatthread相当)
     void cyclic_task();
