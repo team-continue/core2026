@@ -21,6 +21,9 @@ endif()
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CAN.msg"
   "msg/CANArray.msg"
+  "msg/DamagePanelInfo.msg"
+  "msg/DamagePanelInfoArray.msg"
+  DEPENDENCIES
 )
 ament_export_dependencies(rosidl_default_runtime)
 

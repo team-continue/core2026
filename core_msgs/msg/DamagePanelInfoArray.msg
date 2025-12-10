@@ -1,0 +1,1 @@
+core_msgs/DamagePanelInfo[] array
