@@ -1,0 +1,15 @@
+/**:
+  ros__parameters:
+    image_fps: [30]
+    mode: 0
+    image_size: [1280, 720]
+    red_range_lower1: [0, 0, 100]
+    red_range_upper1: [7, 255, 190]
+    red_range_lower2: [173, 0, 100]
+    red_range_upper2: [180, 255, 190]
+    blue_range_lower: [105, 64,  255]
+    blue_range_upper: [135, 255, 255]
+    black_range_lower: [0,  0,   0]
+    black_range_upper: [255, 255, 50]
+    kernel_matrix_size: [20, 20]
+    calibration_file_path: "/home/hauki/Core2025/src/enemy_detection/config/Calibrate-HD.xml"
