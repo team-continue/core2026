@@ -8,15 +8,21 @@ targetSelector::targetSelector() :
 {
     nodeTimer = this->create_wall_timer(
         std::chrono::milliseconds(33),
-        std::bind(&targetSelector::publishTargetPose, this));
+        std::bind(&targetSelector::publishTargetPoint, this));
     dpInfoSub = this->create_subscription<core_msgs::msg::DamagePanelInfoArray>(
         "damage_panels_infomation", 10, std::bind(&targetSelector::selectTarget, this, _1));
-    
+    targetPointPub = this->create_publisher<geometry_msgs::msg::PointStamped>("damage_panel_pose", 1);
 }
 
 void targetSelector::selectTarget(const core_msgs::msg::DamagePanelInfoArray dpMsg){
-    int maxArea = 0;
+    timeStamp = dpMsg.header.stamp;
     damagePanels = dpMsg.array;
+    // std::cout << (this->now() - timeStamp).seconds() << std::endl;
+    if((this->now() - timeStamp).seconds() > 0.1 || damagePanels.size() > 0){
+        return;
+    }
+
+    int maxArea = 0;
 
     for(auto itr = damagePanels.begin(); itr != damagePanels.end(); itr++){
         if(maxArea < itr->area){
@@ -24,18 +30,18 @@ void targetSelector::selectTarget(const core_msgs::msg::DamagePanelInfoArray dpM
             maxArea = itr->area;
         }
     }
-    flag = true;
-    std::cout << target.x << " " << target.y << std::endl;
+    // std::cout << target.x << " " << target.y << " " << maxArea << std::endl;
 }
 
-void targetSelector::publishTargetPose(){
-    if(!flag)
-        return;
+void targetSelector::publishTargetPoint(){
     
-    geometry_msgs::msg::Pose dpPoseMsg;
-    dpPoseMsg.Point.x = target.x;
-    dpPoseMsg.Point.y = target.y;
-
+    auto dpPointMsg = geometry_msgs::msg::PointStamped();
+    dpPointMsg.header.stamp = timeStamp;
+    dpPointMsg.point.x = target.x;
+    dpPointMsg.point.y = target.y;
+    dpPointMsg.point.z = 0.0;
+    targetPointPub->publish(dpPointMsg);
+    return;
 }
 
 //     // gui -> camera座標

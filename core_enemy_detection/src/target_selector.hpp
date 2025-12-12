@@ -3,7 +3,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <opencv2/opencv.hpp>
-#include <geometry_msgs/msg/pose_array.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -23,17 +23,16 @@ public:
 private:
     rclcpp::TimerBase::SharedPtr nodeTimer;
     rclcpp::Subscription<core_msgs::msg::DamagePanelInfoArray>::SharedPtr dpInfoSub;
-    rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr targetPosePub;
+    rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr targetPointPub;
 
     void selectTarget(const core_msgs::msg::DamagePanelInfoArray);
-    void publishTargetPose();
+    void publishTargetPoint();
 
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf;
 
     std::vector<core_msgs::msg::DamagePanelInfo> damagePanels;
+    rclcpp::Time timeStamp;
     core_msgs::msg::DamagePanelInfo target;
-    geometry_msgs::msg::Pose dpPose;
-    bool flag = false;
 };
 }  // namespace core_enemy_detection
 #endif  // CORE_ENEMY_DETECTION__TARGET_SELECTOR_HPP_
