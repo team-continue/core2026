@@ -10,6 +10,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake_auto REQUIRED)
+find_package(std_msgs REQUIRED)
 
 ament_auto_find_build_dependencies()
 
@@ -24,7 +25,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/DamagePanelInfo.msg"
   "msg/DamagePanelInfoArray.msg"
   DEPENDENCIES
+  std_msgs
 )
 ament_export_dependencies(rosidl_default_runtime)
+ament_export_dependencies(std_msgs)
 
 ament_package()
