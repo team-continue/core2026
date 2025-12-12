@@ -25,7 +25,11 @@ targetDetector::targetDetector() :
  * @param msg 受け取ったメッセージ
  */
 void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr imgMsg){
-    
+    timeStamp = cv_bridge::toCvShare(imgMsg, "bgr8")->header.stamp;
+    if((this->now() - timeStamp).seconds() > 0.1){
+        return;
+    }
+
     resetDamagePanelInfo();
 
     // subscribeされたイメージ取得
@@ -35,11 +39,14 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
     cv::cvtColor(rawImage, hsvImage, cv::COLOR_BGR2HSV);
     cv::cvtColor(rawImage, labImage, cv::COLOR_BGR2Lab);
 
+
     // 色抽出
     extractHsvRange();
 
+
     // ノイズ除去
     applyMorphology();
+
 
     // ラベリング処理
     ledLabelMap.num = cv::connectedComponentsWithStats(
@@ -56,13 +63,13 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
         panelLabelMap.centroids
     );
 
+
     // パネルの色の検出物の重点の上下に赤or青の検出物があるか探索
     // あれば、その重点はダメージパネルの座標として認識
-    if(!detectDamagePanel()){
-        return;
-    }
+    detectDamagePanel();
 
     auto dpMsg = core_msgs::msg::DamagePanelInfoArray();
+    dpMsg.header.stamp = timeStamp;
     dpMsg.array = damagePanels;
     dpInfoPub->publish(dpMsg);
 
@@ -72,33 +79,14 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
     // publishImage("mask_panel", panelMaskImage, "mono8");
     // publishImage("labeled_led", ledLabelMap.image, "mono8");
     // publishImage("labeled_panel", panelLabelMap.image, "mono8");
+    // publishResultImage();
     
+    // std::cout << damagePanels.size() << std::endl;  // 検出したダメパ数確認
+    // for(auto i = damagePanels.begin(); i != damagePanels.end(); i++){
+    //     std::cout << i->x << " " << i->y << " " << i->area << std::endl;
+    // }
+
     
-    std::cout << damagePanels.size() << std::endl;  // 検出したダメパ数確認
-    for(auto i = damagePanels.begin(); i != damagePanels.end(); i++){
-        std::cout << i->x << " " << i->y << std::endl;
-    }
-
-    for(auto itr = damagePanels.begin(); itr != damagePanels.end(); itr++){
-        cv::rectangle(
-            rawImage, 
-            cv::Rect(
-                cv::Point(itr->left, itr->top),
-                cv::Point(itr->left + itr->width, itr->top + itr->height)
-            ),
-            cv::Scalar(0, 255, 255),
-            2
-        );
-        cv::circle(
-            rawImage,
-            cv::Point(itr->x, itr->y),
-            3,
-            cv::Scalar(0, 255, 255),
-            -1
-        );
-    }
-    publishImage("result", rawImage, "bgr8");
-
     // // enemy_selectorにpublish(手動制御アシスト用)
     // geometry_msgs::msg::PoseArray dpPosition;
     // for(int i = 0; i < (int)panelCoord.size(); i++){
@@ -199,7 +187,7 @@ void targetDetector::extractHsvRange(){
     
     // lab画像に対する検出
     cv::Mat dst;
-    cv::medianBlur(labImage, dst, 7);
+    cv::medianBlur(labImage, dst, 3);
     cv::inRange(dst, paramName["panel_lab_range_lower"], paramName["panel_lab_range_upper"], panelMaskImage);
 }
 
@@ -268,6 +256,29 @@ bool targetDetector::detectDamagePanel(){
 
     return flag;
 }
+
+void targetDetector::publishResultImage(){
+    for(auto itr = damagePanels.begin(); itr != damagePanels.end(); itr++){
+        cv::rectangle(
+            rawImage, 
+            cv::Rect(
+                cv::Point(itr->left, itr->top),
+                cv::Point(itr->left + itr->width, itr->top + itr->height)
+            ),
+            cv::Scalar(0, 255, 255),
+            2
+        );
+        cv::circle(
+            rawImage,
+            cv::Point(itr->x, itr->y),
+            3,
+            cv::Scalar(0, 255, 255),
+            -1
+        );
+    }
+    publishImage("result", rawImage, "bgr8");
+}
+
 
 /**
  * @brief 処理過程のイメージをpublishして確認するための関数(cv::imshowが何故か使えなかった...)

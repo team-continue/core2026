@@ -53,6 +53,7 @@ private:
     labeledImage ledLabelMap;
     labeledImage panelLabelMap;
     std::vector<core_msgs::msg::DamagePanelInfo> damagePanels;
+    rclcpp::Time timeStamp;
 
     /* variable for publishing image */
     cv_bridge::CvImage img2msg;
@@ -92,6 +93,7 @@ private:
     void extractHsvRange();
     void applyMorphology();
     bool detectDamagePanel();
+    void publishResultImage();
     void publishImage(std::string, cv::Mat, std::string);
 
     void addPublisher(std::string);
