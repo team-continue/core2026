@@ -12,7 +12,7 @@ find_package(geometry_msgs REQUIRED)
 
 include_directories(include)
 
-add_executable(path_follower_node src/path_follower_node.cpp)
+add_executable(path_follower_node src/path_follower_node.cpp src/interpolation.cpp)
 ament_target_dependencies(path_follower_node rclcpp nav_msgs geometry_msgs)
 
 install(TARGETS

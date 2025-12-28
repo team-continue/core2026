@@ -59,6 +59,24 @@ ros2 launch core_path_follower path_follower.launch.py controller_type:=pure_pur
 - pure_pursuit:
   - Select a lookahead point along the path at distance `lookahead_dist` and compute curvature to that point, then convert curvature to angular velocity using `pure_k` and the current linear speed.
 
+## Coarse Waypoints & Interpolation
+
+This node supports receiving coarse waypoints (a short list of waypoints to the goal) and internally expanding them into a dense path before tracking. Choose the interpolation method by parameter `interpolation` (in `config/default_params.yaml`):
+
+- `none` (default): treat incoming `Path` as a dense list of points; no interpolation applied.
+- `spline`: Catmull–Rom cubic spline interpolation between waypoints. Tunable parameter: `spline_samples_per_segment` (int) — samples inserted between each waypoint.
+- `bezier`: Global Bezier curve passing through control points (the provided waypoints are treated as control points). Tunable parameter: `bezier_samples` (int) — number of samples generated along the global Bezier curve.
+
+Examples (override at launch):
+
+```bash
+# Use Catmull-Rom spline with 15 samples per segment
+ros2 launch core_path_follower path_follower.launch.py interpolation:=spline spline_samples_per_segment:=15
+
+# Use Bezier with 200 samples
+ros2 launch core_path_follower path_follower.launch.py interpolation:=bezier bezier_samples:=200
+```
+
 ## Expected Inputs & Behavior
 
 - The `Path` message should contain a sequence of poses in a world frame (commonly `map` or `odom`).
