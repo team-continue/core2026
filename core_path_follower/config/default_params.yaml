@@ -1,0 +1,14 @@
+core_path_follower:
+  ros__parameters:
+    controller_type: "cascade"
+    linear_speed: 0.6
+    lookahead_dist: 0.5
+    outer_kp: 1.2
+    outer_ki: 0.0
+    outer_kd: 0.15
+    inner_kp: 2.0
+    inner_ki: 0.0
+    inner_kd: 0.05
+    pure_k: 1.0
+    # controller_type options: 'cascade' (outer+inner PID), 'pid' (single PID), 'pure_pursuit'
+    control_rate: 20.0
