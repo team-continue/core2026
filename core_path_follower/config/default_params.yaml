@@ -12,3 +12,7 @@ core_path_follower:
     pure_k: 1.0
     # controller_type options: 'cascade' (outer+inner PID), 'pid' (single PID), 'pure_pursuit'
     control_rate: 20.0
+    # interpolation options: 'none', 'spline', 'bezier'
+    interpolation: "none"
+    spline_samples_per_segment: 10
+    bezier_samples: 100

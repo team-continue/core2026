@@ -74,6 +74,10 @@ namespace core_path_follower
         double linear_speed_;
         double lookahead_dist_;
         std::string controller_type_;
+        // interpolation settings
+        std::string interpolation_type_; // 'none', 'spline', 'bezier'
+        int spline_samples_per_segment_;
+        int bezier_samples_;
         // outer PID gains (heading -> desired omega)
         double outer_kp_, outer_ki_, outer_kd_;
         // inner PID gains (omega tracking)
@@ -81,6 +85,10 @@ namespace core_path_follower
         // pure pursuit gain
         double pure_k_;
         double control_rate_;
+
+        // interpolation helpers
+        std::vector<geometry_msgs::msg::Pose> interpolateSpline(const std::vector<geometry_msgs::msg::Pose> &waypoints, int samples_per_segment);
+        std::vector<geometry_msgs::msg::Pose> interpolateBezier(const std::vector<geometry_msgs::msg::Pose> &waypoints, int samples);
     };
 
 } // namespace
