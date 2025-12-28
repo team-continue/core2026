@@ -5,6 +5,7 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <vector>
+#include <mutex>
 
 namespace core_path_follower
 {
@@ -55,8 +56,13 @@ namespace core_path_follower
         rclcpp::TimerBase::SharedPtr timer_;
 
         std::vector<geometry_msgs::msg::Pose> path_poses_;
+        std::mutex path_mutex_;
+        // index on the path we are currently tracking (closest / lookahead base)
+        size_t current_target_idx_ = 0;
         geometry_msgs::msg::Pose current_pose_;
         bool have_odom_ = false;
+
+        bool reset_on_new_path_ = false;
 
         PID heading_outer_pid_; // computes desired angular rate from heading error
         PID heading_inner_pid_; // rate PID to track angular velocity

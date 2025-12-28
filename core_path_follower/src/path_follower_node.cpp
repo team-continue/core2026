@@ -24,6 +24,7 @@ namespace core_path_follower
         this->declare_parameter<double>("inner_kd", 0.05);
         this->declare_parameter<double>("pure_k", 1.0);
         this->declare_parameter<double>("control_rate", 20.0);
+        this->declare_parameter<bool>("reset_on_new_path", false);
 
         linear_speed_ = this->get_parameter("linear_speed").as_double();
         lookahead_dist_ = this->get_parameter("lookahead_dist").as_double();
@@ -36,6 +37,7 @@ namespace core_path_follower
         inner_kd_ = this->get_parameter("inner_kd").as_double();
         pure_k_ = this->get_parameter("pure_k").as_double();
         control_rate_ = this->get_parameter("control_rate").as_double();
+        reset_on_new_path_ = this->get_parameter("reset_on_new_path").as_bool();
 
         heading_outer_pid_ = PID(outer_kp_, outer_ki_, outer_kd_);
         heading_inner_pid_ = PID(inner_kp_, inner_ki_, inner_kd_);
@@ -57,12 +59,40 @@ namespace core_path_follower
 
     void PathFollower::pathCallback(const nav_msgs::msg::Path::SharedPtr msg)
     {
+        std::lock_guard<std::mutex> lock(path_mutex_);
         path_poses_.clear();
         for (const auto &p : msg->poses)
             path_poses_.push_back(p.pose);
-        heading_outer_pid_.reset();
-        heading_inner_pid_.reset();
-        RCLCPP_INFO(this->get_logger(), "Received path with %zu poses", path_poses_.size());
+        // determine starting index: if we have odom, pick closest point, otherwise 0
+        if (have_odom_ && !path_poses_.empty())
+        {
+            double cx = current_pose_.position.x;
+            double cy = current_pose_.position.y;
+            size_t best = 0;
+            double best_d = 1e9;
+            for (size_t i = 0; i < path_poses_.size(); ++i)
+            {
+                double dx = path_poses_[i].position.x - cx;
+                double dy = path_poses_[i].position.y - cy;
+                double d = std::hypot(dx, dy);
+                if (d < best_d)
+                {
+                    best_d = d;
+                    best = i;
+                }
+            }
+            current_target_idx_ = best;
+        }
+        else
+        {
+            current_target_idx_ = 0;
+        }
+        if (reset_on_new_path_)
+        {
+            heading_outer_pid_.reset();
+            heading_inner_pid_.reset();
+        }
+        RCLCPP_INFO(this->get_logger(), "Received path with %zu poses, start_idx=%zu", path_poses_.size(), current_target_idx_);
     }
 
     void PathFollower::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
@@ -86,29 +116,42 @@ namespace core_path_follower
 
     void PathFollower::controlTimer()
     {
-        if (!have_odom_ || path_poses_.empty())
+        if (!have_odom_)
             return;
 
-        // find lookahead point: first point at least lookahead_dist away
+        std::lock_guard<std::mutex> lock(path_mutex_);
+        if (path_poses_.empty())
+            return;
+
+        // current position
         auto [cx, cy] = poseXY(current_pose_);
-        size_t target_idx = 0;
-        double min_dist = 1e9;
-        for (size_t i = 0; i < path_poses_.size(); ++i)
+
+        // ensure current_target_idx_ is within bounds
+        if (current_target_idx_ >= path_poses_.size())
+            current_target_idx_ = path_poses_.empty() ? 0 : path_poses_.size() - 1;
+
+        // advance current_target_idx_ if earlier points are now behind us
+        double best_d = 1e9;
+        size_t best_i = current_target_idx_;
+        // search from current index up to a small window ahead to find closest
+        size_t search_end = std::min(path_poses_.size(), current_target_idx_ + 20);
+        for (size_t i = current_target_idx_; i < search_end; ++i)
         {
             auto [px, py] = poseXY(path_poses_[i]);
-            double dx = px - cx;
-            double dy = py - cy;
-            double d = std::hypot(dx, dy);
-            if (d < min_dist)
+            double d = std::hypot(px - cx, py - cy);
+            if (d < best_d)
             {
-                min_dist = d;
-                target_idx = i;
+                best_d = d;
+                best_i = i;
             }
         }
+        // allow stepping backwards a little if closer earlier in path
+        if (best_d < lookahead_dist_ * 2.0)
+            current_target_idx_ = best_i;
 
-        // search forward from closest until lookahead
-        size_t look_idx = target_idx;
-        for (size_t i = target_idx; i < path_poses_.size(); ++i)
+        // search forward from current_target_idx_ until lookahead distance
+        size_t look_idx = current_target_idx_;
+        for (size_t i = current_target_idx_; i < path_poses_.size(); ++i)
         {
             auto [px, py] = poseXY(path_poses_[i]);
             double d = std::hypot(px - cx, py - cy);
@@ -200,6 +243,16 @@ namespace core_path_follower
         cmd.linear.y = vy;
         cmd.angular.z = ang_z_cmd;
         cmd_pub_->publish(cmd);
+
+        // if we are very close to the current_target_idx_ point, advance index
+        double close_thresh = 0.3; // meters
+        auto [cx2, cy2] = poseXY(current_pose_);
+        auto [tpx, tpy] = poseXY(path_poses_[current_target_idx_]);
+        double dcur = std::hypot(tpx - cx2, tpy - cy2);
+        if (dcur < close_thresh && current_target_idx_ + 1 < path_poses_.size())
+        {
+            current_target_idx_++;
+        }
     }
 
 } // namespace
