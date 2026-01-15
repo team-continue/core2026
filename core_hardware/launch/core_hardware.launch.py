@@ -8,7 +8,7 @@ def generate_launch_description():
             prefix=["sudo -E env \"PYTHONPATH=$PYTHONPATH\" \"LD_LIBRARY_PATH=$LD_LIBRARY_PATH\" \"PATH=$PATH\" \"USER=$USER\"  bash -c "],
             shell=True,
             output='screen',
-            #parameters=[{'if_name': "enp2s0"}]
+            parameters=[{'if_name': "eth0"}]
         )
     return LaunchDescription([
         core_hardware

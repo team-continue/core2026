@@ -6,7 +6,7 @@ using namespace std::chrono_literals;
 CoreHardware::CoreHardware()
     : rclcpp::Node("core_hardware"){
     // パラメータの宣言と取得
-    this->declare_parameter("if_name", "enp2s0");
+    this->declare_parameter("if_name", "eth0");
     this->declare_parameter("cycle_time_us", 1000); // デフォルト1000us = 1ms
 
     this->get_parameter("if_name", if_name_);
