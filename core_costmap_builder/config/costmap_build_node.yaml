@@ -1,0 +1,45 @@
+costmap_build_node:
+  ros__parameters:
+    # ----- topics -----
+    points_in_topic: /livox/lidar
+    global_topic: /costmap/global   # 将来SLAMなら /map に変えるだけ
+
+    points_filt_topic: /lidar/points_filtered
+    local_topic: /costmap/local
+    fused_topic: /costmap/fused
+    local_in_map_topic: /costmap/local_in_map
+
+    # ----- frames -----
+    map_frame: map
+    odom_frame: odom
+    base_frame: base_link
+    lidar_frame: livox_frame
+
+    # ----- local rolling window -----
+    local_width_m: 10.0
+    local_height_m: 10.0
+    resolution_m: 0.05
+    update_hz: 15.0
+
+    # ----- point filtering (PCLなし) -----
+    crop_xy_m: 6.0           # ロボ周り±6mだけ使う
+    min_z_m: 0.10
+    max_z_m: 1.60
+    voxel_leaf_m: 0.05       # Mid-360なら 5cm 推奨
+
+    min_range_m: 0.30
+    max_range_m: 6.0
+
+    # ----- robot / inflation -----
+    robot_radius_m: 0.71     # 1.0m角想定の半径寄せ（おすすめ値）
+    inflation_radius_m: 0.90
+
+    # ----- behavior -----
+    enable_clearing: true
+    points_timeout_sec: 0.2  # 点群止まったら更新停止
+    tf_timeout_ms: 50
+
+    # ----- debug outputs -----
+    publish_filtered_points: true
+    publish_local_in_map: true
+    max_debug_points: 20000
