@@ -1,3 +1,5 @@
 #include <gtest/gtest.h>
 
-TEST(CoreTest, Smoke) { EXPECT_TRUE(true); }
+TEST(CoreTest, Smoke) {
+  EXPECT_TRUE(true);
+}
