@@ -1,10 +1,9 @@
 #pragma once
 
-#include <rclcpp/rclcpp.hpp>
-#include <nav_msgs/msg/occupancy_grid.hpp>
-
 #include <string>
 
+#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <rclcpp/rclcpp.hpp>
 namespace core_costmap_builder
 {
 
@@ -12,11 +11,11 @@ namespace core_costmap_builder
 class StaticGlobalMapPublisher : public rclcpp::Node
 {
 public:
-  explicit StaticGlobalMapPublisher(const rclcpp::NodeOptions &options);
+  explicit StaticGlobalMapPublisher(const rclcpp::NodeOptions & options);
 
 private:
   // ----- helpers -----
-  inline int idx(int x, int y) const { return y * width_ + x; }
+  inline int idx(int x, int y) const {return y * width_ + x;}
   void setOccSafe(int x, int y);
   void buildMap();
   void publishOnce();
@@ -41,7 +40,7 @@ private:
   int publish_times_{1};
 
   // ----- derived -----
-  int width_{552};   // cells
+  int width_{552};  // cells
   int height_{366};  // cells
 
   // ----- ROS interfaces -----
