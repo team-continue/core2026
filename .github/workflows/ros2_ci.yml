@@ -66,10 +66,26 @@ jobs:
           colcon test-result --verbose
         continue-on-error: true
 
+      - name: Run core_test package
+        id: run_core_test
+        run: |
+          . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
+          colcon test --base-paths ros2_ws --packages-select core_test &&
+          colcon test-result --verbose
+        continue-on-error: true
+
       - name: run_test command success
         if: steps.run_test.outcome == 'success'
         run: echo "result - success"
 
       - name: run_test command failure
         if: steps.run_test.outcome == 'failure'
+        run: echo "result - failure" && exit 1
+
+      - name: run_core_test command success
+        if: steps.run_core_test.outcome == 'success'
+        run: echo "result - success"
+
+      - name: run_core_test command failure
+        if: steps.run_core_test.outcome == 'failure'
         run: echo "result - failure" && exit 1

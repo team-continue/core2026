@@ -1,0 +1,10 @@
+function(core_add_gtest target)
+  if(NOT BUILD_TESTING)
+    return()
+  endif()
+
+  ament_add_gtest(${target} ${ARGN})
+  if(TARGET ${target})
+    target_compile_features(${target} PRIVATE cxx_std_17)
+  endif()
+endfunction()
