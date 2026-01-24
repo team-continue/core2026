@@ -174,6 +174,7 @@ FCTP_CLASS class Damiao {
         }
 
         void writeCanFrame(){
+            connect = (millis() - last_recv_ros2_ts_ms_) < DAMIAO_CAN_TIMEOUT;
             // ▼▼▼ ホーミング処理 ▼▼▼
             if (!homing_done) {
                 if(feedback.status != DamiaoStatus::ENABLED){
@@ -195,17 +196,28 @@ FCTP_CLASS class Damiao {
                 if(is_limit_hit){
                     // 現在の積算位置をゼロ点とする
                     offset_pos = accumulated_pos;
-                    writeVelocityControl(0.f); 
                     homing_done = true;
                     ref.position_rad = 0.f; 
                     ref.velocity_rad_s = 0.f;
+                    writeVelocityControl(0.f); 
+                    return;
                 } else {
                     writeVelocityControl(homing_vel);
+                    return;
                 }
-                return;
             }
 
-            // ▼▼▼ 通常制御 ▼▼▼
+            // パラメタ更新処理
+            if(ref.kp_asr != flash.KP_ASR){
+                writeFlash<float>(DamiaoFlashAddr::KP_ASR, ref.kp_asr, flash.KP_ASR);
+                return;
+            }
+            if(ref.ki_asr != flash.KI_ASR){
+                writeFlash<float>(DamiaoFlashAddr::KI_ASR, ref.ki_asr, flash.KI_ASR);
+                return;
+            }
+            
+            // 通常制御モード処理
             int mode = ref.mode;
             if(millis() - last_recv_ros2_ts_ms_ > DAMIAO_ROS2_TIMEOUT){
                 mode = 0;
@@ -218,7 +230,7 @@ FCTP_CLASS class Damiao {
                         return;
                     }
                     writeVelocityControl(0.f);
-                    break;
+                    return;
 
                 case 2: // Velocity
                     if(feedback.status != DamiaoStatus::ENABLED){
@@ -230,7 +242,7 @@ FCTP_CLASS class Damiao {
                         return;
                     }
                     writeVelocityControl(ref.velocity_rad_s);
-                    break;
+                    return;
 
                 case 3: // Position (External)
                     if(feedback.status != DamiaoStatus::ENABLED){
@@ -252,21 +264,11 @@ FCTP_CLASS class Damiao {
                             ref.velocity_rad_s = -ref.velocity_limit_rad_s;
 
                         writeVelocityControl(ref.velocity_rad_s);
+                        return;
                     }
-                    break;
                 default:
                     break;
             }
-
-            if(ref.kp_asr != flash.KP_ASR){
-                writeFlash<float>(DamiaoFlashAddr::KP_ASR, ref.kp_asr, flash.KP_ASR);
-                return;
-            }
-            if(ref.ki_asr != flash.KI_ASR){
-                writeFlash<float>(DamiaoFlashAddr::KI_ASR, ref.ki_asr, flash.KI_ASR);
-                return;
-            }
-            connect = (millis() - last_recv_ros2_ts_ms_) < DAMIAO_CAN_TIMEOUT;
         }
 
         // CANフレーム受信処理
