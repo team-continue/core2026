@@ -1,5 +1,12 @@
 #pragma once
 
+// CAN プロトコル仕様
+// control信号 / MIT / velocity / position
+// 送信 -> 受信 (トルクや位置など)
+
+// Flash読み書き
+// 送信 -> 受信 (対応するアドレスのデータ)
+
 #include <FlexCAN_T4.h>
 
 #define DAMIAO_ROS2_TIMEOUT 1000 // ms
@@ -82,6 +89,12 @@ FCTP_CLASS class Damiao {
     bool is_first_feedback = true; 
     bool no_can_recv = true;
 
+    // 受信待ち関数
+    volatile uint8_t *wait_data = nullptr;
+    volatile uint8_t wait_data_cmd = 0;
+    volatile uint8_t wait_data_addr = 0;
+    volatile size_t wait_data_len = 0;
+
     public:
         // ホーミング用変数
         bool homing_done = true; 
@@ -94,9 +107,10 @@ FCTP_CLASS class Damiao {
         bool connect = false;
         
         // ホーミング判定用のトルク(電流相当)閾値
-        float homing_torque_limit = 0.5f;
+        float homing_torque_limit = 1.5f;
         bool limit_state = false;
         int homing_pin = -1;
+        bool initialized = false;
         
         Damiao(FlexCAN_T4<_bus, _rxSize, _txSize> *can, uint8_t master_id, uint8_t slave_id) 
             : can_(can), master_id_(master_id), slave_id_(slave_id) {}
@@ -118,6 +132,7 @@ FCTP_CLASS class Damiao {
             // ref.kp_apr = flash.KP_APR;
             ref.ki_asr = flash.KI_ASR;
             ref.kp_asr = flash.KP_ASR;
+            initialized = true;
             return true;
         }
 
@@ -163,9 +178,11 @@ FCTP_CLASS class Damiao {
             if (!homing_done) {
                 if(feedback.status != DamiaoStatus::ENABLED){
                     writeCtrlCmd(DamiaoCtrlCmd::TORQUE_ENABLE);
+                    return;
                 }
                 if(flash.CTRL_MODE != DamiaoControlMode::VELOCITY){
                     writeFlash<uint32_t>(DamiaoFlashAddr::CTRL_MODE, DamiaoControlMode::VELOCITY, flash.CTRL_MODE);
+                    return;
                 }
 
                 bool is_limit_hit = false;
@@ -198,6 +215,7 @@ FCTP_CLASS class Damiao {
                 case 0: // Disable
                     if(feedback.status != DamiaoStatus::DISABLED){
                         writeCtrlCmd(DamiaoCtrlCmd::TORQUE_DISABLE);
+                        return;
                     }
                     writeVelocityControl(0.f);
                     break;
@@ -205,9 +223,11 @@ FCTP_CLASS class Damiao {
                 case 2: // Velocity
                     if(feedback.status != DamiaoStatus::ENABLED){
                         writeCtrlCmd(DamiaoCtrlCmd::TORQUE_ENABLE);
+                        return;
                     }
                     if(flash.CTRL_MODE != DamiaoControlMode::VELOCITY){
                         writeFlash<uint32_t>(DamiaoFlashAddr::CTRL_MODE, DamiaoControlMode::VELOCITY, flash.CTRL_MODE);
+                        return;
                     }
                     writeVelocityControl(ref.velocity_rad_s);
                     break;
@@ -215,9 +235,11 @@ FCTP_CLASS class Damiao {
                 case 3: // Position (External)
                     if(feedback.status != DamiaoStatus::ENABLED){
                         writeCtrlCmd(DamiaoCtrlCmd::TORQUE_ENABLE);
+                        return;
                     }
                     if(flash.CTRL_MODE != DamiaoControlMode::VELOCITY){
                         writeFlash<uint32_t>(DamiaoFlashAddr::CTRL_MODE, DamiaoControlMode::VELOCITY, flash.CTRL_MODE);
+                        return;
                     }
                     {
                         // 原点出し後の相対位置(0スタート)へ向かって制御
@@ -238,17 +260,28 @@ FCTP_CLASS class Damiao {
 
             if(ref.kp_asr != flash.KP_ASR){
                 writeFlash<float>(DamiaoFlashAddr::KP_ASR, ref.kp_asr, flash.KP_ASR);
-            } else if(ref.ki_asr != flash.KI_ASR){
+                return;
+            }
+            if(ref.ki_asr != flash.KI_ASR){
                 writeFlash<float>(DamiaoFlashAddr::KI_ASR, ref.ki_asr, flash.KI_ASR);
+                return;
             }
             connect = (millis() - last_recv_ros2_ts_ms_) < DAMIAO_CAN_TIMEOUT;
         }
 
+        // CANフレーム受信処理
         bool readCanFrame(const CAN_message_t &r_msg){
-            if ((r_msg.id != master_id_) || 
-                (r_msg.len != 8) || 
-                ((r_msg.buf[0] & 0x0F) != slave_id_))
-                return false; 
+            // CAN IDチェック
+            if(!check_can_id(r_msg))
+                return false;
+            // 非同期Flash読み出し処理
+            if (wait_data != nullptr && check_cmd_addr(r_msg, wait_data_cmd, wait_data_addr)) {
+                uint8_t* p = (uint8_t*)wait_data;
+                size_t n = wait_data_len;
+                wait_data = nullptr;            // ★先にクリア
+                memcpy(p, r_msg.buf + 4, n);
+                return true;
+            }
 
             last_read_feedback_ts_ms_ = millis();
             feedback.status = (r_msg.buf[0] & 0xF0) >> 4;
@@ -315,7 +348,8 @@ FCTP_CLASS class Damiao {
         bool writeVelocityControl(float velocity_rad_s){
             CAN_message_t w_msg;
             w_msg.id = 0x200 + slave_id_;
-            w_msg.len = 4;
+            w_msg.len = 8;
+            memset(w_msg.buf, 0, 8);
             memcpy(w_msg.buf, (uint8_t*)&velocity_rad_s, sizeof(float));
             return can_->write(w_msg) == 1;
         }
@@ -331,7 +365,7 @@ FCTP_CLASS class Damiao {
 
         template<typename T>
         bool writeFlash(const uint8_t &addr, const T w_data, T &r_data, const unsigned long timeout_ms=1000){
-            if((millis() - last_write_ts_ms_) < 30) return false;
+            if((millis() - last_write_ts_ms_) < 100) return false;
             CAN_message_t w_msg, r_msg;
             w_msg.id = 0x7ff;
             w_msg.len = 8;
@@ -342,10 +376,20 @@ FCTP_CLASS class Damiao {
             memcpy(w_msg.buf + 4, (uint8_t*)&w_data, sizeof(T));
             if(can_->write(w_msg) != 1) return false;
             last_write_ts_ms_ = millis();
+
+            if(initialized){
+                wait_data = (uint8_t*)&r_data;
+                wait_data_cmd = 0x55;
+                wait_data_addr = addr;
+                wait_data_len = sizeof(T);
+                return true; // 初期化後は割り込みCAN受信のため応答不要
+            }
+
+            // 受信待ち
             unsigned long start_time = last_write_ts_ms_;
             bool success = false;
             while(millis() - start_time < timeout_ms) {
-                if(can_->read(r_msg) && (r_msg.len != 8 || r_msg.buf[0] != slave_id_ || r_msg.buf[3] != 0x55)){
+                if(can_->read(r_msg) && check_can_id(r_msg) && check_cmd_addr(r_msg, 0x55, addr)){
                     success = true;
                     break;
                 }
@@ -358,16 +402,27 @@ FCTP_CLASS class Damiao {
         bool readFlash(const uint8_t &addr, T &r_data, const unsigned long timeout_ms=1000){
             CAN_message_t w_msg, r_msg;
             w_msg.id = 0x7ff;
-            w_msg.len = 4;
+            w_msg.len = 8;
+            memset(w_msg.buf, 0, 8);
             w_msg.buf[0] = slave_id_ & 0xff;
             w_msg.buf[1] = 0x00;
             w_msg.buf[2] = 0x33;
             w_msg.buf[3] = addr;
             if(can_->write(w_msg) != 1) return false;
-            unsigned long start_time = millis();
+            if(initialized){
+                wait_data = (uint8_t*)&r_data;
+                wait_data_cmd = 0x33;
+                wait_data_addr = addr;
+                wait_data_len = sizeof(T);
+                return true; // 初期化後は割り込みCAN受信のため応答不要
+            }
+
+            // 受信待ち
+            last_write_ts_ms_ = millis();
+            unsigned long start_time = last_write_ts_ms_;
             bool success = false;
             while(millis() - start_time < timeout_ms) {
-                if(can_->read(r_msg) && (r_msg.len != 8 || r_msg.buf[0] != slave_id_ || r_msg.buf[3] != 0x33)){
+                if(can_->read(r_msg) && check_can_id(r_msg) && check_cmd_addr(r_msg, 0x33, addr)){
                     success = true;
                     break;
                 }
@@ -379,5 +434,15 @@ FCTP_CLASS class Damiao {
         float uint_to_float(uint16_t x, float min, float max, int bits) {
             float normalized = (float)x / (float)((1 << bits) - 1);
             return normalized * (max - min) + min;
+        }
+
+        bool check_can_id(const CAN_message_t &r_msg){
+            if(r_msg.id != master_id_) return false;
+            if(r_msg.len != 8) return false;
+            if ((r_msg.buf[0] & 0x0F) != (slave_id_ & 0x0F)) return false;
+            return true;
+        }
+        bool check_cmd_addr(const CAN_message_t &r_msg, const uint8_t cmd, const uint8_t addr){
+            return r_msg.buf[2] == cmd && r_msg.buf[3] == addr;
         }
 };

@@ -20,7 +20,7 @@
 #define ROBOSTRIDE_CURRENT_MAX 20.0 //A
 #define ROBOSTRIDE_TORQUE_MAX 30.0 //Nm
 
-#define DAMIAO_CAN_TIMEOUT 100 //ms
+#define DAMIAO_CAN_TIMEOUT 1000 //ms
 #define DAMIAO_CAN_CONTROL_PERIOD 1 //ms
 
 Imu im(false);
@@ -241,6 +241,7 @@ void loop() {
     for(int i=0;i<NUM_DAMIAO;++i){
       if(damiao_motor[i].readCanFrame(msg)){
         can3_communicating = false;
+        break;
       }
     }
   }
