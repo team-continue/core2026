@@ -3,7 +3,7 @@
 #include "robostride.h"   // あなたの RoboStride クラスが入ってるヘッダ
 
 // ========= CAN (Teensy 4.x: CAN1 example) =========
-FlexCAN_T4<CAN3, RX_SIZE_256, TX_SIZE_16> Can1;
+FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> Can1;
 
 // ========= User config =========
 static constexpr uint8_t MASTER_ID = 0x01;  // host id
@@ -11,7 +11,7 @@ static constexpr uint8_t MOTOR_ID  = 0x01;  // target motor id
 static constexpr int ACTUATOR_TYPE = (int)ActuatorType::ROBSTRIDE_06;
 
 // RoboStride instance
-RoboStride<CAN3, RX_SIZE_256, TX_SIZE_16> rs(&Can1, MASTER_ID, MOTOR_ID, ACTUATOR_TYPE);
+RoboStride<CAN2, RX_SIZE_256, TX_SIZE_16> rs(&Can1, MASTER_ID, MOTOR_ID, ACTUATOR_TYPE);
 
 // loop period
 static constexpr uint32_t LOOP_DT_MS = 5;
@@ -79,8 +79,11 @@ static void printStatus() {
   if (millis() - last_print_ms < 200) return;
   last_print_ms = millis();
 
-  Serial.printf("connect=%d  pos=%.4f  vel=%.4f  tq=%.4f  temp=%.1f\n",
+  Serial.printf("connect=%d  mode=%d Rpos=%.4f Rvel=%.4f  Spos=%.4f  Svel=%.4f  Stq=%.4f  temp=%.1f\n",
                 (int)rs.connect,
+                rs.ref.mode,
+                rs.ref.position_rad,
+                rs.ref.velocity_rad_s,
                 rs.feedback.position_rad,
                 rs.feedback.velocity_rad_s,
                 rs.feedback.torque_nm,
@@ -97,7 +100,7 @@ void setup() {
   Can1.setBaudRate(1000000); // 1Mbps
 
   // RoboStride init (内部で stop + 受信試行など)
-  rs.init();
+  rs.init(10, 10);
 
   Serial.println("keys: 0=disable 1=velocity 2=motion 3=gain  +/-=vel_amp");
 }

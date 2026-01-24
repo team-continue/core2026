@@ -5,6 +5,7 @@
 #define DAMIAO_ROS2_TIMEOUT 1000 // ms
 #define DAMIAO_CAN_TIMEOUT 100 // ms
 #define DAMIAO_HOMING_TIMEOUT 3000 // ms
+#define DAMIAO_GEAR_RATIO (3591. / 187.)
 
 struct DamiaoFeedBack {
   float position_rad;      // ユーザーに見せる位置 (マルチターン - オフセット)
@@ -23,7 +24,7 @@ struct DamiaoRef{
     float kp_asr = 0.f;
     float ki_asr = 0.f;
     float kp_apr = 5.0f; 
-    float ki_apr = 0.f;
+    float kd_apr = 0.1f;
 };
 
 struct DamiaoStatus{
@@ -113,8 +114,8 @@ FCTP_CLASS class Damiao {
             ){
                 return false;
             }
-            ref.ki_apr = flash.KI_APR;
-            ref.kp_apr = flash.KP_APR;
+            // ref.ki_apr = flash.KI_APR;
+            // ref.kp_apr = flash.KP_APR;
             ref.ki_asr = flash.KI_ASR;
             ref.kp_asr = flash.KP_ASR;
             return true;
@@ -150,7 +151,7 @@ FCTP_CLASS class Damiao {
                     ref.kp_asr = data[0];
                     ref.ki_asr = data[1];
                     ref.kp_apr = data[2];
-                    ref.ki_apr = data[3];
+                    ref.kd_apr = data[3];
                     break;
                 default:
                     return;
@@ -158,8 +159,6 @@ FCTP_CLASS class Damiao {
         }
 
         void writeCanFrame(){
-            readFeedback(); // まず位置更新
-
             // ▼▼▼ ホーミング処理 ▼▼▼
             if (!homing_done) {
                 if(feedback.status != DamiaoStatus::ENABLED){
@@ -223,7 +222,7 @@ FCTP_CLASS class Damiao {
                     {
                         // 原点出し後の相対位置(0スタート)へ向かって制御
                         float pos_error = ref.position_rad - feedback.position_rad;
-                        ref.velocity_rad_s = pos_error * ref.kp_apr;
+                        ref.velocity_rad_s = pos_error * ref.kp_apr - ref.kd_apr * feedback.velocity_rad_s;
 
                         if (ref.velocity_rad_s > ref.velocity_limit_rad_s && ref.velocity_limit_rad_s > 0) 
                             ref.velocity_rad_s = ref.velocity_limit_rad_s;
@@ -243,6 +242,65 @@ FCTP_CLASS class Damiao {
                 writeFlash<float>(DamiaoFlashAddr::KI_ASR, ref.ki_asr, flash.KI_ASR);
             }
             connect = (millis() - last_recv_ros2_ts_ms_) < DAMIAO_CAN_TIMEOUT;
+        }
+
+        bool readCanFrame(const CAN_message_t &r_msg){
+            if ((r_msg.id != master_id_) || 
+                (r_msg.len != 8) || 
+                ((r_msg.buf[0] & 0x0F) != slave_id_))
+                return false; 
+
+            last_read_feedback_ts_ms_ = millis();
+            feedback.status = (r_msg.buf[0] & 0xF0) >> 4;
+            
+            uint16_t pos_raw_int = (uint16_t)(r_msg.buf[1] << 8 | r_msg.buf[2]);
+            uint16_t vel_raw_int = (uint16_t)((r_msg.buf[3] << 4) | (r_msg.buf[4] >> 4));
+            uint16_t tor_raw_int = (uint16_t)(((r_msg.buf[4] & 0x0F) << 8) | r_msg.buf[5]);
+            
+            // 生の角度 (-P_MAX ~ P_MAX)
+            float current_raw_pos = uint_to_float(pos_raw_int, -flash.P_MAX, flash.P_MAX, 16);
+            
+            feedback.velocity_rad_s = uint_to_float(vel_raw_int, -flash.V_MAX, flash.V_MAX, 12);
+            feedback.torque_nm = uint_to_float(tor_raw_int, -flash.T_MAX, flash.T_MAX, 12);
+            feedback.temp_mos = (int8_t)r_msg.buf[6];
+            feedback.temp_rotor = (int8_t)r_msg.buf[7];
+
+            // ★積算処理のロジック変更 (Turns + Raw)
+            float full_range = 2.0f * flash.P_MAX;
+
+            if (is_first_feedback) {
+                prev_raw_pos = current_raw_pos;
+                turns = 0;
+                // 初回は turns=0 として計算
+                accumulated_pos = current_raw_pos; 
+                is_first_feedback = false;
+                
+                if(no_can_recv) {
+                    offset_pos = accumulated_pos; 
+                    no_can_recv = false;
+                }
+            } else {
+                float diff = current_raw_pos - prev_raw_pos;
+                
+                // 回転数のカウントアップ・ダウン判定
+                // 閾値を P_MAX (範囲の半分) に設定し、それを超える急激な変化はラップアラウンドとみなす
+                if (diff < -flash.P_MAX) {
+                    // 正方向に境界を跨いだ (例: 3.1 -> -3.1 => diff = -6.2)
+                    turns++;
+                } else if (diff > flash.P_MAX) {
+                    // 負方向に境界を跨いだ (例: -3.1 -> 3.1 => diff = 6.2)
+                    turns--;
+                }
+                
+                // 最終位置 = (回転数 * 1周の範囲) + 生の位置
+                accumulated_pos = (turns * full_range) + current_raw_pos;
+                
+                prev_raw_pos = current_raw_pos;
+            }
+
+            // 外部出力用 (原点オフセット考慮)
+            feedback.position_rad = (accumulated_pos - offset_pos) / DAMIAO_GEAR_RATIO;
+            return true;
         }
 
     private:
@@ -269,75 +327,6 @@ FCTP_CLASS class Damiao {
             for (int i = 0; i < 7; i++) { w_msg.buf[i] = 0xff;}
             w_msg.buf[7] = cmd;
             return can_->write(w_msg) == 1;
-        }
-
-        bool readFeedback(const unsigned long timeout_ms = 1000){
-            CAN_message_t r_msg;
-            bool success = false;
-            unsigned long start_time = millis();
-            
-            while(millis() - start_time < timeout_ms) {
-                if(can_->read(r_msg)) {
-                    if (r_msg.id == master_id_ && r_msg.len == 8 && (r_msg.buf[0] & 0x0F) == slave_id_) {
-                        success = true;
-                        break;
-                    }
-                }
-            }
-
-            if(success){
-                last_read_feedback_ts_ms_ = millis();
-                feedback.status = (r_msg.buf[0] & 0xF0) >> 4;
-                
-                uint16_t pos_raw_int = (uint16_t)(r_msg.buf[1] << 8 | r_msg.buf[2]);
-                uint16_t vel_raw_int = (uint16_t)((r_msg.buf[3] << 4) | (r_msg.buf[4] >> 4));
-                uint16_t tor_raw_int = (uint16_t)(((r_msg.buf[4] & 0x0F) << 8) | r_msg.buf[5]);
-                
-                // 生の角度 (-P_MAX ~ P_MAX)
-                float current_raw_pos = uint_to_float(pos_raw_int, -flash.P_MAX, flash.P_MAX, 16);
-                
-                feedback.velocity_rad_s = uint_to_float(vel_raw_int, -flash.V_MAX, flash.V_MAX, 12);
-                feedback.torque_nm = uint_to_float(tor_raw_int, -flash.T_MAX, flash.T_MAX, 12);
-                feedback.temp_mos = (int8_t)r_msg.buf[6];
-                feedback.temp_rotor = (int8_t)r_msg.buf[7];
-
-                // ★積算処理のロジック変更 (Turns + Raw)
-                float full_range = 2.0f * flash.P_MAX;
-
-                if (is_first_feedback) {
-                    prev_raw_pos = current_raw_pos;
-                    turns = 0;
-                    // 初回は turns=0 として計算
-                    accumulated_pos = current_raw_pos; 
-                    is_first_feedback = false;
-                    
-                    if(no_can_recv) {
-                        offset_pos = accumulated_pos; 
-                        no_can_recv = false;
-                    }
-                } else {
-                    float diff = current_raw_pos - prev_raw_pos;
-                    
-                    // 回転数のカウントアップ・ダウン判定
-                    // 閾値を P_MAX (範囲の半分) に設定し、それを超える急激な変化はラップアラウンドとみなす
-                    if (diff < -flash.P_MAX) {
-                        // 正方向に境界を跨いだ (例: 3.1 -> -3.1 => diff = -6.2)
-                        turns++;
-                    } else if (diff > flash.P_MAX) {
-                        // 負方向に境界を跨いだ (例: -3.1 -> 3.1 => diff = 6.2)
-                        turns--;
-                    }
-                    
-                    // 最終位置 = (回転数 * 1周の範囲) + 生の位置
-                    accumulated_pos = (turns * full_range) + current_raw_pos;
-                    
-                    prev_raw_pos = current_raw_pos;
-                }
-
-                // 外部出力用 (原点オフセット考慮)
-                feedback.position_rad = accumulated_pos - offset_pos;
-            }
-            return success;
         }
 
         template<typename T>

@@ -16,6 +16,7 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>unzip</depend>
   <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

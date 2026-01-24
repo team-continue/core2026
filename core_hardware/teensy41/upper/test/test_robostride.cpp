@@ -30,9 +30,10 @@ static float vel_freq = 0.2f;   // Hz
 static float pos_amp  = 0.5f;   // rad
 static float pos_freq = 0.1f;   // Hz
 
-float position_kp = 600;
-float vel_kp = 3;
-float vel_ki = 1;
+static float gain_cur_kp = 0.125f; // 例
+static float gain_cur_ki = 0.0158f;
+static float gain_kp     = 500.0f;
+static float gain_kd     = 5.0f;
 
 static uint32_t last_loop_ms = 0;
 static uint32_t last_print_ms = 0;
@@ -56,7 +57,7 @@ static void handleSerial() {
       break;
     case '3':
       g_cmd = 4;
-      Serial.println("-----[cmd] gain update (one-shot)-----");
+      Serial.println("[cmd] gain update (one-shot)");
       break;
 
     case '+':
@@ -78,21 +79,8 @@ static void printStatus() {
   if (millis() - last_print_ms < 200) return;
   last_print_ms = millis();
 
-  Serial.printf("[current ] kp=%.6f  ki=%.6f",
-              rs.drw.cur_kp.data,
-              rs.drw.cur_ki.data);
-
-Serial.printf("[velocity] kp=%.6f  ki=%.6f  filt=%.3f\n",
-              rs.drw.spd_kp.data,
-              rs.drw.spd_ki.data,
-              rs.drw.spd_filt_gain.data);
-
-Serial.printf("[position] kp=%.6f\n",
-              rs.drw.loc_kp.data);
-
-  Serial.printf("connect=%d  mode=%d, pos=%.4f  vel=%.4f  tq=%.4f  temp=%.1f\n",
+  Serial.printf("connect=%d  pos=%.4f  vel=%.4f  tq=%.4f  temp=%.1f\n",
                 (int)rs.connect,
-                (int)rs.drw.run_mode.data,
                 rs.feedback.position_rad,
                 rs.feedback.velocity_rad_s,
                 rs.feedback.torque_nm,
@@ -109,9 +97,7 @@ void setup() {
   Can1.setBaudRate(1000000); // 1Mbps
 
   // RoboStride init (内部で stop + 受信試行など)
-  rs.ref.vel_kp = 10;
-  rs.ref.vel_ki = 1;
-  rs.init(10, 5); // current_max[A], torque_max[Nm]
+  rs.init(10, 10);
 
   Serial.println("keys: 0=disable 1=velocity 2=motion 3=gain  +/-=vel_amp");
 }
@@ -145,9 +131,9 @@ void loop() {
     rs.setPacketFrame(data, len);
   }
   else if (g_cmd == 2) {
-    // velocity moders.drw
-    const float vel = vel_amp * sinf(2.0f * (float)M_PI * vel_freq * t);
-    data[1] = 30;
+    // velocity mode
+    const float vel = 3.14;
+    data[1] = vel;
     len = 2;
     rs.setPacketFrame(data, len);
   }
@@ -163,10 +149,10 @@ void loop() {
   }
   else if (g_cmd == 4) {
     // gain update (one-shot)
-    data[0] = vel_kp;
-    data[1] = vel_ki;
-    data[2] = position_kp;
-    data[3] = 0;
+    data[0] = gain_cur_kp;
+    data[1] = gain_cur_ki;
+    data[2] = gain_kp;
+    data[3] = gain_kd;
     len = 4;
     rs.setPacketFrame(data, len);
 

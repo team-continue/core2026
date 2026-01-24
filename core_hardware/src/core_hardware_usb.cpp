@@ -1,291 +1,171 @@
-
-// #include "tf2_geometry_msgs/msg/tf2_geometry_msgs.hpp"
-
-#include <algorithm>
-#include <boost/array.hpp>
-#include <boost/asio.hpp>
-#include <boost/bind.hpp>
-#include <boost/shared_ptr.hpp>
-#include <boost/thread.hpp>
-#include <functional>
-#include <iostream>
-#include <memory>
-#include <string>
-#include <vector>
-
-#include "nav_msgs/msg/odometry.h"
-#include "nav_msgs/msg/odometry.hpp"
-#include "rclcpp/rclcpp.hpp"
+#include "core_hardware/Packet.h"
 #include "core_msgs/msg/can.hpp"
 #include "core_msgs/msg/can_array.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
+#include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/u_int8.hpp"
+#include "std_msgs/msg/string.hpp"
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-
-using namespace boost::asio;
+using std::placeholders::_1;
 using namespace std::chrono_literals;
 
-#define FLT_SIZE 4
+#define JOINT_NUM 15
 
-#define LEN_BUFF_TX 32768
-#define LEN_BUFF_RX 32768
-
-#define LAST_ID (0xff)
-
-class CanNode : public rclcpp::Node {
+class HaruHardware : public rclcpp::Node {
     rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
-    rclcpp::Subscription<core_msgs::msg::CANArray>::SharedPtr can_array_sub_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr str_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr destroy_pub_;
+    rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr hp_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr hardware_emergency_pub_;
+
+    rclcpp::Subscription<core_msgs::msg::CANArray>::SharedPtr can_sub_;
 
     rclcpp::TimerBase::SharedPtr timer_;
 
-    boost::asio::io_service io;
-    boost::asio::io_context& io_;
-    boost::asio::serial_port port_;
-
-    std::string path_;
-    bool connected_ = false;
-    uint8_t buff_tx_[LEN_BUFF_TX] = {0};
-    int len_buff_tx_ = 0;
-    uint8_t buff_rx_usb_[LEN_BUFF_RX] = {0};
-    int len_buff_rx_usb_ = 0;
-    uint8_t buff_decoded_[LEN_BUFF_RX] = {0};
+    Packet packet_;
+    uint8_t rx_data_[BUFFER_SIZE], tx_data_[BUFFER_SIZE];
+    bool connect = false;
+    int tx_len_ = 0;
+    std::string port_;
+    sensor_msgs::msg::JointState joint_states_;
+    std_msgs::msg::String wireless_;
+    std_msgs::msg::Bool destroy_;
+    std_msgs::msg::UInt8 hp_;
+    sensor_msgs::msg::Imu imu_;
+    std_msgs::msg::Bool hardware_emergency_;
 
    public:
-    CanNode() : Node("core_hardware_usb"), io(), port_(io), io_(io) {
-        // パラメーター
-        declare_parameter("update_freq", 0.005);
-        declare_parameter("port", "/dev/teensy");
-
-        path_ = this->get_parameter("port").as_string();
-        float update_freq = this->get_parameter("update_freq").as_double();
-
-        // ROS初期化
+    HaruHardware()
+        : Node("core_hardware_usb") {
+        declare_parameter("port", "/dev/ttyACM0");
+        port_ = this->get_parameter("port").as_string();
         can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/rx", 10);
-        can_array_sub_ = this->create_subscription<core_msgs::msg::CANArray>(
-            "can/tx", 10, std::bind(&CanNode::can_cb, this, std::placeholders::_1));
+        joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
+        str_pub_ = this->create_publisher<std_msgs::msg::String>("wireless", 10);
+        destroy_pub_ = this->create_publisher<std_msgs::msg::Bool>("destroy", 10);
+        hp_pub_ = this->create_publisher<std_msgs::msg::UInt8>("hp", 10);
+        imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("imu", 10);
+        hardware_emergency_pub_ = this->create_publisher<std_msgs::msg::Bool>("hardware_emergency", 10);
 
-        // メインルーチン
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::seconds{1} * update_freq);
-        timer_ = this->create_wall_timer(duration, std::bind(&CanNode::timer_cb, this));
-    }
-    ~CanNode() {
-        RCLCPP_INFO(this->get_logger(), "stop");
-        port_.cancel();
-        port_.close();
-        io_.stop();
-    }
-    void run() {
-        // USB非同期受信
-        RCLCPP_INFO(this->get_logger(), "port: %s", path_.c_str());
-        rclcpp::WallRate loop_rate(1000ms);
-        while (rclcpp::ok()) {
-            try {
-                port_.open(path_);
-                if (port_.is_open()) {
-                    port_.set_option(boost::asio::serial_port_base::baud_rate(9600));
-                    start_receive();
-                    io_.restart();
-                    connected_ = true;
-                    RCLCPP_INFO(this->get_logger(), "connected_!");
-                    io.run();
-                }
-            } catch (...) {
-                connected_ = false;
-                RCLCPP_WARN(this->get_logger(), "connect failed");
-            }
-            loop_rate.sleep();
-        }
-        connected_ = false;
+        can_sub_ = this->create_subscription<core_msgs::msg::CANArray>(
+            "can/tx", 10, std::bind(&HaruHardware ::can_cb, this, _1));
+        timer_ = this->create_wall_timer(10ms, std::bind(&HaruHardware::timer_cb, this));
+
+        joint_states_.name = std::vector<std::string>{"wheel1", "wheel2", "wheel3", "wheel4", "rotate", "bottom", "up", "left", "right"};
+        joint_states_.effort.resize(JOINT_NUM, 0);
+        joint_states_.velocity.resize(JOINT_NUM, 0);
+        joint_states_.position.resize(JOINT_NUM, 0);
     }
 
    private:
-    void can_cb(const core_msgs::msg::CANArray::SharedPtr msg) {
-        for (auto& c : msg->array) {
-            // 送信するデータをためていく
-            setTxData(c.id, (uint8_t*)c.data.data(), c.data.size() * FLT_SIZE);
-        }
-    }
-    // 数200Hzで非同期送信
     void timer_cb() {
-        // 最後のデータを入れてる
-        float data[1];
-        setTxData(LAST_ID, (uint8_t*)data, 0);
+        int uint8_len, flt_len, rx_len, i;
+        float* flt_addr;
+        uint8_t can_id, *uint8_addr;
+        int* int_addr;
+        double q1, q2, q3, q0;
 
-        // Debug
-        // printBuffer(buff_tx_, len_buff_tx_);
+        core_msgs::msg::CANArray can_array;
 
-        // 送信
-        // printBuffer(buff_encoded, packet_size + 2);
-        if (connected_) {
-            try {
-                port_.write_some(buffer(buff_tx_, len_buff_tx_));
-            } catch (...) {
-                RCLCPP_WARN(this->get_logger(), "send failed");
-            }
-        }
-        len_buff_tx_ = 0;
-    }
-    // 受信割り込みを設定
-    void start_receive() {
-        // バッファが大きくなったらクリア
-        if (len_buff_rx_usb_ > (LEN_BUFF_RX - 64))
-            len_buff_rx_usb_ = 0;
-        // 非同期受信
-        port_.async_read_some(
-            boost::asio::buffer(len_buff_rx_usb_ + buff_rx_usb_, LEN_BUFF_RX - len_buff_rx_usb_),
-            boost::bind(&CanNode::handle_receive, this,
-                        boost::asio::placeholders::error,
-                        boost::asio::placeholders::bytes_transferred));
-    }
-    // 受信割り込み関数
-    void handle_receive(const boost::system::error_code& error,
-                        std::size_t bytes_transferred) {
-        if (boost::system::errc::success == error) {
-            // 受信バッファサイズを更新
-            len_buff_rx_usb_ += bytes_transferred;
-            // Debug
-            // printBuffer(buff_rx_usb_, len_buff_rx_usb_);
-            // std::cout << "find header" << std::endl;
-            // 受信バッファからヘッダー(0x00)を探す
-
-            int i, len_read = 0;
-            core_msgs::msg::CANArray can_array;
-
-            for (i = 0; i < len_buff_rx_usb_; ++i) {
-                // ヘッダーが見つかった
-                if (buff_rx_usb_[i] != 0x00)
-                    continue;
-                // COBSデコード
-
-                int len_encoded = (i - len_read) + 1;
-                // std::cout << "decode" <<", "<<i<<", "<<len_read<<", " << len_encoded<<std::endl;
-                // printBuffer(buff_rx_usb_ + len_read, len_encoded);
-                // std::cout << "-->" << std::endl;
-                int size = cobsDecode(buff_rx_usb_ + len_read, len_encoded, buff_decoded_);
-                // debug
-                // printBuffer(buff_decoded_, size);
-                // デコードに失敗した
-                if (len_encoded != (size + 1)) {
-                    len_read = (i + 1);
-                    continue;
+        try {
+            // もしつながっていなかったら
+            if (!connect) {
+                // Teensyと接続する
+                packet_.connect(port_.c_str());
+                connect = true;
+                RCLCPP_INFO(this->get_logger(), "connect");
+            } else {
+                // 送信
+                packet_.send(tx_data_, tx_len_);
+                tx_len_ = 0;
+                // 受信
+                rx_len = packet_.read(rx_data_);
+                // CANに変換
+                while(i<rx_len){
+                    can_id = rx_data_[i];
+                    uint8_len = rx_data_[i + 1];
+                    flt_len = uint8_len / 4;
+                    uint8_addr = &rx_data_[i + 2];
+                    flt_addr = (float*)uint8_addr;
+                    int_addr = (int*)uint8_addr;
+                    i += (uint8_len + 2);
+                    if(uint8_len == 0){
+                        // 何もしない
+                    // DM 4 + Robostride 3 + Feetech 8 = 15
+                    }else if(can_id < JOINT_NUM && flt_len == 6) {
+                        core_msgs::msg::CAN can;
+                        can.id = can_id;
+                        can.data.resize(flt_len);
+                        can.data.assign(flt_addr, flt_addr + flt_len);
+                        can_array.array.push_back(can);
+                        joint_states_.effort[can_id] = can.data[1];
+                        joint_states_.velocity[can_id] = can.data[3];
+                        joint_states_.position[can_id] = can.data[5];
+                    } else if (can_id == 100 && uint8_len == 1) {
+                        // damege
+                        hp_.data = uint8_addr[0];
+                        hp_pub_->publish(hp_);
+                    } else if (can_id == 101 && uint8_len == 1) {
+                        // destroy
+                        destroy_.data = (uint8_addr[0] == 1);
+                        destroy_pub_->publish(destroy_);
+                    } else if (can_id == 102) {
+                        // wireless
+                        wireless_.data = std::string((char*)uint8_addr, uint8_len);
+                        str_pub_->publish(wireless_);
+                    } else if (can_id == 103 && flt_len == 3) {
+                        //imu
+                        q1 = ((double)int_addr[0]) / 1073741824.0;  // Convert to double. Divide by 2^30
+                        q2 = ((double)int_addr[1]) / 1073741824.0;  // Convert to double. Divide by 2^30
+                        q3 = ((double)int_addr[2]) / 1073741824.0;  // Convert to double. Divide by 2^30
+                        q0 = sqrt(1.0 - ((q1 * q1) + (q2 * q2) + (q3 * q3)));
+                        imu_.orientation.x = q1;
+                        imu_.orientation.y = q2;
+                        imu_.orientation.z = q3;
+                        imu_.orientation.w = q0;
+                        imu_pub_->publish(imu_);
+                    } else if (can_id == 104 && uint8_len == 1) {
+                        hardware_emergency_.data = (uint8_addr[0] == 1);
+                        hardware_emergency_pub_->publish(hardware_emergency_);
+                    }
                 }
-                // buff_decoded: 0x00, id, len, data
-                if (buff_decoded_[0] != 0x00) {
-                    len_read = (i + 1);
-                    continue;
+                if (can_array.array.size() > 0){
+                    can_pub_->publish(can_array);
+                    joint_pub_->publish(joint_states_);
                 }
-                int id_can = buff_decoded_[1];
-                int len_uint8 = buff_decoded_[2];
-                // 0x00, id, len, data
-                if (1 + 2 + len_uint8 != size) {
-                    len_read = (i + 1);
-                    continue;
-                }
-
-                // CANデータ
-                core_msgs::msg::CAN can;
-                can.id = id_can;
-                int len_flt = len_uint8 / FLT_SIZE;
-                float* data_flt = (float*)&buff_decoded_[3];
-                can.data.resize(len_flt);
-                std::copy(data_flt, data_flt + len_flt, can.data.begin());
-                can_array.array.push_back(can);
-                len_read = (i + 1);
             }
-            if (can_array.array.size() > 0) {
-                can_pub_->publish(can_array);
-            }
-            // 退避
-            len_buff_rx_usb_ -= len_read;
-            memcpy(buff_decoded_, buff_rx_usb_ + len_read, len_buff_rx_usb_);
-            // 左詰める
-            memcpy(buff_rx_usb_, buff_decoded_, len_buff_rx_usb_);
-            start_receive();
-        } else {
-            port_.cancel();
-            port_.close();
-            len_buff_rx_usb_ = 0;
+            // 接続できなかった
+        } catch (...) {
+            connect = false;
+            RCLCPP_INFO(this->get_logger(), "no connect");
+            // １秒待つ
+            rclcpp::sleep_for(1000ms);
         }
     }
-    // 送信用バッファにデータを格納
-    void setTxData(uint8_t id, uint8_t* data, uint8_t len) {
-        //  id + data + len + 1(COBS) + 1(0x00)
-        if ((len_buff_tx_ + len + 2 + 2) >= LEN_BUFF_TX)
-            return;
-        if (!isCANData(id, len))
-            return;
-        uint8_t tmp[128] = {0};
-        tmp[0] = id;
-        tmp[1] = len;
-        memcpy(tmp + 2, data, len);
-        size_t size = cobsEncode(tmp, len + 2, buff_tx_ + len_buff_tx_);
-        buff_tx_[len_buff_tx_ + size] = 0x00;  // COBSのデリミタ
-        len_buff_tx_ += (size + 1);
-    }
-    bool isCANData(int id, int len) {
-        int size = len / FLT_SIZE;
-        if (size > 16 || size == 7 || size == 9 || size == 10 || size == 11 ||
-            size == 13 || size == 14 || size == 15) {
-            RCLCPP_WARN(this->get_logger(), "id: %d, data.size() is 0, 1, 2, 3, 4, 5, 6, 8, 12, 16", id);
-            return false;
+    void can_cb(const core_msgs::msg::CANArray::SharedPtr msg) {
+        int flt_len, uint8_len;
+        uint8_t* uint8_addr;
+        for (auto& can : msg->array) {
+            flt_len = can.data.size();
+            uint8_len = flt_len * 4;
+            if (tx_len_ + uint8_len > BUFFER_SIZE)
+                return;
+            tx_data_[tx_len_] = can.id;
+            tx_data_[tx_len_ + 1] = uint8_len;
+            uint8_addr = (uint8_t*)can.data.data();
+            std::copy(uint8_addr, uint8_addr + uint8_len, tx_data_ + tx_len_ + 2);
+            tx_len_ += (uint8_len + 2);
         }
-        return true;
-    }
-    size_t cobsEncode(const uint8_t* data, size_t length, uint8_t* buffer) {
-        uint8_t* encode = buffer;   // Encoded byte pointer
-        uint8_t* codep = encode++;  // Output code pointer
-        uint8_t code = 1;           // Code value
-
-        for (const uint8_t* byte = data; length--; ++byte) {
-            if (*byte)  // Byte not zero, write it
-                *encode++ = *byte, ++code;
-            else {
-                *codep = code, code = 1, codep = encode;
-                if (!*byte || length)
-                    ++encode;
-            }
-        }
-        *codep = code;  // Write final code value
-
-        return (size_t)(encode - buffer);
-    }
-    size_t cobsDecode(const uint8_t* buffer, size_t length, uint8_t* data) {
-        const uint8_t* byte = buffer;  // Encoded input byte pointer
-        uint8_t* decode = data;        // Decoded output byte pointer
-
-        for (uint8_t block = 0; byte < buffer + length; --block) {
-            if (block)  // Decode block byte
-                *decode++ = *byte++;
-            else {
-                block = *byte++;  // Fetch the next block length
-                if (block)        // Encoded zero, write it unless it's delimiter.
-                    *decode++ = 0;
-            }
-        }
-        return (size_t)(decode - data);
-    }
-    void printBuffer(uint8_t* buf, int size) {
-        std::cout << "B " << size << ": ";
-        for (int i = 0; i < size; ++i) {
-            std::cout << (unsigned int)(uint8_t)buf[i] << " ";
-        }
-        std::cout << std::endl;
-    }
-    void printVector(const std::vector<int>& vec) {
-        int size = vec.size();
-        std::cout << "V " << size << ": ";
-        for (int i = 0; i < size; ++i) {
-            std::cout << vec.at(i) << " ";
-        }
-        std::cout << std::endl;
     }
 };
 
 int main(int argc, char* argv[]) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<CanNode>();
-    std::thread t(&CanNode::run, node);
-    rclcpp::spin(node);
+    rclcpp::spin(std::make_shared<HaruHardware>());
     rclcpp::shutdown();
     return 0;
 }
