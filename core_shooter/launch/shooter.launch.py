@@ -4,6 +4,15 @@ from launch.actions import GroupAction
 import os
 
 from ament_index_python.packages import get_package_share_directory
+'''
+# モータ番号
+0-3: 足回りDamiao×4
+4: 無限回転Yaw Robostride 06
+5-6: 砲台Yaw Robostride05×2
+7-14: Feetech
+15: ESC
+16: 非常停止
+'''
 
 
 def generate_launch_description():
@@ -31,23 +40,6 @@ def generate_launch_description():
         ]
     )
 
-    center_shooter_controller_node = Node(
-        package="core_shooter",
-        executable="shooter_controller",
-        name="center_shooter_controller",
-        output="screen",
-        parameters=[
-            shooter_params,
-            {
-                "shoot_motor_id": 10,
-                "loading_motor_id": 7
-            }
-        ],
-        remappings=[
-            hazard_remaps,
-        ]
-    )
-
     left_shooter_controller_node = Node(
         package="core_shooter",
         executable="shooter_controller",
@@ -56,8 +48,8 @@ def generate_launch_description():
         parameters=[
             shooter_params,
             {
-                "shoot_motor_id": 11,
-                "loading_motor_id": 8
+                "shoot_motor_id": 15,
+                "loading_motor_id": 9
             }
         ],
         remappings=[
@@ -74,24 +66,11 @@ def generate_launch_description():
             shooter_params,
             {
                 "shoot_motor_id": 12,
-                "loading_motor_id": 9
+                "loading_motor_id": 10
             }
         ],
         remappings=[
             hazard_remaps,
-        ]
-    )
-
-    center_magazine_manager_node = Node(
-        package="core_shooter",
-        executable="magazine_manager",
-        name="center_magazine_manager",
-        output="screen",
-        parameters=[
-            shooter_params,
-        ],
-        remappings=[
-            ("disk_distance_sensor", "distance1")
         ]
     )
 
@@ -121,23 +100,58 @@ def generate_launch_description():
         ]
     )
 
+    left_aim_bot_node = Node(
+        package="core_shooter",
+        executable="aim_bot",
+        name="left_aim_bot",
+        output="screen",
+        parameters=[
+            shooter_params,
+            {
+                "pitch_motor_id": 7,
+                "yaw_motor_id": 5,
+                "disk_hold_left_motor_id": 11,
+                "disk_hold_right_motor_id": 12
+            }
+        ],
+        remappings=[
+            hazard_remaps,
+        ]
+    )
+
+    right_aim_bot_node = Node(
+        package="core_shooter",
+        executable="aim_bot",
+        name="right_aim_bot",
+        output="screen",
+        parameters=[
+            shooter_params,
+            {
+                "pitch_motor_id": 8,
+                "yaw_motor_id": 6,
+                "disk_hold_left_motor_id": 13,
+                "disk_hold_right_motor_id": 14
+            }
+        ],
+        remappings=[
+            hazard_remaps,
+        ]
+    )
+
     return LaunchDescription([
         shooter_cmd_gate_node,
-        GroupAction([
-            PushRosNamespace("center"),
-            center_shooter_controller_node,
-            center_magazine_manager_node,
-        ]),
 
         GroupAction([
             PushRosNamespace("left"),
             left_shooter_controller_node,
             left_magazine_manager_node,
+            left_aim_bot_node,
         ]),
 
         GroupAction([
             PushRosNamespace("right"),
             right_shooter_controller_node,
             right_magazine_manager_node,
+            right_aim_bot_node,
         ]),
     ])

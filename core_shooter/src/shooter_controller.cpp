@@ -18,8 +18,8 @@ public:
     //========================================
     // shoot id parameters
     //========================================
-    declare_parameter("shoot_motor_id", 10);
-    declare_parameter("loading_motor_id", 7);
+    declare_parameter("shoot_motor_id", 100);
+    declare_parameter("loading_motor_id", 100);
 
     shoot_motor_id_ = this->get_parameter("shoot_motor_id").as_int();
     loading_motor_id_ = this->get_parameter("loading_motor_id").as_int();
@@ -220,7 +220,7 @@ private:
   //========================================
   void shootCmdCallback(const std_msgs::msg::Int32::SharedPtr msg)
   {
-    shoot_repeat_count = msg->data;
+    shoot_repeat_count_ = msg->data;
   }
 
   void shootMotorCallback(const std_msgs::msg::Float32::SharedPtr msg)
@@ -273,7 +273,7 @@ private:
           }
 
           // repeat > 1 && repeat < 0
-          if (shoot_repeat_count == 0) {
+          if (shoot_repeat_count_ == 0) {
             break;
           }
           bool result = shootDecision();
@@ -290,7 +290,7 @@ private:
             state = SHOOT;
             RCLCPP_INFO(get_logger(), "change SHOOT");
           }
-          RCLCPP_INFO(this->get_logger(), "Remaining number of repeats: %d", shoot_repeat_count);
+          RCLCPP_INFO(this->get_logger(), "Remaining number of repeats: %d", shoot_repeat_count_);
           break;
         }
       case SHOOT:
@@ -311,8 +311,8 @@ private:
           shoot_completed_ = true;
           shootStatePublish(shoot_completed_);
 
-          if (shoot_repeat_count >= 1) {
-            shoot_repeat_count--;
+          if (shoot_repeat_count_ >= 1) {
+            shoot_repeat_count_--;
           }
           state = CMD_WAIT;
           RCLCPP_INFO(get_logger(), "change CMD_WAIT");
@@ -321,7 +321,7 @@ private:
 
       case EMERGENCY:
         shoot_completed_ = false;
-        shoot_repeat_count = 0;
+        shoot_repeat_count_ = 0;
 
         if (!is_emergency_unlock) {
           // state = CMD_WAIT;
@@ -350,8 +350,8 @@ private:
       RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Shoot condition not met");
 
       // 打てなかった場合はそのタスクを削除する
-      if (shoot_repeat_count >= 1) {
-        shoot_repeat_count = 0;
+      if (shoot_repeat_count_ >= 1) {
+        shoot_repeat_count_ = 0;
       }
       return false;
     }
@@ -416,11 +416,11 @@ private:
 
   bool isShootIntervalElapsed()
   {
-    if (shoot_repeat_count == 1) {
+    if (shoot_repeat_count_ == 1) {
       return (this->now() - last_shoot_time_).seconds() * 1000 >= shoot_interval_ms_;
-    } else if (shoot_repeat_count >= 2) {
+    } else if (shoot_repeat_count_ >= 2) {
       return (this->now() - last_shoot_time_).seconds() * 1000 >= burst_interval_ms_;
-    } else if (shoot_repeat_count <= -1) {
+    } else if (shoot_repeat_count_ <= -1) {
       return (this->now() - last_shoot_time_).seconds() * 1000 >= fullauto_interval_ms_;
     }
     return false;
@@ -564,7 +564,7 @@ private:
   bool shoot_completed_ = true;
 
   // the count of repeated shots. (x < -1: fullauto, x = 0: none, x > 1: burst )
-  int shoot_repeat_count = 0;
+  int shoot_repeat_count_ = 0;
 
   enum STATE
   {
