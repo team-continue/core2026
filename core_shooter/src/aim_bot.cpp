@@ -151,8 +151,8 @@ private:
 
     // --- 出力計算（比例制御） ---
     double yaw_output = std::clamp(yaw_kp_ * yaw_error, -yaw_max_output_, yaw_max_output_);
-    double pitch_output =
-      std::clamp(pitch_kp_ * pitch_error, -pitch_max_output_, pitch_max_output_);
+    // double pitch_output = std::clamp(pitch_kp_ * pitch_error, -pitch_max_output_, pitch_max_output_);
+    double pitch_output = pitch_error;
 
     // --- 許容範囲以下なら0出力 ---
     if (std::fabs(yaw_error) < yaw_tolerance_) {yaw_output = 0.0;}
