@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "core_path_follower parameter schema",
+  "type": "object",
+  "definitions": {
+    "core_path_follower": {
+      "type": "object",
+      "properties": {
+        "path_topic": {
+          "type": "string",
+          "default": "/planned_path",
+          "description": "Subscribed path topic name."
+        },
+        "odom_topic": {
+          "type": "string",
+          "default": "/odom",
+          "description": "Subscribed odometry topic name."
+        },
+        "cmd_vel_topic": {
+          "type": "string",
+          "default": "/cmd_vel",
+          "description": "Published velocity command topic name."
+        },
+        "use_local_frame": {
+          "type": "boolean",
+          "default": true,
+          "description": "true: path in robot-local frame (chassis_link). false: path in world frame."
+        },
+        "goal_tolerance": {
+          "type": "number",
+          "default": 0.15,
+          "minimum": 0.0,
+          "description": "Distance to last waypoint for goal detection [m]."
+        },
+        "reset_on_new_path": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to reset PID integrators on new path."
+        },
+        "controller_type": {
+          "type": "string",
+          "default": "cascade",
+          "enum": [
+            "cascade",
+            "pid",
+            "pure_pursuit"
+          ],
+          "description": "Controller mode."
+        },
+        "linear_speed": {
+          "type": "number",
+          "default": 0.6,
+          "minimum": 0.0,
+          "description": "Reference forward speed [m/s]."
+        },
+        "lookahead_dist": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0.01,
+          "description": "Lookahead distance for target point selection [m]."
+        },
+        "control_rate": {
+          "type": "number",
+          "default": 20.0,
+          "minimum": 1.0,
+          "description": "Control loop frequency [Hz]."
+        },
+        "outer_kp": {
+          "type": "number",
+          "default": 1.2,
+          "description": "Outer PID proportional gain (heading → omega_ref)."
+        },
+        "outer_ki": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Outer PID integral gain."
+        },
+        "outer_kd": {
+          "type": "number",
+          "default": 0.15,
+          "description": "Outer PID derivative gain."
+        },
+        "inner_kp": {
+          "type": "number",
+          "default": 2.0,
+          "description": "Inner PID proportional gain (omega tracking)."
+        },
+        "inner_ki": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Inner PID integral gain."
+        },
+        "inner_kd": {
+          "type": "number",
+          "default": 0.05,
+          "description": "Inner PID derivative gain."
+        },
+        "pure_k": {
+          "type": "number",
+          "default": 1.0,
+          "description": "Pure pursuit curvature-to-angular-velocity gain."
+        },
+        "interpolation": {
+          "type": "string",
+          "default": "spline",
+          "enum": [
+            "none",
+            "spline",
+            "bezier"
+          ],
+          "description": "Path interpolation method."
+        },
+        "spline_samples_per_segment": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "description": "Catmull-Rom spline samples per segment."
+        },
+        "bezier_samples": {
+          "type": "integer",
+          "default": 100,
+          "minimum": 2,
+          "description": "Total samples for global Bézier curve."
+        }
+      },
+      "required": [
+        "controller_type",
+        "linear_speed",
+        "lookahead_dist",
+        "control_rate"
+      ]
+    }
+  },
+  "properties": {
+    "/**": {
+      "type": "object",
+      "properties": {
+        "ros__parameters": {
+          "$ref": "#/definitions/core_path_follower"
+        }
+      },
+      "required": [
+        "ros__parameters"
+      ]
+    }
+  },
+  "required": [
+    "/**"
+  ]
+}
