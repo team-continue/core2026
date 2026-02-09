@@ -1,5 +1,16 @@
 core_path_follower:
   ros__parameters:
+    # Topic names (match path_planner output)
+    path_topic: "/planned_path"
+    odom_topic: "/odom"
+    cmd_vel_topic: "/cmd_vel"
+    # Coordinate frame mode:
+    #   true  = path is in robot-local frame (from core_path_planner, chassis_link)
+    #   false = path is in world/map frame (requires odom for localisation)
+    use_local_frame: true
+    # Goal tolerance: stop when within this distance of the last waypoint (metres)
+    goal_tolerance: 0.15
+    # controller_type options: 'cascade' (outer+inner PID), 'pid' (single PID), 'pure_pursuit'
     controller_type: "cascade"
     linear_speed: 0.6
     lookahead_dist: 0.5
@@ -10,9 +21,9 @@ core_path_follower:
     inner_ki: 0.0
     inner_kd: 0.05
     pure_k: 1.0
-    # controller_type options: 'cascade' (outer+inner PID), 'pid' (single PID), 'pure_pursuit'
     control_rate: 20.0
+    reset_on_new_path: true
     # interpolation options: 'none', 'spline', 'bezier'
-    interpolation: "none"
+    interpolation: "spline"
     spline_samples_per_segment: 10
     bezier_samples: 100
