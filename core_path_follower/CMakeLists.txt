@@ -1,28 +1,28 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.14)
 project(core_path_follower)
 
-if(NOT CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 17)
+find_package(ament_cmake_auto REQUIRED)
+ament_auto_find_build_dependencies()
+
+# --- library (controller + interpolation, reusable / testable) ---
+ament_auto_add_library(${PROJECT_NAME}_lib SHARED
+  src/controller.cpp
+  src/interpolation.cpp
+)
+
+# --- executable (node entry-point + ROS wrapper) ---
+ament_auto_add_executable(${PROJECT_NAME}_node
+  src/node.cpp
+  src/path_follower_node.cpp
+)
+target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME}_lib)
+
+# --- tests ---
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
 endif()
 
-find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(nav_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(std_msgs REQUIRED)
-
-include_directories(include)
-
-add_executable(path_follower_node src/path_follower_node.cpp src/interpolation.cpp)
-ament_target_dependencies(path_follower_node rclcpp nav_msgs geometry_msgs std_msgs)
-
-install(TARGETS
-    path_follower_node
-    DESTINATION lib/${PROJECT_NAME}
+ament_auto_package(
+  INSTALL_TO_SHARE launch param schema
 )
-
-install(DIRECTORY launch config
-    DESTINATION share/${PROJECT_NAME}
-)
-
-ament_package()
