@@ -17,6 +17,13 @@ ament_auto_add_executable(${PROJECT_NAME}_node
 )
 target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME}_lib)
 
+# --- Python test helper scripts ---
+install(PROGRAMS
+  test/test_path_publisher.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME test_path_publisher
+)
+
 # --- tests ---
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
