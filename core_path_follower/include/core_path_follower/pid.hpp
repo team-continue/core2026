@@ -8,7 +8,7 @@ namespace core_path_follower
   class PID
   {
   public:
-    PID(double p = 0.0, double i = 0.0, double d = 0.0)
+    explicit PID(double p = 0.0, double i = 0.0, double d = 0.0)
         : kp_(p), ki_(i), kd_(d), prev_(0.0), integral_(0.0)
     {
     }

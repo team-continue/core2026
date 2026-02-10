@@ -1,9 +1,5 @@
 #include "core_path_follower/path_follower_node.hpp"
 
-#include <rclcpp/rclcpp.hpp>
-
-#include <memory>
-
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);

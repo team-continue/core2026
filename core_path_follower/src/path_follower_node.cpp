@@ -1,10 +1,10 @@
 #include "core_path_follower/path_follower_node.hpp"
 
-#include "core_path_follower/interpolation.hpp"
-
 #include <chrono>
 #include <cmath>
 #include <functional>
+
+#include "core_path_follower/interpolation.hpp"
 
 namespace core_path_follower
 {
@@ -12,6 +12,7 @@ namespace core_path_follower
   PathFollowerNode::PathFollowerNode(const rclcpp::NodeOptions &options)
       : Node("core_path_follower", options),
         controller_(ControllerParam{})
+
   {
     // topics
     path_topic_ = declare_parameter<std::string>("path_topic", "/planned_path");

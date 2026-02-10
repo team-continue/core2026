@@ -6,11 +6,14 @@ namespace core_path_follower
 {
     namespace interp
     {
-        std::vector<geometry_msgs::msg::Pose> splineCatmullRom(const std::vector<geometry_msgs::msg::Pose> &waypoints, int samples_per_segment)
+        std::vector<geometry_msgs::msg::Pose> splineCatmullRom(
+            const std::vector<geometry_msgs::msg::Pose> &waypoints, int samples_per_segment)
         {
             std::vector<geometry_msgs::msg::Pose> out;
             if (waypoints.size() < 2)
+            {
                 return waypoints;
+            }
 
             for (size_t i = 0; i < waypoints.size() - 1; ++i)
             {
@@ -34,8 +37,12 @@ namespace core_path_follower
                     double y2 = p2.position.y;
                     double y3 = p3.position.y;
 
-                    double cx = 0.5 * ((2.0 * x1) + (-x0 + x2) * t + (2.0 * x0 - 5.0 * x1 + 4.0 * x2 - x3) * t2 + (-x0 + 3.0 * x1 - 3.0 * x2 + x3) * t3);
-                    double cy = 0.5 * ((2.0 * y1) + (-y0 + y2) * t + (2.0 * y0 - 5.0 * y1 + 4.0 * y2 - y3) * t2 + (-y0 + 3.0 * y1 - 3.0 * y2 + y3) * t3);
+                    double cx = 0.5 *
+                                ((2.0 * x1) + (-x0 + x2) * t + (2.0 * x0 - 5.0 * x1 + 4.0 * x2 - x3) * t2 +
+                                 (-x0 + 3.0 * x1 - 3.0 * x2 + x3) * t3);
+                    double cy = 0.5 *
+                                ((2.0 * y1) + (-y0 + y2) * t + (2.0 * y0 - 5.0 * y1 + 4.0 * y2 - y3) * t2 +
+                                 (-y0 + 3.0 * y1 - 3.0 * y2 + y3) * t3);
 
                     geometry_msgs::msg::Pose np;
                     np.position.x = cx;
@@ -55,16 +62,21 @@ namespace core_path_follower
             return out;
         }
 
-        std::vector<geometry_msgs::msg::Pose> bezierGlobal(const std::vector<geometry_msgs::msg::Pose> &waypoints, int samples)
+        std::vector<geometry_msgs::msg::Pose> bezierGlobal(
+            const std::vector<geometry_msgs::msg::Pose> &waypoints, int samples)
         {
             std::vector<geometry_msgs::msg::Pose> out;
             if (waypoints.size() < 2)
+            {
                 return waypoints;
+            }
 
             int n = static_cast<int>(waypoints.size()) - 1;
             std::vector<double> fact(n + 1, 1.0);
             for (int i = 1; i <= n; ++i)
+            {
                 fact[i] = fact[i - 1] * static_cast<double>(i);
+            }
 
             auto binom = [&](int i, int n)
             {
@@ -103,5 +115,5 @@ namespace core_path_follower
             }
             return out;
         }
-    }
-}
+    } // namespace interp
+} // namespace core_path_follower
