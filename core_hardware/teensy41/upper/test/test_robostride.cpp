@@ -109,8 +109,8 @@ static void printStatus() {
                 can2_robostride[0].feedback.velocity_rad_s,
                 can2_robostride[0].feedback.torque_nm,
                 can2_robostride[0].feedback.temp_mos,
-                can2_robostride[0].ref.vel_kp,
-                can2_robostride[0].ref.vel_ki);
+                can2_robostride[0].ref.kp_vel,
+                can2_robostride[0].ref.ki_vel);
 }
 
 void setup() {

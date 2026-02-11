@@ -5,15 +5,15 @@
 
 #define MAX_SIGNAL 2000  //PWM信号における最大のパルス幅[マイクロ秒]
 #define MIN_SIGNAL 1000  //PWM信号における最小のパルス幅[マイクロ秒]
-#define ESC_PIN 24  //ESCへの出力ピン
 
 Servo _esc;
 
 class ESC{
+  int _pin;
   public:
-    ESC(){}
+    ESC(int pin): _pin(pin){}
     void begin(){
-      _esc.attach(ESC_PIN);  // attaches the servo on pin 20
+      _esc.attach(_pin);  // attaches the servo on pin 20
     }
     void init(){
       delay(1000);
@@ -32,3 +32,14 @@ class ESC{
       _esc.writeMicroseconds(value);
     }
 };
+
+#define ESC_NUM 2
+#define ESC1_PIN 35
+#define ESC2_PIN 24
+ESC esc[ESC_NUM] = {ESC(ESC1_PIN), ESC(ESC2_PIN)};
+void esc_init(){
+  for(int i=0;i<ESC_NUM;++i){
+    esc[i].begin();
+    esc[i].init();
+  }
+}

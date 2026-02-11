@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h>
 #include <Arduino.h>
+#include "motor.h"
 
 // =====================
 // RoboStride definitions
@@ -55,15 +56,6 @@ struct ReceiveResult{
     uint8_t host_id;
     uint8_t data[8];
     uint8_t len;
-};
-
-struct RobostrideFeedback {
-    float position_rad;
-    float velocity_rad_s;
-    float torque_nm;
-    float temp_mos;
-    float temp_rotor;
-    uint8_t status;
 };
 
 enum class ActuatorType {
@@ -139,26 +131,7 @@ static const std::map<ActuatorType, ActuatorOperation> ACTUATOR_OPERATION_MAPPIN
     { ActuatorType::ROBSTRIDE_06, { 4 * M_PI, 20, 60,  5000.0, 100.0  } },
 };
 
-// =====================
-// Control ref (Damiao-like)
-// =====================
-// len=0/1: disable
-// len=2: velocity  (data[1]=vel)
-// len=3: motion    (data[1]=vel, data[2]=pos)
-// len=4: gain set  (data[0]=cur_kp, data[1]=cur_ki, data[2]=motion_kp, data[3]=motion_kd)
-struct RoboStrideRef {
-    int mode = 0; // 0:disable, 2:velocity, 3:motion
-    float position_rad = 0.f;
-    float velocity_rad_s = 0.f;
-
-    float torque_nm = 0.f; // motion torque
-    float vel_kp = 1.f;        // motion kp
-    float vel_ki = 0.1f;        // motion ki
-    float pos_kp = 20.f;        // motion kp
-    // float pos_kd = 0.f;        // motion kd
-};
-
-FCTP_CLASS class RoboStride {
+FCTP_CLASS class RoboStride : public MotorBase {
     uint8_t master_id_, motor_id_;
     int actuator_type_;
     FlexCAN_T4<_bus, _rxSize, _txSize> *can_;
@@ -180,17 +153,17 @@ FCTP_CLASS class RoboStride {
     bool first_feedback_received_ = true;
 
 public:
-    RobostrideFeedback feedback = {0};
-    RoboStrideRef ref;
-    bool connect_ros2 = false;
-    bool connect_can = false;
+    MotorState &feedback;
+    MotorRef &ref;
     data_read_write drw;
 
     RoboStride(FlexCAN_T4<_bus, _rxSize, _txSize> *can, uint8_t master_id, uint8_t motor_id, int actuator_type) :
         master_id_(master_id),
         motor_id_(motor_id),
         actuator_type_(actuator_type),
-        can_(can)
+        can_(can),
+        feedback(motor_state),
+        ref(motor_ref)
     {}
     ~RoboStride(){}
 
@@ -291,9 +264,9 @@ public:
             case 4:
                 // param/gain update packet
                 last_recv_ros2_ts_ms_ = millis();
-                ref.vel_kp = data[0];
-                ref.vel_ki = data[1];
-                ref.pos_kp     = data[2];
+                ref.kp_vel = data[0];
+                ref.ki_vel = data[1];
+                ref.kp_pos = data[2];
                 // ref.pos_kd     = data[3];
                 break;
 
@@ -311,30 +284,32 @@ public:
             return false;
         }
         last_recv_can_ts_ms_ = millis();
+        connect = connect_can;
         return true;
     }
 
     void writeCanFrame(){
         connect_can = (millis() - last_recv_can_ts_ms_) < ROBOSTRIDE_CAN_TIMEOUT;
         connect_ros2 = (millis() - last_recv_ros2_ts_ms_) < ROBOSTRIDE_ROS2_TIMEOUT;
+        connect = connect_can;
 
         // timeout => disable
         int mode = ref.mode;
         if(!connect_ros2){
             mode = 0;
         }
-        if(ref.vel_kp != drw.spd_kp.data || ref.vel_ki != drw.spd_ki.data || ref.pos_kp != drw.loc_kp.data){
+        if(ref.kp_vel != drw.spd_kp.data || ref.ki_vel != drw.spd_ki.data || ref.kp_pos != drw.loc_kp.data){
             // writeCanFrame path is non-blocking: no response wait here
-            Set_RobStrite_Motor_parameter(drw.spd_kp.index, ref.vel_kp, Set_parameter, false);
-            drw.spd_kp.data = ref.vel_kp;
+            Set_RobStrite_Motor_parameter(drw.spd_kp.index, ref.kp_vel, Set_parameter, false);
+            drw.spd_kp.data = ref.kp_vel;
             delayMicroseconds(500);
 
-            Set_RobStrite_Motor_parameter(drw.spd_ki.index, ref.vel_ki, Set_parameter, false);
-            drw.spd_ki.data = ref.vel_ki;
+            Set_RobStrite_Motor_parameter(drw.spd_ki.index, ref.ki_vel, Set_parameter, false);
+            drw.spd_ki.data = ref.ki_vel;
             delayMicroseconds(500);
 
-            Set_RobStrite_Motor_parameter(drw.loc_kp.index, ref.pos_kp, Set_parameter, false);
-            drw.loc_kp.data = ref.pos_kp;
+            Set_RobStrite_Motor_parameter(drw.loc_kp.index, ref.kp_pos, Set_parameter, false);
+            drw.loc_kp.data = ref.kp_pos;
             delayMicroseconds(500);
 
             Serial.println("-----[cmd] gain updated-----");
@@ -356,7 +331,7 @@ public:
             case 3: {
                 // Position control (external loop): convert pos error to velocity command.
                 float pos_error = ref.position_rad - feedback.position_rad;
-                float cmd_velocity_rad_s = pos_error * ref.pos_kp;
+                float cmd_velocity_rad_s = pos_error * ref.kp_pos;
 
                 // Treat ref.velocity_rad_s as velocity limit in motion mode.
                 const float velocity_limit_rad_s = fabsf(ref.velocity_rad_s);

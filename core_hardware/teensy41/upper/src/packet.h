@@ -71,7 +71,8 @@ void packet_send(){
 }
 
 void _packet_onPacketReceived(const uint8_t* buffer, size_t size){
-  int flt_len, uint8_len=-2, i;
+  int flt_len, uint8_len=-2;
+  size_t i;
   uint8_t id;
   int uint8_count=0;
   float data[64] = {0};

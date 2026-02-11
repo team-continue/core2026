@@ -8,31 +8,12 @@
 // 送信 -> 受信 (対応するアドレスのデータ)
 
 #include <FlexCAN_T4.h>
-#include <homing.h>
+// #include <homing.h>
+#include "motor.h"
 
 #define DAMIAO_ROS2_TIMEOUT 1000 // ms
 #define DAMIAO_CAN_TIMEOUT 100 // ms
 #define DAMIAO_GEAR_RATIO (3591. / 187.)
-
-struct DamiaoFeedBack {
-  float position_rad;      // ユーザーに見せる位置 (マルチターン - オフセット)
-  float velocity_rad_s;
-  float torque_nm;
-  int8_t temp_mos;
-  int8_t temp_rotor;
-  uint8_t status;
-};
-
-struct DamiaoRef{
-    int mode = 0; // 0: disable, 2: velocity, 3: position (external loop)
-    float position_rad = 0.f;
-    float velocity_rad_s = 0.f;
-    float velocity_limit_rad_s = 0.f;
-    float kp_asr = 0.f;
-    float ki_asr = 0.f;
-    float kp_apr = 5.0f; 
-    float kd_apr = 0.1f;
-};
 
 struct DamiaoStatus{
     static constexpr uint8_t DISABLED = 0x00;
@@ -40,7 +21,7 @@ struct DamiaoStatus{
     static constexpr uint8_t OVERLOAD = 0x0E;
 };
 
-FCTP_CLASS class Damiao {
+FCTP_CLASS class Damiao : public MotorBase {
     struct DamiaoFlash{
         uint32_t CTRL_MODE;
         float P_MAX;
@@ -97,17 +78,19 @@ FCTP_CLASS class Damiao {
 
     public:
         DamiaoFlash flash;
-        DamiaoFeedBack feedback;
-        DamiaoRef ref;
-        bool connect_ros2 = false;
-        bool connect_can = false;
+        MotorState &feedback;
+        MotorRef &ref;
         bool initialized = false;
         
         // ホーミング判定用のトルク(電流相当)閾値
-        Homing homing;
+        // Homing homing;
         
         Damiao(FlexCAN_T4<_bus, _rxSize, _txSize> *can, uint8_t master_id, uint8_t slave_id) 
-            : can_(can), master_id_(master_id), slave_id_(slave_id) {}
+            : can_(can),
+              master_id_(master_id),
+              slave_id_(slave_id),
+              feedback(motor_state),
+              ref(motor_ref) {}
         ~Damiao(){}
 
         bool init(){
@@ -122,10 +105,8 @@ FCTP_CLASS class Damiao {
             ){
                 return false;
             }
-            // ref.ki_apr = flash.KI_APR;
-            // ref.kp_apr = flash.KP_APR;
-            ref.ki_asr = flash.KI_ASR;
-            ref.kp_asr = flash.KP_ASR;
+            ref.ki_vel = flash.KI_ASR;
+            ref.kp_vel = flash.KP_ASR;
             initialized = true;
             return true;
         }
@@ -150,10 +131,10 @@ FCTP_CLASS class Damiao {
                     break;
                 case 4: 
                     last_recv_ros2_ts_ms_ = millis();
-                    ref.kp_asr = data[0];
-                    ref.ki_asr = data[1];
-                    ref.kp_apr = data[2];
-                    ref.kd_apr = data[3];
+                    ref.kp_vel = data[0];
+                    ref.ki_vel = data[1];
+                    ref.kp_pos = data[2];
+                    ref.kd_pos = data[3];
                     break;
                 default:
                     return;
@@ -163,33 +144,36 @@ FCTP_CLASS class Damiao {
         void writeCanFrame(){
             connect_can = (millis() - last_read_feedback_ts_ms_) < DAMIAO_CAN_TIMEOUT;
             connect_ros2 = (millis() - last_recv_ros2_ts_ms_) < DAMIAO_ROS2_TIMEOUT;
+            connect = connect_can;
             // パラメタ更新処理
-            if(ref.kp_asr != flash.KP_ASR){
-                writeFlash<float>(DamiaoFlashAddr::KP_ASR, ref.kp_asr, flash.KP_ASR);
+            if(ref.kp_vel != flash.KP_ASR){
+                writeFlash<float>(DamiaoFlashAddr::KP_ASR, ref.kp_vel, flash.KP_ASR);
                 return;
             }
-            if(ref.ki_asr != flash.KI_ASR){
-                writeFlash<float>(DamiaoFlashAddr::KI_ASR, ref.ki_asr, flash.KI_ASR);
+            if(ref.ki_vel != flash.KI_ASR){
+                writeFlash<float>(DamiaoFlashAddr::KI_ASR, ref.ki_vel, flash.KI_ASR);
                 return;
             }
 
             // ローカルにコピー
-            DamiaoRef damiao_ref = ref;
-            auto homing_state = homing.get(feedback.torque_nm);
-            switch(homing_state.state){
-                case HOMING_STATE_RUNNING:
-                    // ホーミング中
-                    damiao_ref.mode = 2; // 強制的に速度制御へ
-                    damiao_ref.velocity_rad_s = homing_state.ref_vel;
-                    break;
-                case HOMING_STATE_SENSOR_OFFSET:
-                    offset_pos = accumulated_pos;
-                case HOMING_STATE_DONE:
-                default:
-                    if(!connect_ros2)
-                        damiao_ref.mode = 0;
-                    break;
-            }
+            MotorRef damiao_ref = ref;
+            // auto homing_state = homing.get(feedback.torque_nm);
+            // switch(homing_state.state){
+            //     case HOMING_STATE_RUNNING:
+            //         // ホーミング中
+            //         damiao_ref.mode = 2; // 強制的に速度制御へ
+            //         damiao_ref.velocity_rad_s = homing_state.ref_vel;
+            //         break;
+            //     case HOMING_STATE_SENSOR_OFFSET:
+            //         offset_pos = accumulated_pos;
+            //     case HOMING_STATE_DONE:
+            //     default:
+            //         if(!connect_ros2)
+            //             damiao_ref.mode = 0;
+            //         break;
+            // }
+            if(!connect_ros2)
+                damiao_ref.mode = 0;
 
             switch(damiao_ref.mode){
                 case 0: // Disable
@@ -224,7 +208,7 @@ FCTP_CLASS class Damiao {
                     {
                         // 原点出し後の相対位置(0スタート)へ向かって制御
                         float pos_error = damiao_ref.position_rad - feedback.position_rad;
-                        ref.velocity_rad_s = pos_error * ref.kp_apr - ref.kd_apr * feedback.velocity_rad_s;
+                        ref.velocity_rad_s = pos_error * ref.kp_pos - ref.kd_pos * feedback.velocity_rad_s;
 
                         // if (ref.velocity_rad_s > ref.velocity_limit_rad_s && ref.velocity_limit_rad_s > 0) 
                         //     ref.velocity_rad_s = ref.velocity_limit_rad_s;
@@ -265,8 +249,8 @@ FCTP_CLASS class Damiao {
             
             feedback.velocity_rad_s = uint_to_float(vel_raw_int, -flash.V_MAX, flash.V_MAX, 12);
             feedback.torque_nm = uint_to_float(tor_raw_int, -flash.T_MAX, flash.T_MAX, 12);
-            feedback.temp_mos = (int8_t)r_msg.buf[6];
-            feedback.temp_rotor = (int8_t)r_msg.buf[7];
+            feedback.temp_mos = (float)((int8_t)r_msg.buf[6]);
+            feedback.temp_rotor = (float)((int8_t)r_msg.buf[7]);
 
             // ★積算処理のロジック変更 (Turns + Raw)
             float full_range = 2.0f * flash.P_MAX;
@@ -303,6 +287,7 @@ FCTP_CLASS class Damiao {
 
             // 外部出力用 (原点オフセット考慮)
             feedback.position_rad = (accumulated_pos - offset_pos) / DAMIAO_GEAR_RATIO;
+            connect = connect_can;
             return true;
         }
 
