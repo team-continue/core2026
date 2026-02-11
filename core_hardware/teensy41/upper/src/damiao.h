@@ -8,10 +8,10 @@
 // 送信 -> 受信 (対応するアドレスのデータ)
 
 #include <FlexCAN_T4.h>
+#include <homing.h>
 
 #define DAMIAO_ROS2_TIMEOUT 1000 // ms
 #define DAMIAO_CAN_TIMEOUT 100 // ms
-#define DAMIAO_HOMING_TIMEOUT 3000 // ms
 #define DAMIAO_GEAR_RATIO (3591. / 187.)
 
 struct DamiaoFeedBack {
@@ -96,21 +96,15 @@ FCTP_CLASS class Damiao {
     volatile size_t wait_data_len = 0;
 
     public:
-        // ホーミング用変数
-        bool homing_done = true; 
-        float homing_vel = 0.f;
-        unsigned long stop_timer = 0;
-
         DamiaoFlash flash;
         DamiaoFeedBack feedback;
         DamiaoRef ref;
-        bool connect = false;
+        bool connect_ros2 = false;
+        bool connect_can = false;
+        bool initialized = false;
         
         // ホーミング判定用のトルク(電流相当)閾値
-        float homing_torque_limit = 1.5f;
-        bool limit_state = false;
-        int homing_pin = -1;
-        bool initialized = false;
+        Homing homing;
         
         Damiao(FlexCAN_T4<_bus, _rxSize, _txSize> *can, uint8_t master_id, uint8_t slave_id) 
             : can_(can), master_id_(master_id), slave_id_(slave_id) {}
@@ -134,13 +128,6 @@ FCTP_CLASS class Damiao {
             ref.kp_asr = flash.KP_ASR;
             initialized = true;
             return true;
-        }
-
-        void initHoming(int pin, float vel){
-            homing_pin = pin;
-            homing_vel = vel;
-            homing_done = false;
-            stop_timer = millis();
         }
 
         void setPacketFrame(const float *data, const int len){
@@ -174,39 +161,8 @@ FCTP_CLASS class Damiao {
         }
 
         void writeCanFrame(){
-            connect = (millis() - last_recv_ros2_ts_ms_) < DAMIAO_CAN_TIMEOUT;
-            // ▼▼▼ ホーミング処理 ▼▼▼
-            if (!homing_done) {
-                if(feedback.status != DamiaoStatus::ENABLED){
-                    writeCtrlCmd(DamiaoCtrlCmd::TORQUE_ENABLE);
-                    return;
-                }
-                if(flash.CTRL_MODE != DamiaoControlMode::VELOCITY){
-                    writeFlash<uint32_t>(DamiaoFlashAddr::CTRL_MODE, DamiaoControlMode::VELOCITY, flash.CTRL_MODE);
-                    return;
-                }
-
-                bool is_limit_hit = false;
-                if(homing_pin != -1) {
-                    if(limit_state == true) is_limit_hit = true;
-                } else {
-                    if(abs(feedback.torque_nm) >= homing_torque_limit) is_limit_hit = true;
-                }
-
-                if(is_limit_hit){
-                    // 現在の積算位置をゼロ点とする
-                    offset_pos = accumulated_pos;
-                    homing_done = true;
-                    ref.position_rad = 0.f; 
-                    ref.velocity_rad_s = 0.f;
-                    writeVelocityControl(0.f); 
-                    return;
-                } else {
-                    writeVelocityControl(homing_vel);
-                    return;
-                }
-            }
-
+            connect_can = (millis() - last_read_feedback_ts_ms_) < DAMIAO_CAN_TIMEOUT;
+            connect_ros2 = (millis() - last_recv_ros2_ts_ms_) < DAMIAO_ROS2_TIMEOUT;
             // パラメタ更新処理
             if(ref.kp_asr != flash.KP_ASR){
                 writeFlash<float>(DamiaoFlashAddr::KP_ASR, ref.kp_asr, flash.KP_ASR);
@@ -216,14 +172,26 @@ FCTP_CLASS class Damiao {
                 writeFlash<float>(DamiaoFlashAddr::KI_ASR, ref.ki_asr, flash.KI_ASR);
                 return;
             }
-            
-            // 通常制御モード処理
-            int mode = ref.mode;
-            if(millis() - last_recv_ros2_ts_ms_ > DAMIAO_ROS2_TIMEOUT){
-                mode = 0;
+
+            // ローカルにコピー
+            DamiaoRef damiao_ref = ref;
+            auto homing_state = homing.get(feedback.torque_nm);
+            switch(homing_state.state){
+                case HOMING_STATE_RUNNING:
+                    // ホーミング中
+                    damiao_ref.mode = 2; // 強制的に速度制御へ
+                    damiao_ref.velocity_rad_s = homing_state.ref_vel;
+                    break;
+                case HOMING_STATE_SENSOR_OFFSET:
+                    offset_pos = accumulated_pos;
+                case HOMING_STATE_DONE:
+                default:
+                    if(!connect_ros2)
+                        damiao_ref.mode = 0;
+                    break;
             }
 
-            switch(mode){
+            switch(damiao_ref.mode){
                 case 0: // Disable
                     if(feedback.status != DamiaoStatus::DISABLED){
                         writeCtrlCmd(DamiaoCtrlCmd::TORQUE_DISABLE);
@@ -241,7 +209,7 @@ FCTP_CLASS class Damiao {
                         writeFlash<uint32_t>(DamiaoFlashAddr::CTRL_MODE, DamiaoControlMode::VELOCITY, flash.CTRL_MODE);
                         return;
                     }
-                    writeVelocityControl(ref.velocity_rad_s);
+                    writeVelocityControl(damiao_ref.velocity_rad_s);
                     return;
 
                 case 3: // Position (External)
@@ -255,13 +223,13 @@ FCTP_CLASS class Damiao {
                     }
                     {
                         // 原点出し後の相対位置(0スタート)へ向かって制御
-                        float pos_error = ref.position_rad - feedback.position_rad;
+                        float pos_error = damiao_ref.position_rad - feedback.position_rad;
                         ref.velocity_rad_s = pos_error * ref.kp_apr - ref.kd_apr * feedback.velocity_rad_s;
 
-                        if (ref.velocity_rad_s > ref.velocity_limit_rad_s && ref.velocity_limit_rad_s > 0) 
-                            ref.velocity_rad_s = ref.velocity_limit_rad_s;
-                        if (ref.velocity_rad_s < -ref.velocity_limit_rad_s && ref.velocity_limit_rad_s > 0) 
-                            ref.velocity_rad_s = -ref.velocity_limit_rad_s;
+                        // if (ref.velocity_rad_s > ref.velocity_limit_rad_s && ref.velocity_limit_rad_s > 0) 
+                        //     ref.velocity_rad_s = ref.velocity_limit_rad_s;
+                        // if (ref.velocity_rad_s < -ref.velocity_limit_rad_s && ref.velocity_limit_rad_s > 0) 
+                        //     ref.velocity_rad_s = -ref.velocity_limit_rad_s;
 
                         writeVelocityControl(ref.velocity_rad_s);
                         return;
@@ -272,7 +240,7 @@ FCTP_CLASS class Damiao {
         }
 
         // CANフレーム受信処理
-        bool readCanFrame(const CAN_message_t &r_msg){
+        bool setCanFrame(const CAN_message_t &r_msg){
             // CAN IDチェック
             if(!check_can_id(r_msg))
                 return false;

@@ -180,6 +180,8 @@ void setup(void) {
   for(int i=0;i<NUM_DAMIAO;++i){
     damiao_motor[i].init();
   }
+
+
   // for(int i=0;i<NUM_ROBOSTRIDE_CAN2;++i){
   //   robostride_can2[i].init(ROBOSTRIDE_CURRENT_MAX, ROBOSTRIDE_TORQUE_MAX);
   // }
@@ -238,10 +240,20 @@ void loop() {
   }
   CAN_message_t msg;
   if(can3.read(msg)){
+    bool handled = false;
     for(int i=0;i<NUM_DAMIAO;++i){
-      if(damiao_motor[i].readCanFrame(msg)){
+      if(damiao_motor[i].setCanFrame(msg)){
         can3_communicating = false;
+        handled = true;
         break;
+      }
+    }
+    if(!handled){
+      for(int i=0;i<NUM_ROBOSTRIDE_CAN3;++i){
+        if(robostride_can3[i].setCanFrame(msg)){
+          handled = true;
+          break;
+        }
       }
     }
   }
