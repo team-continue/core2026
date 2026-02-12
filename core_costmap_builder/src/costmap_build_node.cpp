@@ -381,7 +381,10 @@ void CostmapBuildNode::setOccupied(double wx, double wy)
   if (!worldToLocalCell(wx, wy, ix, iy)) {
     return;
   }
-  local_grid_[lidx(ix, iy)] = LETHAL;
+  const int idx = lidx(ix, iy);
+  // 既に LETHAL のセルは重複登録しない（同一2Dセルへの複数点を排除）
+  if (local_grid_[idx] == LETHAL) {return;}
+  local_grid_[idx] = LETHAL;
   occ_cells_.emplace_back(ix, iy);
 }
 
