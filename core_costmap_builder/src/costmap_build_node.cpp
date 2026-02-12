@@ -337,6 +337,11 @@ bool CostmapBuildNode::get2DTranslation(
 // ===========================================================================
 // 点群全体を指定フレームに座標変換する
 // tf2::doTransform を使用し、失敗した場合は false を返す
+//
+// 注意: lookupTransform に tf2::TimePointZero（最新TF）を使用している理由:
+// Livox Mid-360 ドライバはデバイス内部タイマーを header.stamp に設定するため、
+// システム時刻ベースの TF バッファと時刻が一致しない。
+// in.header.stamp で引くと変換が必ず失敗するため、最新 TF を使用する。
 // ===========================================================================
 bool CostmapBuildNode::transformPointCloudToFrame(
   const sensor_msgs::msg::PointCloud2 & in,
