@@ -2,9 +2,9 @@
 <package format="3">
   <name>core_costmap_builder</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>ROS 2 package that builds and maintains costmaps from sensor data for robot navigation.</description>
   <maintainer email="4869naokichi@gmail.com">naokichi</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_auto</buildtool_depend>
