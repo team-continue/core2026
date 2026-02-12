@@ -22,10 +22,6 @@ ament_auto_add_executable(costmap_build_node
   src/costmap_build_node.cpp
 )
 
-ament_auto_add_executable(static_global_map_publisher
-  src/static_global_map_publisher.cpp
-)
-
 install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME}
 )
@@ -43,6 +39,5 @@ if(BUILD_TESTING)
 endif()
 
 #add_backward(costmap_build_node)
-#add_backward(static_global_map_publisher)
 
 ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR)
