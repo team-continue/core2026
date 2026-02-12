@@ -29,11 +29,6 @@ jobs:
       - name: Setup directories
         run: mkdir -p ros2_ws/src
 
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          path: ros2_ws/src/${{ github.event.repository.name }}
-
       - name: Remove CodeQL duplicated source roots
         run: |
           find ros2_ws -type d -name '_codeql_detected_source_root' -prune -exec rm -rf '{}' +
@@ -42,7 +37,8 @@ jobs:
         run: |
           apt-get update
           rosdep update
-          rosdep install --from-paths ros2_ws/src --ignore-src -r -y --rosdistro ${{ matrix.rosdistro }}
+          rosdep install --from-paths ros2_ws/src/${{ github.event.repository.name }} \
+            --ignore-src -r -y --rosdistro ${{ matrix.rosdistro }}
 
       - name: Install diagnostic-updater
         run: |
@@ -55,14 +51,6 @@ jobs:
           . /opt/ros/${{ matrix.rosdistro }}/setup.sh
           colcon build --base-paths ros2_ws/src
         continue-on-error: true
-
-      - name: build_test command success
-        if: steps.build_test.outcome == 'success'
-        run: echo "result - success"
-
-      - name: build_test command failure
-        if: steps.build_test.outcome == 'failure'
-        run: echo "result - failure" && exit 1
 
       - name: Run tests
         id: run_test
