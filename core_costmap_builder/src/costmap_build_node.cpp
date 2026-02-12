@@ -1,3 +1,10 @@
+// Copyright 2026 CoRE2026 Team
+//
+// ローカルコストマップ生成ノードの実装
+// LiDAR点群を受信し、ボクセルフィルタ → マーキング → インフレーション の
+// パイプラインでローリングウィンドウ型コストマップを構築・配信する
+//
+
 #include "core_costmap_builder/costmap_build_node.hpp"
 
 #include <algorithm>
@@ -6,113 +13,120 @@
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
+// ---------------------------------------------------------------------------
+// VoxelKey のハッシュ関数
+// boost::hash_combine 同等のビット混合で ix, iy, iz を結合する
+// ---------------------------------------------------------------------------
 std::size_t VoxelKeyHash::operator()(const VoxelKey & k) const noexcept
 {
-  std::size_t h1 = std::hash<int32_t>{}(k.ix);
-  std::size_t h2 = std::hash<int32_t>{}(k.iy);
-  std::size_t h3 = std::hash<int32_t>{}(k.iz);
-
-  std::size_t h = h1;
-  h ^= h2 + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-  h ^= h3 + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+  std::size_t h = std::hash<int32_t>{}(k.ix);
+  h ^= std::hash<int32_t>{}(k.iy) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+  h ^= std::hash<int32_t>{}(k.iz) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
   return h;
 }
 
 namespace core_costmap_builder
 {
 
+// ===========================================================================
+// コンストラクタ
+// パラメータ読み込み → グリッド初期化 → カーネル事前計算 → Sub/Pub 生成
+// ===========================================================================
 CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
 : Node("costmap_build_node", options), tf_buffer_(this->get_clock()), tf_listener_(tf_buffer_)
 {
-  // =========================
-  // Topics
-  // =========================
+  // ---------- トピック名 ----------
   points_in_topic_ = declare_parameter<std::string>("points_in_topic", "/lidar/points");
-  global_topic_ = declare_parameter<std::string>("global_topic", "/costmap/global");
-
   points_filt_topic_ =
     declare_parameter<std::string>("points_filt_topic", "/lidar/points_filtered");
   local_topic_ = declare_parameter<std::string>("local_topic", "/costmap/local");
-  fused_topic_ = declare_parameter<std::string>("fused_topic", "/costmap/fused");
-  local_in_map_topic_ =
-    declare_parameter<std::string>("local_in_map_topic", "/costmap/local_in_map");
 
-  // =========================
-  // Frames
-  // =========================
-  map_frame_ = declare_parameter<std::string>("map_frame", "map");
+  // ---------- フレーム名 ----------
   odom_frame_ = declare_parameter<std::string>("odom_frame", "odom");
   base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
   lidar_frame_ = declare_parameter<std::string>("lidar_frame", "");
 
-  // =========================
-  // Local rolling window
-  // =========================
+  // ---------- ローリングウィンドウ設定 ----------
   local_width_m_ = declare_parameter<double>("local_width_m", 10.0);
   local_height_m_ = declare_parameter<double>("local_height_m", 10.0);
   resolution_m_ = declare_parameter<double>("resolution_m", 0.05);
   update_hz_ = declare_parameter<double>("update_hz", 15.0);
 
-  // =========================
-  // Filtering（PCLなし、ifだけ）
-  // =========================
+  // ---------- 点群フィルタリングパラメータ ----------
   crop_xy_m_ = declare_parameter<double>("crop_xy_m", 6.0);
   min_z_m_ = declare_parameter<double>("min_z_m", 0.10);
   max_z_m_ = declare_parameter<double>("max_z_m", 1.60);
   voxel_leaf_m_ = declare_parameter<double>("voxel_leaf_m", 0.05);
-
   min_range_m_ = declare_parameter<double>("min_range_m", 0.30);
   max_range_m_ = declare_parameter<double>("max_range_m", 6.0);
 
-  // =========================
-  // Robot / inflation
-  // =========================
+  // ---------- ロボット形状 / インフレーション ----------
   robot_radius_m_ = declare_parameter<double>("robot_radius_m", 0.71);
   inflation_radius_m_ = declare_parameter<double>("inflation_radius_m", 0.90);
 
-  // =========================
-  // Behavior
-  // =========================
-  enable_clearing_ = declare_parameter<bool>("enable_clearing", true);
+  // ---------- 動作パラメータ ----------
   points_timeout_sec_ = declare_parameter<double>("points_timeout_sec", 0.2);
   tf_timeout_ms_ = declare_parameter<int>("tf_timeout_ms", 50);
-
   publish_filtered_points_ = declare_parameter<bool>("publish_filtered_points", true);
-  publish_local_in_map_ = declare_parameter<bool>("publish_local_in_map", true);
   max_debug_points_ = declare_parameter<int>("max_debug_points", 20000);
 
-  // =========================
-  // Local grid init
-  // =========================
+  // ---------- ローカルグリッド初期化 ----------
+  // 幅・高さをセル数に変換し、全セルを FREE で埋める
   size_x_ = static_cast<int>(std::round(local_width_m_ / resolution_m_));
   size_y_ = static_cast<int>(std::round(local_height_m_ / resolution_m_));
   if (size_x_ <= 0 || size_y_ <= 0) {
     throw std::runtime_error("Invalid local grid size. Check local_width/height/resolution.");
   }
-  local_grid_.assign(size_x_ * size_y_, UNKNOWN);
+  local_grid_.assign(size_x_ * size_y_, FREE);
 
-  // =========================
-  // Sub/Pub
-  // =========================
+  // ---------- インフレーションカーネルの事前計算 ----------
+  // ロボットから inflation_radius_m_ 以内のセルに対してコスト値を計算し、
+  // テーブルに保存しておく。毎サイクルはこのテーブルを走査するだけで済む
+  min_range_sq_ = min_range_m_ * min_range_m_;
+  max_range_sq_ = max_range_m_ * max_range_m_;
+  {
+    const int r_infl = static_cast<int>(std::ceil(inflation_radius_m_ / resolution_m_));
+    const double infl_sq = inflation_radius_m_ * inflation_radius_m_;
+    const double robot_sq = robot_radius_m_ * robot_radius_m_;
+    const double range_diff = inflation_radius_m_ - robot_radius_m_;
+
+    for (int dy = -r_infl; dy <= r_infl; ++dy) {
+      for (int dx = -r_infl; dx <= r_infl; ++dx) {
+        // 自分自身のセルはスキップ（occupied で既に LETHAL）
+        if (dx == 0 && dy == 0) {continue;}
+
+        const double dist_sq = (dx * dx + dy * dy) * resolution_m_ * resolution_m_;
+        if (dist_sq > infl_sq) {continue;}
+
+        int8_t cost;
+        if (dist_sq <= robot_sq) {
+          // ロボット半径以内 → 致命的コスト
+          cost = LETHAL;
+        } else {
+          // ロボット半径〜インフレーション半径 → 線形減衰コスト
+          const double dist = std::sqrt(dist_sq);
+          const double t = (inflation_radius_m_ - dist) / range_diff;
+          cost = static_cast<int8_t>(std::round(t * (LETHAL - 1)));
+        }
+        inflation_kernel_.push_back({dx, dy, cost});
+      }
+    }
+  }
+
+  // 再利用バッファの初期容量を確保（ヒープ再確保を抑制）
+  voxel_used_.reserve(50000);
+  occ_cells_.reserve(2048);
+
+  // ---------- サブスクライバ / パブリッシャ ----------
   sub_points_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     points_in_topic_, rclcpp::SensorDataQoS(),
     std::bind(&CostmapBuildNode::onPoints, this, std::placeholders::_1));
 
-  // globalは “最後の1枚を保持して欲しい” ことが多いので transient_local を推奨
-  // 送信側QoSと合わない場合はここを変更
-  auto global_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
-  sub_global_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
-    global_topic_, global_qos,
-    std::bind(&CostmapBuildNode::onGlobal, this, std::placeholders::_1));
-
   pub_local_ = create_publisher<nav_msgs::msg::OccupancyGrid>(local_topic_, 10);
-  pub_fused_ = create_publisher<nav_msgs::msg::OccupancyGrid>(fused_topic_, 10);
-
   pub_points_filt_ =
     create_publisher<sensor_msgs::msg::PointCloud2>(points_filt_topic_, rclcpp::SensorDataQoS());
-  pub_local_in_map_ = create_publisher<nav_msgs::msg::OccupancyGrid>(local_in_map_topic_, 10);
 
-  // update timer（ここで点群処理→local→fusion をまとめて回す）
+  // ---------- 更新タイマー ----------
   const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, update_hz_));
   timer_ = create_wall_timer(period, std::bind(&CostmapBuildNode::onUpdate, this));
 
@@ -121,52 +135,52 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
     size_x_, size_y_, resolution_m_, local_width_m_, local_height_m_);
 }
 
+// ===========================================================================
+// 点群受信コールバック
+// 受信した点群を保持し、受信時刻を記録する
+// ===========================================================================
 void CostmapBuildNode::onPoints(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
   last_points_ = msg;
-  // last_points_stamp_ = msg->header.stamp;
   last_points_stamp_ = this->now();
 }
 
-void CostmapBuildNode::onGlobal(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
-{
-  global_map_ = msg;
-}
-
+// ===========================================================================
+// コストマップ更新メインループ（タイマーコールバック）
+// 毎サイクル:
+//   ロボ位置取得 → 点群鮮度確認 → odom変換 → フィルタ → マーク → 膨張 → 配信
+// ===========================================================================
 void CostmapBuildNode::onUpdate()
 {
-  // ---------- 0) ロボ位置（odom<-base_link）を取得して rolling window 原点更新 ----------
+  // --- ロボット位置を取得してローリングウィンドウの原点を更新 ---
   double robot_x = 0.0, robot_y = 0.0;
   if (!get2DTranslation(odom_frame_, base_frame_, robot_x, robot_y)) {
-    return;
+    return;  // TFが取れなければ何もしない
   }
-
   local_origin_x_ = robot_x - local_width_m_ * 0.5;
   local_origin_y_ = robot_y - local_height_m_ * 0.5;
 
-  // ---------- 1) 点群鮮度チェック ----------
+  // --- 点群の鮮度チェック ---
+  // 点群がまだ来ていない、またはタイムアウトしている場合は
+  // グリッドを更新せずにそのまま配信する（安全側に倒す）
   if (!last_points_) {
     publishLocal();
-    publishFused();
     return;
   }
   const double age = (this->now() - last_points_stamp_).seconds();
   if (age > points_timeout_sec_) {
-    // 点群が止まった時に地図を消すと危険なので「更新しない」方が安全
     publishLocal();
-    publishFused();
     return;
   }
 
-  // ---------- 2) 点群を odom に変換 ----------
+  // --- 点群を odom フレームに座標変換 ---
   sensor_msgs::msg::PointCloud2 points_odom;
   if (!transformPointCloudToFrame(*last_points_, odom_frame_, points_odom)) {
     publishLocal();
-    publishFused();
     return;
   }
 
-  // ---------- 3) センサ原点（clearingの始点） ----------
+  // --- センサ原点の取得（距離フィルタの基準点） ---
   double sensor_x = robot_x, sensor_y = robot_y;
   if (!lidar_frame_.empty()) {
     double lx, ly;
@@ -176,14 +190,14 @@ void CostmapBuildNode::onUpdate()
     }
   }
 
-  // ---------- 4) local grid を毎回 unknown にリセット（最初はこれが一番デバッグ容易） ----------
-  std::fill(local_grid_.begin(), local_grid_.end(), UNKNOWN);
+  // --- グリッドを全セルFREEにリセット ---
+  std::fill(local_grid_.begin(), local_grid_.end(), FREE);
+  occ_cells_.clear();
 
-  // ---------- 5) voxel set（leafごとに1点だけ採用） ----------
-  std::unordered_set<VoxelKey, VoxelKeyHash> voxel_used;
-  voxel_used.reserve(50000);
+  // --- ボクセル重複排除セットをクリア（バケット配列は再利用） ---
+  voxel_used_.clear();
 
-  // デバッグ用フィルタ後点群（上限付き）
+  // --- デバッグ用フィルタ後点群バッファ ---
   std::vector<float> dbg_x, dbg_y, dbg_z;
   if (publish_filtered_points_) {
     dbg_x.reserve(10000);
@@ -191,30 +205,30 @@ void CostmapBuildNode::onUpdate()
     dbg_z.reserve(10000);
   }
 
-  // fieldsチェック（x/y/zが無い点群は扱えない）
+  // --- PointCloud2 のフィールド確認 ---
   if (!hasField(points_odom, "x") || !hasField(points_odom, "y") || !hasField(points_odom, "z")) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "PointCloud2 has no x/y/z fields.");
     publishLocal();
-    publishFused();
     return;
   }
 
+  // --- 点群イテレータ ---
   sensor_msgs::PointCloud2ConstIterator<float> it_x(points_odom, "x");
   sensor_msgs::PointCloud2ConstIterator<float> it_y(points_odom, "y");
   sensor_msgs::PointCloud2ConstIterator<float> it_z(points_odom, "z");
 
-  // ---------- 6) 1点ずつフィルタ→costmap反映 ----------
+  // --- 1点ずつフィルタしてコストマップに反映 ---
   for (; it_x != it_x.end(); ++it_x, ++it_y, ++it_z) {
     const float x = *it_x;
     const float y = *it_y;
     const float z = *it_z;
 
-    // NaN/Inf除去
+    // NaN / Inf を除去
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
       continue;
     }
 
-    // Crop（ロボ近傍±crop_xy）
+    // XYクロップ: ロボット中心から ±crop_xy_m_ の範囲外は捨てる
     if (std::fabs(static_cast<double>(x) - robot_x) > crop_xy_m_) {
       continue;
     }
@@ -222,56 +236,51 @@ void CostmapBuildNode::onUpdate()
       continue;
     }
 
-    // Z
+    // 高さフィルタ: odom フレームでの Z 範囲外は捨てる
     if (z < min_z_m_ || z > max_z_m_) {
       continue;
     }
 
-    // Range
+    // 距離フィルタ: センサからの2D距離の二乗で比較（sqrt回避）
     const double dx = static_cast<double>(x) - sensor_x;
     const double dy = static_cast<double>(y) - sensor_y;
-    const double r = std::hypot(dx, dy);
-    if (r < min_range_m_ || r > max_range_m_) {
+    const double rsq = dx * dx + dy * dy;
+    if (rsq < min_range_sq_ || rsq > max_range_sq_) {
       continue;
     }
 
-    // Voxel（leafで整数格子化して重複排除）
-    const int32_t ix = static_cast<int32_t>(std::floor(static_cast<double>(x) / voxel_leaf_m_));
-    const int32_t iy = static_cast<int32_t>(std::floor(static_cast<double>(y) / voxel_leaf_m_));
-    const int32_t iz = static_cast<int32_t>(std::floor(static_cast<double>(z) / voxel_leaf_m_));
-    VoxelKey key{ix, iy, iz};
-    if (voxel_used.find(key) != voxel_used.end()) {
+    // ボクセルダウンサンプリング: 同一ボクセル内で最初の1点のみ通す
+    const int32_t vx = static_cast<int32_t>(std::floor(static_cast<double>(x) / voxel_leaf_m_));
+    const int32_t vy = static_cast<int32_t>(std::floor(static_cast<double>(y) / voxel_leaf_m_));
+    const int32_t vz = static_cast<int32_t>(std::floor(static_cast<double>(z) / voxel_leaf_m_));
+    if (!voxel_used_.emplace(VoxelKey{vx, vy, vz}).second) {
       continue;
     }
-    voxel_used.insert(key);
 
-    // debug点群に保存（上限あり）
+    // デバッグ点群に追加（上限付き）
     if (publish_filtered_points_ && static_cast<int>(dbg_x.size()) < max_debug_points_) {
       dbg_x.push_back(x);
       dbg_y.push_back(y);
       dbg_z.push_back(z);
     }
 
-    // clearing（射線上のunknownをfree化。occupiedは消さない）
-    if (enable_clearing_) {
-      raytraceFree(sensor_x, sensor_y, x, y);
-    }
-
-    // marking（終点をoccupied）
+    // セルを LETHAL にマーキング（occ_cells_ にも登録）
     setOccupied(x, y);
   }
 
-  // ---------- 7) inflation ----------
+  // --- 事前計算カーネルによるインフレーション ---
   applyInflation();
 
-  // ---------- 8) publish ----------
+  // --- コストマップ配信 ---
   publishLocal();
   if (publish_filtered_points_) {
     publishFilteredPoints(dbg_x, dbg_y, dbg_z);
   }
-  publishFused();
 }
 
+// ===========================================================================
+// PointCloud2 に指定名フィールドが含まれるか確認する
+// ===========================================================================
 bool CostmapBuildNode::hasField(
   const sensor_msgs::msg::PointCloud2 & cloud,
   const std::string & name) const
@@ -284,6 +293,10 @@ bool CostmapBuildNode::hasField(
   return false;
 }
 
+// ===========================================================================
+// 2フレーム間の2D並進ベクトル (x, y) をTFから取得する
+// 取得できなかった場合は false を返す
+// ===========================================================================
 bool CostmapBuildNode::get2DTranslation(
   const std::string & target, const std::string & source,
   double & x, double & y)
@@ -303,6 +316,10 @@ bool CostmapBuildNode::get2DTranslation(
   }
 }
 
+// ===========================================================================
+// 点群全体を指定フレームに座標変換する
+// tf2::doTransform を使用し、失敗した場合は false を返す
+// ===========================================================================
 bool CostmapBuildNode::transformPointCloudToFrame(
   const sensor_msgs::msg::PointCloud2 & in,
   const std::string & target_frame,
@@ -323,6 +340,10 @@ bool CostmapBuildNode::transformPointCloudToFrame(
   }
 }
 
+// ===========================================================================
+// ワールド座標 → ローカルグリッドのセル座標変換
+// グリッド外の場合は false を返す
+// ===========================================================================
 bool CostmapBuildNode::worldToLocalCell(double wx, double wy, int & ix, int & iy) const
 {
   const double gx = (wx - local_origin_x_) / resolution_m_;
@@ -332,6 +353,10 @@ bool CostmapBuildNode::worldToLocalCell(double wx, double wy, int & ix, int & iy
   return 0 <= ix && ix < size_x_ && 0 <= iy && iy < size_y_;
 }
 
+// ===========================================================================
+// 指定ワールド座標のセルを致命的障害物 (LETHAL) にマーキングし、
+// 占有セル一覧 (occ_cells_) にインデックスを登録する
+// ===========================================================================
 void CostmapBuildNode::setOccupied(double wx, double wy)
 {
   int ix, iy;
@@ -339,147 +364,31 @@ void CostmapBuildNode::setOccupied(double wx, double wy)
     return;
   }
   local_grid_[lidx(ix, iy)] = LETHAL;
+  occ_cells_.emplace_back(ix, iy);
 }
 
-void CostmapBuildNode::raytraceFree(double sx, double sy, double ex, double ey)
-{
-  int x0, y0, x1, y1;
-  if (!worldToLocalCell(sx, sy, x0, y0)) {
-    return;
-  }
-
-  if (!worldToLocalCell(ex, ey, x1, y1)) {
-    // Clip the ray to the rolling window so clearing still happens inside it.
-    const double min_x = local_origin_x_;
-    const double min_y = local_origin_y_;
-    const double max_x = local_origin_x_ + size_x_ * resolution_m_;
-    const double max_y = local_origin_y_ + size_y_ * resolution_m_;
-    const double dx = ex - sx;
-    const double dy = ey - sy;
-    double t0 = 0.0;
-    double t1 = 1.0;
-
-    auto clip = [&](double p, double q) -> bool {
-      if (p == 0.0) {
-        return q >= 0.0;
-      }
-      const double r = q / p;
-      if (p < 0.0) {
-        if (r > t1) {
-          return false;
-        }
-        if (r > t0) {
-          t0 = r;
-        }
-      } else {
-        if (r < t0) {
-          return false;
-        }
-        if (r < t1) {
-          t1 = r;
-        }
-      }
-      return true;
-    };
-
-    if (!clip(-dx, sx - min_x) || !clip(dx, max_x - sx) ||
-        !clip(-dy, sy - min_y) || !clip(dy, max_y - sy)) {
-      return;
-    }
-
-    double ex_clipped = sx + t1 * dx;
-    double ey_clipped = sy + t1 * dy;
-    // Avoid landing exactly on the max boundary (floor would go out of range).
-    ex_clipped = std::min(std::max(ex_clipped, min_x), max_x - 1e-6);
-    ey_clipped = std::min(std::max(ey_clipped, min_y), max_y - 1e-6);
-
-    if (!worldToLocalCell(ex_clipped, ey_clipped, x1, y1)) {
-      return;
-    }
-  }
-
-  int dx = std::abs(x1 - x0);
-  int dy = std::abs(y1 - y0);
-  int sx_step = (x0 < x1) ? 1 : -1;
-  int sy_step = (y0 < y1) ? 1 : -1;
-  int err = dx - dy;
-
-  int x = x0, y = y0;
-  while (!(x == x1 && y == y1)) {
-    auto & cell = local_grid_[lidx(x, y)];
-    if (cell == UNKNOWN) {
-      cell = FREE;  // occupiedは消さない
-    }
-    int e2 = 2 * err;
-    if (e2 > -dy) {
-      err -= dy;
-      x += sx_step;
-    }
-    if (e2 < dx) {
-      err += dx;
-      y += sy_step;
-    }
-
-    if (x < 0 || y < 0 || x >= size_x_ || y >= size_y_) {
-      break;
-    }
-  }
-}
-
+// ===========================================================================
+// インフレーション処理
+// occ_cells_ に登録された各占有セルに対し、事前計算済みカーネル
+// (inflation_kernel_) を適用して周囲のセルにコスト値を書き込む
+// 同一セルに複数の影響がある場合は最大値を採用する
+// ===========================================================================
 void CostmapBuildNode::applyInflation()
 {
-  const int r_infl = static_cast<int>(std::ceil(inflation_radius_m_ / resolution_m_));
-  if (r_infl <= 0) {
-    return;
-  }
-
-  // occupiedセルを列挙
-  std::vector<std::pair<int, int>> occ;
-  occ.reserve(1024);
-  for (int y = 0; y < size_y_; ++y) {
-    for (int x = 0; x < size_x_; ++x) {
-      if (local_grid_[lidx(x, y)] == LETHAL) {
-        occ.emplace_back(x, y);
-      }
-    }
-  }
-
-  // 各occupied周りを塗る（ナイーブ版）
-  for (const auto & c : occ) {
-    const int cx = c.first, cy = c.second;
-
-    const int x_min = std::max(0, cx - r_infl);
-    const int x_max = std::min(size_x_ - 1, cx + r_infl);
-    const int y_min = std::max(0, cy - r_infl);
-    const int y_max = std::min(size_y_ - 1, cy + r_infl);
-
-    for (int y = y_min; y <= y_max; ++y) {
-      for (int x = x_min; x <= x_max; ++x) {
-        const double dist = std::hypot(x - cx, y - cy) * resolution_m_;
-        if (dist > inflation_radius_m_) {
-          continue;
-        }
-
-        if (dist <= robot_radius_m_) {
-          local_grid_[lidx(x, y)] = LETHAL;
-          continue;
-        }
-
-        // 線形減衰（指数にしたければここを変更）
-        const double t = (inflation_radius_m_ - dist) / (inflation_radius_m_ - robot_radius_m_);
-        const int cost = static_cast<int>(std::round(t * (LETHAL - 1)));  // 1..99
-
-        auto & cell = local_grid_[lidx(x, y)];
-        if (cell == UNKNOWN) {
-          cell = static_cast<int8_t>(cost);
-        } else {
-          cell = std::max<int8_t>(cell, static_cast<int8_t>(cost));
-        }
-      }
+  for (const auto & [cx, cy] : occ_cells_) {
+    for (const auto & k : inflation_kernel_) {
+      const int nx = cx + k.dx;
+      const int ny = cy + k.dy;
+      if (nx < 0 || nx >= size_x_ || ny < 0 || ny >= size_y_) {continue;}
+      auto & cell = local_grid_[lidx(nx, ny)];
+      cell = std::max(cell, k.cost);
     }
   }
 }
 
+// ===========================================================================
+// ローカルコストマップを OccupancyGrid メッセージとしてパブリッシュする
+// ===========================================================================
 void CostmapBuildNode::publishLocal()
 {
   nav_msgs::msg::OccupancyGrid msg;
@@ -499,6 +408,10 @@ void CostmapBuildNode::publishLocal()
   pub_local_->publish(msg);
 }
 
+// ===========================================================================
+// フィルタ後の点群をデバッグ用にパブリッシュする
+// xyz のみの PointCloud2 を構築して配信する
+// ===========================================================================
 void CostmapBuildNode::publishFilteredPoints(
   const std::vector<float> & xs,
   const std::vector<float> & ys,
@@ -524,95 +437,11 @@ void CostmapBuildNode::publishFilteredPoints(
   pub_points_filt_->publish(cloud);
 }
 
-void CostmapBuildNode::publishFused()
-{
-  if (!global_map_) {
-    return;
-  }
-
-  const auto & G = *global_map_;
-
-  // map<-odom TF
-  geometry_msgs::msg::TransformStamped tf_map_odom;
-  try {
-    tf_map_odom = tf_buffer_.lookupTransform(
-      map_frame_, odom_frame_, tf2::TimePointZero,
-      std::chrono::milliseconds(tf_timeout_ms_));
-  } catch (const tf2::TransformException & ex) {
-    RCLCPP_WARN_THROTTLE(
-      get_logger(), *get_clock(), 2000, "TF failed (%s <- %s): %s",
-      map_frame_.c_str(), odom_frame_.c_str(), ex.what());
-    return;
-  }
-
-  // 2D変換：yaw + translation だけ使う（local->map投影には十分）
-  const auto & q = tf_map_odom.transform.rotation;
-  const double siny_cosp = 2.0 * (q.w * q.z + q.x * q.y);
-  const double cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
-  const double yaw = std::atan2(siny_cosp, cosy_cosp);
-  const double c = std::cos(yaw);
-  const double s = std::sin(yaw);
-  const auto & t = tf_map_odom.transform.translation;
-
-  // fused = global copy
-  nav_msgs::msg::OccupancyGrid fused = G;
-  fused.header.stamp = now();
-
-  nav_msgs::msg::OccupancyGrid local_in_map;
-  if (publish_local_in_map_) {
-    local_in_map = G;
-    local_in_map.header.stamp = now();
-    std::fill(local_in_map.data.begin(), local_in_map.data.end(), UNKNOWN);
-  }
-
-  const double gres = G.info.resolution;
-  const double g_origin_x = G.info.origin.position.x;
-  const double g_origin_y = G.info.origin.position.y;
-  const int gW = static_cast<int>(G.info.width);
-  const int gH = static_cast<int>(G.info.height);
-
-  for (int ly = 0; ly < size_y_; ++ly) {
-    for (int lx = 0; lx < size_x_; ++lx) {
-      const int8_t L = local_grid_[lidx(lx, ly)];
-      if (L == UNKNOWN) {
-        continue;
-      }
-
-      // localセル中心（odom）
-      const double x_odom = local_origin_x_ + (lx + 0.5) * resolution_m_;
-      const double y_odom = local_origin_y_ + (ly + 0.5) * resolution_m_;
-
-      // mapへ投影
-      const double x_map = c * x_odom - s * y_odom + t.x;
-      const double y_map = s * x_odom + c * y_odom + t.y;
-
-      // global index
-      const int gx = static_cast<int>(std::floor((x_map - g_origin_x) / gres));
-      const int gy = static_cast<int>(std::floor((y_map - g_origin_y) / gres));
-      if (gx < 0 || gy < 0 || gx >= gW || gy >= gH) {
-        continue;
-      }
-
-      const int gidx = gy * gW + gx;
-
-      // 合成（unknownルール + max）
-      const int8_t Gv = fused.data[gidx];
-      fused.data[gidx] = (Gv == UNKNOWN) ? L : std::max<int8_t>(Gv, L);
-
-      if (publish_local_in_map_) {
-        local_in_map.data[gidx] = L;
-      }
-    }
-  }
-
-  pub_fused_->publish(fused);
-  if (publish_local_in_map_) {
-    pub_local_in_map_->publish(local_in_map);
-  }
-}
-
 }  // namespace core_costmap_builder
 
+// ===========================================================================
+// エントリポイント
+// ===========================================================================
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
