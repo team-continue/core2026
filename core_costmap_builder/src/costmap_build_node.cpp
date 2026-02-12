@@ -64,6 +64,16 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   robot_radius_m_ = declare_parameter<double>("robot_radius_m", 0.71);
   inflation_radius_m_ = declare_parameter<double>("inflation_radius_m", 0.90);
 
+  // inflation_radius_m_ が robot_radius_m_ 以下だと range_diff が 0 以下になり
+  // ゼロ除算が発生するため、最低でも 1 セル分の余裕を持たせる
+  if (inflation_radius_m_ <= robot_radius_m_) {
+    inflation_radius_m_ = robot_radius_m_ + resolution_m_;
+    RCLCPP_WARN(get_logger(),
+      "inflation_radius_m (%.3f) <= robot_radius_m (%.3f): "
+      "auto-corrected to %.3f",
+      inflation_radius_m_ - resolution_m_, robot_radius_m_, inflation_radius_m_);
+  }
+
   // ---------- 動作パラメータ ----------
   points_timeout_sec_ = declare_parameter<double>("points_timeout_sec", 0.2);
   tf_timeout_ms_ = declare_parameter<int>("tf_timeout_ms", 50);
