@@ -138,6 +138,14 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
 // ===========================================================================
 // 点群受信コールバック
 // 受信した点群を保持し、受信時刻を記録する
+//
+// 注意: last_points_stamp_ には this->now() を使用する
+// 理由: Livox Mid-360 ドライバは msg->header.stamp にデバイス起動時刻起算の
+//       タイムスタンプ（例: sec: 4550 ≈ 75分）を設定するため、システム時刻
+//       this->now()（例: sec: 1.77×10⁹ ≈ 2026年）との差分が約56年になる。
+//       msg->header.stamp を使用すると、鮮度判定で常にタイムアウト扱いとなり
+//       点群が利用できなくなる。this->now() で「データ受信時刻」を記録する
+//       ことで正しく動作する。
 // ===========================================================================
 void CostmapBuildNode::onPoints(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
