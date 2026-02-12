@@ -68,7 +68,8 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   // ゼロ除算が発生するため、最低でも 1 セル分の余裕を持たせる
   if (inflation_radius_m_ <= robot_radius_m_) {
     inflation_radius_m_ = robot_radius_m_ + resolution_m_;
-    RCLCPP_WARN(get_logger(),
+    RCLCPP_WARN(
+      get_logger(),
       "inflation_radius_m (%.3f) <= robot_radius_m (%.3f): "
       "auto-corrected to %.3f",
       inflation_radius_m_ - resolution_m_, robot_radius_m_, inflation_radius_m_);
