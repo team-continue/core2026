@@ -91,6 +91,12 @@ private:
   /// @brief PointCloud2 に指定名のフィールドが存在するか確認する
   bool hasField(const sensor_msgs::msg::PointCloud2 & cloud, const std::string & name) const;
 
+  /// @brief 点群をフィルタリングし、通過した点をグリッドにマーキング・デバッグ配信する
+  void filterAndMarkPoints(
+    const sensor_msgs::msg::PointCloud2 & cloud,
+    double sensor_x, double sensor_y,
+    double robot_x, double robot_y);
+
   // --- グリッド操作 ---
 
   /// @brief ワールド座標 (wx, wy) をローカルグリッドのセル座標に変換する

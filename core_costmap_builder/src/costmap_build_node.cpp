@@ -166,28 +166,17 @@ void CostmapBuildNode::onPoints(const sensor_msgs::msg::PointCloud2::SharedPtr m
 
 // ===========================================================================
 // コストマップ更新メインループ（タイマーコールバック）
-// 毎サイクル:
-//   ロボ位置取得 → 点群鮮度確認 → odom変換 → フィルタ → マーク → 膨張 → 配信
 // ===========================================================================
 void CostmapBuildNode::onUpdate()
 {
-  // --- ロボット位置を取得してローリングウィンドウの原点を更新 ---
+  // --- ロボット位置を取得しローリングウィンドウ原点を更新 ---
   double robot_x = 0.0, robot_y = 0.0;
-  if (!get2DTranslation(odom_frame_, base_frame_, robot_x, robot_y)) {
-    return;  // TFが取れなければ何もしない
-  }
+  if (!get2DTranslation(odom_frame_, base_frame_, robot_x, robot_y)) {return;}
   local_origin_x_ = robot_x - local_width_m_ * 0.5;
   local_origin_y_ = robot_y - local_height_m_ * 0.5;
 
-  // --- 点群の鮮度チェック ---
-  // 点群がまだ来ていない、またはタイムアウトしている場合は
-  // グリッドを更新せずにそのまま配信する（安全側に倒す）
-  if (!last_points_) {
-    publishLocal();
-    return;
-  }
-  const double age = (this->now() - last_points_stamp_).seconds();
-  if (age > points_timeout_sec_) {
+  // --- 点群鮮度チェック（未受信 or タイムアウト → グリッド更新なしで配信） ---
+  if (!last_points_ || (this->now() - last_points_stamp_).seconds() > points_timeout_sec_) {
     publishLocal();
     return;
   }
@@ -199,24 +188,37 @@ void CostmapBuildNode::onUpdate()
     return;
   }
 
-  // --- センサ原点の取得（距離フィルタの基準点） ---
+  // --- センサ原点取得（get2DTranslation 失敗時はロボット位置をフォールバック） ---
   double sensor_x = robot_x, sensor_y = robot_y;
   if (!lidar_frame_.empty()) {
-    double lx, ly;
-    if (get2DTranslation(odom_frame_, lidar_frame_, lx, ly)) {
-      sensor_x = lx;
-      sensor_y = ly;
-    }
+    get2DTranslation(odom_frame_, lidar_frame_, sensor_x, sensor_y);
   }
 
-  // --- グリッドを全セルFREEにリセット ---
+  // --- グリッドリセット → フィルタ＆マーク → 膨張 → 配信 ---
   std::fill(local_grid_.begin(), local_grid_.end(), FREE);
   occ_cells_.clear();
-
-  // --- ボクセル重複排除セットをクリア（バケット配列は再利用） ---
   voxel_used_.clear();
 
-  // --- デバッグ用フィルタ後点群バッファ ---
+  filterAndMarkPoints(points_odom, sensor_x, sensor_y, robot_x, robot_y);
+  applyInflation();
+  publishLocal();
+}
+
+// ===========================================================================
+// 点群フィルタリング＆マーキング
+// クロップ / 高さ / 距離 / ボクセル重複を適用し、通過した点を LETHAL にマーキング
+// ===========================================================================
+void CostmapBuildNode::filterAndMarkPoints(
+  const sensor_msgs::msg::PointCloud2 & cloud,
+  double sensor_x, double sensor_y,
+  double robot_x, double robot_y)
+{
+  if (!hasField(cloud, "x") || !hasField(cloud, "y") || !hasField(cloud, "z")) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "PointCloud2 has no x/y/z fields.");
+    return;
+  }
+
+  // デバッグ用フィルタ後点群バッファ
   std::vector<float> dbg_x, dbg_y, dbg_z;
   if (publish_filtered_points_) {
     dbg_x.reserve(10000);
@@ -224,74 +226,47 @@ void CostmapBuildNode::onUpdate()
     dbg_z.reserve(10000);
   }
 
-  // --- PointCloud2 のフィールド確認 ---
-  if (!hasField(points_odom, "x") || !hasField(points_odom, "y") || !hasField(points_odom, "z")) {
-    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "PointCloud2 has no x/y/z fields.");
-    publishLocal();
-    return;
-  }
+  sensor_msgs::PointCloud2ConstIterator<float> it_x(cloud, "x");
+  sensor_msgs::PointCloud2ConstIterator<float> it_y(cloud, "y");
+  sensor_msgs::PointCloud2ConstIterator<float> it_z(cloud, "z");
 
-  // --- 点群イテレータ ---
-  sensor_msgs::PointCloud2ConstIterator<float> it_x(points_odom, "x");
-  sensor_msgs::PointCloud2ConstIterator<float> it_y(points_odom, "y");
-  sensor_msgs::PointCloud2ConstIterator<float> it_z(points_odom, "z");
-
-  // --- 1点ずつフィルタしてコストマップに反映 ---
   for (; it_x != it_x.end(); ++it_x, ++it_y, ++it_z) {
     const float x = *it_x;
     const float y = *it_y;
     const float z = *it_z;
 
-    // NaN / Inf を除去
-    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
-      continue;
-    }
+    // NaN / Inf 除去
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {continue;}
 
-    // XYクロップ: ロボット中心から ±crop_xy_m_ の範囲外は捨てる
-    if (std::fabs(static_cast<double>(x) - robot_x) > crop_xy_m_) {
-      continue;
-    }
-    if (std::fabs(static_cast<double>(y) - robot_y) > crop_xy_m_) {
-      continue;
-    }
+    // XYクロップ
+    if (std::fabs(static_cast<double>(x) - robot_x) > crop_xy_m_) {continue;}
+    if (std::fabs(static_cast<double>(y) - robot_y) > crop_xy_m_) {continue;}
 
-    // 高さフィルタ: odom フレームでの Z 範囲外は捨てる
-    if (z < min_z_m_ || z > max_z_m_) {
-      continue;
-    }
+    // 高さフィルタ
+    if (z < min_z_m_ || z > max_z_m_) {continue;}
 
-    // 距離フィルタ: センサからの2D距離の二乗で比較（sqrt回避）
+    // 距離フィルタ（二乗比較で sqrt 回避）
     const double dx = static_cast<double>(x) - sensor_x;
     const double dy = static_cast<double>(y) - sensor_y;
     const double rsq = dx * dx + dy * dy;
-    if (rsq < min_range_sq_ || rsq > max_range_sq_) {
-      continue;
-    }
+    if (rsq < min_range_sq_ || rsq > max_range_sq_) {continue;}
 
-    // ボクセルダウンサンプリング: 同一ボクセル内で最初の1点のみ通す
+    // ボクセルダウンサンプリング
     const int32_t vx = static_cast<int32_t>(std::floor(static_cast<double>(x) / voxel_leaf_m_));
     const int32_t vy = static_cast<int32_t>(std::floor(static_cast<double>(y) / voxel_leaf_m_));
     const int32_t vz = static_cast<int32_t>(std::floor(static_cast<double>(z) / voxel_leaf_m_));
-    if (!voxel_used_.emplace(VoxelKey{vx, vy, vz}).second) {
-      continue;
-    }
+    if (!voxel_used_.emplace(VoxelKey{vx, vy, vz}).second) {continue;}
 
-    // デバッグ点群に追加（上限付き）
+    // デバッグ点群（上限付き）
     if (publish_filtered_points_ && static_cast<int>(dbg_x.size()) < max_debug_points_) {
       dbg_x.push_back(x);
       dbg_y.push_back(y);
       dbg_z.push_back(z);
     }
 
-    // セルを LETHAL にマーキング（occ_cells_ にも登録）
     setOccupied(x, y);
   }
 
-  // --- 事前計算カーネルによるインフレーション ---
-  applyInflation();
-
-  // --- コストマップ配信 ---
-  publishLocal();
   if (publish_filtered_points_) {
     publishFilteredPoints(dbg_x, dbg_y, dbg_z);
   }
@@ -304,12 +279,11 @@ bool CostmapBuildNode::hasField(
   const sensor_msgs::msg::PointCloud2 & cloud,
   const std::string & name) const
 {
-  for (const auto & f : cloud.fields) {
-    if (f.name == name) {
-      return true;
-    }
-  }
-  return false;
+  return std::any_of(
+    cloud.fields.begin(), cloud.fields.end(),
+    [&name](const auto & f) {
+      return f.name == name;
+    });
 }
 
 // ===========================================================================
