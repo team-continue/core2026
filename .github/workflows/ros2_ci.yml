@@ -34,20 +34,26 @@ jobs:
         with:
           path: ros2_ws/src/${{ github.event.repository.name }}
 
+      - name: Remove CodeQL duplicated source roots
+        run: |
+          find ros2_ws -type d -name '_codeql_detected_source_root' -prune -exec rm -rf '{}' +
+
       - name: Install dependencies
         run: |
-          rosdep update &&
-          apt-get update &&
-          rosdep install --from-path ros2_ws/src -i -y --rosdistro ${{ matrix.rosdistro }}
+          apt-get update
+          rosdep update
+          rosdep install --from-paths ros2_ws/src --ignore-src -r -y --rosdistro ${{ matrix.rosdistro }}
 
       - name: Install diagnostic-updater
-        run: apt-get install ros-${{ matrix.rosdistro }}-diagnostic-updater
+        run: |
+          apt-get update
+          apt-get install -y ros-${{ matrix.rosdistro }}-diagnostic-updater
 
       - name: Build tests
         id: build_test
         run: |
-          . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
-          colcon build --base-paths ros2_ws
+          . /opt/ros/${{ matrix.rosdistro }}/setup.sh
+          colcon build --base-paths ros2_ws/src
         continue-on-error: true
 
       - name: build_test command success
@@ -61,8 +67,8 @@ jobs:
       - name: Run tests
         id: run_test
         run: |
-          . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
-          colcon test --base-paths ros2_ws &&
+          . /opt/ros/${{ matrix.rosdistro }}/setup.sh
+          colcon test --base-paths ros2_ws/src
           colcon test-result --verbose
         continue-on-error: true
 
