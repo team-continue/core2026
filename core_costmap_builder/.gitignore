@@ -1,2 +1,1 @@
-.vscode
-AGENTS.md
+launch/costmap_full.launch.py
