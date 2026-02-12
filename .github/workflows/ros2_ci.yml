@@ -32,7 +32,8 @@ jobs:
       - name: Setup ROS2 workspace
         run: |
           mkdir -p /ros2_ws/src
-          ln -s $GITHUB_WORKSPACE /ros2_ws/src/core2026
+          cp -r $GITHUB_WORKSPACE /ros2_ws/src/core2026
+          find /ros2_ws/src -name '_codeql*' -exec rm -rf {} + 2>/dev/null || true
 
       - name: Install dependencies
         run: |
