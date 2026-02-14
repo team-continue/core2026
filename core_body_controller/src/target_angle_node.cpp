@@ -12,7 +12,7 @@ class PID {
   float dt_;
   float error_prev_;
 
- public:
+public:
   PID(float kp, float ki, float dt) : dt_(dt), error_prev_(0.0) {
     reset();
     setGain(kp, ki);
@@ -56,10 +56,10 @@ class PID {
 };
 
 class TargetAngleNode : public rclcpp::Node {
- public:
+public:
   TargetAngleNode();
 
- private:
+private:
   // rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr target_angle_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rotation_pub_;
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
@@ -70,18 +70,15 @@ class TargetAngleNode : public rclcpp::Node {
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr body_target_angle_pub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr body_omega_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
-      joint_state_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rotation_flag_pub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_stop_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr target_omega_pub_;
 
   constexpr static double MAX_ROTATION = M_PI * 10;
-  constexpr static std::chrono::milliseconds TIMER_PERIOD =
-      std::chrono::milliseconds(100);
+  constexpr static std::chrono::milliseconds TIMER_PERIOD = std::chrono::milliseconds(100);
 
-  PID pid_ = PID(2.595048087059986, 0.0,
-                 std::chrono::duration<double>(TIMER_PERIOD).count());
+  PID pid_ = PID(2.595048087059986, 0.0, std::chrono::duration<double>(TIMER_PERIOD).count());
   double gimbalControl();
 
   constexpr static double INITIAL_TARGET_ANGLE = -1.90;
@@ -94,7 +91,7 @@ class TargetAngleNode : public rclcpp::Node {
   double latest_imu_yaw_ = 0;
   double latest_body_omega_ = 0;
   double latest_body_angle_ = 0;
-  bool emergency_stop_flag_ = false;
+  bool emergency_stop_flag_ = true;
   geometry_msgs::msg::Twist latest_twist_;
 
   double calc_nearlest_target_angle(double current_angle) {
@@ -148,8 +145,7 @@ TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
       "cmd_vel", 10, [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
         latest_twist_ = *msg;
       });
-  timer_ = this->create_wall_timer(
-      TIMER_PERIOD, std::bind(&TargetAngleNode::timer_callback, this));
+  timer_ = this->create_wall_timer(TIMER_PERIOD, std::bind(&TargetAngleNode::timer_callback, this));
   can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx", 10);
   imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
       "imu", 10, [this](const sensor_msgs::msg::Imu::SharedPtr msg) {
@@ -161,43 +157,34 @@ TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
         latest_imu_yaw_ = atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
         // RCLCPP_INFO(this->get_logger(), "yaw: %f", latest_imu_yaw_);
       });
-  body_target_angle_pub_ =
-      this->create_publisher<std_msgs::msg::Float64>("body_target_angle", 10);
+  body_target_angle_pub_ = this->create_publisher<std_msgs::msg::Float64>("body_target_angle", 10);
   body_omega_sub_ = this->create_subscription<std_msgs::msg::Float64>(
       "body_omega", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) {
         latest_body_omega_ = msg->data;
       });
   joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-      "joint_states", 10,
-      [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
+      "joint_states", 10, [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
         latest_body_angle_ = msg->position[4];
       });
-  rotation_flag_pub_ =
-      this->create_publisher<std_msgs::msg::Bool>("rotation_flag", 10);
+  rotation_flag_pub_ = this->create_publisher<std_msgs::msg::Bool>("rotation_flag", 10);
   emergency_stop_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "/system/emergency/hazard_status", 10,
-      [this](const std_msgs::msg::Bool::SharedPtr msg) {
+      "/system/emergency/hazard_status", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
         emergency_stop_flag_ = msg->data;
       });
-  target_omega_pub_ =
-      this->create_publisher<std_msgs::msg::Float64>("target_omega", 10);
+  target_omega_pub_ = this->create_publisher<std_msgs::msg::Float64>("target_omega", 10);
 }
 
 double TargetAngleNode::gimbalControl() {
   if (rotation_flag_) {
     world_target_angle_ +=
         latest_twist_.angular.z *
-        std::chrono::duration_cast<std::chrono::duration<double>>(TIMER_PERIOD)
-            .count();
+        std::chrono::duration_cast<std::chrono::duration<double>>(TIMER_PERIOD).count();
     world_target_angle_ = fmod(world_target_angle_, 2 * M_PI);
-    RCLCPP_INFO(this->get_logger(), "world_target_angle_: %f",
-                world_target_angle_);
+    RCLCPP_INFO(this->get_logger(), "world_target_angle_: %f", world_target_angle_);
     RCLCPP_INFO(this->get_logger(), "latest_imu_yaw_: %f", latest_imu_yaw_);
-    return pid_.update(world_target_angle_ - latest_imu_yaw_, MAX_ROTATION) -
-           latest_body_omega_;
+    return pid_.update(world_target_angle_ - latest_imu_yaw_, MAX_ROTATION) - latest_body_omega_;
   } else {
-    RCLCPP_INFO(this->get_logger(), "body_target_angle_: %f",
-                body_target_angle_);
+    RCLCPP_INFO(this->get_logger(), "body_target_angle_: %f", body_target_angle_);
     return pid_.update(body_target_angle_ - latest_body_angle_, MAX_ROTATION);
   }
 }
@@ -208,7 +195,7 @@ void TargetAngleNode::timer_callback() {
   can_msg.array[0].id = 4;
   can_msg.array[0].data.push_back(3);
 
-  if (!emergency_stop_flag_) {
+  if (emergency_stop_flag_) {
     RCLCPP_ERROR(this->get_logger(), "Emergency stop flag is set");
     can_msg.array[0].data.push_back(0);
   } else {
@@ -236,7 +223,7 @@ void TargetAngleNode::timer_callback() {
   }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<TargetAngleNode>());
   rclcpp::shutdown();
