@@ -1,0 +1,2 @@
+std_msgs/Header header
+core_msgs/PoseWithWeight pose
