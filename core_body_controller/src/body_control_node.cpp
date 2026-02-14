@@ -79,7 +79,7 @@ void BodyControlNode::timer_callback() {
     cmd_vel_.angular.z = 0;
   }
 
-  if (!emergency_stop_flag_) {
+  if (emergency_stop_flag_) {
     RCLCPP_ERROR(this->get_logger(), "Emergency stop flag is set");
     emergency_stop();
     return;
@@ -117,7 +117,7 @@ void BodyControlNode::emergency_stop() {
   cmd_vel_.angular.x = 0;
   cmd_vel_.angular.y = 0;
   cmd_vel_.angular.z = 0;
-  emergency_stop_flag_ = false;
+  emergency_stop_flag_ = true;
   RCLCPP_INFO(this->get_logger(), "Emergency stop completed");
 }
 
@@ -142,15 +142,24 @@ std::vector<float> BodyControlNode::invert_kinematics_calc(
 
   // Standard mecanum wheel inverse kinematics
   // Wheel arrangement (looking from top):
+  //        x
   //   0 [/]  [\] 1
   //   3 [\]  [/] 2
   // Wheels at 45 degrees, using proper mecanum formulas
 
-  wheel_velocities[0] = (vx_body - vy_body - BODY_WIDTH * omega) / WHEEL_RADIUS;
-  wheel_velocities[1] = (vx_body + vy_body - BODY_WIDTH * omega) / WHEEL_RADIUS;
-  wheel_velocities[2] = (vx_body + vy_body - BODY_WIDTH * omega) / WHEEL_RADIUS;
-  wheel_velocities[3] = (vx_body - vy_body - BODY_WIDTH * omega) / WHEEL_RADIUS;
-
+  // invert kinematics for omni
+  wheel_velocities[0] =
+      (vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - BODY_WIDTH * omega) /
+      WHEEL_RADIUS;
+  wheel_velocities[1] =
+      (vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - BODY_WIDTH * omega) /
+      WHEEL_RADIUS;
+  wheel_velocities[2] =
+      (vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) /
+      WHEEL_RADIUS;
+  wheel_velocities[3] =
+      (vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) /
+      WHEEL_RADIUS;
   return wheel_velocities;
 }
 
