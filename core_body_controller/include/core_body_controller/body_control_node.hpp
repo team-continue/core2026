@@ -71,7 +71,7 @@ class BodyControlNode : public rclcpp::Node {
 
   geometry_msgs::msg::Twist cmd_vel_;
   geometry_msgs::msg::Twist latest_twist_;
-  bool emergency_stop_flag_ = false;
+  bool emergency_stop_flag_ = true;
   bool rotation_flag_ = false;
   float body_angle_ = 0;
   float body_target_angle_ = 0;
