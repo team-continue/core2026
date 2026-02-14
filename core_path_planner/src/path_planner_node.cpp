@@ -9,13 +9,13 @@ PathPlannerNode::PathPlannerNode(const rclcpp::NodeOptions& options)
       declare_parameter<std::string>("global_map_topic", "/map");
   local_costmap_topic_ =
       declare_parameter<std::string>("local_costmap_topic", "/local_costmap");
-  start_topic_ = declare_parameter<std::string>("start_topic", "/start");
-  goal_topic_ = declare_parameter<std::string>("goal_topic", "/goal");
+  start_topic_ = declare_parameter<std::string>("start_topic", "/start_pose");
+  goal_topic_ = declare_parameter<std::string>("goal_topic", "/goal_pose");
   path_topic_ = declare_parameter<std::string>("path_topic", "/planned_path");
   local_frame_id_ =
       declare_parameter<std::string>("local_frame_id", "chassis_link");
   occupied_threshold_ = declare_parameter<int>("occupied_threshold", 50);
-  allow_unknown_ = declare_parameter<bool>("allow_unknown", false);
+  allow_unknown_ = declare_parameter<bool>("allow_unknown", true);
   use_diagonal_ = declare_parameter<bool>("use_diagonal", true);
 
   global_map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
@@ -50,28 +50,34 @@ PathPlannerNode::PathPlannerNode(const rclcpp::NodeOptions& options)
 void PathPlannerNode::onGlobalMapReceived(
     const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
   global_map_ = *msg;
-  tryPlan();
+  RCLCPP_INFO(get_logger(), "Global map received");
+  // tryPlan();
 }
 
 void PathPlannerNode::onLocalCostmapReceived(
     const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
   planner_.setLocalCostmap(*msg);
+  RCLCPP_INFO(get_logger(), "Local costmap received");
   tryPlan();
 }
 
 void PathPlannerNode::onStartPoseReceived(
     const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
   start_pose_ = *msg;
+  RCLCPP_INFO(get_logger(), "Start pose received");
   tryPlan();
 }
 
 void PathPlannerNode::onGoalPoseReceived(
     const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
   goal_pose_ = *msg;
-  tryPlan();
+  RCLCPP_INFO(get_logger(), "Goal pose received");
+  // tryPlan();
 }
 
 void PathPlannerNode::tryPlan() {
+  RCLCPP_INFO(get_logger(), "Attempting to plan path");
+
   if (!global_map_.has_value() || !start_pose_.has_value() ||
       !goal_pose_.has_value()) {
     return;

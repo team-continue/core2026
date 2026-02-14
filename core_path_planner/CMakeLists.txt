@@ -22,6 +22,7 @@ ament_auto_find_build_dependencies()
 ament_auto_add_library(${PROJECT_NAME}_lib SHARED
   src/path_planner.cpp
   src/path_planner_node.cpp
+  src/costmap_publisher_node.cpp
 )
 
 # Executable that runs the path planner node
@@ -29,6 +30,12 @@ ament_auto_add_executable(path_planner_node
   src/node.cpp
 )
 target_link_libraries(path_planner_node ${PROJECT_NAME}_lib)
+
+# Executable that runs the costmap publisher node
+ament_auto_add_executable(costmap_publisher_node
+  src/costmap_publisher_main.cpp
+)
+target_link_libraries(costmap_publisher_node ${PROJECT_NAME}_lib)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
