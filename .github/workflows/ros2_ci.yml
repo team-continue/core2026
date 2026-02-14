@@ -51,32 +51,6 @@ jobs:
       - name: Install ament-clang-format
         run: apt-get install -y ros-${{ matrix.rosdistro }}-ament-clang-format clang-format
 
-      - name: Format with ament_clang_format
-        if: github.event_name == 'push' && github.ref_name != 'main'
-        run: |
-          . /opt/ros/${{ matrix.rosdistro }}/setup.sh
-          cd /ros2_ws/src/core2026
-          files=$(git ls-files '*.c' '*.cc' '*.cpp' '*.h' '*.hpp' || true)
-          if [ -n "$files" ]; then
-            ament_clang_format --reformat $files || true
-          else
-            echo "No C/C++ files to format."
-          fi
-
-      - name: Commit and push formatting changes
-        if: github.event_name == 'push' && github.ref_name != 'main'
-        run: |
-          cd /ros2_ws/src/core2026
-          if [[ -n "$(git status --porcelain)" ]]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "chore: auto-format with ament-clang-format"
-            git push origin HEAD:${{ github.ref_name }}
-          else
-            echo "No formatting changes to commit."
-          fi
-
       - name: Build tests
         id: build_test
         run: |
@@ -126,3 +100,29 @@ jobs:
       - name: run_core_test command failure
         if: steps.run_core_test.outcome == 'failure'
         run: echo "result - failure" && exit 1
+
+      - name: Format with ament_clang_format
+        if: github.event_name == 'push' && github.ref_name != 'main'
+        run: |
+          . /opt/ros/${{ matrix.rosdistro }}/setup.sh
+          cd /ros2_ws/src/core2026
+          files=$(git ls-files '*.c' '*.cc' '*.cpp' '*.h' '*.hpp' || true)
+          if [ -n "$files" ]; then
+            ament_clang_format --reformat $files || true
+          else
+            echo "No C/C++ files to format."
+          fi
+
+      - name: Commit and push formatting changes
+        if: github.event_name == 'push' && github.ref_name != 'main'
+        run: |
+          cd /ros2_ws/src/core2026
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore: auto-format with ament-clang-format"
+            git push origin HEAD:${{ github.ref_name }}
+          else
+            echo "No formatting changes to commit."
+          fi
