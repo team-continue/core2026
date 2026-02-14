@@ -52,9 +52,7 @@ def generate_launch_description():
                 "loading_motor_id": 9
             }
         ],
-        remappings=[
-            hazard_remaps,
-        ]
+        remappings=hazard_remaps
     )
 
     right_shooter_controller_node = Node(
@@ -69,9 +67,7 @@ def generate_launch_description():
                 "loading_motor_id": 10
             }
         ],
-        remappings=[
-            hazard_remaps,
-        ]
+        remappings=hazard_remaps
     )
 
     left_magazine_manager_node = Node(
@@ -114,9 +110,7 @@ def generate_launch_description():
                 "disk_hold_right_motor_id": 12
             }
         ],
-        remappings=[
-            hazard_remaps,
-        ]
+        remappings=hazard_remaps
     )
 
     right_aim_bot_node = Node(
@@ -133,9 +127,7 @@ def generate_launch_description():
                 "disk_hold_right_motor_id": 14
             }
         ],
-        remappings=[
-            hazard_remaps,
-        ]
+        remappings=hazard_remaps
     )
 
     return LaunchDescription([

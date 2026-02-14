@@ -105,6 +105,18 @@ private:
 
   void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
   {
+    const size_t position_size = msg->position.size();
+    if (yaw_motor_id_ < 0 || pitch_motor_id_ < 0 ||
+      static_cast<size_t>(yaw_motor_id_) >= position_size ||
+      static_cast<size_t>(pitch_motor_id_) >= position_size)
+    {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "joint_states size mismatch: position=%zu, yaw_id=%d, pitch_id=%d",
+        position_size, yaw_motor_id_, pitch_motor_id_);
+      return;
+    }
+
     yaw_angle_ = msg->position[yaw_motor_id_];
     pitch_angle_ = msg->position[pitch_motor_id_];
   }

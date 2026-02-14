@@ -1,12 +1,6 @@
 #include "rclcpp/rclcpp.hpp"
-#include <chrono>
-#include <math.h>
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/int32.hpp"
-#include "std_msgs/msg/float32.hpp"
-#include "sensor_msgs/msg/joint_state.hpp"
-#include "core_msgs/msg/can.hpp"
-#include "core_msgs/msg/can_array.hpp"
 
 
 class ShooterCmdGate : public rclcpp::Node
@@ -52,17 +46,12 @@ public:
     right_cmd_pub_ = this->create_publisher<std_msgs::msg::Int32>(
       "right_shoot_cmd", 10);
 
-    //========================================
-    // timer callback
-    //========================================
-    timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(10), std::bind(&ShooterCmdGate::timerCallback, this));
   }
 
   void onceCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     if (msg->data) {
-      center_shoot_repeat_count_ = 1;
+      publishCenterCmd(1);
       RCLCPP_INFO(this->get_logger(), "On trigger: Shoot");
     }
   }
@@ -70,32 +59,29 @@ public:
   void burstCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     if (msg->data) {
-      center_shoot_repeat_count_ = 3;
+      publishCenterCmd(3);
       RCLCPP_INFO(this->get_logger(), "On trigger: Burst");
     }
   }
 
   void fullautoCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    if (msg->data) {
-      // Flip: ON
-      center_shoot_repeat_count_ = -1;
+    if (msg->data && !fullauto_enabled_) {
+      fullauto_enabled_ = true;
+      publishCenterCmd(-1);
       RCLCPP_INFO(this->get_logger(), "On trigger: Fullauto");
-    } else if (!msg->data) {
-      // Flip: OFF
-      if (center_shoot_repeat_count_ == -1) {
-        center_shoot_repeat_count_ = 0;
-        return;
-      }
+    } else if (!msg->data && fullauto_enabled_) {
+      fullauto_enabled_ = false;
+      publishCenterCmd(0);
     }
   }
 
   void fullburstCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     if (msg->data) {
-      center_shoot_repeat_count_ = 1;
-      left_shoot_repeat_count_ = 1;
-      right_shoot_repeat_count_ = 1;
+      publishCenterCmd(1);
+      publishLeftCmd(1);
+      publishRightCmd(1);
       RCLCPP_INFO(this->get_logger(), "On trigger: Fullburst");
     }
   }
@@ -103,7 +89,7 @@ public:
   void shootLeftCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     if (msg->data) {
-      left_shoot_repeat_count_ = 1;
+      publishLeftCmd(1);
       RCLCPP_INFO(this->get_logger(), "On trigger: Left Shoot");
     }
   }
@@ -111,24 +97,30 @@ public:
   void shootRightCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     if (msg->data) {
-      right_shoot_repeat_count_ = 1;
+      publishRightCmd(1);
       RCLCPP_INFO(this->get_logger(), "On trigger: Right Shoot");
     }
   }
 
-  void timerCallback()
+  void publishCenterCmd(int repeat_count)
   {
-    auto center_msg = std_msgs::msg::Int32();
-    center_msg.data = center_shoot_repeat_count_;
-    center_cmd_pub_->publish(center_msg);
+    std_msgs::msg::Int32 msg;
+    msg.data = repeat_count;
+    center_cmd_pub_->publish(msg);
+  }
 
-    auto left_msg = std_msgs::msg::Int32();
-    left_msg.data = left_shoot_repeat_count_;
-    left_cmd_pub_->publish(left_msg);
+  void publishLeftCmd(int repeat_count)
+  {
+    std_msgs::msg::Int32 msg;
+    msg.data = repeat_count;
+    left_cmd_pub_->publish(msg);
+  }
 
-    auto right_msg = std_msgs::msg::Int32();
-    right_msg.data = right_shoot_repeat_count_;
-    right_cmd_pub_->publish(right_msg);
+  void publishRightCmd(int repeat_count)
+  {
+    std_msgs::msg::Int32 msg;
+    msg.data = repeat_count;
+    right_cmd_pub_->publish(msg);
   }
 
   //========================================
@@ -149,17 +141,9 @@ public:
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr right_cmd_pub_;
 
   //========================================
-  // timer callback valids
-  //========================================
-  rclcpp::TimerBase::SharedPtr timer_;
-
-  //========================================
   // valids
   //========================================
-  // the count of repeated shots. (x < -1: fullauto, x = 0: none, x > 1: burst )
-  int center_shoot_repeat_count_ = 0;
-  int left_shoot_repeat_count_ = 0;
-  int right_shoot_repeat_count_ = 0;
+  bool fullauto_enabled_ = false;
 };
 
 

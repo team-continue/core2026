@@ -169,6 +169,20 @@ private:
   //========================================
   void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
   {
+    const size_t position_size = msg->position.size();
+    const size_t velocity_size = msg->velocity.size();
+    if (loading_motor_id_ < 0 || shoot_motor_id_ < 0 ||
+      static_cast<size_t>(loading_motor_id_) >= position_size ||
+      static_cast<size_t>(shoot_motor_id_) >= velocity_size ||
+      position_size <= 4)
+    {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "joint_states size mismatch: position=%zu, velocity=%zu, loading_id=%d, shoot_id=%d",
+        position_size, velocity_size, loading_motor_id_, shoot_motor_id_);
+      return;
+    }
+
     loading_motor_rad_ = msg->position[loading_motor_id_];
     shoot_motor_rad_ = msg->velocity[shoot_motor_id_];
     turret_angle_from_chassis_ = msg->position[4];
@@ -207,12 +221,14 @@ private:
 
   void hazardStatusCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    if (hazard_state_ && msg->data) {
-      // キンテイ解除時にショット完了をtrueにする
+    const bool previous_hazard_state = hazard_state_;
+    hazard_state_ = msg->data;
+
+    // 禁止解除時にショット完了をtrueにする
+    if (previous_hazard_state && !hazard_state_) {
       shoot_completed_ = true;
       RCLCPP_INFO(get_logger(), "Clear Emergency, Set shoot_completed_ TRUE");
     }
-    hazard_state_ = msg->data;
   }
 
   //========================================
@@ -258,6 +274,7 @@ private:
           RCLCPP_INFO(get_logger(), "Initilize, %f", loading_motor_rad_);
 
           setAngle(loading_motor_id_, getShootMotorRotationCount() * M_PI);
+          last_shoot_time_ = this->now();
 
           shoot_completed_ = false;
           state = SHOOT;
@@ -266,7 +283,7 @@ private:
         }
       case CMD_WAIT:
         {
-          if (is_emergency_unlock) {
+          if (hazard_state_) {
             state = EMERGENCY;
             RCLCPP_INFO(get_logger(), "Set EMERGENCY in CMD_WAIT");
             break;
@@ -283,6 +300,7 @@ private:
             RCLCPP_INFO(get_logger(), "internal cnt = %d, %f", shoot_cnt, M_PI + shoot_cnt * M_PI);
 
             setAngle(loading_motor_id_, getShootMotorRotationCount() * M_PI + M_PI);
+            last_shoot_time_ = this->now();
 
             shoot_completed_ = false;
             shootStatePublish(shoot_completed_);
@@ -294,7 +312,7 @@ private:
           break;
         }
       case SHOOT:
-        if (is_emergency_unlock) {
+        if (hazard_state_) {
           state = EMERGENCY;
           setAngle(loading_motor_id_, loading_motor_rad_);
 
@@ -323,7 +341,7 @@ private:
         shoot_completed_ = false;
         shoot_repeat_count_ = 0;
 
-        if (!is_emergency_unlock) {
+        if (!hazard_state_) {
           // state = CMD_WAIT;
           state = INIT;
           RCLCPP_INFO(get_logger(), "Clear emergency, change CMD_WAIT");
@@ -372,7 +390,8 @@ private:
   //========================================
   bool canShoot()
   {
-    return hazard_state_ && isValidAngle() && isShootIntervalElapsed() && !isJamDetected();
+    // hazard_status=true は危険状態なので射撃不可
+    return !hazard_state_ && isValidAngle() && isShootIntervalElapsed() && !isJamDetected();
   }
 
   bool isValidAngle()
@@ -520,14 +539,14 @@ private:
   //========================================
   // subscription valids
   //========================================
-  double loading_motor_rad_;
-  double shoot_motor_rad_;
-  double turret_angle_from_chassis_;
+  double loading_motor_rad_ = 0.0;
+  double shoot_motor_rad_ = 0.0;
+  double turret_angle_from_chassis_ = 0.0;
 
   double target_omega_ = 0.0;
-  double jam_photo_reflector_raw_;
+  bool jam_photo_reflector_raw_ = false;
 
-  bool hazard_state_ = true;
+  bool hazard_state_ = false;
 
   //========================================
   // parameter valids
@@ -576,7 +595,6 @@ private:
   STATE state = CMD_WAIT;
   int shoot_cnt = 0;
 
-  bool is_emergency_unlock = false;
   float target_angle = M_PI;
 
   rclcpp::Time start_time_;
