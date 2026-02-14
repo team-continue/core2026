@@ -1,13 +1,15 @@
 #include "path_planner/costmap_publisher_node.hpp"
 
-namespace path_planner {
+namespace path_planner
+{
 
-CostmapPublisherNode::CostmapPublisherNode(const rclcpp::NodeOptions& options)
-    : Node("core_costmap_publisher_node", options) {
+CostmapPublisherNode::CostmapPublisherNode(const rclcpp::NodeOptions & options)
+: Node("core_costmap_publisher_node", options)
+{
   global_map_topic_ =
-      declare_parameter<std::string>("global_map_topic", "/map");
+    declare_parameter<std::string>("global_map_topic", "/map");
   local_costmap_topic_ =
-      declare_parameter<std::string>("local_costmap_topic", "/local_costmap");
+    declare_parameter<std::string>("local_costmap_topic", "/local_costmap");
   global_frame_id_ = declare_parameter<std::string>("global_frame_id", "map");
   local_frame_id_ = declare_parameter<std::string>("local_frame_id", "map");
 
@@ -24,35 +26,39 @@ CostmapPublisherNode::CostmapPublisherNode(const rclcpp::NodeOptions& options)
   local_origin_y_ = declare_parameter<double>("local_origin_y", -1.0);
 
   global_map_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
-      global_map_topic_, rclcpp::QoS(1).transient_local().reliable());
+    global_map_topic_, rclcpp::QoS(1).transient_local().reliable());
 
   local_costmap_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
-      local_costmap_topic_, rclcpp::QoS(1).reliable());
+    local_costmap_topic_, rclcpp::QoS(1).reliable());
 
   // One-shot timer to publish after construction completes
   publish_timer_ = create_wall_timer(
-      std::chrono::milliseconds(100),
-      std::bind(&CostmapPublisherNode::publishCostmaps, this));
+    std::chrono::milliseconds(100),
+    std::bind(&CostmapPublisherNode::publishCostmaps, this));
 
   RCLCPP_INFO(get_logger(), "Costmap Publisher Node initialized");
 }
 
-void CostmapPublisherNode::publishCostmaps() {
+void CostmapPublisherNode::publishCostmaps()
+{
   // Cancel timer so this only fires once
   publish_timer_->cancel();
 
   auto global_map = buildGlobalMap();
   global_map_pub_->publish(global_map);
-  RCLCPP_INFO(get_logger(), "Published global costmap (%d x %d, %.3f m/cell)",
-              global_width_, global_height_, global_resolution_);
+  RCLCPP_INFO(
+    get_logger(), "Published global costmap (%d x %d, %.3f m/cell)",
+    global_width_, global_height_, global_resolution_);
 
   auto local_costmap = buildLocalCostmap();
   local_costmap_pub_->publish(local_costmap);
-  RCLCPP_INFO(get_logger(), "Published local costmap (%d x %d, %.3f m/cell)",
-              local_width_, local_height_, local_resolution_);
+  RCLCPP_INFO(
+    get_logger(), "Published local costmap (%d x %d, %.3f m/cell)",
+    local_width_, local_height_, local_resolution_);
 }
 
-nav_msgs::msg::OccupancyGrid CostmapPublisherNode::buildGlobalMap() const {
+nav_msgs::msg::OccupancyGrid CostmapPublisherNode::buildGlobalMap() const
+{
   nav_msgs::msg::OccupancyGrid map;
   map.header.stamp = now();
   map.header.frame_id = global_frame_id_;
@@ -69,11 +75,13 @@ nav_msgs::msg::OccupancyGrid CostmapPublisherNode::buildGlobalMap() const {
 
   // Add boundary walls (1-cell thick border)
   fillRect(map, 0, 0, global_width_ - 1, 0, 100);  // bottom
-  fillRect(map, 0, global_height_ - 1, global_width_ - 1, global_height_ - 1,
-           100);                                    // top
+  fillRect(
+    map, 0, global_height_ - 1, global_width_ - 1, global_height_ - 1,
+    100);                                           // top
   fillRect(map, 0, 0, 0, global_height_ - 1, 100);  // left
-  fillRect(map, global_width_ - 1, 0, global_width_ - 1, global_height_ - 1,
-           100);  // right
+  fillRect(
+    map, global_width_ - 1, 0, global_width_ - 1, global_height_ - 1,
+    100);         // right
 
   // Add a few rectangular obstacles inside the map
   // Obstacle 1: horizontal bar in the upper-left area
@@ -88,7 +96,8 @@ nav_msgs::msg::OccupancyGrid CostmapPublisherNode::buildGlobalMap() const {
   return map;
 }
 
-nav_msgs::msg::OccupancyGrid CostmapPublisherNode::buildLocalCostmap() const {
+nav_msgs::msg::OccupancyGrid CostmapPublisherNode::buildLocalCostmap() const
+{
   nav_msgs::msg::OccupancyGrid map;
   map.header.stamp = now();
   map.header.frame_id = local_frame_id_;
@@ -106,9 +115,11 @@ nav_msgs::msg::OccupancyGrid CostmapPublisherNode::buildLocalCostmap() const {
   return map;
 }
 
-void CostmapPublisherNode::fillRect(nav_msgs::msg::OccupancyGrid& map, int x0,
-                                    int y0, int x1, int y1,
-                                    int8_t value) const {
+void CostmapPublisherNode::fillRect(
+  nav_msgs::msg::OccupancyGrid & map, int x0,
+  int y0, int x1, int y1,
+  int8_t value) const
+{
   const int width = static_cast<int>(map.info.width);
   const int height = static_cast<int>(map.info.height);
   for (int y = y0; y <= y1 && y < height; ++y) {

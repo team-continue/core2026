@@ -4,21 +4,24 @@
 #include <rclcpp/rclcpp.hpp>
 #include <string>
 
-namespace path_planner {
+namespace path_planner
+{
 
-class CostmapPublisherNode : public rclcpp::Node {
- public:
+class CostmapPublisherNode : public rclcpp::Node
+{
+public:
   explicit CostmapPublisherNode(
-      const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
+    const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
- private:
+private:
   void publishCostmaps();
 
   nav_msgs::msg::OccupancyGrid buildGlobalMap() const;
   nav_msgs::msg::OccupancyGrid buildLocalCostmap() const;
 
-  void fillRect(nav_msgs::msg::OccupancyGrid& map, int x0, int y0, int x1,
-                int y1, int8_t value) const;
+  void fillRect(
+    nav_msgs::msg::OccupancyGrid & map, int x0, int y0, int x1,
+    int y1, int8_t value) const;
 
   std::string global_map_topic_;
   std::string local_costmap_topic_;

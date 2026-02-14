@@ -10,31 +10,34 @@
 
 #include "path_planner/path_planner.hpp"
 
-namespace path_planner {
+namespace path_planner
+{
 
-class PathPlannerNode : public rclcpp::Node {
- public:
+class PathPlannerNode : public rclcpp::Node
+{
+public:
   explicit PathPlannerNode(
-      const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
+    const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
- private:
+private:
   void onGlobalMapReceived(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
   void onLocalCostmapReceived(
-      const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
+    const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
   void onStartPoseReceived(
-      const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+    const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   void onGoalPoseReceived(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
   void tryPlan();
-  void publishPath(const std::vector<PathPlanner::GridIndex>& path_cells);
+  void publishPath(const std::vector<PathPlanner::GridIndex> & path_cells);
 
   // Transform a point from global to local (robot) coordinates
-  void transformToLocal(double global_x, double global_y,
-                        const geometry_msgs::msg::Pose& robot_pose,
-                        double& local_x, double& local_y) const;
+  void transformToLocal(
+    double global_x, double global_y,
+    const geometry_msgs::msg::Pose & robot_pose,
+    double & local_x, double & local_y) const;
 
   // Extract yaw from quaternion
-  double getYawFromQuaternion(const geometry_msgs::msg::Quaternion& q) const;
+  double getYawFromQuaternion(const geometry_msgs::msg::Quaternion & q) const;
 
   // Planner instance
   PathPlanner planner_;
@@ -53,7 +56,7 @@ class PathPlannerNode : public rclcpp::Node {
   // Subscribers
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr global_map_sub_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr
-      local_costmap_sub_;
+    local_costmap_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr start_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub_;
 
