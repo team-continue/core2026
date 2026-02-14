@@ -34,7 +34,9 @@ uint8_t wirelessbuffer_[MAX_DATA_LENGTH];
 
 // LED timer
 void led_timer_cb();
+void imu_timer_cb();
 IntervalTimer led_timer;
+IntervalTimer imu_timer;
 
 // PCから受信時に一度呼ばれるやつ
 void packet_FrameCallBack(){
@@ -93,9 +95,7 @@ void packet_FrameCallBack(){
     len_wireless++;
   }
   // imu
-  if(im.getQuat(quat)){
-    packet_setInt32(103, quat, 3); 
-  }
+  packet_setInt32(103, quat, 3); 
   hardware_enable[0] = damiao_motor[0].connect ? 0 : 1;
   packet_setUint8(104, hardware_enable, 1);
   packet_send();
@@ -135,13 +135,13 @@ void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len
         if(data[0] < 0){
           // esc.init();
         }else{
-          esc[id - 15].write(data[0]);
+          esc[id - 15].write(data[len - 1]);
         }
       }
       break;
     case 17:
       if(len>=1)
-        digitalWrite(PIN_EMERGENCY, data[1] != 0.f);
+        digitalWrite(PIN_EMERGENCY, data[len-1] != 0.f);
       break;
     default:
       break;
@@ -159,11 +159,16 @@ void setup(void) {
   PORT_WIRELESS.addMemoryForRead(&wirelessbuffer_, sizeof(wirelessbuffer_));
   im.init();
   sts.init();
-  can2_init();
-  can3_init();
-  esc_init();
+//   can2_init();
+//   can3_init();
+//   esc_init();
 
   led_timer.begin(led_timer_cb, 50 * 1000); //20Hz
+  imu_timer.begin(imu_timer_cb, 10 * 1000); //100Hz
+}
+
+void imu_timer_cb(){
+   im.getQuat(quat);
 }
 
 void led_timer_cb(){
@@ -183,6 +188,6 @@ void led_timer_cb(){
 void loop() {
   packet_update();
   sts.loop();
-  can2_loop();
-  can3_loop();
+//   can2_loop();
+//   can3_loop();
 }

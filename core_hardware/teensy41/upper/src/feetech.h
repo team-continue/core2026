@@ -4,14 +4,16 @@
 #include "pi.h"
 #include <cstring>
 
-#define STS_CONTROL_DT 0.01f
-#define STS_LIMIT_VEL ((67.0f / 60.0f) * 2.0f * M_PI)
+#define STS_CONTROL_DT 0.02f
+#define STS_LIMIT_VEL_STS3215 ((67.0f / 60.0f) * 2.0f * M_PI)
+#define STS_LIMIT_VEL_STS3020 ((100.0f / 60.0f) * 2.0f * M_PI)
 #define STS_PID_P 5
 
 #define STS_CONTROL_INTERVAL_US 10000UL
 #define STS_CONNECT_TIMEOUT_MS 1000UL
 #define STS_RECONNECT_INTERVAL_MS 500UL
-#define MAX_DATA_LENGTH 2048
+#define STS_SYNCREAD_TIMEOUT_MS 50UL
+#define MAX_DATA_LENGTH 32768
 #define LEN_SERVO 8
 
 struct STS_SERVO {
@@ -22,6 +24,9 @@ struct STS_SERVO {
   float ref_vel = 0.0f;
   float ref_pos = 0.0f;
   float origin = 0.0f;
+
+  float limit_vel = STS_LIMIT_VEL_STS3020;
+
   uint8_t torque = 0;
   PID pos_pid{STS_PID_P, 0.0f, STS_CONTROL_DT};
   bool vel_cmd = false;
@@ -40,13 +45,21 @@ class STS {
 
   STS() {
     const float default_origin[LEN_SERVO] = {
-      M_PI, M_PI + 0.900000f, -0.9f, 0.1f, 0.0f, 0.0f, 0.0f, 0.0f
+      M_PI,
+      M_PI,
+      M_PI,
+      M_PI,
+      M_PI,
+      M_PI,
+      M_PI,
+      M_PI,
     };
     for (int i = 0; i < LEN_SERVO; ++i) {
       servos[i].id = i + 1;
       servos[i].origin = default_origin[i];
-      servos[i].vel_cmd = (i >= 2 && i < 4);
     }
+    servos[1].vel_cmd = true;
+    servos[5].vel_cmd = true;
   }
 
   void init() {
@@ -59,26 +72,31 @@ class STS {
     last_control_us_ = micros();
   }
 
-  void torque_on() {
+  void torque(bool on) {
     byte ids[LEN_SERVO] = {0};
     const byte len_id = collectServoIds(ids);
-    for (int n = 0; n < len_id; ++n) {
-      const int i = findServoIndex(ids[n]);
-      if (i < 0) {
-        continue;
-      }
-      servos[i].torque = 0;
-      sts_writeReg(ids[n], 55, 1);
-      delay(20);
-      sts_writeReg(ids[n], 33, servos[i].vel_cmd ? 1 : 0);
-      delay(20);
-      sts_writeReg(ids[n], 40, 1);
-      delay(20);
+
+    byte status_level[LEN_SERVO] = {0};
+    byte torque_data[LEN_SERVO] = {0};
+    byte lock[LEN_SERVO] = {0};
+    for (int i = 0; i < len_id; ++i) {
+      torque_data[i] = on ? 1 : 0;
+      lock[i] = 1;
     }
+    sts_syncWrite(ids, len_id, 8, 1, status_level);
+    sts_syncWrite(ids, len_id, 40, 1, torque_data);
+    sts_syncWrite(ids, len_id, 55, 1, lock);
   }
 
   void loop() {
     syncReadData();
+
+    if (syncread_pending_) {
+      if ((millis() - syncread_sent_ms_) <= STS_SYNCREAD_TIMEOUT_MS) {
+        return;
+      }
+      syncread_pending_ = false;
+    }
 
     const uint32_t now_us = micros();
     if ((uint32_t)(now_us - last_control_us_) < STS_CONTROL_INTERVAL_US) {
@@ -89,18 +107,31 @@ class STS {
     const uint32_t now_ms = millis();
     connect = ((now_ms - prev_connect_ts_) <= STS_CONNECT_TIMEOUT_MS);
 
+    if (disable) {
+      if (!prev_disable_) {
+        torque(false);
+        prev_disable_ = true;
+      }
+    } else {
+      prev_disable_ = false;
+    }
+
     if (!connect && !disable &&
         (now_ms - last_torque_on_ms_) >= STS_RECONNECT_INTERVAL_MS) {
       last_torque_on_ms_ = now_ms;
-      torque_on();
+      torque(true);
     }
 
     syncWriteCommandByMode();
 
     byte ids[LEN_SERVO] = {0};
-    const byte len_id = collectServoIds(ids);
+    const byte len_id =
+      syncread_upper_half_ ? collectServoIdsInRange(ids, 5, 8)
+                           : collectServoIdsInRange(ids, 1, 4);
     if (len_id > 0) {
+      startSyncReadTracking(ids, len_id);
       sts_syncRead(ids, len_id, 56, 15);
+      syncread_upper_half_ = !syncread_upper_half_;
     }
   }
 
@@ -153,6 +184,13 @@ class STS {
   int buffer_data_num = 0;
   uint32_t last_control_us_ = 0;
   uint32_t last_torque_on_ms_ = 0;
+  bool prev_disable_ = false;
+  bool syncread_upper_half_ = false;
+  bool syncread_pending_ = false;
+  uint32_t syncread_sent_ms_ = 0;
+  byte syncread_expected_ids_[LEN_SERVO] = {0};
+  bool syncread_received_[LEN_SERVO] = {0};
+  byte syncread_expected_len_ = 0;
 
   byte collectServoIds(byte *ids) const {
     byte len_id = 0;
@@ -163,6 +201,50 @@ class STS {
       ids[len_id++] = servos[i].id;
     }
     return len_id;
+  }
+
+  byte collectServoIdsInRange(byte *ids, byte min_id, byte max_id) const {
+    byte len_id = 0;
+    for (int i = 0; i < LEN_SERVO; ++i) {
+      if (servos[i].id == 0) {
+        continue;
+      }
+      if (servos[i].id < min_id || servos[i].id > max_id) {
+        continue;
+      }
+      ids[len_id++] = servos[i].id;
+    }
+    return len_id;
+  }
+
+  void startSyncReadTracking(const byte *ids, byte len_id) {
+    syncread_expected_len_ = len_id;
+    memset(syncread_expected_ids_, 0, sizeof(syncread_expected_ids_));
+    memset(syncread_received_, 0, sizeof(syncread_received_));
+    for (int i = 0; i < len_id; ++i) {
+      syncread_expected_ids_[i] = ids[i];
+    }
+    syncread_sent_ms_ = millis();
+    syncread_pending_ = (len_id > 0);
+  }
+
+  void markSyncReadReceived(byte id) {
+    if (!syncread_pending_) {
+      return;
+    }
+    for (int i = 0; i < syncread_expected_len_; ++i) {
+      if (syncread_expected_ids_[i] == id) {
+        syncread_received_[i] = true;
+        break;
+      }
+    }
+
+    for (int i = 0; i < syncread_expected_len_; ++i) {
+      if (!syncread_received_[i]) {
+        return;
+      }
+    }
+    syncread_pending_ = false;
   }
 
   int findServoIndex(const byte id) const {
@@ -188,9 +270,15 @@ class STS {
       }
 
       if (servos[i].vel_cmd) {
+        if (disable) {
+          servos[i].ref_vel = 0.0f;
+          servos[i].pos_pid.reset();
+        } else {
+          const float pos_error = servos[i].ref_pos - servos[i].pos;
+          servos[i].ref_vel = servos[i].pos_pid.update(pos_error, servos[i].limit_vel);
+        }
         vel_ids[vel_len] = servos[i].id;
-        const float cmd_vel = disable ? 0.0f : servos[i].ref_vel;
-        vel_data[vel_len++] = constrain(cmd_vel, -STS_LIMIT_VEL, STS_LIMIT_VEL);
+        vel_data[vel_len++] = servos[i].ref_vel;
       } else {
         pos_ids[pos_len] = servos[i].id;
         pos_data[pos_len++] = servos[i].ref_pos + servos[i].origin;
@@ -287,8 +375,7 @@ class STS {
   void sts_syncWriteVel(byte *ids, byte len_id, float *data) {
     int16_t buf[32];
     for (int i = 0; i < len_id; ++i) {
-      const float vel = constrain(data[i], -STS_LIMIT_VEL, STS_LIMIT_VEL);
-      int16_t temp = (int16_t)(vel / (2 * M_PI) * 4096.0f);
+      int16_t temp = (int16_t)(data[i] / (2 * M_PI) * 4096.0f);
       if (temp < 0) {
         temp = -temp;
         bitWrite(temp, 15, 1);
@@ -322,6 +409,7 @@ class STS {
     }
 
     prev_connect_ts_ = millis();
+    markSyncReadReceived(id);
 
     if (len > 19) {
       const uint16_t pos = (uint16_t)(data[6] << 8 | data[5]) & 0x0fff;

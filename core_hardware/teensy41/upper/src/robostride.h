@@ -145,6 +145,7 @@ FCTP_CLASS class RoboStride : public MotorBase {
 
     unsigned long last_recv_can_ts_ms_ = 0;
     unsigned long last_recv_ros2_ts_ms_ = 0;
+    uint8_t configured_run_mode_ = Speed_control_mode;
 
     // Track multi-turn position state similar to Damiao implementation
     int32_t position_turns_ = 0;
@@ -164,14 +165,19 @@ public:
         can_(can),
         feedback(motor_state),
         ref(motor_ref)
-    {}
+    {
+        ref.kp_vel = 2.0f;
+        ref.ki_vel = 0.021f;
+        ref.kp_pos = 10.0f;
+        ref.kd_pos = 0.0f;
+    }
     ~RoboStride(){}
 
     // ===========
     // Requested APIs
     // ===========
 
-    bool init(float current_max, float torque_max){
+    bool init(float current_max, float torque_max, float acc_limit = 100.0f, uint8_t init_run_mode = Speed_control_mode){
         Serial.printf("[RoboStride:init] start (motor_id=%u)\n", motor_id_);
         auto log_step = [&](const char* step, bool ok) -> bool {
             Serial.print("[RoboStride:init] ");
@@ -179,6 +185,7 @@ public:
             Serial.println(ok ? " OK" : " FAIL");
             return ok;
         };
+        configured_run_mode_ = (init_run_mode == PosPP_control_mode) ? PosPP_control_mode : Speed_control_mode;
 
         // Any missing parameter response => init failure
         if(!log_step("Get param 0x7005(run_mode)", Get_RobStrite_Motor_parameter(0x7005))) return false;
@@ -203,11 +210,43 @@ public:
         // Disenable_Motor(0);
         // delayMicroseconds(1000);
 
-        if(!log_step("Set run_mode=Speed(0x7005)", Set_RobStrite_Motor_parameter(drw.run_mode.index, Speed_control_mode, Set_mode))) return false;
+        if(configured_run_mode_ == PosPP_control_mode){
+            if(!log_step("Set run_mode=PosPP(0x7005)", Set_RobStrite_Motor_parameter(drw.run_mode.index, PosPP_control_mode, Set_mode))) return false;
+        }else{
+            if(!log_step("Set run_mode=Speed(0x7005)", Set_RobStrite_Motor_parameter(drw.run_mode.index, Speed_control_mode, Set_mode))) return false;
+        }
         delayMicroseconds(1000);
 
         if(!log_step("Get run_mode(0x7005)", Get_RobStrite_Motor_parameter(drw.run_mode.index))) return false;
         delayMicroseconds(1000);
+        drw.run_mode.data = (float)configured_run_mode_;
+
+        if(!log_step("Set spd_kp(0x701F)", Set_RobStrite_Motor_parameter(drw.spd_kp.index, ref.kp_vel, Set_parameter))) return false;
+        delayMicroseconds(1000);
+        if(!log_step("Get spd_kp(0x701F)", Get_RobStrite_Motor_parameter(drw.spd_kp.index))) return false;
+        delayMicroseconds(1000);
+        if (fabsf(drw.spd_kp.data - ref.kp_vel) > 1e-3f) {
+            Serial.printf("[RoboStride:init] spd_kp mismatch set=%.5f get=%.5f\n", ref.kp_vel, drw.spd_kp.data);
+            return false;
+        }
+
+        if(!log_step("Set spd_ki(0x7020)", Set_RobStrite_Motor_parameter(drw.spd_ki.index, ref.ki_vel, Set_parameter))) return false;
+        delayMicroseconds(1000);
+        if(!log_step("Get spd_ki(0x7020)", Get_RobStrite_Motor_parameter(drw.spd_ki.index))) return false;
+        delayMicroseconds(1000);
+        if (fabsf(drw.spd_ki.data - ref.ki_vel) > 1e-3f) {
+            Serial.printf("[RoboStride:init] spd_ki mismatch set=%.5f get=%.5f\n", ref.ki_vel, drw.spd_ki.data);
+            return false;
+        }
+
+        if(!log_step("Set loc_kp(0x701E)", Set_RobStrite_Motor_parameter(drw.loc_kp.index, ref.kp_pos, Set_parameter))) return false;
+        delayMicroseconds(1000);
+        if(!log_step("Get loc_kp(0x701E)", Get_RobStrite_Motor_parameter(drw.loc_kp.index))) return false;
+        delayMicroseconds(1000);
+        if (fabsf(drw.loc_kp.data - ref.kp_pos) > 1e-3f) {
+            Serial.printf("[RoboStride:init] loc_kp mismatch set=%.5f get=%.5f\n", ref.kp_pos, drw.loc_kp.data);
+            return false;
+        }
 
         if(!log_step("Enable motor", enable_motor())) return false;
 
@@ -215,9 +254,9 @@ public:
         if(!log_step("Set limit_cur=27A(0x7018)", Set_RobStrite_Motor_parameter(0X7018, 27.0f, Set_parameter))) return false;
         delayMicroseconds(1000);
 
-        if(!log_step("Set acc(0x7026)", Set_RobStrite_Motor_parameter(0X7026, Motor_Set_All_.set_acc, Set_parameter))) return false;
+        if(!log_step("Set acc(0x7026)", Set_RobStrite_Motor_parameter(0X7026, acc_limit, Set_parameter))) return false;
         delayMicroseconds(1000);
-        Serial.printf("Switched to Speed Control Mode, Now: %d\n", (int)drw.run_mode.data);
+        Serial.printf("Switched run_mode, Now: %d\n", (int)drw.run_mode.data);
 
         if(!log_step("Set torque_max(0x700B)", Set_RobStrite_Motor_parameter(0X700B, torque_max, Set_parameter))) return false;
         delayMicroseconds(1000);
@@ -243,23 +282,23 @@ public:
     void setPacketFrame(const float *data, const int len){
         switch(len){
             case 0:
-            case 1:
+            // case 1:
                 ref.mode = 0; // disable
                 last_recv_ros2_ts_ms_ = millis();
                 break;
-
+            case 1:    
             case 2:
-                ref.mode = 2; // velocity
+            case 3:
+                ref.mode = (configured_run_mode_ == PosPP_control_mode) ? 3 : 2; // position or velocity based on configured mode
                 last_recv_ros2_ts_ms_ = millis();
-                ref.velocity_rad_s = data[1];
+                ref.velocity_rad_s = data[len-1];
                 break;
 
-            case 3:
-                ref.mode = 3; // motion
-                last_recv_ros2_ts_ms_ = millis();
-                ref.velocity_rad_s = data[1];
-                ref.position_rad   = data[2];
-                break;
+            // case 3:
+            //     ref.mode = 3; // position (PosPP)
+            //     last_recv_ros2_ts_ms_ = millis();
+            //     ref.position_rad   = data[1];
+            //     break;
 
             case 4:
                 // param/gain update packet
@@ -298,52 +337,48 @@ public:
         if(!connect_ros2){
             mode = 0;
         }
-        if(ref.kp_vel != drw.spd_kp.data || ref.ki_vel != drw.spd_ki.data || ref.kp_pos != drw.loc_kp.data){
-            // writeCanFrame path is non-blocking: no response wait here
+
+        // Gain sync: optimistic local update after non-blocking write.
+        if (ref.kp_vel != drw.spd_kp.data) {
             Set_RobStrite_Motor_parameter(drw.spd_kp.index, ref.kp_vel, Set_parameter, false);
             drw.spd_kp.data = ref.kp_vel;
-            delayMicroseconds(500);
-
+            return;
+        }
+        if (ref.ki_vel != drw.spd_ki.data) {
             Set_RobStrite_Motor_parameter(drw.spd_ki.index, ref.ki_vel, Set_parameter, false);
             drw.spd_ki.data = ref.ki_vel;
-            delayMicroseconds(500);
-
+            return;
+        }
+        if (ref.kp_pos != drw.loc_kp.data) {
             Set_RobStrite_Motor_parameter(drw.loc_kp.index, ref.kp_pos, Set_parameter, false);
             drw.loc_kp.data = ref.kp_pos;
-            delayMicroseconds(500);
-
-            Serial.println("-----[cmd] gain updated-----");
+            return;
         }
 
         // ---- control ----
         switch(mode){
             case 0: {
-                send_velocity_mode_command(0, false);
+                if (configured_run_mode_ == PosPP_control_mode) {
+                    // Hold current angle in PosPP mode.
+                    send_pospp_mode_command(feedback.position_rad, false);
+                } else {
+                    send_velocity_mode_command(0, false);
+                }
                 break;
             }
 
             case 2: {
-                // velocity mode (internal changes: disable->set mode->enable)
-                send_velocity_mode_command(ref.velocity_rad_s, false);
+                if (configured_run_mode_ == Speed_control_mode) {
+                    send_velocity_mode_command(ref.velocity_rad_s, false);
+                }
                 break;
             }
 
             case 3: {
-                // Position control (external loop): convert pos error to velocity command.
-                float pos_error = ref.position_rad - feedback.position_rad;
-                float cmd_velocity_rad_s = pos_error * ref.kp_pos;
-
-                // Treat ref.velocity_rad_s as velocity limit in motion mode.
-                const float velocity_limit_rad_s = fabsf(ref.velocity_rad_s);
-                if (velocity_limit_rad_s > 0.0f) {
-                    if (cmd_velocity_rad_s > velocity_limit_rad_s) {
-                        cmd_velocity_rad_s = velocity_limit_rad_s;
-                    } else if (cmd_velocity_rad_s < -velocity_limit_rad_s) {
-                        cmd_velocity_rad_s = -velocity_limit_rad_s;
-                    }
+                if (configured_run_mode_ == PosPP_control_mode) {
+                    // Position control in PosPP mode: command target angle only.
+                    send_pospp_mode_command(ref.position_rad, false);
                 }
-
-                send_velocity_mode_command(cmd_velocity_rad_s, false);
                 break;
             }
 
@@ -354,22 +389,48 @@ public:
 
 private:
     bool decodeCanFrame(const CAN_message_t &r_msg, ReceiveResult &result){
-        // RoboStride uses extended frame
+        // まずは extended を基本とする（ただし切り分け中ならログ出すのもアリ）
         if (!r_msg.flags.extended) {
             return false;
         }
-        // Frame destination motor id is LSB of CAN ID
+
         const uint32_t can_id = r_msg.id;
-        const uint8_t dst_motor_id = (uint8_t)(can_id & 0xFF);
-        if (dst_motor_id != motor_id_) {
+
+        // 仕様: bit28..24 = communication type (5bit)
+        const uint8_t comm_type = (uint8_t)((can_id >> 24) & 0x1F);
+
+        // data area 2 = bit23..8
+        const uint16_t data_area2 = (uint16_t)((can_id >> 8) & 0xFFFF);
+
+        // data area 1 = bit7..0
+        const uint8_t  data_area1 = (uint8_t)(can_id & 0xFF);
+
+        // 便利: bit15..8 / bit7..0 を個別に見たい場面が多い
+        const uint8_t id_mid = (uint8_t)((can_id >> 8) & 0xFF);  // bit15..8
+        const uint8_t id_lsb = data_area1;                       // bit7..0
+
+        // ----------------------------
+        // ★ここが肝：モータIDの場所が type により変わる/実装差がある
+        // なので「どこかに motor_id_ が出ていれば通す」方式にする（互換優先）
+        // ----------------------------
+        bool match_motor = (id_lsb == motor_id_) || (id_mid == motor_id_) || ((data_area2 & 0xFF) == motor_id_);
+        bool match_master = (id_lsb == master_id_) || (id_mid == master_id_) || ((data_area2 & 0xFF) == master_id_);
+
+        // 返信は「master宛」表現だったり「motor表現」だったりが混ざるので、どちらか一致で通す
+        if (!(match_motor || match_master)) {
             return false;
         }
-        result.communication_type = (uint8_t)((can_id >> 24) & 0x1F);
-        result.extra_data = (uint16_t)((can_id >> 8) & 0xFFFF);
-        result.host_id = (uint8_t)(can_id & 0xFF);
 
+        result.communication_type = comm_type;
+        result.extra_data = data_area2;
+
+        // host_id の意味が曖昧なので、とりあえず “返信先/相手判定に使えそうな側” を入れておく
+        // （必要ならここは後で確定させる）
+        result.host_id = id_lsb;
+
+        // error / pattern は今の取り方を維持（※仕様と完全一致かは別途確認）
         error_code_ = (uint8_t)((can_id >> 16) & 0x3F);
-        pattern_ = (uint8_t)((can_id >> 22) & 0x03);
+        pattern_    = (uint8_t)((can_id >> 22) & 0x03);
 
         memcpy(result.data, r_msg.buf, r_msg.len);
         result.len = r_msg.len;
@@ -476,6 +537,13 @@ private:
     // ループを最低1回は回す
     while ((millis() - start_time) < (unsigned long)timeout_ms){
         if (can_->read(r_msg)){
+            // debug
+            Serial.printf("[RoboStride] Received CAN frame: ID=0x%08X, DLC=%u, Data=", r_msg.id, r_msg.len);
+            for(int i = 0; i < r_msg.len; i++){
+                Serial.printf("%02X ", r_msg.buf[i]);
+            }
+            Serial.println();
+            // decode
             if (decodeCanFrame(r_msg, result)) {
                 return true;
             }
@@ -487,20 +555,12 @@ private:
 
     bool receive_status_frame(){
         ReceiveResult result;
-
-        // 5msは短いことがあるので、必要なら 10〜20ms に増やしてもOK
-        const unsigned long timeout_ms = 10;
-        const unsigned long start_time = millis();
-
-        while ((millis() - start_time) < timeout_ms) {
-            if (!receive(result, 10)) {
-                continue;
-            }
-            if (applyReceiveResult(result)) {
-                return true;
-            }
+        if(!receive(result, 10)){
+            Serial.println("[RoboStride] receive_status_frame timeout");
         }
-
+        if (applyReceiveResult(result)) {
+            return true;
+        }
         return false;
     }
 
@@ -650,32 +710,13 @@ private:
     }
 
     bool send_velocity_mode_command(float velocity_rad_s, bool wait_response = true){
-        // Switch to speed mode if needed
-        // Get_RobStrite_Motor_parameter(drw.run_mode.index);
-        // enable_motor();
-        // if(drw.run_mode.data != Speed_control_mode){
-        //     Disenable_Motor(0);
-        //     delayMicroseconds(1000);
-
-        //     Set_RobStrite_Motor_parameter(drw.run_mode.index, Speed_control_mode, Set_mode);
-        //     delayMicroseconds(1000);
-
-        //     Get_RobStrite_Motor_parameter(drw.run_mode.index);
-        //     delayMicroseconds(1000);
-
-        //     enable_motor();
-
-        //     // Example: set some limits (kept from your original)
-        //     Set_RobStrite_Motor_parameter(0X7018, 27.0f, Set_parameter);
-        //     delayMicroseconds(1000);
-
-        //     Set_RobStrite_Motor_parameter(0X7026, Motor_Set_All_.set_acc, Set_parameter);
-        //     delayMicroseconds(1000);
-        //     Serial.printf("Switched to Speed Control Mode, Now: %d\n", (int)drw.run_mode.data);
-        // }
-
         // Write speed reference
         Set_RobStrite_Motor_parameter(0X700A, velocity_rad_s, Set_parameter, wait_response);
+        return true;
+    }
+
+    bool send_pospp_mode_command(float position_rad, bool wait_response = true){
+        Set_RobStrite_Motor_parameter(0X7016, position_rad, Set_parameter, wait_response);
         return true;
     }
 

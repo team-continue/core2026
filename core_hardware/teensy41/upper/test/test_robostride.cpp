@@ -132,7 +132,7 @@ void loop() {
   // あなたの setPacketFrame() の仕様:
   // len=0/1: disable
   // len=2: velocity  data[1]=vel
-  // len=3: motion    data[1]=vel, data[2]=pos
+  // len=3: motion(PosPP) data[1]=pos
   // len=4: gain set  data[0]=cur_kp, data[1]=cur_ki, data[2]=motion_kp, data[3]=motion_kd
   float data[4] = {0};
 
@@ -150,9 +150,8 @@ void loop() {
     can2_robostride[0].setPacketFrame(data, len);
   }
   else if (g_cmd == 3) {
-    // motion mode: pos + vel
-    data[1] = target_vel;
-    data[2] = target_pos;
+    // motion mode (PosPP): angle only
+    data[1] = target_pos;
     len = 3;
     can2_robostride[0].setPacketFrame(data, len);
   }

@@ -90,7 +90,12 @@ FCTP_CLASS class Damiao : public MotorBase {
               master_id_(master_id),
               slave_id_(slave_id),
               feedback(motor_state),
-              ref(motor_ref) {}
+              ref(motor_ref) {
+            ref.kp_vel = 1.0f;
+            ref.ki_vel = 0.1f;
+            ref.kp_pos = 5.0f;
+            ref.kd_pos = 0.1f;
+        }
         ~Damiao(){}
 
         bool init(){
@@ -105,8 +110,8 @@ FCTP_CLASS class Damiao : public MotorBase {
             ){
                 return false;
             }
-            ref.ki_vel = flash.KI_ASR;
-            ref.kp_vel = flash.KP_ASR;
+            ref.kp_vel = flash.KI_ASR;
+            ref.ki_vel = flash.KP_ASR;
             initialized = true;
             return true;
         }
@@ -114,21 +119,23 @@ FCTP_CLASS class Damiao : public MotorBase {
         void setPacketFrame(const float *data, const int len){
             switch(len){
                 case 0:
-                case 1:
                     ref.mode = 0;
                     last_recv_ros2_ts_ms_ = millis();
                     break;
-                case 2: 
-                    ref.mode = 2;
+                // 固定にした
+                case 1: 
+                case 2:
+                case 3:
+                    ref.mode = 2; // velocity mode
                     last_recv_ros2_ts_ms_ = millis();
-                    ref.velocity_rad_s = data[1];
+                    ref.velocity_rad_s = data[len-1];
                     break;
-                case 3: 
-                    ref.mode = 3;
-                    last_recv_ros2_ts_ms_ = millis();
-                    ref.velocity_limit_rad_s = data[1];
-                    ref.position_rad = data[2];
-                    break;
+                // case 3: 
+                //     ref.mode = 3;
+                //     last_recv_ros2_ts_ms_ = millis();
+                //     ref.velocity_limit_rad_s = data[1];
+                //     ref.position_rad = data[2];
+                //     break;
                 case 4: 
                     last_recv_ros2_ts_ms_ = millis();
                     ref.kp_vel = data[0];

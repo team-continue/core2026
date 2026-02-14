@@ -11,8 +11,8 @@ struct MotorRef {
   float torque_nm = 0.0f;
   float kp_vel = 0.0f;
   float ki_vel = 0.0f;
-  float kp_pos = 5.0f;
-  float kd_pos = 0.1f;
+  float kp_pos = 0.0f;
+  float kd_pos = 0.0f;
 };
 
 struct MotorState {
