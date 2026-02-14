@@ -17,7 +17,7 @@ def generate_launch_description():
         parameters=[costmap_params],
     )
 
-    debug_odom_to_base = Node(
+    debug_odom_to_base = Node(  # noqa: F841
         package="tf2_ros",
         executable="static_transform_publisher",
         name="debug_odom_to_base",
@@ -30,7 +30,7 @@ def generate_launch_description():
         ],
     )
 
-    debug_base_to_livox = Node(
+    debug_base_to_livox = Node(  # noqa: F841
         package="tf2_ros",
         executable="static_transform_publisher",
         name="debug_base_to_livox",
@@ -44,7 +44,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        #debug_odom_to_base,
-        #debug_base_to_livox,
+        # debug_odom_to_base,
+        # debug_base_to_livox,
         costmap_build,
     ])
