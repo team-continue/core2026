@@ -94,7 +94,7 @@ class TargetAngleNode : public rclcpp::Node {
   double latest_imu_yaw_ = 0;
   double latest_body_omega_ = 0;
   double latest_body_angle_ = 0;
-  bool emergency_stop_flag_ = false;
+  bool emergency_stop_flag_ = true;
   geometry_msgs::msg::Twist latest_twist_;
 
   double calc_nearlest_target_angle(double current_angle) {
