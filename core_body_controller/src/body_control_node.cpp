@@ -140,12 +140,12 @@ std::vector<float> BodyControlNode::invert_kinematics_calc(
       -cmd_vel.linear.x * sin(body_angle) + cmd_vel.linear.y * cos(body_angle);
   float omega = cmd_vel.angular.z;
 
-  // Standard mecanum wheel inverse kinematics
+  // Standard omni wheel inverse kinematics
   // Wheel arrangement (looking from top):
   //        x
   //   0 [/]  [\] 1
   //   3 [\]  [/] 2
-  // Wheels at 45 degrees, using proper mecanum formulas
+  // Wheels at 45 degrees, using proper omni wheel formulas
 
   // invert kinematics for omni
   wheel_velocities[0] =
