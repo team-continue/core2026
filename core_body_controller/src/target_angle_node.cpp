@@ -208,7 +208,7 @@ void TargetAngleNode::timer_callback() {
   can_msg.array[0].id = 4;
   can_msg.array[0].data.push_back(3);
 
-  if (!emergency_stop_flag_) {
+  if (emergency_stop_flag_) {
     RCLCPP_ERROR(this->get_logger(), "Emergency stop flag is set");
     can_msg.array[0].data.push_back(0);
   } else {
