@@ -94,7 +94,7 @@ class TargetAngleNode : public rclcpp::Node {
   double latest_imu_yaw_ = 0;
   double latest_body_omega_ = 0;
   double latest_body_angle_ = 0;
-  bool emergency_stop_flag_ = false;
+  bool emergency_stop_flag_ = true;
   geometry_msgs::msg::Twist latest_twist_;
 
   double calc_nearlest_target_angle(double current_angle) {
@@ -208,7 +208,7 @@ void TargetAngleNode::timer_callback() {
   can_msg.array[0].id = 4;
   can_msg.array[0].data.push_back(3);
 
-  if (!emergency_stop_flag_) {
+  if (emergency_stop_flag_) {
     RCLCPP_ERROR(this->get_logger(), "Emergency stop flag is set");
     can_msg.array[0].data.push_back(0);
   } else {
