@@ -8,6 +8,8 @@
 #include "std_msgs/msg/float32.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "geometry_msgs/msg/point.hpp"
+#include "core_msgs/msg/can.hpp"
+#include "core_msgs/msg/can_array.hpp"
 
 using namespace std::chrono_literals;
 
@@ -122,8 +124,7 @@ public:
     // ----------------------------
     // Publisher
     // ----------------------------
-    turret_motor_pub_ = create_publisher<std_msgs::msg::Float32>("/can/tx/turret_motor_angle", 10);
-    pitch_motor_pub_ = create_publisher<std_msgs::msg::Float32>("/can/tx/pitch_motor_angle", 10);
+    can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("/can/tx", 10);
 
     // ----------------------------
     // Timer
@@ -219,15 +220,13 @@ private:
         return;
       }
 
-      std_msgs::msg::Float32 yaw_msg;
-      yaw_msg.data =
-        static_cast<float>(std::clamp(test_yaw_target_, yaw_min_angle_, yaw_max_angle_));
-      turret_motor_pub_->publish(yaw_msg);
+      const float yaw_output = static_cast<float>(
+        std::clamp(test_yaw_target_, yaw_min_angle_, yaw_max_angle_));
+      motorPublish(yaw_motor_id_, yaw_output);
 
-      std_msgs::msg::Float32 pitch_msg;
-      pitch_msg.data = static_cast<float>(
+      const float pitch_output = static_cast<float>(
         std::clamp(test_pitch_target_, pitch_min_angle_, pitch_max_angle_));
-      pitch_motor_pub_->publish(pitch_msg);
+      motorPublish(pitch_motor_id_, pitch_output);
       return;
     }
 
@@ -238,13 +237,8 @@ private:
       const double pitch_output = std::clamp(
         manual_mode_pitch_fixed_angle_, pitch_min_angle_, pitch_max_angle_);
 
-      std_msgs::msg::Float32 yaw_msg;
-      yaw_msg.data = static_cast<float>(yaw_output);
-      turret_motor_pub_->publish(yaw_msg);
-
-      std_msgs::msg::Float32 pitch_msg;
-      pitch_msg.data = static_cast<float>(pitch_output);
-      pitch_motor_pub_->publish(pitch_msg);
+      motorPublish(yaw_motor_id_, static_cast<float>(yaw_output));
+      motorPublish(pitch_motor_id_, static_cast<float>(pitch_output));
       return;
     }
 
@@ -276,23 +270,33 @@ private:
     // --- 出力Publish ---
     std_msgs::msg::Float32 yaw_msg;
     yaw_msg.data = static_cast<float>(yaw_output);
-    turret_motor_pub_->publish(yaw_msg);
+    motorPublish(yaw_motor_id_, yaw_msg.data);
 
     std_msgs::msg::Float32 pitch_msg;
     pitch_msg.data = static_cast<float>(pitch_output);
-    pitch_motor_pub_->publish(pitch_msg);
+    motorPublish(pitch_motor_id_, pitch_msg.data);
   }
 
   void publishHoldCurrent()
   {
     std_msgs::msg::Float32 yaw_msg;
     yaw_msg.data = static_cast<float>(std::clamp(yaw_angle_, yaw_min_angle_, yaw_max_angle_));
-    turret_motor_pub_->publish(yaw_msg);
+    motorPublish(yaw_motor_id_, yaw_msg.data);
 
     std_msgs::msg::Float32 pitch_msg;
     pitch_msg.data = static_cast<float>(
       std::clamp(pitch_angle_ + pitch_offset_, pitch_min_angle_, pitch_max_angle_));
-    pitch_motor_pub_->publish(pitch_msg);
+    motorPublish(pitch_motor_id_, pitch_msg.data);
+  }
+
+  void motorPublish(int id, float data)
+  {
+    auto can_array = core_msgs::msg::CANArray();
+    auto can = core_msgs::msg::CAN();
+    can.id = id;
+    can.data.push_back(data);
+    can_array.array.push_back(can);
+    can_pub_->publish(can_array);
   }
 
   // ===== 内部変数 =====
@@ -333,9 +337,7 @@ private:
   int yaw_motor_id_;
 
   // ROS通信
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr turret_motor_pub_;
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pitch_motor_pub_;
-
+  rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr target_image_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr test_yaw_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr test_pitch_sub_;

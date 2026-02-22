@@ -207,16 +207,14 @@ private:
   void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
   {
     const size_t position_size = msg->position.size();
-    const size_t velocity_size = msg->velocity.size();
-    if (loading_motor_id_ < 0 || shoot_motor_id_ < 0 ||
+    if (loading_motor_id_ < 0 ||
       static_cast<size_t>(loading_motor_id_) >= position_size ||
-      static_cast<size_t>(shoot_motor_id_) >= velocity_size ||
       position_size <= 4)
     {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 2000,
-        "joint_states size mismatch: position=%zu, velocity=%zu, loading_id=%d, shoot_id=%d",
-        position_size, velocity_size, loading_motor_id_, shoot_motor_id_);
+        "joint_states size mismatch: position=%zu, loading_id=%d (need loading index and position[4])",
+        position_size, loading_motor_id_);
       return;
     }
 
