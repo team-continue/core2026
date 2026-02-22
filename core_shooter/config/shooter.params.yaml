@@ -1,73 +1,86 @@
 /**:
     ros__parameters:
         # ========================================
-        # ShootController:
-        # shoot id
+        # ShooterController
+        # motor ids are overridden in launch
         # shoot_motor_id: -> launch
         # loading_motor_id: -> launch
 
         # shoot parameters
-        burst_count: 3 #バーストモードのバースト数 # 3
-        shoot_interval_ms: 500 #発射のクールタイム         # 500
-        burst_interval_ms: 500 #バーストのクールタイム     # 500
-        fullauto_interval_ms: 500 #フルオートのクールタイム   # 500
+        burst_count: 3  # バースト発射数
+        shoot_interval_ms: 500  # 単発の発射間隔[ms]
+        burst_interval_ms: 500  # バースト時の発射間隔[ms]
+        fullauto_interval_ms: 500  # フルオート時の発射間隔[ms]
+        shoot_motor_rotation_cmd_activation_delay_sec: 2.0  # 非ゼロ速度指令開始から発射許可までの遅延[s]
 
-        # panel limit parameters
-        limit_rad:
-            [0.349, 2.443, 3.490, 5.585] #パネルの制限
-            # 　limit_rad_[1]
-            # 　　＼　　　limit_rad_[0]
-            # 　　　＼　／
-            # 　true ◯  true  ---- 0 [rad]
-            # 　　　／　＼
-            # 　　／　　　limit_rad_[3]
-            # 　limit_rad_[2]
-
-        enable_panel_synchronizer: false #パネルの制限をオンにするか #true
-        yaw_reflect: 0.25 # 隙間撃ちの角速度変化の係数
+        # panel limit parameters (enable_panel_synchronizer=true のとき使用)
+        limit_rad: [0.349, 2.443, 3.490, 5.585]
+        # limit_rad_[1]
+        #   ＼     limit_rad_[0]
+        #    ＼  ／
+        # true ◯ true ---- 0 [rad]
+        #    ／  ＼
+        #   ／     limit_rad_[3]
+        # limit_rad_[2]
+        enable_panel_synchronizer: false
 
         # loading motor parameters
-        loading_motor_speed: 6.5 #モータ速度         # 3.0
-        loading_motor_initial_angle: [0.0, 0.0, 0.0] #モータの初期角度
+        loading_motor_speed: 6.5
+        loading_motor_initial_angle: [0.0, 0.0, 0.0]  # 要素数は3固定
 
         # shoot motor parameters
-        min_speed: 1200.0 #モータ速度0と判断するための閾値  # 1200.0
-        target_speed: [2000.0, 1750.0, 1500.0] #モータスピードの可変値
-        motor_target_threshold: 0.95 #モータ速度が達したと判断する閾値 # 0.95
+        target_speed: [2000.0, 1750.0, 1500.0]
 
         # jam parameters
-        jam_detect_time_sec: 0.1 #ジャム検出時間  # 0.1
+        jam_detect_time_sec: 0.1
 
         # debug parameters
-        set_initial_rad: 0.0 #初期角度設定用
+        set_initial_rad: 0.0
 
         # ========================================
         # MagazineManager
-        remaining_disks: 0 #マガジン弾数 <-初期値は "27 - loading_disk" を入れる
-        disk_thickness: 20.0 #ディスクの厚さ [mm] double
-        sensor_height: 500.0 #センサの高さ [mm] double
-        window_size: 3 #移動平均の窓サイズ
+        # motor ids are overridden in launch
+        # disk_hold_left_motor_id: -> launch
+        # disk_hold_right_motor_id: -> launch
+        remaining_disks: 0  # 初期弾数（例: 27 - loading_disk）
+        disk_thickness: 20.0  # [mm]
+        sensor_height: 500.0  # [mm]
+        window_size: 3  # 移動平均の窓サイズ
+        regrip_enabled: true
+        regrip_release_ms: 200
+        hold_disable_height_margin_mm: 0.5
 
         # ========================================
-        # aim_bot:
-        # frame
-        source_frame: "base_link" # 自分側のフレーム
-        target_frame: "enemy_tf" # 敵のフレーム名
+        # AimBot
+        # motor ids are overridden in launch
+        # pitch_motor_id: -> launch
+        # yaw_motor_id: -> launch
 
         # periodic rate
         rate: 30.0
 
-        # motor ids
-        # pitch_motor_id: -> launch
-        # yaw_motor_id: -> launch
+        # test/manual mode
+        enable_test_mode: false  # trueで test_yaw_angle / test_pitch_angle を購読
+        manual_mode_pitch_fixed_angle: 0.0  # manual_mode=true 時の固定 pitch 角度[rad]
 
-        # yaw control parameters
-        yaw_kp: 1.2 # 比例ゲイン
-        yaw_max_output: 1.0 # 出力上限 (rad/s)
-        yaw_tolerance: 0.02 # 偏差がこの値以下なら停止
+        # image target settings (target_image_position topic, normalized coords)
+        image_center_x: 0.5
+        image_center_y: 0.5
+        image_tolerance_x: 0.02
+        image_tolerance_y: 0.02
+        target_timeout_sec: 0.2
 
-        # Pitch control parameters ->位置制御
-        # pitch_kp: 1.0 # 比例ゲイン
-        # pitch_max_output: 1.0 # 出力上限
-        pitch_tolerance: 0.02 # 許容誤差
-        pitch_offset: 0.0 # サーボ取り付け角などの補正 (rad)
+        # image error -> angle command gain
+        yaw_image_gain: 0.5
+        pitch_image_gain: 0.5
+        yaw_direction: 1.0
+        pitch_direction: 1.0
+
+        # motor angle caps [rad]
+        yaw_min_angle: -3.14159265359
+        yaw_max_angle: 3.14159265359
+        pitch_min_angle: -3.14159265359
+        pitch_max_angle: 3.14159265359
+
+        # fixed angle offset [rad]
+        pitch_offset: 0.0

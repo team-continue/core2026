@@ -1,15 +1,13 @@
 #include <memory>
 #include <cmath>
 #include <algorithm>
+#include <stdexcept>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float32.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
-#include "geometry_msgs/msg/transform_stamped.hpp"
-#include "tf2/exceptions.h"
-#include "tf2_ros/buffer.h"
-#include "tf2_ros/transform_listener.h"
+#include "geometry_msgs/msg/point.hpp"
 
 using namespace std::chrono_literals;
 
@@ -22,44 +20,101 @@ public:
     // ----------------------------
     // パラメータ宣言
     // ----------------------------
-    declare_parameter<std::string>("source_frame", "base_link");
-    declare_parameter<std::string>("target_frame", "enemy_tf");
-    declare_parameter<double>("rate", 30.0);
-    declare_parameter<int>("pitch_motor_id", 10);
-    declare_parameter<int>("yaw_motor_id", 7);
-
-    // Yaw制御パラメータ
-    declare_parameter<double>("yaw_kp", 1.2);
-    declare_parameter<double>("yaw_max_output", 1.0);
-    declare_parameter<double>("yaw_tolerance", 0.02);
-
-    // Pitch制御パラメータ
-    declare_parameter<double>("pitch_kp", 1.0);
-    declare_parameter<double>("pitch_max_output", 1.0);
-    declare_parameter<double>("pitch_tolerance", 0.02);
-    declare_parameter<double>("pitch_offset", 0.0);
+    this->declare_parameter<double>("rate", 30.0);
+    this->declare_parameter<int>("pitch_motor_id", 10);
+    this->declare_parameter<int>("yaw_motor_id", 7);
+    this->declare_parameter<double>("pitch_offset", 0.0);
+    this->declare_parameter<double>("yaw_min_angle", -3.14159265359);
+    this->declare_parameter<double>("yaw_max_angle", 3.14159265359);
+    this->declare_parameter<double>("pitch_min_angle", -3.14159265359);
+    this->declare_parameter<double>("pitch_max_angle", 3.14159265359);
+    this->declare_parameter<double>("image_center_x", 0.5);
+    this->declare_parameter<double>("image_center_y", 0.5);
+    this->declare_parameter<double>("image_tolerance_x", 0.02);
+    this->declare_parameter<double>("image_tolerance_y", 0.02);
+    this->declare_parameter<double>("yaw_image_gain", 0.5);
+    this->declare_parameter<double>("pitch_image_gain", 0.5);
+    this->declare_parameter<double>("yaw_direction", 1.0);
+    this->declare_parameter<double>("pitch_direction", 1.0);
+    this->declare_parameter<double>("target_timeout_sec", 0.2);
+    this->declare_parameter<bool>("enable_test_mode", false);
+    this->declare_parameter<double>("manual_mode_pitch_fixed_angle", 0.0);
 
     // ----------------------------
     // パラメータ取得
     // ----------------------------
-    get_parameter("source_frame", source_frame_);
-    get_parameter("target_frame", target_frame_);
-    get_parameter("rate", rate_);
-    get_parameter("yaw_kp", yaw_kp_);
-    get_parameter("yaw_max_output", yaw_max_output_);
-    get_parameter("yaw_tolerance", yaw_tolerance_);
-    get_parameter("pitch_kp", pitch_kp_);
-    get_parameter("pitch_max_output", pitch_max_output_);
-    get_parameter("pitch_tolerance", pitch_tolerance_);
-    get_parameter("pitch_offset", pitch_offset_);
-    get_parameter("pitch_motor_id", pitch_motor_id_);
-    get_parameter("yaw_motor_id", yaw_motor_id_);
+    this->get_parameter("rate", rate_);
+    this->get_parameter("pitch_offset", pitch_offset_);
+    this->get_parameter("yaw_min_angle", yaw_min_angle_);
+    this->get_parameter("yaw_max_angle", yaw_max_angle_);
+    this->get_parameter("pitch_min_angle", pitch_min_angle_);
+    this->get_parameter("pitch_max_angle", pitch_max_angle_);
+    this->get_parameter("image_center_x", image_center_x_);
+    this->get_parameter("image_center_y", image_center_y_);
+    this->get_parameter("image_tolerance_x", image_tolerance_x_);
+    this->get_parameter("image_tolerance_y", image_tolerance_y_);
+    this->get_parameter("yaw_image_gain", yaw_image_gain_);
+    this->get_parameter("pitch_image_gain", pitch_image_gain_);
+    this->get_parameter("yaw_direction", yaw_direction_);
+    this->get_parameter("pitch_direction", pitch_direction_);
+    this->get_parameter("target_timeout_sec", target_timeout_sec_);
+    this->get_parameter("enable_test_mode", enable_test_mode_);
+    this->get_parameter("manual_mode_pitch_fixed_angle", manual_mode_pitch_fixed_angle_);
+    this->get_parameter("pitch_motor_id", pitch_motor_id_);
+    this->get_parameter("yaw_motor_id", yaw_motor_id_);
+
+    if (rate_ <= 0.0) {
+      RCLCPP_FATAL(get_logger(), "Invalid rate=%f (must be > 0)", rate_);
+      throw std::runtime_error("invalid aimbot rate");
+    }
+    if (pitch_motor_id_ < 0 || yaw_motor_id_ < 0) {
+      RCLCPP_FATAL(
+        get_logger(), "Invalid motor ids: pitch_motor_id=%d, yaw_motor_id=%d",
+        pitch_motor_id_, yaw_motor_id_);
+      throw std::runtime_error("invalid aimbot motor ids");
+    }
+    if (yaw_min_angle_ > yaw_max_angle_) {
+      RCLCPP_FATAL(
+        get_logger(), "Invalid yaw angle caps: yaw_min_angle=%f > yaw_max_angle=%f",
+        yaw_min_angle_, yaw_max_angle_);
+      throw std::runtime_error("invalid yaw angle caps");
+    }
+    if (pitch_min_angle_ > pitch_max_angle_) {
+      RCLCPP_FATAL(
+        get_logger(), "Invalid pitch angle caps: pitch_min_angle=%f > pitch_max_angle=%f",
+        pitch_min_angle_, pitch_max_angle_);
+      throw std::runtime_error("invalid pitch angle caps");
+    }
+    if (image_tolerance_x_ < 0.0 || image_tolerance_y_ < 0.0 || target_timeout_sec_ < 0.0) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid image params: image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f",
+        image_tolerance_x_, image_tolerance_y_, target_timeout_sec_);
+      throw std::runtime_error("invalid aimbot image parameters");
+    }
 
     // ----------------------------
     // Subscriber
     // ----------------------------
+    target_image_sub_ = create_subscription<geometry_msgs::msg::Point>(
+      "target_image_position", 10,
+      std::bind(&AimBot::targetImageCallback, this, std::placeholders::_1));
+
+    if (enable_test_mode_) {
+      test_yaw_sub_ = create_subscription<std_msgs::msg::Float32>(
+        "test_yaw_angle", 10,
+        std::bind(&AimBot::testYawCallback, this, std::placeholders::_1));
+      test_pitch_sub_ = create_subscription<std_msgs::msg::Float32>(
+        "test_pitch_angle", 10,
+        std::bind(&AimBot::testPitchCallback, this, std::placeholders::_1));
+      RCLCPP_WARN(get_logger(), "Test mode enabled: subscribing test_yaw_angle / test_pitch_angle");
+    }
+
     aimbot_state_sub_ = create_subscription<std_msgs::msg::Bool>(
       "aimbot_state", 10, std::bind(&AimBot::aimbotStateCallback, this, std::placeholders::_1));
+
+    manual_mode_sub_ = create_subscription<std_msgs::msg::Bool>(
+      "manual_mode", 10, std::bind(&AimBot::manualModeCallback, this, std::placeholders::_1));
 
     hazard_state_sub_ = create_subscription<std_msgs::msg::Bool>(
       "hazard_status", 10, std::bind(&AimBot::hazardCallback, this, std::placeholders::_1));
@@ -70,15 +125,8 @@ public:
     // ----------------------------
     // Publisher
     // ----------------------------
-    turret_dev_pub_ = create_publisher<std_msgs::msg::Float32>("turret_deviation", 10);
     turret_motor_pub_ = create_publisher<std_msgs::msg::Float32>("/can/tx/turret_motor_angle", 10);
     pitch_motor_pub_ = create_publisher<std_msgs::msg::Float32>("/can/tx/pitch_motor_angle", 10);
-
-    // ----------------------------
-    // TF
-    // ----------------------------
-    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // ----------------------------
     // Timer
@@ -87,8 +135,8 @@ public:
     timer_ = create_wall_timer(period, std::bind(&AimBot::timerCallback, this));
 
     RCLCPP_INFO(
-      get_logger(), "AimBot started. TF: %s -> %s",
-      source_frame_.c_str(), target_frame_.c_str());
+      get_logger(), "AimBot started. image_center=(%.3f, %.3f), image_tolerance=(%.3f, %.3f)",
+      image_center_x_, image_center_y_, image_tolerance_x_, image_tolerance_y_);
   }
 
 private:
@@ -101,6 +149,46 @@ private:
   void hazardCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     hazard_detected_ = msg->data;
+  }
+
+  void manualModeCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    const bool prev = manual_mode_active_;
+    manual_mode_active_ = msg->data;
+
+    if (manual_mode_active_ && !prev) {
+      if (!has_joint_state_) {
+        manual_mode_active_ = false;
+        RCLCPP_WARN(this->get_logger(), "Manual mode ON ignored: joint_states not received yet");
+        return;
+      }
+      manual_mode_yaw_hold_angle_ = std::clamp(yaw_angle_, yaw_min_angle_, yaw_max_angle_);
+      RCLCPP_INFO(
+        this->get_logger(), "Manual mode ON: hold yaw=%f, fixed pitch=%f",
+        manual_mode_yaw_hold_angle_, manual_mode_pitch_fixed_angle_);
+    } else if (!manual_mode_active_ && prev) {
+      RCLCPP_INFO(this->get_logger(), "Manual mode OFF");
+    }
+  }
+
+  void targetImageCallback(const geometry_msgs::msg::Point::SharedPtr msg)
+  {
+    target_image_x_ = msg->x;
+    target_image_y_ = msg->y;
+    has_target_ = true;
+    last_target_time_ = this->now();
+  }
+
+  void testYawCallback(const std_msgs::msg::Float32::SharedPtr msg)
+  {
+    test_yaw_target_ = msg->data;
+    has_test_yaw_target_ = true;
+  }
+
+  void testPitchCallback(const std_msgs::msg::Float32::SharedPtr msg)
+  {
+    test_pitch_target_ = msg->data;
+    has_test_pitch_target_ = true;
   }
 
   void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
@@ -119,56 +207,76 @@ private:
 
     yaw_angle_ = msg->position[yaw_motor_id_];
     pitch_angle_ = msg->position[pitch_motor_id_];
+    has_joint_state_ = true;
   }
 
   void timerCallback()
   {
     // 緊急停止または無効時はゼロ出力
     if (!aimbot_enabled_ || hazard_detected_) {
-      publishZero();
+      publishHoldCurrent();
       return;
     }
 
-    geometry_msgs::msg::TransformStamped transform;
-    try {
-      transform = tf_buffer_->lookupTransform(
-        source_frame_, target_frame_, tf2::TimePointZero,
-        200ms);
-    } catch (const tf2::TransformException & ex) {
+    if (enable_test_mode_) {
+      if (!has_test_yaw_target_ || !has_test_pitch_target_) {
+        RCLCPP_WARN_THROTTLE(
+          this->get_logger(), *this->get_clock(), 2000,
+          "test mode enabled but test yaw/pitch target not received yet");
+        publishHoldCurrent();
+        return;
+      }
+
+      std_msgs::msg::Float32 yaw_msg;
+      yaw_msg.data = static_cast<float>(std::clamp(test_yaw_target_, yaw_min_angle_, yaw_max_angle_));
+      turret_motor_pub_->publish(yaw_msg);
+
+      std_msgs::msg::Float32 pitch_msg;
+      pitch_msg.data = static_cast<float>(
+        std::clamp(test_pitch_target_, pitch_min_angle_, pitch_max_angle_));
+      pitch_motor_pub_->publish(pitch_msg);
+      return;
+    }
+
+    if (manual_mode_active_) {
+      const double yaw_output = std::clamp(manual_mode_yaw_hold_angle_, yaw_min_angle_, yaw_max_angle_);
+      const double pitch_output = std::clamp(
+        manual_mode_pitch_fixed_angle_, pitch_min_angle_, pitch_max_angle_);
+
+      std_msgs::msg::Float32 yaw_msg;
+      yaw_msg.data = static_cast<float>(yaw_output);
+      turret_motor_pub_->publish(yaw_msg);
+
+      std_msgs::msg::Float32 pitch_msg;
+      pitch_msg.data = static_cast<float>(pitch_output);
+      pitch_motor_pub_->publish(pitch_msg);
+      return;
+    }
+
+    if (!has_target_ || (this->now() - last_target_time_).seconds() > target_timeout_sec_) {
       RCLCPP_WARN_THROTTLE(
-        this->get_logger(),
-        *this->get_clock(), 2000, "TF lookup failed: %s", ex.what());
-      publishZero();
+        this->get_logger(), *this->get_clock(), 2000,
+        "target_image_position timeout");
+      publishHoldCurrent();
       return;
     }
 
-    // --- 敵座標を取得 ---
-    double tx = transform.transform.translation.x;
-    double ty = transform.transform.translation.y;
-    double tz = transform.transform.translation.z;
+    // 画像内位置（0.0-1.0想定）から中心との差を計算
+    const double x_error = target_image_x_ - image_center_x_;
+    const double y_error = target_image_y_ - image_center_y_;
 
-    // --- 目標角度算出 ---
-    double target_yaw = std::atan2(ty, tx);
-    double dist_xy = std::sqrt(tx * tx + ty * ty);
-    double target_pitch = std::atan2(-tz, dist_xy) + pitch_offset_;
+    // モータ側が位置制御を行う前提で、現在角 + 画像偏差から目標角を算出
+    double yaw_target = yaw_angle_;
+    double pitch_target = pitch_angle_ + pitch_offset_;
+    if (std::fabs(x_error) > image_tolerance_x_) {
+      yaw_target += yaw_direction_ * yaw_image_gain_ * x_error;
+    }
+    if (std::fabs(y_error) > image_tolerance_y_) {
+      pitch_target += pitch_direction_ * pitch_image_gain_ * y_error;
+    }
 
-    // --- 偏差計算（現在角度との差分） ---
-    double yaw_error = target_yaw - yaw_angle_;
-    double pitch_error = target_pitch - pitch_angle_;
-
-    // --- 偏差を出力（デバッグ用） ---
-    std_msgs::msg::Float32 dev_msg;
-    dev_msg.data = static_cast<float>(yaw_error);
-    turret_dev_pub_->publish(dev_msg);
-
-    // --- 出力計算（比例制御） ---
-    double yaw_output = std::clamp(yaw_kp_ * yaw_error, -yaw_max_output_, yaw_max_output_);
-    // double pitch_output = std::clamp(pitch_kp_ * pitch_error, -pitch_max_output_, pitch_max_output_);
-    double pitch_output = pitch_error;
-
-    // --- 許容範囲以下なら0出力 ---
-    if (std::fabs(yaw_error) < yaw_tolerance_) {yaw_output = 0.0;}
-    if (std::fabs(pitch_error) < pitch_tolerance_) {pitch_output = 0.0;}
+    const double yaw_output = std::clamp(yaw_target, yaw_min_angle_, yaw_max_angle_);
+    const double pitch_output = std::clamp(pitch_target, pitch_min_angle_, pitch_max_angle_);
 
     // --- 出力Publish ---
     std_msgs::msg::Float32 yaw_msg;
@@ -180,44 +288,67 @@ private:
     pitch_motor_pub_->publish(pitch_msg);
   }
 
-  void publishZero()
+  void publishHoldCurrent()
   {
-    std_msgs::msg::Float32 zero;
-    zero.data = 0.0f;
-    turret_dev_pub_->publish(zero);
-    turret_motor_pub_->publish(zero);
-    pitch_motor_pub_->publish(zero);
+    std_msgs::msg::Float32 yaw_msg;
+    yaw_msg.data = static_cast<float>(std::clamp(yaw_angle_, yaw_min_angle_, yaw_max_angle_));
+    turret_motor_pub_->publish(yaw_msg);
+
+    std_msgs::msg::Float32 pitch_msg;
+    pitch_msg.data = static_cast<float>(
+      std::clamp(pitch_angle_ + pitch_offset_, pitch_min_angle_, pitch_max_angle_));
+    pitch_motor_pub_->publish(pitch_msg);
   }
 
   // ===== 内部変数 =====
   bool aimbot_enabled_ = false;
-  bool hazard_detected_ = false;
+  bool hazard_detected_ = true;
+  bool has_joint_state_ = false;
 
   double yaw_angle_ = 0.0;
   double pitch_angle_ = 0.0;
-
-  std::string source_frame_;
-  std::string target_frame_;
-  std::string yaw_joint_name_;
-  std::string pitch_joint_name_;
+  double target_image_x_ = 0.5;
+  double target_image_y_ = 0.5;
+  bool has_target_ = false;
+  rclcpp::Time last_target_time_{0, 0, RCL_ROS_TIME};
+  double test_yaw_target_ = 0.0;
+  double test_pitch_target_ = 0.0;
+  bool has_test_yaw_target_ = false;
+  bool has_test_pitch_target_ = false;
+  bool manual_mode_active_ = false;
+  double manual_mode_yaw_hold_angle_ = 0.0;
 
   double rate_;
-  double yaw_kp_, yaw_max_output_, yaw_tolerance_;
-  double pitch_kp_, pitch_max_output_, pitch_tolerance_, pitch_offset_;
+  double pitch_offset_;
+  double yaw_min_angle_;
+  double yaw_max_angle_;
+  double pitch_min_angle_;
+  double pitch_max_angle_;
+  double image_center_x_;
+  double image_center_y_;
+  double image_tolerance_x_;
+  double image_tolerance_y_;
+  double yaw_image_gain_;
+  double pitch_image_gain_;
+  double yaw_direction_;
+  double pitch_direction_;
+  double target_timeout_sec_;
+  bool enable_test_mode_ = false;
+  double manual_mode_pitch_fixed_angle_ = 0.0;
   int pitch_motor_id_;
   int yaw_motor_id_;
 
   // ROS通信
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr turret_dev_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr turret_motor_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pitch_motor_pub_;
 
+  rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr target_image_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr test_yaw_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr test_pitch_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr aimbot_state_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr manual_mode_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_state_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
-
-  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
-  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

@@ -10,8 +10,8 @@ from ament_index_python.packages import get_package_share_directory
 4: 無限回転Yaw Robostride 06
 5-6: 砲台Yaw Robostride05×2
 7-14: Feetech
-15: ESC
-16: 非常停止
+15-16: ESC
+17: 非常停止
 '''
 
 
@@ -22,10 +22,7 @@ def generate_launch_description():
         "config",
         "shooter.params.yaml"
     )
-
-    hazard_remaps = [
-        ("hazard_status", "/system/emergency/hazard_status")
-    ]
+    hazard_remaps = ("hazard_status", "/system/emergency/hazard_status")
 
     shooter_cmd_gate_node = Node(
         package="core_shooter",
@@ -34,7 +31,6 @@ def generate_launch_description():
         output="screen",
         parameters=[shooter_params],
         remappings=[
-            ("center_shoot_cmd", "/center/shoot_cmd"),
             ("left_shoot_cmd", "/left/shoot_cmd"),
             ("right_shoot_cmd", "/right/shoot_cmd"),
         ]
@@ -52,7 +48,9 @@ def generate_launch_description():
                 "loading_motor_id": 9
             }
         ],
-        remappings=hazard_remaps
+        remappings=[
+            hazard_remaps
+        ]
     )
 
     right_shooter_controller_node = Node(
@@ -67,7 +65,9 @@ def generate_launch_description():
                 "loading_motor_id": 10
             }
         ],
-        remappings=hazard_remaps
+        remappings=[
+            hazard_remaps
+        ]
     )
 
     left_magazine_manager_node = Node(
@@ -77,9 +77,14 @@ def generate_launch_description():
         output="screen",
         parameters=[
             shooter_params,
+            {
+                "disk_hold_left_motor_id": 13,
+                "disk_hold_right_motor_id": 14
+            }
         ],
         remappings=[
-            ("disk_distance_sensor", "distance2")
+            ("disk_distance_sensor", "distance2"),
+            hazard_remaps,
         ]
     )
 
@@ -90,9 +95,14 @@ def generate_launch_description():
         output="screen",
         parameters=[
             shooter_params,
+            {
+                "disk_hold_left_motor_id": 9,
+                "disk_hold_right_motor_id": 10
+            }
         ],
         remappings=[
-            ("disk_distance_sensor", "distance3")
+            ("disk_distance_sensor", "distance3"),
+            hazard_remaps,
         ]
     )
 
@@ -104,13 +114,14 @@ def generate_launch_description():
         parameters=[
             shooter_params,
             {
-                "pitch_motor_id": 7,
-                "yaw_motor_id": 5,
-                "disk_hold_left_motor_id": 11,
-                "disk_hold_right_motor_id": 12
+                "pitch_motor_id": 11,
+                "yaw_motor_id": 6,
+
             }
         ],
-        remappings=hazard_remaps
+        remappings=[
+            hazard_remaps
+        ]
     )
 
     right_aim_bot_node = Node(
@@ -121,13 +132,13 @@ def generate_launch_description():
         parameters=[
             shooter_params,
             {
-                "pitch_motor_id": 8,
-                "yaw_motor_id": 6,
-                "disk_hold_left_motor_id": 13,
-                "disk_hold_right_motor_id": 14
+                "pitch_motor_id": 7,
+                "yaw_motor_id": 5,
             }
         ],
-        remappings=hazard_remaps
+        remappings=[
+            hazard_remaps
+        ]
     )
 
     return LaunchDescription([

@@ -22,15 +22,15 @@ public:
     //========================================
     // parameters
     //========================================
-    declare_parameter("remaining_disks", 27);
-    declare_parameter("disk_thickness", 1.0);
-    declare_parameter("sensor_height", 100.0);
-    declare_parameter("window_size", 3);
+    this->declare_parameter<int>("remaining_disks", 27);
+    this->declare_parameter<double>("disk_thickness", 1.0);
+    this->declare_parameter<double>("sensor_height", 100.0);
+    this->declare_parameter<int>("window_size", 3);
 
-    remaining_disks_ = this->get_parameter("remaining_disks").as_int();
-    disk_thickness_ = this->get_parameter("disk_thickness").as_double();
-    sensor_height_ = this->get_parameter("sensor_height").as_double();
-    window_size_ = this->get_parameter("window_size").as_int();
+    this->get_parameter("remaining_disks", remaining_disks_);
+    this->get_parameter("disk_thickness", disk_thickness_);
+    this->get_parameter("sensor_height", sensor_height_);
+    this->get_parameter("window_size", window_size_);
 
     RCLCPP_INFO(
       this->get_logger(),
@@ -40,38 +40,27 @@ public:
     //========================================
     // disk hold motor parameters
     //========================================
-    declare_parameter("disk_hold_right_motor_id", 100);
-    declare_parameter("disk_hold_left_motor_id", 101);
+    this->declare_parameter<int>("disk_hold_right_motor_id", 100);
+    this->declare_parameter<int>("disk_hold_left_motor_id", 101);
 
-    declare_parameter("hold_left_angle", 30.0);
-    declare_parameter("hold_right_angle", 30.0);
-    declare_parameter("release_left_angle", -10.0);
-    declare_parameter("release_right_angle", -10.0);
-
-    disk_hold_right_motor_id_ = this->get_parameter("disk_hold_right_motor_id").as_int();
-    disk_hold_left_motor_id_ = this->get_parameter("disk_hold_left_motor_id").as_int();
-
-    hold_left_angle_ = this->get_parameter("hold_left_angle").as_double();
-    hold_right_angle_ = this->get_parameter("hold_right_angle").as_double();
-    release_left_angle_ = this->get_parameter("release_left_angle").as_double();
-    release_right_angle_ = this->get_parameter("release_right_angle").as_double();
+    this->get_parameter("disk_hold_right_motor_id", disk_hold_right_motor_id_);
+    this->get_parameter("disk_hold_left_motor_id", disk_hold_left_motor_id_);
 
     //========================================
     // regrip parameters
     //========================================
-    declare_parameter("regrip_enabled", true);
-    declare_parameter("regrip_release_ms", 200);
+    this->declare_parameter<bool>("regrip_enabled", true);
+    this->declare_parameter<int>("regrip_release_ms", 200);
 
     // 下段残2でregripは仕様固定（必要ならパラメータ化OK）
-    regrip_enabled_ = this->get_parameter("regrip_enabled").as_bool();
-    regrip_release_ms_ = this->get_parameter("regrip_release_ms").as_int();
+    this->get_parameter("regrip_enabled", regrip_enabled_);
+    this->get_parameter("regrip_release_ms", regrip_release_ms_);
 
     //========================================
     // disk hold parameters (redundant check)
     //========================================
-    declare_parameter("hold_disable_height_margin_mm", 0.5);
-    hold_disable_height_margin_mm_ =
-      this->get_parameter("hold_disable_height_margin_mm").as_double();
+    this->declare_parameter<double>("hold_disable_height_margin_mm", 0.5);
+    this->get_parameter("hold_disable_height_margin_mm", hold_disable_height_margin_mm_);
 
     //========================================
     // subscribers
@@ -271,7 +260,7 @@ private:
       state_ = State::IDLE_RELEASED;
       regrip_done_ = false;
       latched_valid_ = false;
-      publish_angles(release_left_angle_, release_right_angle_);
+      publish_hold_command(RELEASE);
       return;
     }
 
@@ -290,7 +279,7 @@ private:
       state_ = State::IDLE_RELEASED;
       regrip_done_ = false;
       latched_valid_ = false;
-      publish_angles(release_left_angle_, release_right_angle_);
+      publish_hold_command(RELEASE);
       return;
     }
 
@@ -301,7 +290,7 @@ private:
       state_ = State::IDLE_RELEASED;
       regrip_done_ = false;
       latched_valid_ = false;
-      publish_angles(release_left_angle_, release_right_angle_);
+      publish_hold_command(RELEASE);
       return;
     }
 
@@ -344,19 +333,19 @@ private:
       }
     }
 
-    // (D) 状態に応じて角度指令
+    // (D) 状態に応じて0/1指令（0: release, 1: grip）
     switch (state_) {
       case State::IDLE_RELEASED:
-        publish_angles(release_left_angle_, release_right_angle_);
+        publish_hold_command(RELEASE);
         break;
 
       case State::HOLDING:
-        publish_angles(hold_left_angle_, hold_right_angle_);
+        publish_hold_command(GRIP);
         break;
 
       case State::REGRIP_RELEASING:
         // 開放中
-        publish_angles(release_left_angle_, release_right_angle_);
+        publish_hold_command(RELEASE);
 
         // ★REGRIP中はセンサが見える想定
         // 移動平均の窓が揃ってから同期（安定化）
@@ -384,10 +373,11 @@ private:
   //========================================
   // publish
   //========================================
-  void publish_angles(double left_angle, double right_angle)
+  void publish_hold_command(int hold_cmd)
   {
-    motorPublish(disk_hold_left_motor_id_, (float)left_angle);
-    motorPublish(disk_hold_right_motor_id_, (float)right_angle);
+    const float cmd = static_cast<float>(hold_cmd);
+    motorPublish(disk_hold_left_motor_id_, cmd);
+    motorPublish(disk_hold_right_motor_id_, cmd);
   }
 
   void motorPublish(int id, float data)
@@ -437,17 +427,17 @@ private:
   int window_size_ = 3;
 
   // disk hold motor params
+  enum GRIPSTATE
+  {
+    RELEASE = 0,
+    GRIP = 1
+  };
   int disk_hold_left_motor_id_ = 101;
   int disk_hold_right_motor_id_ = 100;
 
-  double hold_left_angle_ = 30.0;
-  double hold_right_angle_ = 30.0;
-  double release_left_angle_ = -10.0;
-  double release_right_angle_ = -10.0;
-
   // disk hold state
   bool hold_on_ = false;
-  bool hazard_active_ = false;
+  bool hazard_active_ = true;
   State state_ = State::IDLE_RELEASED;
 
   // regrip

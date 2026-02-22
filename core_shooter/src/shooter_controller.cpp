@@ -1,6 +1,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include <chrono>
 #include <math.h>
+#include <stdexcept>
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/int32.hpp"
 #include "std_msgs/msg/float32.hpp"
@@ -18,11 +19,17 @@ public:
     //========================================
     // shoot id parameters
     //========================================
-    declare_parameter("shoot_motor_id", 100);
-    declare_parameter("loading_motor_id", 100);
+    this->declare_parameter<int>("shoot_motor_id", 100);
+    this->declare_parameter<int>("loading_motor_id", 100);
 
-    shoot_motor_id_ = this->get_parameter("shoot_motor_id").as_int();
-    loading_motor_id_ = this->get_parameter("loading_motor_id").as_int();
+    this->get_parameter("shoot_motor_id", shoot_motor_id_);
+    this->get_parameter("loading_motor_id", loading_motor_id_);
+    if (shoot_motor_id_ < 0 || loading_motor_id_ < 0) {
+      RCLCPP_FATAL(
+        this->get_logger(), "Invalid motor ids: shoot_motor_id=%d, loading_motor_id=%d",
+        shoot_motor_id_, loading_motor_id_);
+      throw std::runtime_error("invalid shooter motor ids");
+    }
 
     RCLCPP_INFO(
       this->get_logger(), "shoot_motor_id: %d, loading_motor_id: %d", shoot_motor_id_,
@@ -31,47 +38,72 @@ public:
     //========================================
     // shoot parameters
     //========================================
-    declare_parameter("burst_count", 3);
-    declare_parameter("shoot_interval_ms", 500);
-    declare_parameter("burst_interval_ms", 500);
-    declare_parameter("fullauto_interval_ms", 500);
+    this->declare_parameter<int>("burst_count", 3);
+    this->declare_parameter<int>("shoot_interval_ms", 500);
+    this->declare_parameter<int>("burst_interval_ms", 500);
+    this->declare_parameter<int>("fullauto_interval_ms", 500);
+    this->declare_parameter<double>("shoot_motor_rotation_cmd_activation_delay_sec", 2.0);
 
-    burst_count_ = this->get_parameter("burst_count").as_int();
-    shoot_interval_ms_ = this->get_parameter("shoot_interval_ms").as_int();
-    burst_interval_ms_ = this->get_parameter("burst_interval_ms").as_int();
-    fullauto_interval_ms_ = this->get_parameter("fullauto_interval_ms").as_int();
+    this->get_parameter("burst_count", burst_count_);
+    this->get_parameter("shoot_interval_ms", shoot_interval_ms_);
+    this->get_parameter("burst_interval_ms", burst_interval_ms_);
+    this->get_parameter("fullauto_interval_ms", fullauto_interval_ms_);
+    this->get_parameter(
+      "shoot_motor_rotation_cmd_activation_delay_sec",
+      shoot_motor_rotation_cmd_activation_delay_sec_);
+    if (
+      burst_count_ <= 0 || shoot_interval_ms_ < 0 || burst_interval_ms_ < 0 || fullauto_interval_ms_ < 0 ||
+      shoot_motor_rotation_cmd_activation_delay_sec_ < 0.0)
+    {
+      RCLCPP_FATAL(
+        this->get_logger(),
+        "Invalid shoot params: burst_count=%d, shoot_interval_ms=%d, burst_interval_ms=%d, fullauto_interval_ms=%d, shoot_motor_rotation_cmd_activation_delay_sec=%f",
+        burst_count_, shoot_interval_ms_, burst_interval_ms_, fullauto_interval_ms_,
+        shoot_motor_rotation_cmd_activation_delay_sec_);
+      throw std::runtime_error("invalid shoot parameters");
+    }
 
     RCLCPP_INFO(
-      this->get_logger(), "burst: %d, burst_interval_ms: %d, burst_interval_ms: %d, fullauto_interval_ms: %d", burst_count_, shoot_interval_ms_, burst_interval_ms_,
-      fullauto_interval_ms_);
+      this->get_logger(),
+      "burst: %d, shoot_interval_ms: %d, burst_interval_ms: %d, fullauto_interval_ms: %d, shoot_motor_rotation_cmd_activation_delay_sec: %.3f",
+      burst_count_, shoot_interval_ms_, burst_interval_ms_, fullauto_interval_ms_,
+      shoot_motor_rotation_cmd_activation_delay_sec_);
 
     //========================================
     // panel limit parameters
     //========================================
-    declare_parameter("limit_rad", std::vector<double>(4, 0.0));
-    declare_parameter("enable_panel_synchronizer", true);
-    declare_parameter("yaw_reflect", 1.0);
+    this->declare_parameter<std::vector<double>>("limit_rad", std::vector<double>(4, 0.0));
+    this->declare_parameter<bool>("enable_panel_synchronizer", true);
 
-    limit_rad_ = this->get_parameter("limit_rad").as_double_array();
+    this->get_parameter("limit_rad", limit_rad_);
+    if (limit_rad_.size() != 4) {
+      RCLCPP_FATAL(
+        this->get_logger(), "Invalid limit_rad size=%zu (expected 4)", limit_rad_.size());
+      throw std::runtime_error("invalid limit_rad size");
+    }
     RCLCPP_INFO(
       this->get_logger(), "limit_rad: %f, %f, %f, %f", limit_rad_[0], limit_rad_[1], limit_rad_[2],
       limit_rad_[3]);
 
-    enable_panel_synchronizer_ = this->get_parameter("enable_panel_synchronizer").as_bool();
-    yaw_reflect_ = this->get_parameter("yaw_reflect").as_double();
+    this->get_parameter("enable_panel_synchronizer", enable_panel_synchronizer_);
     RCLCPP_INFO(
-      this->get_logger(), "enable_panel_synchronizer: %d, yaw_reflect: %f", enable_panel_synchronizer_,
-      yaw_reflect_);
+      this->get_logger(), "enable_panel_synchronizer: %d", enable_panel_synchronizer_);
 
     //========================================
     // loading motor parameters
     //========================================
-    declare_parameter("loading_motor_speed", 3.0);
-    declare_parameter("loading_motor_initial_angle", std::vector<double>(4, 0.0));
+    this->declare_parameter<double>("loading_motor_speed", 3.0);
+    this->declare_parameter<std::vector<double>>(
+      "loading_motor_initial_angle", std::vector<double>(3, 0.0));
 
-    loading_motor_speed_ = this->get_parameter("loading_motor_speed").as_double();
-    loading_motor_initial_angle_ =
-      this->get_parameter("loading_motor_initial_angle").as_double_array();
+    this->get_parameter("loading_motor_speed", loading_motor_speed_);
+    this->get_parameter("loading_motor_initial_angle", loading_motor_initial_angle_);
+    if (loading_motor_initial_angle_.size() != 3) {
+      RCLCPP_FATAL(
+        this->get_logger(), "Invalid loading_motor_initial_angle size=%zu (expected 3)",
+        loading_motor_initial_angle_.size());
+      throw std::runtime_error("invalid loading_motor_initial_angle size");
+    }
 
     RCLCPP_INFO(
       this->get_logger(), "loading_motor_speed: %f, loading_motor1_initial_angle: %f, loading_motor2_initial_angle: %f, loading_motor3_initial_angle: %f",
@@ -81,34 +113,41 @@ public:
     //========================================
     // shoot motor parameters
     //========================================
-    declare_parameter("min_speed", 1200.0);
-    declare_parameter("target_speed", std::vector<double>(3, 0.0));
-    declare_parameter("motor_target_threshold", 0.95);
+    this->declare_parameter<std::vector<double>>("target_speed", std::vector<double>(3, 0.0));
 
-    min_speed_ = this->get_parameter("min_speed").as_double();
-    shoot_motor_target_speed_ = this->get_parameter("target_speed").as_double_array();
-    motor_target_threshold_ = this->get_parameter("motor_target_threshold").as_double();
+    this->get_parameter("target_speed", shoot_motor_target_speed_);
+    if (shoot_motor_target_speed_.size() != 3) {
+      RCLCPP_FATAL(
+        this->get_logger(), "Invalid target_speed size=%zu (expected 3)",
+        shoot_motor_target_speed_.size());
+      throw std::runtime_error("invalid target_speed size");
+    }
 
     RCLCPP_INFO(
-      this->get_logger(), "min_speed: %f, target_speed1: %f, target_speed2: %f, target_speed3: %f, motor_target_threshold: %f",
-      min_speed_, shoot_motor_target_speed_[0], shoot_motor_target_speed_[1],
-      shoot_motor_target_speed_[2], motor_target_threshold_);
+      this->get_logger(), "target_speed1: %f, target_speed2: %f, target_speed3: %f",
+      shoot_motor_target_speed_[0], shoot_motor_target_speed_[1], shoot_motor_target_speed_[2]);
 
     //========================================
     // jam parameters
     //========================================
-    declare_parameter("jam_detect_time_sec", 0.1);
+    this->declare_parameter<double>("jam_detect_time_sec", 0.1);
 
-    jam_detect_time_sec_ = this->get_parameter("jam_detect_time_sec").as_double();
+    this->get_parameter("jam_detect_time_sec", jam_detect_time_sec_);
+    if (jam_detect_time_sec_ < 0.0) {
+      RCLCPP_FATAL(
+        this->get_logger(), "Invalid jam_detect_time_sec=%f (must be >= 0)",
+        jam_detect_time_sec_);
+      throw std::runtime_error("invalid jam_detect_time_sec");
+    }
 
     RCLCPP_INFO(this->get_logger(), "jam_detect_time_sec_: %f", jam_detect_time_sec_);
 
     //========================================
     // debug parameters
     //========================================
-    declare_parameter("set_initial_rad", 0.0);
+    this->declare_parameter<double>("set_initial_rad", 0.0);
 
-    set_initial_rad_ = this->get_parameter("set_initial_rad").as_double();
+    this->get_parameter("set_initial_rad", set_initial_rad_);
 
     RCLCPP_INFO(this->get_logger(), "set_initial_rad_: %f", set_initial_rad_);
 
@@ -118,9 +157,6 @@ public:
     joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
       "/joint_states", 10,
       std::bind(&ShooterController::jointStateCallback, this, std::placeholders::_1));
-    target_omega_sub_ = this->create_subscription<std_msgs::msg::Float32>(
-      "/target_omega", 10,
-      std::bind(&ShooterController::targetOmegaCallback, this, std::placeholders::_1));
     jam_sensor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "jam", 10,
       std::bind(&ShooterController::jamSensorCallback, this, std::placeholders::_1));
@@ -184,13 +220,7 @@ private:
     }
 
     loading_motor_rad_ = msg->position[loading_motor_id_];
-    shoot_motor_rad_ = msg->velocity[shoot_motor_id_];
     turret_angle_from_chassis_ = msg->position[4];
-  }
-
-  void targetOmegaCallback(const std_msgs::msg::Float32::SharedPtr msg)
-  {
-    target_omega_ = msg->data;
   }
 
   void jamSensorCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -241,23 +271,36 @@ private:
 
   void shootMotorCallback(const std_msgs::msg::Float32::SharedPtr msg)
   {
+    float commanded_speed = 0.0f;
     switch (state) {
       case EMERGENCY:
-        setSpeed(shoot_motor_id_, 0.0);
+        commanded_speed = 0.0f;
         break;
 
       default:
         if (msg->data > 0.7) {
-          setSpeed(shoot_motor_id_, shoot_motor_target_speed_[0]);
+          commanded_speed = static_cast<float>(shoot_motor_target_speed_[0]);
         } else if (msg->data > 0.4) {
-          setSpeed(shoot_motor_id_, shoot_motor_target_speed_[1]);
+          commanded_speed = static_cast<float>(shoot_motor_target_speed_[1]);
         } else if (msg->data > 0.1) {
-          setSpeed(shoot_motor_id_, shoot_motor_target_speed_[2]);
+          commanded_speed = static_cast<float>(shoot_motor_target_speed_[2]);
         } else {
-          setSpeed(shoot_motor_id_, 0.0);
+          commanded_speed = 0.0f;
         }
         break;
     }
+    setSpeed(shoot_motor_id_, commanded_speed);
+    const bool nonzero_command = commanded_speed > 0.0f;
+    if (nonzero_command) {
+      if (!shoot_motor_rotation_cmd_requested_) {
+        shoot_motor_rotation_cmd_requested_ = true;
+        shoot_motor_rotation_cmd_start_time_ = this->now();
+      }
+    } else {
+      resetShootMotorRotationCommandState();
+    }
+
+    updateShootMotorRotationCommandFlag();
   }
 
   //========================================
@@ -265,6 +308,7 @@ private:
   //========================================
   void timerCallback()
   {
+    updateShootMotorRotationCommandFlag();
     jamStatePublish(is_jam_detected_);
 
     switch (state) {
@@ -285,6 +329,7 @@ private:
         {
           if (hazard_state_) {
             state = EMERGENCY;
+            resetShootMotorRotationCommandState();
             RCLCPP_INFO(get_logger(), "Set EMERGENCY in CMD_WAIT");
             break;
           }
@@ -314,6 +359,7 @@ private:
       case SHOOT:
         if (hazard_state_) {
           state = EMERGENCY;
+          resetShootMotorRotationCommandState();
           setAngle(loading_motor_id_, loading_motor_rad_);
 
           RCLCPP_INFO(get_logger(), "Set EMERGENCY in SHOOT");
@@ -340,6 +386,7 @@ private:
       case EMERGENCY:
         shoot_completed_ = false;
         shoot_repeat_count_ = 0;
+        resetShootMotorRotationCommandState();
 
         if (!hazard_state_) {
           // state = CMD_WAIT;
@@ -391,7 +438,8 @@ private:
   bool canShoot()
   {
     // hazard_status=true は危険状態なので射撃不可
-    return !hazard_state_ && isValidAngle() && isShootIntervalElapsed() && !isJamDetected();
+    return !hazard_state_ && isValidAngle() && isShootIntervalElapsed() &&
+           isShootMotorRotationCommandActive() && !isJamDetected();
   }
 
   bool isValidAngle()
@@ -409,10 +457,8 @@ private:
     //　　／　　　limit_rad_[3]
     // 　limit_rad_[2]
 
-    double shift = yaw_reflect_ * target_omega_;
-
-    // theta を逆方向にシフト + 正規化
-    double rad = turret_angle_from_chassis_ - shift;
+    // theta を正規化
+    double rad = turret_angle_from_chassis_;
     rad = fmod(rad, 2 * M_PI);
     if (rad < 0) {
       rad += 2 * M_PI;
@@ -443,6 +489,29 @@ private:
       return (this->now() - last_shoot_time_).seconds() * 1000 >= fullauto_interval_ms_;
     }
     return false;
+  }
+
+  bool isShootMotorRotationCommandActive() const
+  {
+    return shoot_motor_rotation_cmd_active_;
+  }
+
+  void updateShootMotorRotationCommandFlag()
+  {
+    if (!shoot_motor_rotation_cmd_requested_) {
+      shoot_motor_rotation_cmd_active_ = false;
+      return;
+    }
+
+    const auto elapsed = this->now() - shoot_motor_rotation_cmd_start_time_;
+    shoot_motor_rotation_cmd_active_ =
+      elapsed >= rclcpp::Duration::from_seconds(shoot_motor_rotation_cmd_activation_delay_sec_);
+  }
+
+  void resetShootMotorRotationCommandState()
+  {
+    shoot_motor_rotation_cmd_requested_ = false;
+    shoot_motor_rotation_cmd_active_ = false;
   }
 
   //========================================
@@ -511,7 +580,6 @@ private:
   // Subscription valids
   //========================================
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr target_omega_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr jam_sensor_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_status_sub_;
 
@@ -540,13 +608,14 @@ private:
   // subscription valids
   //========================================
   double loading_motor_rad_ = 0.0;
-  double shoot_motor_rad_ = 0.0;
   double turret_angle_from_chassis_ = 0.0;
 
-  double target_omega_ = 0.0;
   bool jam_photo_reflector_raw_ = false;
 
-  bool hazard_state_ = false;
+  bool hazard_state_ = true;
+  bool shoot_motor_rotation_cmd_requested_ = false;
+  bool shoot_motor_rotation_cmd_active_ = false;
+  rclcpp::Time shoot_motor_rotation_cmd_start_time_ = now();
 
   //========================================
   // parameter valids
@@ -562,7 +631,6 @@ private:
 
   std::vector<double> limit_rad_;
   bool enable_panel_synchronizer_;
-  double yaw_reflect_;
 
   float loading_motor_speed_;
   std::vector<double> loading_motor_initial_angle_;
@@ -571,11 +639,10 @@ private:
   bool shoot_ready_state_disable_;
   double set_initial_rad_;
 
-  double min_speed_;
   std::vector<double> shoot_motor_target_speed_;
-  double motor_target_threshold_;
 
   double jam_detect_time_sec_;
+  double shoot_motor_rotation_cmd_activation_delay_sec_ = 2.0;
 
   //========================================
   // valids
