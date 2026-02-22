@@ -110,11 +110,8 @@ public:
       RCLCPP_WARN(get_logger(), "Test mode enabled: subscribing test_yaw_angle / test_pitch_angle");
     }
 
-    aimbot_state_sub_ = create_subscription<std_msgs::msg::Bool>(
-      "aimbot_state", 10, std::bind(&AimBot::aimbotStateCallback, this, std::placeholders::_1));
-
     manual_mode_sub_ = create_subscription<std_msgs::msg::Bool>(
-      "manual_mode", 10, std::bind(&AimBot::manualModeCallback, this, std::placeholders::_1));
+      "/manual_mode", 10, std::bind(&AimBot::manualModeCallback, this, std::placeholders::_1));
 
     hazard_state_sub_ = create_subscription<std_msgs::msg::Bool>(
       "hazard_status", 10, std::bind(&AimBot::hazardCallback, this, std::placeholders::_1));
@@ -141,11 +138,6 @@ public:
 
 private:
   // ===== コールバック =====
-  void aimbotStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
-  {
-    aimbot_enabled_ = msg->data;
-  }
-
   void hazardCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     hazard_detected_ = msg->data;
@@ -212,8 +204,8 @@ private:
 
   void timerCallback()
   {
-    // 緊急停止または無効時はゼロ出力
-    if (!aimbot_enabled_ || hazard_detected_) {
+    // 緊急停止時は現在角保持
+    if (hazard_detected_) {
       publishHoldCurrent();
       return;
     }
@@ -228,7 +220,8 @@ private:
       }
 
       std_msgs::msg::Float32 yaw_msg;
-      yaw_msg.data = static_cast<float>(std::clamp(test_yaw_target_, yaw_min_angle_, yaw_max_angle_));
+      yaw_msg.data =
+        static_cast<float>(std::clamp(test_yaw_target_, yaw_min_angle_, yaw_max_angle_));
       turret_motor_pub_->publish(yaw_msg);
 
       std_msgs::msg::Float32 pitch_msg;
@@ -239,7 +232,9 @@ private:
     }
 
     if (manual_mode_active_) {
-      const double yaw_output = std::clamp(manual_mode_yaw_hold_angle_, yaw_min_angle_, yaw_max_angle_);
+      const double yaw_output = std::clamp(
+        manual_mode_yaw_hold_angle_, yaw_min_angle_,
+        yaw_max_angle_);
       const double pitch_output = std::clamp(
         manual_mode_pitch_fixed_angle_, pitch_min_angle_, pitch_max_angle_);
 
@@ -301,7 +296,6 @@ private:
   }
 
   // ===== 内部変数 =====
-  bool aimbot_enabled_ = false;
   bool hazard_detected_ = true;
   bool has_joint_state_ = false;
 
@@ -345,7 +339,6 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr target_image_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr test_yaw_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr test_pitch_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr aimbot_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr manual_mode_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_state_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;

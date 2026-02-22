@@ -52,7 +52,8 @@ public:
       "shoot_motor_rotation_cmd_activation_delay_sec",
       shoot_motor_rotation_cmd_activation_delay_sec_);
     if (
-      burst_count_ <= 0 || shoot_interval_ms_ < 0 || burst_interval_ms_ < 0 || fullauto_interval_ms_ < 0 ||
+      burst_count_ <= 0 || shoot_interval_ms_ < 0 || burst_interval_ms_ < 0 ||
+      fullauto_interval_ms_ < 0 ||
       shoot_motor_rotation_cmd_activation_delay_sec_ < 0.0)
     {
       RCLCPP_FATAL(

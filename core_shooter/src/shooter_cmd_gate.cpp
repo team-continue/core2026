@@ -16,7 +16,8 @@ public:
     this->declare_parameter<int>("burst_count", 3);
     this->get_parameter("burst_count", burst_count_);
     if (burst_count_ <= 0) {
-      RCLCPP_FATAL(this->get_logger(), "Invalid parameter burst_count=%d (must be > 0)", burst_count_);
+      RCLCPP_FATAL(
+        this->get_logger(), "Invalid parameter burst_count=%d (must be > 0)", burst_count_);
       throw std::runtime_error("invalid burst_count");
     }
 

@@ -77,7 +77,7 @@ public:
       "disk_distance_sensor", 10,
       std::bind(&MagazineManager::diskDistanceSensorCallback, this, std::placeholders::_1));
 
-    sub_hold_state_ = this->create_subscription<std_msgs::msg::Bool>(
+    hold_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "disk_hold_state", 10,
       std::bind(&MagazineManager::holdStateCallback, this, std::placeholders::_1));
 
@@ -397,7 +397,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_status_sub_;
   rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr reloading_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr disk_distance_sensor_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_hold_state_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hold_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_status_sub_;
 
   //========================================
