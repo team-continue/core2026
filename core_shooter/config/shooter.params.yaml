@@ -7,11 +7,11 @@
         # loading_motor_id: -> launch
 
         # shoot parameters
-        burst_count: 3  # バースト発射数
-        shoot_interval_ms: 500  # 単発の発射間隔[ms]
-        burst_interval_ms: 500  # バースト時の発射間隔[ms]
-        fullauto_interval_ms: 500  # フルオート時の発射間隔[ms]
-        shoot_motor_rotation_cmd_activation_delay_sec: 2.0  # 非ゼロ速度指令開始から発射許可までの遅延[s]
+        burst_count: 3 # バースト発射数
+        shoot_interval_ms: 500 # 単発の発射間隔[ms]
+        burst_interval_ms: 500 # バースト時の発射間隔[ms]
+        fullauto_interval_ms: 500 # フルオート時の発射間隔[ms]
+        shoot_motor_rotation_cmd_activation_delay_sec: 2.0 # 非ゼロ速度指令開始から発射許可までの遅延[s]
 
         # panel limit parameters (enable_panel_synchronizer=true のとき使用)
         limit_rad: [0.349, 2.443, 3.490, 5.585]
@@ -26,7 +26,7 @@
 
         # loading motor parameters
         loading_motor_speed: 6.5
-        loading_motor_initial_angle: [0.0, 0.0, 0.0]  # 要素数は3固定
+        loading_motor_initial_angle: [0.0, 0.0, 0.0] # 要素数は3固定
 
         # shoot motor parameters
         target_speed: [2000.0, 1750.0, 1500.0]
@@ -42,10 +42,10 @@
         # motor ids are overridden in launch
         # disk_hold_left_motor_id: -> launch
         # disk_hold_right_motor_id: -> launch
-        remaining_disks: 0  # 初期弾数（例: 27 - loading_disk）
-        disk_thickness: 20.0  # [mm]
-        sensor_height: 500.0  # [mm]
-        window_size: 3  # 移動平均の窓サイズ
+        remaining_disks: 0 # 初期弾数（例: 27 - loading_disk）
+        disk_thickness: 20.0 # [mm]
+        sensor_height: 500.0 # [mm]
+        window_size: 3 # 移動平均の窓サイズ
         regrip_enabled: true
         regrip_release_ms: 200
         hold_disable_height_margin_mm: 0.5
@@ -60,8 +60,8 @@
         rate: 30.0
 
         # test/manual mode
-        enable_test_mode: false  # trueで test_yaw_angle / test_pitch_angle を購読
-        manual_mode_pitch_fixed_angle: 0.0  # manual_mode=true 時の固定 pitch 角度[rad]
+        enable_test_mode: true # trueで test_yaw_angle / test_pitch_angle を購読
+        manual_mode_pitch_fixed_angle: 0.0 # manual_mode=true 時の固定 pitch 角度[rad]
 
         # image target settings (target_image_position topic, normalized coords)
         image_center_x: 0.5

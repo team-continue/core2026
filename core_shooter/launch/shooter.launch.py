@@ -45,6 +45,7 @@ def generate_launch_description():
             shooter_params,
             {
                 "shoot_motor_id": 15,
+                # "loading_motor_id": 12
                 "loading_motor_id": 9
             }
         ],
@@ -61,7 +62,8 @@ def generate_launch_description():
         parameters=[
             shooter_params,
             {
-                "shoot_motor_id": 12,
+                "shoot_motor_id": 16,
+                # "loading_motor_id": 8
                 "loading_motor_id": 10
             }
         ],
@@ -78,8 +80,10 @@ def generate_launch_description():
         parameters=[
             shooter_params,
             {
-                "disk_hold_left_motor_id": 13,
-                "disk_hold_right_motor_id": 14
+                # "disk_hold_left_motor_id": 13,
+                # "disk_hold_right_motor_id": 14
+                "disk_hold_left_motor_id": 11,
+                "disk_hold_right_motor_id": 12
             }
         ],
         remappings=[
@@ -96,8 +100,10 @@ def generate_launch_description():
         parameters=[
             shooter_params,
             {
-                "disk_hold_left_motor_id": 9,
-                "disk_hold_right_motor_id": 10
+                # "disk_hold_left_motor_id": 9,
+                # "disk_hold_right_motor_id": 10
+                "disk_hold_left_motor_id": 13,
+                "disk_hold_right_motor_id": 14
             }
         ],
         remappings=[
@@ -114,8 +120,9 @@ def generate_launch_description():
         parameters=[
             shooter_params,
             {
-                "pitch_motor_id": 11,
-                "yaw_motor_id": 6,
+                # "pitch_motor_id": 11,
+                "pitch_motor_id": 7,
+                "yaw_motor_id": 5,
 
             }
         ],
@@ -132,8 +139,9 @@ def generate_launch_description():
         parameters=[
             shooter_params,
             {
-                "pitch_motor_id": 7,
-                "yaw_motor_id": 5,
+                # "pitch_motor_id": 7,
+                "pitch_motor_id": 8,
+                "yaw_motor_id": 6,
             }
         ],
         remappings=[
@@ -148,13 +156,13 @@ def generate_launch_description():
             PushRosNamespace("left"),
             left_shooter_controller_node,
             left_magazine_manager_node,
-            left_aim_bot_node,
+            # left_aim_bot_node,
         ]),
 
         GroupAction([
             PushRosNamespace("right"),
             right_shooter_controller_node,
             right_magazine_manager_node,
-            right_aim_bot_node,
+            # right_aim_bot_node,
         ]),
     ])

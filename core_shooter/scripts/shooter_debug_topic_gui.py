@@ -1,0 +1,673 @@
+#!/usr/bin/env python3
+
+import tkinter as tk
+from tkinter import ttk
+
+import rclpy
+from rclpy.node import Node
+from core_msgs.msg import CAN, CANArray
+from std_msgs.msg import Bool, Float32, Float64, Int8, Int32
+
+
+class DebugTopicPublisher(Node):
+    def __init__(self) -> None:
+        super().__init__("shooter_debug_topic_gui")
+        self.monitor_listeners = {}
+        self.monitor_subscriptions = []
+
+        self.bool_publishers = {
+            "/manual_mode": self.create_publisher(Bool, "/manual_mode", 10),
+            "/system/emergency/hazard_status": self.create_publisher(
+                Bool, "/system/emergency/hazard_status", 10
+            ),
+            "/left_shoot_once": self.create_publisher(Bool, "/left_shoot_once", 10),
+            "/left_shoot_burst": self.create_publisher(Bool, "/left_shoot_burst", 10),
+            "/left_shoot_fullauto": self.create_publisher(Bool, "/left_shoot_fullauto", 10),
+            "/right_shoot_once": self.create_publisher(Bool, "/right_shoot_once", 10),
+            "/right_shoot_burst": self.create_publisher(Bool, "/right_shoot_burst", 10),
+            "/right_shoot_fullauto": self.create_publisher(Bool, "/right_shoot_fullauto", 10),
+        }
+        self.float_publishers = {
+            "/left/test_yaw_angle": self.create_publisher(Float32, "/left/test_yaw_angle", 10),
+            "/left/test_pitch_angle": self.create_publisher(Float32, "/left/test_pitch_angle", 10),
+            "/right/test_yaw_angle": self.create_publisher(Float32, "/right/test_yaw_angle", 10),
+            "/right/test_pitch_angle": self.create_publisher(Float32, "/right/test_pitch_angle", 10),
+            "/left/shoot_motor": self.create_publisher(Float32, "/left/shoot_motor", 10),
+            "/right/shoot_motor": self.create_publisher(Float32, "/right/shoot_motor", 10),
+        }
+        self.float64_publishers = {
+            "/left/disk_hold_state": self.create_publisher(Float64, "/left/disk_hold_state", 10),
+            "/right/disk_hold_state": self.create_publisher(Float64, "/right/disk_hold_state", 10),
+        }
+        self.can_tx_pub = self.create_publisher(CANArray, "/can/tx", 10)
+        self._add_monitor_subscription("/left/remaining_disk", Int8)
+        self._add_monitor_subscription("/right/remaining_disk", Int8)
+        self._add_monitor_subscription("/left/shoot_status", Bool)
+        self._add_monitor_subscription("/right/shoot_status", Bool)
+        self._add_monitor_subscription("/left/shoot_cmd", Int32)
+        self._add_monitor_subscription("/right/shoot_cmd", Int32)
+        self._add_monitor_subscription("/left/reloading", Int8)
+        self._add_monitor_subscription("/right/reloading", Int8)
+        self._add_monitor_subscription("/left/distance2", Int32)
+        self._add_monitor_subscription("/right/distance3", Int32)
+
+    def publish_bool(self, topic: str, value: bool) -> None:
+        msg = Bool()
+        msg.data = value
+        self.bool_publishers[topic].publish(msg)
+        self.get_logger().info(f"publish {topic}={value}")
+
+    def publish_float(self, topic: str, value: float) -> None:
+        msg = Float32()
+        msg.data = float(value)
+        self.float_publishers[topic].publish(msg)
+        self.get_logger().info(f"publish {topic}={msg.data:.4f}")
+
+    def publish_float64(self, topic: str, value: float) -> None:
+        msg = Float64()
+        msg.data = float(value)
+        self.float64_publishers[topic].publish(msg)
+        self.get_logger().info(f"publish {topic}={msg.data:.4f}")
+
+    def publish_can_single(self, can_id: int, data: float) -> None:
+        can_array = CANArray()
+        can = CAN()
+        can.id = int(can_id)
+        can.data.append(float(data))
+        can_array.array.append(can)
+        self.can_tx_pub.publish(can_array)
+        self.get_logger().info(f"publish /can/tx: id={can.id}, data=[{float(data):.4f}]")
+
+    def set_monitor_listener(self, topic: str, listener) -> None:
+        self.monitor_listeners[topic] = listener
+
+    def _add_monitor_subscription(self, topic: str, msg_type) -> None:
+        sub = self.create_subscription(
+            msg_type,
+            topic,
+            lambda msg, t=topic: self._monitor_callback(t, msg),
+            10,
+        )
+        self.monitor_subscriptions.append(sub)
+
+    def _monitor_callback(self, topic: str, msg) -> None:
+        listener = self.monitor_listeners.get(topic)
+        if listener is None:
+            return
+        listener(msg.data)
+
+
+class DebugGui:
+    def __init__(self, root: tk.Tk, node: DebugTopicPublisher) -> None:
+        self.root = root
+        self.node = node
+        self.root.title("ROS2 Shooter Debug Topic Publisher")
+
+        self.status_var = tk.StringVar(value="Ready")
+        self.monitor_vars = {
+            "/left/remaining_disk": tk.StringVar(value="--"),
+            "/right/remaining_disk": tk.StringVar(value="--"),
+            "/left/shoot_status": tk.StringVar(value="--"),
+            "/right/shoot_status": tk.StringVar(value="--"),
+            "/left/shoot_cmd": tk.StringVar(value="--"),
+            "/right/shoot_cmd": tk.StringVar(value="--"),
+            "/left/reloading": tk.StringVar(value="--"),
+            "/right/reloading": tk.StringVar(value="--"),
+            "/left/distance2": tk.StringVar(value="--"),
+            "/right/distance3": tk.StringVar(value="--"),
+        }
+        self.left_yaw_var = tk.DoubleVar(value=0.0)
+        self.left_pitch_var = tk.DoubleVar(value=0.0)
+        self.right_yaw_var = tk.DoubleVar(value=0.0)
+        self.right_pitch_var = tk.DoubleVar(value=0.0)
+        self.left_shoot_motor_var = tk.DoubleVar(value=0.0)
+        self.right_shoot_motor_var = tk.DoubleVar(value=0.0)
+        self.left_yaw_entry_var = tk.StringVar(value="0.0")
+        self.left_pitch_entry_var = tk.StringVar(value="0.0")
+        self.right_yaw_entry_var = tk.StringVar(value="0.0")
+        self.right_pitch_entry_var = tk.StringVar(value="0.0")
+        self.left_shoot_motor_entry_var = tk.StringVar(value="0.0")
+        self.right_shoot_motor_entry_var = tk.StringVar(value="0.0")
+        self.can_tx_id_entry_var = tk.StringVar(value="0")
+        self.can_tx_data_entry_var = tk.StringVar(value="0.0")
+
+        self.manual_mode_var = tk.BooleanVar(value=False)
+        self.left_disk_hold_state_var = tk.BooleanVar(value=False)
+        self.right_disk_hold_state_var = tk.BooleanVar(value=False)
+        self.hazard_status_var = tk.BooleanVar(value=False)
+        self.left_fullauto_var = tk.BooleanVar(value=False)
+        self.right_fullauto_var = tk.BooleanVar(value=False)
+
+        for topic in self.monitor_vars:
+            self.node.set_monitor_listener(
+                topic, lambda value, topic=topic: self._on_monitor_value(topic, value)
+            )
+        self._build_ui()
+        self._fit_window_to_content()
+        self._schedule_spin()
+
+    def _build_ui(self) -> None:
+        outer = ttk.Frame(self.root)
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        self.canvas = tk.Canvas(outer, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(outer, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        self.v_scrollbar = scrollbar
+
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        container = ttk.Frame(self.canvas, padding=12)
+        self.scroll_container = container
+        self.canvas_window_id = self.canvas.create_window((0, 0), window=container, anchor="nw")
+        container.bind("<Configure>", self._on_scroll_frame_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+        self.root.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.root.bind_all("<Button-4>", self._on_mousewheel)
+        self.root.bind_all("<Button-5>", self._on_mousewheel)
+
+        notes = (
+            "Bool/Shooter topics are published to actual runtime topic names (absolute).\n"
+            "Monitor shows left/right runtime values (remaining_disk, shoot_status/cmd, reloading, distance)."
+        )
+        ttk.Label(container, text=notes, justify=tk.LEFT).pack(anchor=tk.W, pady=(0, 10))
+
+        content_area = ttk.Frame(container)
+        content_area.pack(fill=tk.BOTH, expand=True)
+
+        left_column = ttk.Frame(content_area)
+        right_column = ttk.Frame(content_area)
+        left_column.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 8))
+        right_column.grid(row=0, column=1, sticky=tk.NSEW)
+
+        content_area.columnconfigure(0, weight=3)
+        content_area.columnconfigure(1, weight=2)
+        content_area.rowconfigure(0, weight=1)
+
+        self._build_monitor_frame(left_column)
+        self._build_can_tx_frame(left_column)
+        self._build_state_frame(left_column)
+        self._build_shoot_frame(right_column)
+        self._build_angle_frame(container)
+
+        self.status_separator = ttk.Separator(self.root, orient=tk.HORIZONTAL)
+        self.status_separator.pack(fill=tk.X, padx=12, pady=(0, 6))
+        self.status_label = ttk.Label(self.root, textvariable=self.status_var)
+        self.status_label.pack(anchor=tk.W, padx=12, pady=(0, 8))
+
+    def _build_monitor_frame(self, parent: ttk.Frame) -> None:
+        frame = ttk.LabelFrame(parent, text="Monitor", padding=10)
+        frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(frame, text="Item").grid(row=0, column=0, sticky=tk.W, padx=(0, 8))
+        ttk.Label(frame, text="Left").grid(row=0, column=1, sticky=tk.W, padx=(0, 8))
+        ttk.Label(frame, text="Right").grid(row=0, column=2, sticky=tk.W, padx=(0, 8))
+        ttk.Label(frame, text="Type").grid(row=0, column=3, sticky=tk.W)
+
+        rows = [
+            ("remaining_disk", "/left/remaining_disk", "/right/remaining_disk", "Int8"),
+            ("shoot_status", "/left/shoot_status", "/right/shoot_status", "Bool"),
+            ("shoot_cmd", "/left/shoot_cmd", "/right/shoot_cmd", "Int32"),
+            ("reloading", "/left/reloading", "/right/reloading", "Int8"),
+            ("distance (L:distance2 / R:distance3)", "/left/distance2", "/right/distance3", "Int32"),
+        ]
+        for row_index, (label, left_topic, right_topic, type_name) in enumerate(rows, start=1):
+            ttk.Label(frame, text=label).grid(
+                row=row_index, column=0, sticky=tk.W, padx=(0, 8), pady=(6 if row_index > 1 else 4, 0)
+            )
+            ttk.Label(frame, textvariable=self.monitor_vars[left_topic], width=12).grid(
+                row=row_index, column=1, sticky=tk.W, padx=(0, 8), pady=(6 if row_index > 1 else 4, 0)
+            )
+            ttk.Label(frame, textvariable=self.monitor_vars[right_topic], width=12).grid(
+                row=row_index, column=2, sticky=tk.W, padx=(0, 8), pady=(6 if row_index > 1 else 4, 0)
+            )
+            ttk.Label(frame, text=type_name).grid(
+                row=row_index, column=3, sticky=tk.W, pady=(6 if row_index > 1 else 4, 0)
+            )
+
+    def _build_angle_frame(self, parent: ttk.Frame) -> None:
+        frame = ttk.LabelFrame(parent, text="Aimbot Test Angles", padding=10)
+        frame.pack(fill=tk.X, pady=(0, 10))
+
+        left_frame = ttk.LabelFrame(frame, text="Left")
+        left_frame.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 8))
+        right_frame = ttk.LabelFrame(frame, text="Right")
+        right_frame.grid(row=0, column=1, sticky=tk.NSEW)
+
+        self._build_angle_row(
+            left_frame,
+            row=0,
+            topic="/left/test_yaw_angle",
+            label="Yaw [rad]",
+            slider_var=self.left_yaw_var,
+            entry_var=self.left_yaw_entry_var,
+            slider_min=-3.14159265359,
+            slider_max=3.14159265359,
+        )
+        self._build_angle_row(
+            left_frame,
+            row=1,
+            topic="/left/test_pitch_angle",
+            label="Pitch [rad]",
+            slider_var=self.left_pitch_var,
+            entry_var=self.left_pitch_entry_var,
+            slider_min=-3.14159265359,
+            slider_max=3.14159265359,
+        )
+        ttk.Button(
+            left_frame,
+            text="Publish Left Angles",
+            command=lambda: self._publish_angle_pair(
+                "/left/test_yaw_angle",
+                self.left_yaw_entry_var,
+                "/left/test_pitch_angle",
+                self.left_pitch_entry_var,
+            ),
+        ).grid(row=2, column=0, columnspan=5, sticky=tk.EW, padx=8, pady=(8, 8))
+
+        self._build_angle_row(
+            right_frame,
+            row=0,
+            topic="/right/test_yaw_angle",
+            label="Yaw [rad]",
+            slider_var=self.right_yaw_var,
+            entry_var=self.right_yaw_entry_var,
+            slider_min=-3.14159265359,
+            slider_max=3.14159265359,
+        )
+        self._build_angle_row(
+            right_frame,
+            row=1,
+            topic="/right/test_pitch_angle",
+            label="Pitch [rad]",
+            slider_var=self.right_pitch_var,
+            entry_var=self.right_pitch_entry_var,
+            slider_min=-3.14159265359,
+            slider_max=3.14159265359,
+        )
+        ttk.Button(
+            right_frame,
+            text="Publish Right Angles",
+            command=lambda: self._publish_angle_pair(
+                "/right/test_yaw_angle",
+                self.right_yaw_entry_var,
+                "/right/test_pitch_angle",
+                self.right_pitch_entry_var,
+            ),
+        ).grid(row=2, column=0, columnspan=5, sticky=tk.EW, padx=8, pady=(8, 8))
+
+        frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+    def _build_can_tx_frame(self, parent: ttk.Frame) -> None:
+        frame = ttk.LabelFrame(parent, text="CAN TX (Single CAN in CANArray)", padding=10)
+        frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(frame, text="/can/tx").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+        ttk.Label(frame, text="id").grid(row=0, column=1, sticky=tk.E, padx=(0, 4), pady=4)
+        ttk.Entry(frame, textvariable=self.can_tx_id_entry_var, width=8).grid(
+            row=0, column=2, sticky=tk.W, padx=(0, 8), pady=4
+        )
+        ttk.Label(frame, text="data(float)").grid(
+            row=0, column=3, sticky=tk.E, padx=(0, 4), pady=4
+        )
+        ttk.Entry(frame, textvariable=self.can_tx_data_entry_var, width=12).grid(
+            row=0, column=4, sticky=tk.W, padx=(0, 8), pady=4
+        )
+        ttk.Button(frame, text="Publish", command=self._publish_can_tx_from_entries).grid(
+            row=0, column=5, sticky=tk.EW, pady=4
+        )
+
+        ttk.Label(
+            frame,
+            text="Publishes CANArray{ array: [ CAN{ id, data:[value] } ] }",
+        ).grid(row=1, column=0, columnspan=6, sticky=tk.W, pady=(4, 0))
+
+        frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(5, weight=0)
+
+    def _build_angle_row(
+        self,
+        parent: ttk.LabelFrame,
+        row: int,
+        topic: str,
+        label: str,
+        slider_var: tk.DoubleVar,
+        entry_var: tk.StringVar,
+        slider_min: float = -3.14159265359,
+        slider_max: float = 3.14159265359,
+    ) -> None:
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+
+        scale = ttk.Scale(
+            parent,
+            from_=slider_min,
+            to=slider_max,
+            variable=slider_var,
+            command=lambda value, ev=entry_var: ev.set(f"{float(value):.4f}"),
+        )
+        scale.grid(row=row, column=1, sticky=tk.EW, padx=(0, 8), pady=4)
+
+        entry = ttk.Entry(parent, textvariable=entry_var, width=12)
+        entry.grid(row=row, column=2, sticky=tk.W, padx=(0, 8), pady=4)
+
+        def apply_entry_to_slider() -> None:
+            try:
+                value = float(entry_var.get())
+            except ValueError:
+                self._set_status(f"Invalid float for {topic}: {entry_var.get()!r}")
+                return
+            value = max(slider_min, min(slider_max, value))
+            entry_var.set(f"{value:.4f}")
+            slider_var.set(value)
+
+        ttk.Button(parent, text="Apply", command=apply_entry_to_slider).grid(
+            row=row, column=3, sticky=tk.EW, padx=(0, 8), pady=4
+        )
+        ttk.Button(
+            parent,
+            text="Publish",
+            command=lambda t=topic, v=entry_var: self._publish_float_from_entry(t, v),
+        ).grid(row=row, column=4, sticky=tk.EW, pady=4)
+
+        for col in range(5):
+            parent.columnconfigure(col, weight=1 if col in (1, 2) else 0)
+
+    def _build_state_frame(self, parent: ttk.Frame) -> None:
+        frame = ttk.LabelFrame(parent, text="States", padding=10)
+        frame.pack(fill=tk.X, pady=(0, 10))
+
+        rows = [
+            ("/manual_mode", self.manual_mode_var, "bool"),
+            ("/left/disk_hold_state", self.left_disk_hold_state_var, "float01"),
+            ("/right/disk_hold_state", self.right_disk_hold_state_var, "float01"),
+            ("/system/emergency/hazard_status", self.hazard_status_var, "bool"),
+        ]
+        for row, (topic, var, value_kind) in enumerate(rows):
+            ttk.Label(frame, text=topic).grid(row=row, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+            ttk.Checkbutton(
+                frame,
+                text="0.0 / 1.0" if value_kind == "float01" else "True / False",
+                variable=var,
+                command=lambda t=topic, v=var, k=value_kind: self._publish_state_value(t, v.get(), k),
+            ).grid(row=row, column=1, sticky=tk.W, padx=(0, 8), pady=4)
+            ttk.Button(
+                frame,
+                text="Publish",
+                command=lambda t=topic, v=var, k=value_kind: self._publish_state_value(t, v.get(), k),
+            ).grid(row=row, column=2, sticky=tk.EW, pady=4)
+
+        ttk.Button(frame, text="Publish All States", command=self._publish_all_states).grid(
+            row=len(rows), column=0, columnspan=3, sticky=tk.EW, pady=(8, 0)
+        )
+
+        frame.columnconfigure(1, weight=1)
+        frame.columnconfigure(2, weight=0)
+
+    def _build_shoot_frame(self, parent: ttk.Frame) -> None:
+        frame = ttk.LabelFrame(parent, text="Shooter Commands", padding=10)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        left_frame = ttk.LabelFrame(frame, text="Left")
+        left_frame.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 8))
+        right_frame = ttk.LabelFrame(frame, text="Right")
+        right_frame.grid(row=0, column=1, sticky=tk.NSEW)
+
+        self._build_shooter_side(
+            left_frame,
+            once_topic="/left_shoot_once",
+            burst_topic="/left_shoot_burst",
+            fullauto_topic="/left_shoot_fullauto",
+            shoot_motor_topic="/left/shoot_motor",
+            shoot_motor_slider_var=self.left_shoot_motor_var,
+            shoot_motor_entry_var=self.left_shoot_motor_entry_var,
+            fullauto_var=self.left_fullauto_var,
+        )
+        self._build_shooter_side(
+            right_frame,
+            once_topic="/right_shoot_once",
+            burst_topic="/right_shoot_burst",
+            fullauto_topic="/right_shoot_fullauto",
+            shoot_motor_topic="/right/shoot_motor",
+            shoot_motor_slider_var=self.right_shoot_motor_var,
+            shoot_motor_entry_var=self.right_shoot_motor_entry_var,
+            fullauto_var=self.right_fullauto_var,
+        )
+
+        frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+    def _build_shooter_side(
+        self,
+        parent: ttk.LabelFrame,
+        once_topic: str,
+        burst_topic: str,
+        fullauto_topic: str,
+        shoot_motor_topic: str,
+        shoot_motor_slider_var: tk.DoubleVar,
+        shoot_motor_entry_var: tk.StringVar,
+        fullauto_var: tk.BooleanVar,
+    ) -> None:
+        parent.configure(padding=10)
+
+        ttk.Button(
+            parent, text="Shoot Once", command=lambda t=once_topic: self._pulse_bool(t)
+        ).pack(fill=tk.X, pady=(0, 8))
+        ttk.Button(
+            parent, text="Shoot Burst", command=lambda t=burst_topic: self._pulse_bool(t)
+        ).pack(fill=tk.X, pady=(0, 8))
+        ttk.Checkbutton(
+            parent,
+            text="Fullauto (toggle)",
+            variable=fullauto_var,
+            command=lambda t=fullauto_topic, v=fullauto_var: self._publish_bool(t, v.get()),
+        ).pack(anchor=tk.W)
+
+        motor_frame = ttk.LabelFrame(parent, text="shoot_motor (Float32)")
+        motor_frame.pack(fill=tk.X, pady=(10, 0))
+
+        ttk.Scale(
+            motor_frame,
+            from_=0.0,
+            to=1.0,
+            variable=shoot_motor_slider_var,
+            command=lambda value, ev=shoot_motor_entry_var: ev.set(f"{float(value):.4f}"),
+        ).grid(row=0, column=0, columnspan=3, sticky=tk.EW, padx=8, pady=(8, 6))
+
+        ttk.Entry(motor_frame, textvariable=shoot_motor_entry_var, width=10).grid(
+            row=1, column=0, sticky=tk.W, padx=8, pady=(0, 8)
+        )
+        ttk.Button(
+            motor_frame,
+            text="Apply",
+            command=lambda v=shoot_motor_entry_var, s=shoot_motor_slider_var, t=shoot_motor_topic: (
+                self._apply_entry_to_slider(v, s, t)
+            ),
+        ).grid(row=1, column=1, sticky=tk.EW, padx=(0, 6), pady=(0, 8))
+        ttk.Button(
+            motor_frame,
+            text="Publish",
+            command=lambda t=shoot_motor_topic, v=shoot_motor_entry_var: self._publish_float_from_entry(
+                t, v
+            ),
+        ).grid(row=1, column=2, sticky=tk.EW, padx=(0, 8), pady=(0, 8))
+        ttk.Button(
+            motor_frame,
+            text="Stop(0)",
+            command=lambda t=shoot_motor_topic, v=shoot_motor_entry_var, s=shoot_motor_slider_var: (
+                self._publish_shoot_motor_zero(t, v, s)
+            ),
+        ).grid(row=2, column=0, columnspan=3, sticky=tk.EW, padx=8, pady=(0, 8))
+
+        motor_frame.columnconfigure(0, weight=1)
+        motor_frame.columnconfigure(1, weight=1)
+        motor_frame.columnconfigure(2, weight=1)
+
+    def _publish_float_from_entry(self, topic: str, entry_var: tk.StringVar) -> None:
+        try:
+            value = float(entry_var.get())
+        except ValueError:
+            self._set_status(f"Invalid float for {topic}: {entry_var.get()!r}")
+            return
+        if topic in ("/left/shoot_motor", "/right/shoot_motor"):
+            value = max(0.0, min(1.0, value))
+            entry_var.set(f"{value:.4f}")
+        self.node.publish_float(topic, value)
+        self._set_status(f"Published {topic}={value:.4f}")
+
+    def _publish_angle_pair(
+        self,
+        yaw_topic: str,
+        yaw_entry_var: tk.StringVar,
+        pitch_topic: str,
+        pitch_entry_var: tk.StringVar,
+    ) -> None:
+        self._publish_float_from_entry(yaw_topic, yaw_entry_var)
+        self._publish_float_from_entry(pitch_topic, pitch_entry_var)
+
+    def _publish_can_tx_from_entries(self) -> None:
+        try:
+            can_id = int(self.can_tx_id_entry_var.get(), 10)
+        except ValueError:
+            self._set_status(f"Invalid CAN id: {self.can_tx_id_entry_var.get()!r}")
+            return
+        try:
+            data = float(self.can_tx_data_entry_var.get())
+        except ValueError:
+            self._set_status(f"Invalid CAN data: {self.can_tx_data_entry_var.get()!r}")
+            return
+
+        if can_id < 0 or can_id > 255:
+            self._set_status(f"CAN id out of range (0-255): {can_id}")
+            return
+
+        self.node.publish_can_single(can_id, data)
+        self._set_status(f"Published /can/tx id={can_id}, data={data:.4f}")
+
+    def _publish_shoot_motor_zero(
+        self, topic: str, entry_var: tk.StringVar, slider_var: tk.DoubleVar
+    ) -> None:
+        slider_var.set(0.0)
+        entry_var.set("0.0")
+        self._publish_float_from_entry(topic, entry_var)
+
+    def _apply_entry_to_slider(
+        self, entry_var: tk.StringVar, slider_var: tk.DoubleVar, topic: str
+    ) -> None:
+        try:
+            value = float(entry_var.get())
+        except ValueError:
+            self._set_status(f"Invalid float for {topic}: {entry_var.get()!r}")
+            return
+        if topic in ("/left/shoot_motor", "/right/shoot_motor"):
+            value = max(0.0, min(1.0, value))
+            entry_var.set(f"{value:.4f}")
+        slider_var.set(value)
+
+    def _publish_bool(self, topic: str, value: bool) -> None:
+        self.node.publish_bool(topic, value)
+        self._set_status(f"Published {topic}={value}")
+
+    def _publish_state_value(self, topic: str, checked: bool, value_kind: str) -> None:
+        if value_kind == "float01":
+            self.node.publish_float64(topic, 1.0 if checked else 0.0)
+            self._set_status(f"Published {topic}={1.0 if checked else 0.0:.1f}")
+            return
+        self._publish_bool(topic, checked)
+
+    def _publish_all_states(self) -> None:
+        self._publish_bool("/manual_mode", self.manual_mode_var.get())
+        self.node.publish_float64("/left/disk_hold_state", 1.0 if self.left_disk_hold_state_var.get() else 0.0)
+        self.node.publish_float64("/right/disk_hold_state", 1.0 if self.right_disk_hold_state_var.get() else 0.0)
+        self._publish_bool("/system/emergency/hazard_status", self.hazard_status_var.get())
+
+    def _pulse_bool(self, topic: str) -> None:
+        self.node.publish_bool(topic, True)
+        self._set_status(f"Pulse publish {topic}=True")
+
+    def _set_status(self, text: str) -> None:
+        self.status_var.set(text)
+
+    def _on_monitor_value(self, topic: str, value) -> None:
+        if isinstance(value, bool):
+            text = "True" if value else "False"
+        else:
+            text = str(value)
+        self.monitor_vars[topic].set(text)
+
+    def _schedule_spin(self) -> None:
+        if rclpy.ok():
+            rclpy.spin_once(self.node, timeout_sec=0.0)
+            self.root.after(20, self._schedule_spin)
+
+    def _fit_window_to_content(self) -> None:
+        self.root.update_idletasks()
+
+        content_w = self.scroll_container.winfo_reqwidth()
+        content_h = self.scroll_container.winfo_reqheight()
+        scrollbar_w = self.v_scrollbar.winfo_reqwidth()
+        status_h = self.status_separator.winfo_reqheight() + self.status_label.winfo_reqheight() + 14
+
+        target_w = content_w + scrollbar_w
+        target_h = content_h + status_h
+
+        max_w, max_h = self.root.maxsize()
+        target_w = min(target_w, max_w)
+        target_h = min(target_h, max_h)
+
+        min_w = min(760, target_w)
+        min_h = min(520, target_h)
+        self.root.minsize(min_w, min_h)
+        self.root.geometry(f"{target_w}x{target_h}")
+        self.root.update_idletasks()
+
+    def _on_scroll_frame_configure(self, _event) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event) -> None:
+        self.canvas.itemconfigure(self.canvas_window_id, width=event.width)
+
+    def _on_mousewheel(self, event) -> None:
+        event_num = getattr(event, "num", None)
+        event_delta = getattr(event, "delta", 0)
+
+        if event_num == 4:
+            self.canvas.yview_scroll(-1, "units")
+            return
+        if event_num == 5:
+            self.canvas.yview_scroll(1, "units")
+            return
+        if event_delta:
+            self.canvas.yview_scroll(int(-event_delta / 120), "units")
+
+
+def main() -> None:
+    rclpy.init()
+    node = DebugTopicPublisher()
+    root = tk.Tk()
+    gui = DebugGui(root, node)
+
+    def on_close() -> None:
+        try:
+            if gui.left_fullauto_var.get():
+                node.publish_bool("/left_shoot_fullauto", False)
+            if gui.right_fullauto_var.get():
+                node.publish_bool("/right_shoot_fullauto", False)
+        except Exception:
+            pass
+        root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", on_close)
+
+    try:
+        root.mainloop()
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

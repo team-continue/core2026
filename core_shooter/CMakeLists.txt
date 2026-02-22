@@ -40,6 +40,13 @@ ament_auto_add_executable(aim_bot
 )
 
 install(
+  PROGRAMS
+    scripts/shooter_debug_topic_gui.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME shooter_debug_topic_gui
+)
+
+install(
   DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}/
 )
