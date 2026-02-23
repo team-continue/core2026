@@ -87,7 +87,7 @@ def generate_launch_description():
             }
         ],
         remappings=[
-            ("disk_distance_sensor", "distance2"),
+            ("disk_distance_sensor", "distance"),
             hazard_remaps,
         ]
     )
@@ -107,7 +107,7 @@ def generate_launch_description():
             }
         ],
         remappings=[
-            ("disk_distance_sensor", "distance3"),
+            ("disk_distance_sensor", "distance"),
             hazard_remaps,
         ]
     )
@@ -156,13 +156,13 @@ def generate_launch_description():
             PushRosNamespace("left"),
             left_shooter_controller_node,
             left_magazine_manager_node,
-            # left_aim_bot_node,
+            left_aim_bot_node,
         ]),
 
         GroupAction([
             PushRosNamespace("right"),
             right_shooter_controller_node,
             right_magazine_manager_node,
-            # right_aim_bot_node,
+            right_aim_bot_node,
         ]),
     ])

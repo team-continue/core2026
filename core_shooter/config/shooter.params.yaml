@@ -32,6 +32,7 @@
         target_speed: [2000.0, 1750.0, 1500.0]
 
         # jam parameters
+        enable_jam_detection: true
         jam_detect_time_sec: 0.1
 
         # debug parameters

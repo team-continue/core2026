@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cstdint>
+#include <stdexcept>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -32,6 +33,17 @@ public:
     this->get_parameter("sensor_height", sensor_height_);
     this->get_parameter("window_size", window_size_);
 
+    if (window_size_ <= 0) {
+      RCLCPP_FATAL(
+        this->get_logger(), "Invalid window_size=%d (must be > 0)", window_size_);
+      throw std::runtime_error("invalid window_size");
+    }
+    if (disk_thickness_ <= 0.0) {
+      RCLCPP_FATAL(
+        this->get_logger(), "Invalid disk_thickness=%f (must be > 0)", disk_thickness_);
+      throw std::runtime_error("invalid disk_thickness");
+    }
+
     RCLCPP_INFO(
       this->get_logger(),
       "remaining_disks: %d, disk_thickness: %f, sensor_height: %f",
@@ -55,6 +67,11 @@ public:
     // 下段残2でregripは仕様固定（必要ならパラメータ化OK）
     this->get_parameter("regrip_enabled", regrip_enabled_);
     this->get_parameter("regrip_release_ms", regrip_release_ms_);
+    if (regrip_release_ms_ < 0) {
+      RCLCPP_FATAL(
+        this->get_logger(), "Invalid regrip_release_ms=%d (must be >= 0)", regrip_release_ms_);
+      throw std::runtime_error("invalid regrip_release_ms");
+    }
 
     //========================================
     // disk hold parameters (redundant check)
@@ -88,7 +105,8 @@ public:
     //========================================
     // publishers
     //========================================
-    remaining_disk_pub_ = this->create_publisher<std_msgs::msg::Int8>("remaining_disk", 10);
+    remaining_disk_pub_ = this->create_publisher<std_msgs::msg::Int8>(
+      "remaining_disk", rclcpp::QoS(10).transient_local());
     can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("/can/tx", 10);
 
     //========================================
@@ -118,7 +136,10 @@ private:
   //========================================
   void shootStatusCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    if (msg->data) {
+    const bool rising = msg->data && !prev_shoot_status_;
+    prev_shoot_status_ = msg->data;
+
+    if (rising) {
       // 押さえ中はセンサが歪むので、通常はカウントで減算
       remainingDiskEstimator(-1);
     }
@@ -148,6 +169,13 @@ private:
       buffer_.pop_front();
     }
 
+    if (buffer_.empty()) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "disk distance buffer is empty (window_size=%d)", window_size_);
+      return;
+    }
+
     double sum = 0.0;
     for (double v : buffer_) {sum += v;}
     distance_ = sum / buffer_.size();
@@ -171,6 +199,10 @@ private:
 
     // センサ同期（リグリップで開いている時だけ呼ぶ）
     if (data == 0) {
+      if (disk_thickness_ <= 0.0) {
+        RCLCPP_ERROR(this->get_logger(), "disk_thickness must be > 0 for estimation");
+        return;
+      }
       estimated_stack_height_mm_ = sensor_height_ - distance_;
 
       if (estimated_stack_height_mm_ <= 0.0) {
@@ -260,7 +292,7 @@ private:
       state_ = State::IDLE_RELEASED;
       regrip_done_ = false;
       latched_valid_ = false;
-      publish_hold_command(RELEASE);
+      publish_hold_command(false);
       return;
     }
 
@@ -279,7 +311,7 @@ private:
       state_ = State::IDLE_RELEASED;
       regrip_done_ = false;
       latched_valid_ = false;
-      publish_hold_command(RELEASE);
+      publish_hold_command(false);
       return;
     }
 
@@ -290,7 +322,7 @@ private:
       state_ = State::IDLE_RELEASED;
       regrip_done_ = false;
       latched_valid_ = false;
-      publish_hold_command(RELEASE);
+      publish_hold_command(false);
       return;
     }
 
@@ -336,16 +368,16 @@ private:
     // (D) 状態に応じて0/1指令（0: release, 1: grip）
     switch (state_) {
       case State::IDLE_RELEASED:
-        publish_hold_command(RELEASE);
+        publish_hold_command(false);
         break;
 
       case State::HOLDING:
-        publish_hold_command(GRIP);
+        publish_hold_command(true);
         break;
 
       case State::REGRIP_RELEASING:
         // 開放中
-        publish_hold_command(RELEASE);
+        publish_hold_command(false);
 
         // ★REGRIP中はセンサが見える想定
         // 移動平均の窓が揃ってから同期（安定化）
@@ -373,9 +405,9 @@ private:
   //========================================
   // publish
   //========================================
-  void publish_hold_command(int hold_cmd)
+  void publish_hold_command(bool hold)
   {
-    const float cmd = static_cast<float>(hold_cmd);
+    const float cmd = hold ? 1.0f : 0.0f;
     motorPublish(disk_hold_left_motor_id_, cmd);
     motorPublish(disk_hold_right_motor_id_, cmd);
   }
@@ -427,16 +459,12 @@ private:
   int window_size_ = 3;
 
   // disk hold motor params
-  enum GRIPSTATE
-  {
-    RELEASE = 0,
-    GRIP = 1
-  };
   int disk_hold_left_motor_id_ = 101;
   int disk_hold_right_motor_id_ = 100;
 
   // disk hold state
   bool hold_on_ = false;
+  bool prev_shoot_status_ = false;
   bool hazard_active_ = true;
   State state_ = State::IDLE_RELEASED;
 

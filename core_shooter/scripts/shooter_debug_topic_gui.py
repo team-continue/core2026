@@ -6,7 +6,7 @@ from tkinter import ttk
 import rclpy
 from rclpy.node import Node
 from core_msgs.msg import CAN, CANArray
-from std_msgs.msg import Bool, Float32, Float64, Int8, Int32
+from std_msgs.msg import Bool, Float32, Int8, Int32
 
 
 class DebugTopicPublisher(Node):
@@ -26,18 +26,18 @@ class DebugTopicPublisher(Node):
             "/right_shoot_once": self.create_publisher(Bool, "/right_shoot_once", 10),
             "/right_shoot_burst": self.create_publisher(Bool, "/right_shoot_burst", 10),
             "/right_shoot_fullauto": self.create_publisher(Bool, "/right_shoot_fullauto", 10),
+            "/left/disk_hold_state": self.create_publisher(Bool, "/left/disk_hold_state", 10),
+            "/right/disk_hold_state": self.create_publisher(Bool, "/right/disk_hold_state", 10),
         }
         self.float_publishers = {
             "/left/test_yaw_angle": self.create_publisher(Float32, "/left/test_yaw_angle", 10),
             "/left/test_pitch_angle": self.create_publisher(Float32, "/left/test_pitch_angle", 10),
             "/right/test_yaw_angle": self.create_publisher(Float32, "/right/test_yaw_angle", 10),
-            "/right/test_pitch_angle": self.create_publisher(Float32, "/right/test_pitch_angle", 10),
+            "/right/test_pitch_angle": self.create_publisher(
+                Float32, "/right/test_pitch_angle", 10
+            ),
             "/left/shoot_motor": self.create_publisher(Float32, "/left/shoot_motor", 10),
             "/right/shoot_motor": self.create_publisher(Float32, "/right/shoot_motor", 10),
-        }
-        self.float64_publishers = {
-            "/left/disk_hold_state": self.create_publisher(Float64, "/left/disk_hold_state", 10),
-            "/right/disk_hold_state": self.create_publisher(Float64, "/right/disk_hold_state", 10),
         }
         self.can_tx_pub = self.create_publisher(CANArray, "/can/tx", 10)
         self._add_monitor_subscription("/left/remaining_disk", Int8)
@@ -61,12 +61,6 @@ class DebugTopicPublisher(Node):
         msg = Float32()
         msg.data = float(value)
         self.float_publishers[topic].publish(msg)
-        self.get_logger().info(f"publish {topic}={msg.data:.4f}")
-
-    def publish_float64(self, topic: str, value: float) -> None:
-        msg = Float64()
-        msg.data = float(value)
-        self.float64_publishers[topic].publish(msg)
         self.get_logger().info(f"publish {topic}={msg.data:.4f}")
 
     def publish_can_single(self, can_id: int, data: float) -> None:
@@ -169,7 +163,8 @@ class DebugGui:
 
         notes = (
             "Bool/Shooter topics are published to actual runtime topic names (absolute).\n"
-            "Monitor shows left/right runtime values (remaining_disk, shoot_status/cmd, reloading, distance)."
+            "Monitor shows left/right runtime values "
+            "(remaining_disk, shoot_status/cmd, reloading, distance)."
         )
         ttk.Label(container, text=notes, justify=tk.LEFT).pack(anchor=tk.W, pady=(0, 10))
 
@@ -210,17 +205,34 @@ class DebugGui:
             ("shoot_status", "/left/shoot_status", "/right/shoot_status", "Bool"),
             ("shoot_cmd", "/left/shoot_cmd", "/right/shoot_cmd", "Int32"),
             ("reloading", "/left/reloading", "/right/reloading", "Int8"),
-            ("distance (L:distance2 / R:distance3)", "/left/distance2", "/right/distance3", "Int32"),
+            (
+                "distance (L:distance2 / R:distance3)",
+                "/left/distance2",
+                "/right/distance3",
+                "Int32",
+            ),
         ]
         for row_index, (label, left_topic, right_topic, type_name) in enumerate(rows, start=1):
             ttk.Label(frame, text=label).grid(
-                row=row_index, column=0, sticky=tk.W, padx=(0, 8), pady=(6 if row_index > 1 else 4, 0)
+                row=row_index,
+                column=0,
+                sticky=tk.W,
+                padx=(0, 8),
+                pady=(6 if row_index > 1 else 4, 0),
             )
             ttk.Label(frame, textvariable=self.monitor_vars[left_topic], width=12).grid(
-                row=row_index, column=1, sticky=tk.W, padx=(0, 8), pady=(6 if row_index > 1 else 4, 0)
+                row=row_index,
+                column=1,
+                sticky=tk.W,
+                padx=(0, 8),
+                pady=(6 if row_index > 1 else 4, 0),
             )
             ttk.Label(frame, textvariable=self.monitor_vars[right_topic], width=12).grid(
-                row=row_index, column=2, sticky=tk.W, padx=(0, 8), pady=(6 if row_index > 1 else 4, 0)
+                row=row_index,
+                column=2,
+                sticky=tk.W,
+                padx=(0, 8),
+                pady=(6 if row_index > 1 else 4, 0),
             )
             ttk.Label(frame, text=type_name).grid(
                 row=row_index, column=3, sticky=tk.W, pady=(6 if row_index > 1 else 4, 0)
@@ -381,22 +393,26 @@ class DebugGui:
 
         rows = [
             ("/manual_mode", self.manual_mode_var, "bool"),
-            ("/left/disk_hold_state", self.left_disk_hold_state_var, "float01"),
-            ("/right/disk_hold_state", self.right_disk_hold_state_var, "float01"),
+            ("/left/disk_hold_state", self.left_disk_hold_state_var, "bool"),
+            ("/right/disk_hold_state", self.right_disk_hold_state_var, "bool"),
             ("/system/emergency/hazard_status", self.hazard_status_var, "bool"),
         ]
         for row, (topic, var, value_kind) in enumerate(rows):
             ttk.Label(frame, text=topic).grid(row=row, column=0, sticky=tk.W, padx=(0, 8), pady=4)
             ttk.Checkbutton(
                 frame,
-                text="0.0 / 1.0" if value_kind == "float01" else "True / False",
+                text="True / False",
                 variable=var,
-                command=lambda t=topic, v=var, k=value_kind: self._publish_state_value(t, v.get(), k),
+                command=lambda t=topic, v=var, k=value_kind: self._publish_state_value(
+                    t, v.get(), k
+                ),
             ).grid(row=row, column=1, sticky=tk.W, padx=(0, 8), pady=4)
             ttk.Button(
                 frame,
                 text="Publish",
-                command=lambda t=topic, v=var, k=value_kind: self._publish_state_value(t, v.get(), k),
+                command=lambda t=topic, v=var, k=value_kind: self._publish_state_value(
+                    t, v.get(), k
+                ),
             ).grid(row=row, column=2, sticky=tk.EW, pady=4)
 
         ttk.Button(frame, text="Publish All States", command=self._publish_all_states).grid(
@@ -483,23 +499,20 @@ class DebugGui:
         ttk.Button(
             motor_frame,
             text="Apply",
-            command=lambda v=shoot_motor_entry_var, s=shoot_motor_slider_var, t=shoot_motor_topic: (
-                self._apply_entry_to_slider(v, s, t)
-            ),
+            command=lambda v=shoot_motor_entry_var, s=shoot_motor_slider_var, t=shoot_motor_topic:
+            self._apply_entry_to_slider(v, s, t),
         ).grid(row=1, column=1, sticky=tk.EW, padx=(0, 6), pady=(0, 8))
         ttk.Button(
             motor_frame,
             text="Publish",
-            command=lambda t=shoot_motor_topic, v=shoot_motor_entry_var: self._publish_float_from_entry(
-                t, v
-            ),
+            command=lambda t=shoot_motor_topic, v=shoot_motor_entry_var:
+            self._publish_float_from_entry(t, v),
         ).grid(row=1, column=2, sticky=tk.EW, padx=(0, 8), pady=(0, 8))
         ttk.Button(
             motor_frame,
             text="Stop(0)",
-            command=lambda t=shoot_motor_topic, v=shoot_motor_entry_var, s=shoot_motor_slider_var: (
-                self._publish_shoot_motor_zero(t, v, s)
-            ),
+            command=lambda t=shoot_motor_topic, v=shoot_motor_entry_var, s=shoot_motor_slider_var:
+            self._publish_shoot_motor_zero(t, v, s),
         ).grid(row=2, column=0, columnspan=3, sticky=tk.EW, padx=8, pady=(0, 8))
 
         motor_frame.columnconfigure(0, weight=1)
@@ -572,16 +585,12 @@ class DebugGui:
         self._set_status(f"Published {topic}={value}")
 
     def _publish_state_value(self, topic: str, checked: bool, value_kind: str) -> None:
-        if value_kind == "float01":
-            self.node.publish_float64(topic, 1.0 if checked else 0.0)
-            self._set_status(f"Published {topic}={1.0 if checked else 0.0:.1f}")
-            return
         self._publish_bool(topic, checked)
 
     def _publish_all_states(self) -> None:
         self._publish_bool("/manual_mode", self.manual_mode_var.get())
-        self.node.publish_float64("/left/disk_hold_state", 1.0 if self.left_disk_hold_state_var.get() else 0.0)
-        self.node.publish_float64("/right/disk_hold_state", 1.0 if self.right_disk_hold_state_var.get() else 0.0)
+        self.node.publish_bool("/left/disk_hold_state", self.left_disk_hold_state_var.get())
+        self.node.publish_bool("/right/disk_hold_state", self.right_disk_hold_state_var.get())
         self._publish_bool("/system/emergency/hazard_status", self.hazard_status_var.get())
 
     def _pulse_bool(self, topic: str) -> None:
@@ -609,7 +618,11 @@ class DebugGui:
         content_w = self.scroll_container.winfo_reqwidth()
         content_h = self.scroll_container.winfo_reqheight()
         scrollbar_w = self.v_scrollbar.winfo_reqwidth()
-        status_h = self.status_separator.winfo_reqheight() + self.status_label.winfo_reqheight() + 14
+        status_h = (
+            self.status_separator.winfo_reqheight()
+            + self.status_label.winfo_reqheight()
+            + 14
+        )
 
         target_w = content_w + scrollbar_w
         target_h = content_h + status_h

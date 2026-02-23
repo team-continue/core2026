@@ -131,8 +131,10 @@ public:
     //========================================
     // jam parameters
     //========================================
+    this->declare_parameter<bool>("enable_jam_detection", true);
     this->declare_parameter<double>("jam_detect_time_sec", 0.1);
 
+    this->get_parameter("enable_jam_detection", enable_jam_detection_);
     this->get_parameter("jam_detect_time_sec", jam_detect_time_sec_);
     if (jam_detect_time_sec_ < 0.0) {
       RCLCPP_FATAL(
@@ -141,7 +143,9 @@ public:
       throw std::runtime_error("invalid jam_detect_time_sec");
     }
 
-    RCLCPP_INFO(this->get_logger(), "jam_detect_time_sec_: %f", jam_detect_time_sec_);
+    RCLCPP_INFO(
+      this->get_logger(), "enable_jam_detection: %d, jam_detect_time_sec_: %f",
+      enable_jam_detection_, jam_detect_time_sec_);
 
     //========================================
     // debug parameters
@@ -212,7 +216,8 @@ private:
       position_size <= 4)
     {
       RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 2000,
+        this->get_logger(),
+        *this->get_clock(), 2000,
         "joint_states size mismatch: position=%zu, loading_id=%d (need loading index and position[4])",
         position_size, loading_motor_id_);
       return;
@@ -298,7 +303,6 @@ private:
     } else {
       resetShootMotorRotationCommandState();
     }
-
     updateShootMotorRotationCommandFlag();
   }
 
@@ -387,6 +391,8 @@ private:
         shoot_repeat_count_ = 0;
         resetShootMotorRotationCommandState();
 
+        setSpeed(shoot_motor_id_, 0.0f);
+
         if (!hazard_state_) {
           // state = CMD_WAIT;
           state = INIT;
@@ -415,7 +421,7 @@ private:
 
       // 打てなかった場合はそのタスクを削除する
       if (shoot_repeat_count_ >= 1) {
-        shoot_repeat_count_ = 0;
+        shoot_repeat_count_ -= 1;
       }
       return false;
     }
@@ -437,8 +443,9 @@ private:
   bool canShoot()
   {
     // hazard_status=true は危険状態なので射撃不可
+    const bool jam_ok = !enable_jam_detection_ || !isJamDetected();
     return !hazard_state_ && isValidAngle() && isShootIntervalElapsed() &&
-           isShootMotorRotationCommandActive() && !isJamDetected();
+           isShootMotorRotationCommandActive() && jam_ok;
   }
 
   bool isValidAngle()
@@ -512,6 +519,7 @@ private:
     shoot_motor_rotation_cmd_requested_ = false;
     shoot_motor_rotation_cmd_active_ = false;
   }
+
 
   //========================================
   // motorPub
@@ -641,6 +649,7 @@ private:
   std::vector<double> shoot_motor_target_speed_;
 
   double jam_detect_time_sec_;
+  bool enable_jam_detection_ = true;
   double shoot_motor_rotation_cmd_activation_delay_sec_ = 2.0;
 
   //========================================
