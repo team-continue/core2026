@@ -6,6 +6,7 @@ from tkinter import ttk
 import rclpy
 from rclpy.node import Node
 from core_msgs.msg import CAN, CANArray
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float32, Int8, Int32
 
 
@@ -14,6 +15,8 @@ class DebugTopicPublisher(Node):
         super().__init__("shooter_debug_topic_gui")
         self.monitor_listeners = {}
         self.monitor_subscriptions = []
+        self.joint_states_listener = None
+        self.can_tx_listener = None
 
         self.bool_publishers = {
             "/manual_mode": self.create_publisher(Bool, "/manual_mode", 10),
@@ -48,8 +51,14 @@ class DebugTopicPublisher(Node):
         self._add_monitor_subscription("/right/shoot_cmd", Int32)
         self._add_monitor_subscription("/left/reloading", Int8)
         self._add_monitor_subscription("/right/reloading", Int8)
-        self._add_monitor_subscription("/left/distance2", Int32)
-        self._add_monitor_subscription("/right/distance3", Int32)
+        self._add_monitor_subscription("/left/distance", Int32)
+        self._add_monitor_subscription("/right/distance", Int32)
+        self.joint_states_sub = self.create_subscription(
+            JointState, "/joint_states", self._joint_states_callback, 10
+        )
+        self.can_tx_monitor_sub = self.create_subscription(
+            CANArray, "/can/tx", self._can_tx_callback, 10
+        )
 
     def publish_bool(self, topic: str, value: bool) -> None:
         msg = Bool()
@@ -75,6 +84,12 @@ class DebugTopicPublisher(Node):
     def set_monitor_listener(self, topic: str, listener) -> None:
         self.monitor_listeners[topic] = listener
 
+    def set_joint_states_listener(self, listener) -> None:
+        self.joint_states_listener = listener
+
+    def set_can_tx_listener(self, listener) -> None:
+        self.can_tx_listener = listener
+
     def _add_monitor_subscription(self, topic: str, msg_type) -> None:
         sub = self.create_subscription(
             msg_type,
@@ -89,6 +104,52 @@ class DebugTopicPublisher(Node):
         if listener is None:
             return
         listener(msg.data)
+
+    def _joint_states_callback(self, msg: JointState) -> None:
+        if self.joint_states_listener is None:
+            return
+
+        pos_values = {i: "--" for i in range(17)}
+        vel_values = {i: "--" for i in range(17)}
+
+        for i in range(min(17, len(msg.position))):
+            pos_values[i] = f"{msg.position[i]:.4f}"
+        for i in range(min(17, len(msg.velocity))):
+            vel_values[i] = f"{msg.velocity[i]:.4f}"
+
+        meta_text = (
+            f"name={len(msg.name)} pos={len(msg.position)} vel={len(msg.velocity)} eff={len(msg.effort)}"
+        )
+        self.joint_states_listener(pos_values, vel_values, meta_text)
+
+    def _can_tx_callback(self, msg: CANArray) -> None:
+        if self.can_tx_listener is None:
+            return
+
+        if not msg.array:
+            self.can_tx_listener({}, "frames=0", "")
+            return
+
+        updates = {}
+        extras = []
+        for frame in msg.array:
+            if not frame.data:
+                value_text = "-"
+            elif len(frame.data) == 1:
+                value_text = f"{frame.data[0]:.4f}"
+            else:
+                preview = ", ".join(f"{x:.3f}" for x in frame.data[:3])
+                suffix = "..." if len(frame.data) > 3 else ""
+                value_text = f"[{preview}{suffix}]"
+
+            frame_id = int(frame.id)
+            if 0 <= frame_id <= 16:
+                updates[frame_id] = value_text
+            else:
+                extras.append(f"id={frame_id}:{value_text}")
+
+        extra_text = "; ".join(extras)
+        self.can_tx_listener(updates, f"frames={len(msg.array)}", extra_text)
 
 
 class DebugGui:
@@ -107,9 +168,15 @@ class DebugGui:
             "/right/shoot_cmd": tk.StringVar(value="--"),
             "/left/reloading": tk.StringVar(value="--"),
             "/right/reloading": tk.StringVar(value="--"),
-            "/left/distance2": tk.StringVar(value="--"),
-            "/right/distance3": tk.StringVar(value="--"),
+            "/left/distance": tk.StringVar(value="--"),
+            "/right/distance": tk.StringVar(value="--"),
         }
+        self.joint_states_meta_var = tk.StringVar(value="name=0 pos=0 vel=0 eff=0")
+        self.joint_state_pos_vars = {i: tk.StringVar(value="--") for i in range(17)}
+        self.joint_state_vel_vars = {i: tk.StringVar(value="--") for i in range(17)}
+        self.can_tx_frames_var = tk.StringVar(value="frames=0")
+        self.can_tx_extra_var = tk.StringVar(value="")
+        self.can_tx_id_vars = {i: tk.StringVar(value="--") for i in range(17)}
         self.left_yaw_var = tk.DoubleVar(value=0.0)
         self.left_pitch_var = tk.DoubleVar(value=0.0)
         self.right_yaw_var = tk.DoubleVar(value=0.0)
@@ -136,6 +203,8 @@ class DebugGui:
             self.node.set_monitor_listener(
                 topic, lambda value, topic=topic: self._on_monitor_value(topic, value)
             )
+        self.node.set_joint_states_listener(self._on_joint_states_grid)
+        self.node.set_can_tx_listener(self._on_can_tx_grid)
         self._build_ui()
         self._fit_window_to_content()
         self._schedule_spin()
@@ -163,8 +232,7 @@ class DebugGui:
 
         notes = (
             "Bool/Shooter topics are published to actual runtime topic names (absolute).\n"
-            "Monitor shows left/right runtime values "
-            "(remaining_disk, shoot_status/cmd, reloading, distance)."
+            "Monitor shows left/right runtime values plus /joint_states and /can/tx grid."
         )
         ttk.Label(container, text=notes, justify=tk.LEFT).pack(anchor=tk.W, pady=(0, 10))
 
@@ -176,14 +244,14 @@ class DebugGui:
         left_column.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 8))
         right_column.grid(row=0, column=1, sticky=tk.NSEW)
 
-        content_area.columnconfigure(0, weight=3)
-        content_area.columnconfigure(1, weight=2)
+        content_area.columnconfigure(0, weight=2)
+        content_area.columnconfigure(1, weight=3)
         content_area.rowconfigure(0, weight=1)
 
-        self._build_monitor_frame(left_column)
         self._build_can_tx_frame(left_column)
         self._build_state_frame(left_column)
-        self._build_shoot_frame(right_column)
+        self._build_shoot_frame(left_column)
+        self._build_monitor_frame(right_column)
         self._build_angle_frame(container)
 
         self.status_separator = ttk.Separator(self.root, orient=tk.HORIZONTAL)
@@ -205,12 +273,7 @@ class DebugGui:
             ("shoot_status", "/left/shoot_status", "/right/shoot_status", "Bool"),
             ("shoot_cmd", "/left/shoot_cmd", "/right/shoot_cmd", "Int32"),
             ("reloading", "/left/reloading", "/right/reloading", "Int8"),
-            (
-                "distance (L:distance2 / R:distance3)",
-                "/left/distance2",
-                "/right/distance3",
-                "Int32",
-            ),
+            ("distance", "/left/distance", "/right/distance", "Int32"),
         ]
         for row_index, (label, left_topic, right_topic, type_name) in enumerate(rows, start=1):
             ttk.Label(frame, text=label).grid(
@@ -237,6 +300,71 @@ class DebugGui:
             ttk.Label(frame, text=type_name).grid(
                 row=row_index, column=3, sticky=tk.W, pady=(6 if row_index > 1 else 4, 0)
             )
+
+        summary_row = len(rows) + 1
+        ttk.Separator(frame, orient=tk.HORIZONTAL).grid(
+            row=summary_row, column=0, columnspan=4, sticky=tk.EW, pady=(8, 6)
+        )
+
+        detail_panel = ttk.Frame(frame)
+        detail_panel.grid(row=summary_row + 1, column=0, columnspan=4, sticky=tk.EW, pady=(0, 4))
+
+        joint_wrap = ttk.LabelFrame(detail_panel, text="/joint_states", padding=8)
+        joint_wrap.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 8))
+        can_tx_wrap = ttk.LabelFrame(detail_panel, text="/can/tx", padding=8)
+        can_tx_wrap.grid(row=0, column=1, sticky=tk.NSEW)
+
+        joint_panel = ttk.Frame(joint_wrap)
+        joint_panel.pack(fill=tk.X, expand=True)
+
+        ttk.Label(joint_panel, textvariable=self.joint_states_meta_var).grid(
+            row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 4)
+        )
+        ttk.Label(joint_panel, text="name(idx)").grid(row=1, column=0, sticky=tk.W, padx=(0, 8))
+        ttk.Label(joint_panel, text="pos").grid(row=1, column=1, sticky=tk.W, padx=(0, 8))
+        ttk.Label(joint_panel, text="vel").grid(row=1, column=2, sticky=tk.W)
+
+        for i in range(17):
+            row = i + 2
+            ttk.Label(joint_panel, text=str(i), width=8).grid(
+                row=row, column=0, sticky=tk.W, padx=(0, 8), pady=(0, 2)
+            )
+            ttk.Label(joint_panel, textvariable=self.joint_state_pos_vars[i], width=12).grid(
+                row=row, column=1, sticky=tk.W, padx=(0, 8), pady=(0, 2)
+            )
+            ttk.Label(joint_panel, textvariable=self.joint_state_vel_vars[i], width=12).grid(
+                row=row, column=2, sticky=tk.W, pady=(0, 2)
+            )
+
+        joint_panel.columnconfigure(1, weight=1)
+        joint_panel.columnconfigure(2, weight=1)
+
+        can_tx_panel = ttk.Frame(can_tx_wrap)
+        can_tx_panel.pack(fill=tk.X, expand=True)
+
+        ttk.Label(can_tx_panel, textvariable=self.can_tx_frames_var).grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 4)
+        )
+        ttk.Label(can_tx_panel, text="id").grid(row=1, column=0, sticky=tk.W, padx=(0, 8))
+        ttk.Label(can_tx_panel, text="data").grid(row=1, column=1, sticky=tk.W)
+
+        for can_id in range(17):
+            row = can_id + 2
+            ttk.Label(can_tx_panel, text=f"{can_id:02d}", width=8).grid(
+                row=row, column=0, sticky=tk.W, padx=(0, 8), pady=(0, 2)
+            )
+            ttk.Label(can_tx_panel, textvariable=self.can_tx_id_vars[can_id], width=12).grid(
+                row=row, column=1, sticky=tk.W, pady=(0, 2)
+            )
+
+        can_tx_panel.columnconfigure(1, weight=1)
+
+        detail_panel.columnconfigure(0, weight=3)
+        detail_panel.columnconfigure(1, weight=2)
+
+        frame.columnconfigure(1, weight=1)
+        frame.columnconfigure(2, weight=1)
+        frame.columnconfigure(3, weight=1)
 
     def _build_angle_frame(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Aimbot Test Angles", padding=10)
@@ -606,6 +734,20 @@ class DebugGui:
         else:
             text = str(value)
         self.monitor_vars[topic].set(text)
+
+    def _on_joint_states_grid(self, pos_values: dict, vel_values: dict, meta_text: str) -> None:
+        self.joint_states_meta_var.set(meta_text)
+        for i in range(17):
+            self.joint_state_pos_vars[i].set(pos_values.get(i, "--"))
+            self.joint_state_vel_vars[i].set(vel_values.get(i, "--"))
+
+    def _on_can_tx_grid(self, updates: dict, frame_text: str, extra_text: str) -> None:
+        meta_text = frame_text if not extra_text else f"{frame_text} | extra: {extra_text}"
+        self.can_tx_frames_var.set(meta_text)
+        for can_id, value_text in updates.items():
+            if can_id in self.can_tx_id_vars:
+                self.can_tx_id_vars[can_id].set(value_text)
+        self.can_tx_extra_var.set(f"extra: {extra_text}" if extra_text else "")
 
     def _schedule_spin(self) -> None:
         if rclpy.ok():

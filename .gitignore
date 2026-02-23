@@ -53,3 +53,8 @@ CATKIN_IGNORE
 *.obj
 
 .vscode/
+
+install/
+build/
+log/
+.gitignore
