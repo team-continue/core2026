@@ -46,10 +46,6 @@ class DebugTopicPublisher(Node):
             "/left/shoot_motor": self.create_publisher(Float32, "/left/shoot_motor", 10),
             "/right/shoot_motor": self.create_publisher(Float32, "/right/shoot_motor", 10),
         }
-        self.int8_publishers = {
-            "/left/reloading": self.create_publisher(Int8, "/left/reloading", 10),
-            "/right/reloading": self.create_publisher(Int8, "/right/reloading", 10),
-        }
         self.point_publishers = {
             "/left/target_image_position": self.create_publisher(
                 PointStamped, "/left/target_image_position", 10
@@ -94,12 +90,6 @@ class DebugTopicPublisher(Node):
         can_array.array.append(can)
         self.can_tx_pub.publish(can_array)
         self.get_logger().info(f"publish /can/tx: id={can.id}, data=[{float(data):.4f}]")
-
-    def publish_int8(self, topic: str, value: int) -> None:
-        msg = Int8()
-        msg.data = int(value)
-        self.int8_publishers[topic].publish(msg)
-        self.get_logger().info(f"publish {topic}={msg.data}")
 
     def publish_point_stamped(self, topic: str, x: float, y: float, z: float = 0.0) -> None:
         msg = PointStamped()

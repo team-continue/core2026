@@ -1,119 +1,104 @@
 /**:
-    ros__parameters:
-        # ========================================
-        # ShooterController
-        # motor ids are overridden in launch
-        # shoot_motor_id: -> launch
-        # loading_motor_id: -> launch
+        ros__parameters:
+                # ========================================
+                # ShooterController
+                # motor ids are overridden in launch
+                # shoot_motor_id: -> launch
+                # loading_motor_id: -> launch
 
-        # shoot parameters
-        burst_count: 3 # バースト発射数
-        manual_mode_target_side: "right" # /manual_mode を転送する先（"left" or "right"）
-        shoot_interval_ms: 500 # 単発の発射間隔[ms]
-        burst_interval_ms: 500 # バースト時の発射間隔[ms]
-        fullauto_interval_ms: 500 # フルオート時の発射間隔[ms]
-        shoot_motor_rotation_cmd_activation_delay_sec: 2.0 # 非ゼロ速度指令開始から発射許可までの遅延[s]
+                # shoot parameters
+                burst_count: 3 # バースト発射数
+                manual_mode_target_side: "right" # /manual_mode を転送する先（"left" or "right"）
+                shoot_interval_ms: 500 # 単発の発射間隔[ms]
+                burst_interval_ms: 500 # バースト時の発射間隔[ms]
+                fullauto_interval_ms: 500 # フルオート時の発射間隔[ms]
+                shoot_motor_rotation_cmd_activation_delay_sec: 2.0 # 非ゼロ速度指令開始から発射許可までの遅延[s]
 
-        # panel limit parameters (enable_panel_synchronizer=true のとき使用)
-        limit_rad: [0.349, 2.443, 3.490, 5.585]
-        # limit_rad_[1]
-        #   ＼     limit_rad_[0]
-        #    ＼  ／
-        # true ◯ true ---- 0 [rad]
-        #    ／  ＼
-        #   ／     limit_rad_[3]
-        # limit_rad_[2]
-        enable_panel_synchronizer: false
+                # panel limit parameters (enable_panel_synchronizer=true のとき使用)
+                limit_rad: [0.349, 2.443, 3.490, 5.585]
+                # limit_rad_[1]
+                #   ＼     limit_rad_[0]
+                #    ＼  ／
+                # true ◯ true ---- 0 [rad]
+                #    ／  ＼
+                #   ／     limit_rad_[3]
+                # limit_rad_[2]
+                enable_panel_synchronizer: false
 
-        # loading motor parameters
-        loading_motor_speed: 6.5
+                # loading motor parameters
+                loading_motor_speed: 6.5
 
-        # shoot motor parameters
-        target_speed: [2000.0, 1750.0, 1500.0]
+                # shoot motor parameters
+                target_speed: [2000.0, 1750.0, 1500.0]
 
-        # jam parameters
-        enable_jam_detection: false
-        jam_detect_time_sec: 0.1
+                # jam parameters
+                enable_jam_detection: false
+                jam_detect_time_sec: 0.1
 
-        # debug parameters
-        set_initial_rad: 0.0
+                # debug parameters
+                set_initial_rad: 0.0
 
-        # ========================================
-        # MagazineManager
-        # motor ids are overridden in launch
-        # disk_hold_left_motor_id: -> launch
-        # disk_hold_right_motor_id: -> launch
-        remaining_disks: 30 # 初期弾数（例: 27 - loading_disk）
-        disk_thickness: 20.0 # [mm]
-        sensor_height: 500.0 # [mm]
-        window_size: 3 # 移動平均の窓サイズ
-        regrip_enabled: true
-        regrip_release_ms: 200
-        hold_disable_height_margin_mm: 0.5
+                # ========================================
+                # MagazineManager
+                # motor ids are overridden in launch
+                # disk_hold_left_motor_id: -> launch
+                # disk_hold_right_motor_id: -> launch
+                remaining_disks: 30 # 初期弾数（例: 27 - loading_disk）
+                disk_thickness: 20.0 # [mm]
+                sensor_height: 500.0 # [mm]
+                window_size: 3 # 移動平均の窓サイズ
+                regrip_enabled: true
+                regrip_release_ms: 200
+                hold_disable_height_margin_mm: 0.5
 
-        # ========================================
-        # AimBot
-        # motor ids are overridden in launch
-        # pitch_motor_id: -> launch
-        # yaw_motor_id: -> launch
+                # ========================================
+                # AimBot
+                # motor ids are overridden in launch
+                # pitch_motor_id: -> launch
+                # yaw_motor_id: -> launch
 
-        # periodic rate
-        rate: 30.0
+                # periodic rate
+                rate: 30.0
 
-        # test/manual mode
-        enable_test_mode: false # test_mode topic未受信時のデフォルト値（test_mode: std_msgs/Bool が来たらtopic値を優先）
-        # test_mode: std_msgs/Bool (relative topic)
-        test_yaw_gain: 0.01 # test_mode時のyaw加算係数（manual_modeのyawは固定なので未使用）
-        test_pitch_gain: 0.005 # test/manual mode時のpitch加算係数（-1..1入力に適用）
-        manual_mode_yaw_fixed_angle: 0.0 # manual_mode遷移時に設定し、その後も固定する yaw 角度[rad]
-        manual_mode_pitch_initial_angle: 0.0 # manual_mode遷移時に設定する初期 pitch 角度[rad]
-        # manual_mode=true 時の pitch は std_msgs/Float32 の manual_pitch_angle topic で加算入力（-1..1, 0で保持）
-        # 遷移直後の pitch は manual_mode_pitch_initial_angle
+                # test/manual mode
+                enable_test_mode: false # test_mode topic未受信時のデフォルト値（test_mode: std_msgs/Bool が来たらtopic値を優先）
+                # test_mode: std_msgs/Bool (relative topic)
+                test_yaw_gain: 0.01 # test_mode時のyaw加算係数（manual_modeのyawは固定なので未使用）
+                test_pitch_gain: 0.005 # test/manual mode時のpitch加算係数（-1..1入力に適用）
+                manual_mode_yaw_fixed_angle: 0.0 # manual_mode遷移時に設定し、その後も固定する yaw 角度[rad]
+                manual_mode_pitch_initial_angle: 0.0 # manual_mode遷移時に設定する初期 pitch 角度[rad]
+                # manual_mode=true 時の pitch は std_msgs/Float32 の manual_pitch_angle topic で加算入力（-1..1, 0で保持）
+                # 遷移直後の pitch は manual_mode_pitch_initial_angle
 
-        # image target settings
-        # target_image_position: geometry_msgs/PointStamped
-        #   detected     -> point=(x_px, y_px, 0)  [center-origin pixel coords]
-        #   not detected -> point=(0, 0, 1)
-        image_width: 1280.0
-        image_height: 720.0
-        use_fov_image_tracking: false # true: 画角+画像比率ベース, false: yaw/pitch_image_gain による加算制御
-        horizontal_fov_deg: 100.0 # 横画角[deg]。縦画角は image_height / image_width 比から導出
-        # image_tolerance_x/y はピクセル誤差ベースで効く（両方式共通）
-        # legacy params (center-origin inputでは未使用、互換のため残置)
-        image_center_x: 0.5
-        image_center_y: 0.5
-        image_tolerance_x: 0.02
-        image_tolerance_y: 0.02
-        target_timeout_sec: 0.2
-        max_yaw_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
-        max_pitch_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
+                # image target settings
+                # target_image_position: geometry_msgs/PointStamped
+                #   detected     -> point=(x_px, y_px, 0)  [center-origin pixel coords]
+                #   not detected -> point=(0, 0, 1)
+                image_width: 1280.0
+                image_height: 720.0
+                use_fov_image_tracking: false # true: 画角+画像比率ベース, false: yaw/pitch_image_gain による加算制御
+                horizontal_fov_deg: 100.0 # 横画角[deg]。縦画角は image_height / image_width 比から導出
+                # image_tolerance_x/y はピクセル誤差ベースで効く（両方式共通）
+                # legacy params (center-origin inputでは未使用、互換のため残置)
+                image_center_x: 0.5
+                image_center_y: 0.5
+                image_tolerance_x: 0.02
+                image_tolerance_y: 0.02
+                target_timeout_sec: 0.2
+                max_yaw_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
+                max_pitch_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
 
-        # forbidden region avoidance (joint_state実測角ベースの yaw/pitch 空間)
-        forbidden_region_enabled: false
-        # 境界点（順序付き）。yaw/pitch を同じ長さで与える
-        forbidden_region_points_yaw: []
-        forbidden_region_points_pitch: []
-        # 点近傍禁止 [rad]
-        forbidden_region_point_radius: 0.0
-        # 線分近傍禁止（pointsを順に結ぶ） [rad]
-        forbidden_region_connect_as_polyline: true
-        forbidden_region_polyline_margin: 0.0
-        # true のとき最後の点と最初の点も接続（閉ループ）。まずは open polyline 推奨
-        forbidden_region_closed_loop: false
-        # 端回り回避の追加マージン [rad]
-        forbidden_region_detour_extra_margin: 0.02
+                # image error -> angle command gain（use_fov_image_tracking=false の時に使用）
+                yaw_image_gain: 0.00001
+                pitch_image_gain: 0.00001
+                yaw_direction: 1.0
+                pitch_direction: 1.0
 
-        # image error -> angle command gain（use_fov_image_tracking=false の時に使用）
-        yaw_image_gain: 0.00001
-        pitch_image_gain: 0.00001
-        yaw_direction: 1.0
-        pitch_direction: 1.0
+                # motor angle caps [rad] -> launch
+                # yaw_min_angle: -3.14159265359
+                # yaw_max_angle: 3.14159265359
+                # pitch_min_angle: -3.14159265359
+                # pitch_max_angle: 3.14159265359
 
-        # motor angle caps [rad] -> launch
-        # yaw_min_angle: -3.14159265359
-        # yaw_max_angle: 3.14159265359
-        # pitch_min_angle: -3.14159265359
-        # pitch_max_angle: 3.14159265359
-
-        # fixed angle offset [rad]
-        pitch_offset: 0.0
+                # fixed angle offset [rad]
+                pitch_offset: 0.0
