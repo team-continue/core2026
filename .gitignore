@@ -53,3 +53,4 @@ CATKIN_IGNORE
 *.obj
 
 .vscode/
+_codeql_detected_source_root
