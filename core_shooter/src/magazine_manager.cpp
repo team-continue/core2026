@@ -110,14 +110,14 @@ public:
     can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("/can/tx", 10);
 
     //========================================
+    // initialize (publish remaining disks first)
+    //========================================
+    remainingDisksPublish(remaining_disks_);
+
+    //========================================
     // timer callback
     //========================================
     timer_ = this->create_wall_timer(10ms, std::bind(&MagazineManager::on_timer, this));
-
-    //========================================
-    // initialize
-    //========================================
-    remainingDisksPublish(remaining_disks_);
   }
 
 private:
@@ -136,12 +136,25 @@ private:
   //========================================
   void shootStatusCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
+    // 初回受信は現在状態の同期として扱い、誤って減算しない
+    if (!shoot_status_initialized_) {
+      prev_shoot_status_ = msg->data;
+      shoot_status_initialized_ = true;
+      return;
+    }
+
     const bool rising = msg->data && !prev_shoot_status_;
     prev_shoot_status_ = msg->data;
 
     if (rising) {
       // 押さえ中はセンサが歪むので、通常はカウントで減算
       remainingDiskEstimator(-1);
+
+      // hold=true中の射撃回数を数え、10回でregripする
+      if (state_ == State::HOLDING && hold_on_ && !hazard_active_ && remaining_disks_ > 10) {
+        ++hold_shots_since_grip_;
+        RCLCPP_INFO(this->get_logger(), "hold_shots_since_grip: %d", hold_shots_since_grip_);
+      }
     }
   }
 
@@ -149,6 +162,7 @@ private:
   {
     if (msg->data > 0) {
       // 押さえの影響でセンサは信用できない想定 → ここでは同期しない
+      remaining_disks_ += msg->data;
       remainingDisksPublish(remaining_disks_);
     }
   }
@@ -214,6 +228,12 @@ private:
       if (estimated < 0) {
         estimated = 0;
       }
+      if (estimated > 127) {
+        RCLCPP_WARN_THROTTLE(
+          this->get_logger(), *this->get_clock(), 2000,
+          "disk estimate overflow (%d) -> clamp to 127", estimated);
+        estimated = 127;
+      }
 
       remaining_disks_ = estimated;
 
@@ -244,39 +264,41 @@ private:
   //========================================
   void holdStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    hold_on_ = msg->data;
+    // ボタン指示（hazard / <=10枚 は on_timer で優先上書き）
+    hold_request_on_ = msg->data;
 
-    if (!hold_on_) {
-      state_ = State::IDLE_RELEASED;
-      regrip_done_ = false;
-      latched_valid_ = false;
-    } else {
-      if (state_ == State::IDLE_RELEASED) {
-        state_ = State::HOLDING;
+    // ボタン押下時は即release側へ寄せる（最終決定は on_timer）
+    if (hold_request_on_) {
+      hold_on_ = false;
+      hold_shots_since_grip_ = 0;
+      if (state_ != State::REGRIP_RELEASING) {
+        state_ = State::IDLE_RELEASED;
       }
     }
   }
 
-  // hazard：押さえ状態（ラッチ）をリセット
+  // hazard：hold出力を強制releaseし、通常復帰後は on_timer の優先順に戻す
   void hazardStatusCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     const bool prev = hazard_active_;
     hazard_active_ = msg->data;
 
     if (hazard_active_ && !prev) {
+      hold_on_ = false;
       state_ = State::IDLE_RELEASED;
-      regrip_done_ = false;
-      latched_valid_ = false;
+      hold_shots_since_grip_ = 0;
+      publish_hold_command(false);
       RCLCPP_ERROR(this->get_logger(), "HAZARD ACTIVE -> force RELEASE + reset");
       return;
     }
 
     if (!hazard_active_ && prev) {
-      // 復帰後も「押さえリセット」仕様 → 再ラッチされるまでrelease
+      // 復帰後は通常ロジックに復帰（hold_on_ 指示に従う）
+      hold_on_ = false;
       state_ = State::IDLE_RELEASED;
-      regrip_done_ = false;
-      latched_valid_ = false;
-      RCLCPP_WARN(this->get_logger(), "HAZARD CLEARED -> reset hold latch");
+      hold_shots_since_grip_ = 0;
+      on_timer();  // hazard解除を即時反映（条件を満たせばgrip）
+      RCLCPP_WARN(this->get_logger(), "HAZARD CLEARED -> resume normal hold logic");
     }
   }
 
@@ -286,97 +308,78 @@ private:
   void on_timer()
   {
     // ============================================================
-    // PRIORITY 1: HAZARD STOP（最優先）→ 押さえ状態もリセット
+    // PRIORITY 1: HAZARDなら必ずrelease(false)
     // ============================================================
     if (hazard_active_) {
+      hold_on_ = false;
       state_ = State::IDLE_RELEASED;
-      regrip_done_ = false;
-      latched_valid_ = false;
+      hold_shots_since_grip_ = 0;
       publish_hold_command(false);
       return;
     }
 
     // ============================================================
-    // PRIORITY 2: 全体が10枚以下なら掴めない（冗長判定含む）
-    //   - センサは「リグリップ時のみ」信用できるので last_* を使う
+    // PRIORITY 2: 10枚以下なら必ずrelease(false)（冗長判定含む）
     // ============================================================
-    const bool cannot_hold_by_count = (remaining_disks_ <= 10);
-    const bool cannot_hold_by_last_sensor =
-      (last_sensor_estimated_disks_ >= 0 && last_sensor_estimated_disks_ <= 10);
-    const bool cannot_hold_by_last_height =
-      (last_sensor_height_mm_ >= 0.0 &&
-      last_sensor_height_mm_ <= (disk_thickness_ * 10.0 + hold_disable_height_margin_mm_));
-
-    if (cannot_hold_by_count || cannot_hold_by_last_sensor || cannot_hold_by_last_height) {
+    if (remaining_disks_ <= 10) {
+      hold_on_ = false;
       state_ = State::IDLE_RELEASED;
-      regrip_done_ = false;
-      latched_valid_ = false;
+      hold_shots_since_grip_ = 0;
       publish_hold_command(false);
       return;
     }
 
     // ============================================================
-    // PRIORITY 3: hold OFFなら開く（操作で解除）
+    // PRIORITY 3: ボタン押下時はrelease
     // ============================================================
-    if (!hold_on_) {
+    if (hold_request_on_) {
+      hold_on_ = false;
       state_ = State::IDLE_RELEASED;
-      regrip_done_ = false;
-      latched_valid_ = false;
+      hold_shots_since_grip_ = 0;
       publish_hold_command(false);
       return;
     }
 
     // ============================================================
-    // NORMAL: hold ON かつ 11枚以上 → 「下から10枚目を固定」
+    // NORMAL: ボタン未押下 かつ 11枚以上
     // ============================================================
-
-    // (A) まだ固定基準がないなら、いまの全体枚数から「上側枚数」をラッチ
-    if (!latched_valid_) {
-      latched_above_disks_ = remaining_disks_ - 10;
-      if (latched_above_disks_ < 0) {
-        latched_above_disks_ = 0;
-      }
-      latched_valid_ = true;
-      regrip_done_ = false;
+    if (state_ == State::IDLE_RELEASED) {
       state_ = State::HOLDING;
+      hold_shots_since_grip_ = 0;
     }
 
-    // (B) 固定ディスクより下（=下段側）の残数を計算
-    int below_remaining = remaining_disks_ - latched_above_disks_ - 1;
-    if (below_remaining < 0) {
-      below_remaining = 0;
-    }
+    // hold=trueになってから10回撃ったら false->true (regrip)
+    if (regrip_enabled_ && state_ == State::HOLDING && hold_shots_since_grip_ >= 10) {
+      state_ = State::REGRIP_RELEASING;
+      hold_shots_since_grip_ = 0;
 
-    // (C) 下段残数が2になったら regrip（1回だけ）
-    if (regrip_enabled_ && !regrip_done_ && below_remaining == 2) {
-      if (state_ != State::REGRIP_RELEASING) {
-        state_ = State::REGRIP_RELEASING;
+      // ★移動平均バッファをクリア（押さえ中の値を捨てる）
+      buffer_.clear();
 
-        // ★移動平均バッファをクリア（押さえ中の値を捨てる）
-        buffer_.clear();
+      regrip_release_until_ =
+        this->now() + rclcpp::Duration(0, static_cast<int64_t>(regrip_release_ms_) * 1000 * 1000);
 
-        regrip_release_until_ =
-          this->now() + rclcpp::Duration(0, static_cast<int64_t>(regrip_release_ms_) * 1000 * 1000);
-
-        RCLCPP_WARN(
-          this->get_logger(),
-          "Regrip triggered: total=%d, latched_above=%d, below_remaining=%d -> release %d ms",
-          remaining_disks_, latched_above_disks_, below_remaining, regrip_release_ms_);
-      }
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Regrip triggered after 10 shots: total=%d -> release %d ms",
+        remaining_disks_, regrip_release_ms_);
     }
 
     // (D) 状態に応じて0/1指令（0: release, 1: grip）
     switch (state_) {
       case State::IDLE_RELEASED:
+        hold_on_ = false;
         publish_hold_command(false);
         break;
 
       case State::HOLDING:
+        hold_on_ = true;
         publish_hold_command(true);
         break;
 
       case State::REGRIP_RELEASING:
         // 開放中
+        hold_on_ = false;
         publish_hold_command(false);
 
         // ★REGRIP中はセンサが見える想定
@@ -387,14 +390,7 @@ private:
 
         if (this->now() >= regrip_release_until_) {
           state_ = State::HOLDING;
-          regrip_done_ = true;
-
-          // regrip後に「新しい10枚目」を固定し直す：ラッチ更新
-          latched_above_disks_ = remaining_disks_ - 10;
-          if (latched_above_disks_ < 0) {
-            latched_above_disks_ = 0;
-          }
-          latched_valid_ = true;
+          hold_shots_since_grip_ = 0;
 
           RCLCPP_WARN(this->get_logger(), "Regrip done -> HOLDING");
         }
@@ -407,7 +403,7 @@ private:
   //========================================
   void publish_hold_command(bool hold)
   {
-    const float cmd = hold ? 1.0f : 0.0f;
+    const float cmd = hold ? 0.0f : 1.0f;
     motorPublish(disk_hold_left_motor_id_, cmd);
     motorPublish(disk_hold_right_motor_id_, cmd);
   }
@@ -463,15 +459,17 @@ private:
   int disk_hold_right_motor_id_ = 100;
 
   // disk hold state
-  bool hold_on_ = false;
+  bool hold_request_on_ = false;  // operator request from disk_hold_state topic
+  bool hold_on_ = false;  // effective hold state after hazard/remaining/regrip conditions
   bool prev_shoot_status_ = false;
+  bool shoot_status_initialized_ = false;
   bool hazard_active_ = true;
   State state_ = State::IDLE_RELEASED;
+  int hold_shots_since_grip_ = 0;
 
   // regrip
   bool regrip_enabled_ = true;
   int regrip_release_ms_ = 200;
-  bool regrip_done_ = false;
   rclcpp::Time regrip_release_until_{0, 0, RCL_ROS_TIME};
 
   // redundant sensor check (valid ONLY when synced during regrip)
@@ -481,9 +479,6 @@ private:
   int last_sensor_estimated_disks_ = -1;  // -1: 未取得
   double last_sensor_height_mm_ = -1.0;
 
-  // latch for "10th disk hold" logic
-  bool latched_valid_ = false;
-  int latched_above_disks_ = 0;
 };
 
 int main(int argc, char * argv[])

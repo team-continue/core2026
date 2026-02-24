@@ -5,6 +5,7 @@ from tkinter import ttk
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSHistoryPolicy, QoSProfile
 from core_msgs.msg import CAN, CANArray
 from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import JointState
@@ -18,6 +19,7 @@ class DebugTopicPublisher(Node):
         self.monitor_subscriptions = []
         self.joint_states_listener = None
         self.can_tx_listener = None
+        self.monitor_qos = QoSProfile(history=QoSHistoryPolicy.KEEP_LAST, depth=1)
 
         self.bool_publishers = {
             "/test_mode": self.create_publisher(Bool, "/test_mode", 10),
@@ -44,6 +46,10 @@ class DebugTopicPublisher(Node):
             "/left/shoot_motor": self.create_publisher(Float32, "/left/shoot_motor", 10),
             "/right/shoot_motor": self.create_publisher(Float32, "/right/shoot_motor", 10),
         }
+        self.int8_publishers = {
+            "/left/reloading": self.create_publisher(Int8, "/left/reloading", 10),
+            "/right/reloading": self.create_publisher(Int8, "/right/reloading", 10),
+        }
         self.point_publishers = {
             "/left/target_image_position": self.create_publisher(
                 PointStamped, "/left/target_image_position", 10
@@ -59,15 +65,13 @@ class DebugTopicPublisher(Node):
         self._add_monitor_subscription("/right/shoot_status", Bool)
         self._add_monitor_subscription("/left/shoot_cmd", Int32)
         self._add_monitor_subscription("/right/shoot_cmd", Int32)
-        self._add_monitor_subscription("/left/reloading", Int8)
-        self._add_monitor_subscription("/right/reloading", Int8)
         self._add_monitor_subscription("/left/distance", Int32)
         self._add_monitor_subscription("/right/distance", Int32)
         self.joint_states_sub = self.create_subscription(
-            JointState, "/joint_states", self._joint_states_callback, 10
+            JointState, "/joint_states", self._joint_states_callback, self.monitor_qos
         )
         self.can_tx_monitor_sub = self.create_subscription(
-            CANArray, "/can/tx", self._can_tx_callback, 10
+            CANArray, "/can/tx", self._can_tx_callback, self.monitor_qos
         )
 
     def publish_bool(self, topic: str, value: bool) -> None:
@@ -90,6 +94,12 @@ class DebugTopicPublisher(Node):
         can_array.array.append(can)
         self.can_tx_pub.publish(can_array)
         self.get_logger().info(f"publish /can/tx: id={can.id}, data=[{float(data):.4f}]")
+
+    def publish_int8(self, topic: str, value: int) -> None:
+        msg = Int8()
+        msg.data = int(value)
+        self.int8_publishers[topic].publish(msg)
+        self.get_logger().info(f"publish {topic}={msg.data}")
 
     def publish_point_stamped(self, topic: str, x: float, y: float, z: float = 0.0) -> None:
         msg = PointStamped()
@@ -117,7 +127,7 @@ class DebugTopicPublisher(Node):
             msg_type,
             topic,
             lambda msg, t=topic: self._monitor_callback(t, msg),
-            10,
+            self.monitor_qos,
         )
         self.monitor_subscriptions.append(sub)
 
@@ -191,8 +201,6 @@ class DebugGui:
             "/right/shoot_status": tk.StringVar(value="--"),
             "/left/shoot_cmd": tk.StringVar(value="--"),
             "/right/shoot_cmd": tk.StringVar(value="--"),
-            "/left/reloading": tk.StringVar(value="--"),
-            "/right/reloading": tk.StringVar(value="--"),
             "/left/distance": tk.StringVar(value="--"),
             "/right/distance": tk.StringVar(value="--"),
         }
@@ -234,6 +242,8 @@ class DebugGui:
         self.left_disk_hold_state_var = tk.BooleanVar(value=False)
         self.right_disk_hold_state_var = tk.BooleanVar(value=False)
         self.hazard_status_var = tk.BooleanVar(value=False)
+        self.left_reloading_entry_var = tk.StringVar(value="0")
+        self.right_reloading_entry_var = tk.StringVar(value="0")
         self.left_fullauto_var = tk.BooleanVar(value=False)
         self.right_fullauto_var = tk.BooleanVar(value=False)
 
@@ -311,7 +321,6 @@ class DebugGui:
             ("remaining_disk", "/left/remaining_disk", "/right/remaining_disk", "Int8"),
             ("shoot_status", "/left/shoot_status", "/right/shoot_status", "Bool"),
             ("shoot_cmd", "/left/shoot_cmd", "/right/shoot_cmd", "Int32"),
-            ("reloading", "/left/reloading", "/right/reloading", "Int8"),
             ("distance", "/left/distance", "/right/distance", "Int32"),
         ]
         for row_index, (label, left_topic, right_topic, type_name) in enumerate(rows, start=1):
@@ -775,8 +784,37 @@ class DebugGui:
                 ),
             ).grid(row=row, column=2, sticky=tk.EW, pady=4)
 
+        reloading_row_base = len(rows)
+        ttk.Separator(frame, orient=tk.HORIZONTAL).grid(
+            row=reloading_row_base,
+            column=0,
+            columnspan=3,
+            sticky=tk.EW,
+            pady=(8, 6),
+        )
+
+        int8_rows = [
+            ("/left/reloading", self.left_reloading_entry_var),
+            ("/right/reloading", self.right_reloading_entry_var),
+        ]
+        for idx, (topic, entry_var) in enumerate(int8_rows, start=1):
+            row = reloading_row_base + idx
+            ttk.Label(frame, text=topic).grid(row=row, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+            entry = ttk.Entry(frame, textvariable=entry_var, width=10)
+            entry.grid(row=row, column=1, sticky=tk.W, padx=(0, 8), pady=4)
+            ttk.Button(
+                frame,
+                text="Publish",
+                command=lambda t=topic, v=entry_var: self._publish_int8_from_entry(t, v),
+            ).grid(row=row, column=2, sticky=tk.EW, pady=4)
+            ttk.Label(frame, text="Int8").grid(row=row, column=3, sticky=tk.W, padx=(8, 0), pady=4)
+
         ttk.Button(frame, text="Publish All States", command=self._publish_all_states).grid(
-            row=len(rows), column=0, columnspan=3, sticky=tk.EW, pady=(8, 0)
+            row=reloading_row_base + len(int8_rows) + 1,
+            column=0,
+            columnspan=4,
+            sticky=tk.EW,
+            pady=(8, 0),
         )
 
         frame.columnconfigure(1, weight=1)
@@ -952,6 +990,18 @@ class DebugGui:
         self.node.publish_bool(topic, value)
         self._set_status(f"Published {topic}={value}")
 
+    def _publish_int8_from_entry(self, topic: str, entry_var: tk.StringVar) -> None:
+        try:
+            value = int(entry_var.get(), 10)
+        except ValueError:
+            self._set_status(f"Invalid Int8 for {topic}: {entry_var.get()!r}")
+            return
+
+        value = max(-128, min(127, value))
+        entry_var.set(str(value))
+        self.node.publish_int8(topic, value)
+        self._set_status(f"Published {topic}={value}")
+
     def _publish_state_value(self, topic: str, checked: bool, value_kind: str) -> None:
         self._publish_bool(topic, checked)
 
@@ -961,6 +1011,8 @@ class DebugGui:
         self.node.publish_bool("/left/disk_hold_state", self.left_disk_hold_state_var.get())
         self.node.publish_bool("/right/disk_hold_state", self.right_disk_hold_state_var.get())
         self._publish_bool("/system/emergency/hazard_status", self.hazard_status_var.get())
+        self._publish_int8_from_entry("/left/reloading", self.left_reloading_entry_var)
+        self._publish_int8_from_entry("/right/reloading", self.right_reloading_entry_var)
 
     def _pulse_bool(self, topic: str) -> None:
         self.node.publish_bool(topic, True)
@@ -992,32 +1044,33 @@ class DebugGui:
 
     def _schedule_spin(self) -> None:
         if rclpy.ok():
-            rclpy.spin_once(self.node, timeout_sec=0.0)
-            self.root.after(20, self._schedule_spin)
+            # Drain a small batch each tick so high-rate monitor topics stay responsive.
+            for _ in range(4):
+                rclpy.spin_once(self.node, timeout_sec=0.0)
+            self.root.after(5, self._schedule_spin)
 
     def _fit_window_to_content(self) -> None:
         self.root.update_idletasks()
 
-        content_w = self.scroll_container.winfo_reqwidth()
-        content_h = self.scroll_container.winfo_reqheight()
-        scrollbar_w = self.v_scrollbar.winfo_reqwidth()
-        status_h = (
-            self.status_separator.winfo_reqheight()
-            + self.status_label.winfo_reqheight()
-            + 14
-        )
+        desired_w = 1920
+        desired_h = 1080
 
-        target_w = content_w + scrollbar_w
-        target_h = content_h + status_h
-
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
         max_w, max_h = self.root.maxsize()
-        target_w = min(target_w, max_w)
-        target_h = min(target_h, max_h)
+        avail_w = max_w if max_w > 1 else screen_w
+        avail_h = max_h if max_h > 1 else screen_h
+
+        target_w = min(desired_w, avail_w)
+        target_h = min(desired_h, avail_h)
 
         min_w = min(760, target_w)
         min_h = min(520, target_h)
         self.root.minsize(min_w, min_h)
-        self.root.geometry(f"{target_w}x{target_h}")
+
+        pos_x = max((screen_w - target_w) // 2, 0)
+        pos_y = max((screen_h - target_h) // 2, 0)
+        self.root.geometry(f"{target_w}x{target_h}+{pos_x}+{pos_y}")
         self.root.update_idletasks()
 
     def _on_scroll_frame_configure(self, _event) -> None:
