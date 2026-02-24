@@ -31,6 +31,9 @@ def generate_launch_description():
         output="screen",
         parameters=[shooter_params],
         remappings=[
+            ("manual_mode", "/manual_mode"),
+            ("left_manual_mode", "/left/manual_mode"),
+            ("right_manual_mode", "/right/manual_mode"),
             ("left_shoot_cmd", "/left/shoot_cmd"),
             ("right_shoot_cmd", "/right/shoot_cmd"),
         ]
@@ -145,7 +148,7 @@ def generate_launch_description():
             }
         ],
         remappings=[
-            hazard_remaps
+            hazard_remaps,
         ]
     )
 

@@ -6,6 +6,7 @@ from tkinter import ttk
 import rclpy
 from rclpy.node import Node
 from core_msgs.msg import CAN, CANArray
+from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float32, Int8, Int32
 
@@ -19,6 +20,7 @@ class DebugTopicPublisher(Node):
         self.can_tx_listener = None
 
         self.bool_publishers = {
+            "/test_mode": self.create_publisher(Bool, "/test_mode", 10),
             "/manual_mode": self.create_publisher(Bool, "/manual_mode", 10),
             "/system/emergency/hazard_status": self.create_publisher(
                 Bool, "/system/emergency/hazard_status", 10
@@ -41,6 +43,14 @@ class DebugTopicPublisher(Node):
             ),
             "/left/shoot_motor": self.create_publisher(Float32, "/left/shoot_motor", 10),
             "/right/shoot_motor": self.create_publisher(Float32, "/right/shoot_motor", 10),
+        }
+        self.point_publishers = {
+            "/left/target_image_position": self.create_publisher(
+                PointStamped, "/left/target_image_position", 10
+            ),
+            "/right/target_image_position": self.create_publisher(
+                PointStamped, "/right/target_image_position", 10
+            ),
         }
         self.can_tx_pub = self.create_publisher(CANArray, "/can/tx", 10)
         self._add_monitor_subscription("/left/remaining_disk", Int8)
@@ -81,6 +91,18 @@ class DebugTopicPublisher(Node):
         self.can_tx_pub.publish(can_array)
         self.get_logger().info(f"publish /can/tx: id={can.id}, data=[{float(data):.4f}]")
 
+    def publish_point_stamped(self, topic: str, x: float, y: float, z: float = 0.0) -> None:
+        msg = PointStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "image_center"
+        msg.point.x = float(x)
+        msg.point.y = float(y)
+        msg.point.z = 0.0
+        self.point_publishers[topic].publish(msg)
+        self.get_logger().info(
+            f"publish {topic}: point=({msg.point.x:.1f}, {msg.point.y:.1f}, {msg.point.z:.1f})"
+        )
+
     def set_monitor_listener(self, topic: str, listener) -> None:
         self.monitor_listeners[topic] = listener
 
@@ -118,7 +140,10 @@ class DebugTopicPublisher(Node):
             vel_values[i] = f"{msg.velocity[i]:.4f}"
 
         meta_text = (
-            f"name={len(msg.name)} pos={len(msg.position)} vel={len(msg.velocity)} eff={len(msg.effort)}"
+            f"name={len(msg.name)} "
+            f"pos={len(msg.position)} "
+            f"vel={len(msg.velocity)} "
+            f"eff={len(msg.effort)}"
         )
         self.joint_states_listener(pos_values, vel_values, meta_text)
 
@@ -191,7 +216,20 @@ class DebugGui:
         self.right_shoot_motor_entry_var = tk.StringVar(value="0.0")
         self.can_tx_id_entry_var = tk.StringVar(value="0")
         self.can_tx_data_entry_var = tk.StringVar(value="0.0")
+        self.target_pad_side_var = tk.StringVar(value="left")
+        self.target_pad_coord_var = tk.StringVar(
+            value="x=0.0, y=0.0 (center origin, +x right, +y up)"
+        )
+        self.target_pad_topic_var = tk.StringVar(value="/left/target_image_position")
+        self.target_pad_display_w = 640
+        self.target_pad_display_h = 360
+        self.target_pad_canvas = None
+        self.target_pad_marker = None
+        self.target_pad_return_job = None
+        self.target_pad_current_x = 0.0
+        self.target_pad_current_y = 0.0
 
+        self.test_mode_var = tk.BooleanVar(value=False)
         self.manual_mode_var = tk.BooleanVar(value=False)
         self.left_disk_hold_state_var = tk.BooleanVar(value=False)
         self.right_disk_hold_state_var = tk.BooleanVar(value=False)
@@ -252,6 +290,7 @@ class DebugGui:
         self._build_state_frame(left_column)
         self._build_shoot_frame(left_column)
         self._build_monitor_frame(right_column)
+        self._build_target_image_pad_frame(container)
         self._build_angle_frame(container)
 
         self.status_separator = ttk.Separator(self.root, orient=tk.HORIZONTAL)
@@ -366,6 +405,171 @@ class DebugGui:
         frame.columnconfigure(2, weight=1)
         frame.columnconfigure(3, weight=1)
 
+    def _build_target_image_pad_frame(self, parent: ttk.Frame) -> None:
+        frame = ttk.LabelFrame(parent, text="Target Image Position Pad", padding=10)
+        frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(
+            frame,
+            text=(
+                "Click pad to publish target_image_position as geometry_msgs/PointStamped "
+                "(logical area 1280x720, origin at center)"
+            ),
+            justify=tk.LEFT,
+        ).grid(row=0, column=0, columnspan=4, sticky=tk.W, pady=(0, 6))
+
+        ttk.Label(frame, text="Target").grid(row=1, column=0, sticky=tk.W, padx=(0, 8))
+        ttk.Radiobutton(
+            frame,
+            text="Left (/left/target_image_position)",
+            value="left",
+            variable=self.target_pad_side_var,
+            command=self._update_target_pad_topic_label,
+        ).grid(row=1, column=1, sticky=tk.W, padx=(0, 8))
+        ttk.Radiobutton(
+            frame,
+            text="Right (/right/target_image_position)",
+            value="right",
+            variable=self.target_pad_side_var,
+            command=self._update_target_pad_topic_label,
+        ).grid(row=1, column=2, sticky=tk.W)
+
+        ttk.Label(frame, textvariable=self.target_pad_topic_var).grid(
+            row=2, column=0, columnspan=4, sticky=tk.W, pady=(0, 4)
+        )
+        ttk.Label(frame, textvariable=self.target_pad_coord_var).grid(
+            row=3, column=0, columnspan=4, sticky=tk.W, pady=(0, 8)
+        )
+
+        canvas = tk.Canvas(
+            frame,
+            width=self.target_pad_display_w,
+            height=self.target_pad_display_h,
+            background="#f5f5f5",
+            highlightthickness=1,
+            highlightbackground="#808080",
+        )
+        canvas.grid(row=4, column=0, columnspan=4, sticky=tk.W)
+        self.target_pad_canvas = canvas
+
+        w = self.target_pad_display_w
+        h = self.target_pad_display_h
+        cx = w / 2
+        cy = h / 2
+        canvas.create_rectangle(1, 1, w - 1, h - 1, outline="#404040")
+        canvas.create_line(cx, 0, cx, h, fill="#808080")
+        canvas.create_line(0, cy, w, cy, fill="#808080")
+        canvas.create_text(cx + 6, cy + 10, anchor=tk.NW, text="(0,0)", fill="#404040")
+        self._draw_target_pad_marker(cx, cy)
+
+        canvas.bind("<Button-1>", self._on_target_pad_press_or_drag)
+        canvas.bind("<B1-Motion>", self._on_target_pad_press_or_drag)
+        canvas.bind("<ButtonRelease-1>", self._on_target_pad_release)
+
+        frame.columnconfigure(1, weight=1)
+        frame.columnconfigure(2, weight=1)
+
+    def _update_target_pad_topic_label(self) -> None:
+        side = self.target_pad_side_var.get()
+        if side == "right":
+            self.target_pad_topic_var.set("/right/target_image_position")
+            return
+        self.target_pad_topic_var.set("/left/target_image_position")
+
+    def _on_target_pad_press_or_drag(self, event) -> None:
+        if self.target_pad_canvas is None:
+            return
+        self._cancel_target_pad_return()
+
+        w = float(self.target_pad_display_w)
+        h = float(self.target_pad_display_h)
+        x_canvas = min(max(float(event.x), 0.0), w)
+        y_canvas = min(max(float(event.y), 0.0), h)
+
+        logical_x = (x_canvas - (w / 2.0)) * (1280.0 / w)
+        logical_y = ((h / 2.0) - y_canvas) * (720.0 / h)
+        logical_x = max(-640.0, min(640.0, logical_x))
+        logical_y = max(-360.0, min(360.0, logical_y))
+
+        self._set_target_pad_point(logical_x, logical_y, publish=True)
+
+    def _on_target_pad_release(self, _event) -> None:
+        self._start_target_pad_return()
+
+    def _set_target_pad_point(self, logical_x: float, logical_y: float, publish: bool) -> None:
+        logical_x = max(-640.0, min(640.0, float(logical_x)))
+        logical_y = max(-360.0, min(360.0, float(logical_y)))
+        self.target_pad_current_x = logical_x
+        self.target_pad_current_y = logical_y
+
+        x_canvas, y_canvas = self._target_pad_canvas_from_logical(logical_x, logical_y)
+        self._draw_target_pad_marker(x_canvas, y_canvas)
+
+        topic = (
+            "/right/target_image_position"
+            if self.target_pad_side_var.get() == "right"
+            else "/left/target_image_position"
+        )
+        self.target_pad_coord_var.set(
+            f"x={logical_x:.1f}, y={logical_y:.1f} (center origin, +x right, +y up)"
+        )
+        self.target_pad_topic_var.set(topic)
+
+        if publish:
+            self.node.publish_point_stamped(topic, logical_x, logical_y, 0.0)
+            self._set_status(f"Published {topic}: x={logical_x:.1f}, y={logical_y:.1f}, z=0.0")
+
+    def _target_pad_canvas_from_logical(
+            self, logical_x: float, logical_y: float) -> tuple[float, float]:
+        w = float(self.target_pad_display_w)
+        h = float(self.target_pad_display_h)
+        x_canvas = (logical_x / 1280.0) * w + (w / 2.0)
+        y_canvas = (h / 2.0) - (logical_y / 720.0) * h
+        return x_canvas, y_canvas
+
+    def _cancel_target_pad_return(self) -> None:
+        if self.target_pad_return_job is None:
+            return
+        try:
+            self.root.after_cancel(self.target_pad_return_job)
+        except Exception:
+            pass
+        self.target_pad_return_job = None
+
+    def _start_target_pad_return(self) -> None:
+        self._cancel_target_pad_return()
+        self.target_pad_return_job = self.root.after(30, self._step_target_pad_return)
+
+    def _step_target_pad_return(self) -> None:
+        self.target_pad_return_job = None
+
+        next_x = self.target_pad_current_x * 0.90
+        next_y = self.target_pad_current_y * 0.90
+        if abs(next_x) < 0.5 and abs(next_y) < 0.5:
+            self._set_target_pad_point(0.0, 0.0, publish=True)
+            return
+
+        self._set_target_pad_point(next_x, next_y, publish=True)
+        self.target_pad_return_job = self.root.after(30, self._step_target_pad_return)
+
+    def _draw_target_pad_marker(self, x_canvas: float, y_canvas: float) -> None:
+        if self.target_pad_canvas is None:
+            return
+
+        canvas = self.target_pad_canvas
+        if self.target_pad_marker is not None:
+            canvas.delete(self.target_pad_marker)
+
+        r = 5
+        self.target_pad_marker = canvas.create_oval(
+            x_canvas - r,
+            y_canvas - r,
+            x_canvas + r,
+            y_canvas + r,
+            outline="#d22",
+            width=2,
+        )
+
     def _build_angle_frame(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Aimbot Test Angles", padding=10)
         frame.pack(fill=tk.X, pady=(0, 10))
@@ -382,8 +586,10 @@ class DebugGui:
             label="Yaw [rad]",
             slider_var=self.left_yaw_var,
             entry_var=self.left_yaw_entry_var,
-            slider_min=-3.14159265359,
-            slider_max=3.14159265359,
+            slider_min=-1.0,
+            slider_max=1.0,
+            spring_return=True,
+            live_publish=True,
         )
         self._build_angle_row(
             left_frame,
@@ -392,8 +598,10 @@ class DebugGui:
             label="Pitch [rad]",
             slider_var=self.left_pitch_var,
             entry_var=self.left_pitch_entry_var,
-            slider_min=-3.14159265359,
-            slider_max=3.14159265359,
+            slider_min=-1.0,
+            slider_max=1.0,
+            spring_return=True,
+            live_publish=True,
         )
         ttk.Button(
             left_frame,
@@ -413,8 +621,10 @@ class DebugGui:
             label="Yaw [rad]",
             slider_var=self.right_yaw_var,
             entry_var=self.right_yaw_entry_var,
-            slider_min=-3.14159265359,
-            slider_max=3.14159265359,
+            slider_min=-1.0,
+            slider_max=1.0,
+            spring_return=True,
+            live_publish=True,
         )
         self._build_angle_row(
             right_frame,
@@ -423,8 +633,10 @@ class DebugGui:
             label="Pitch [rad]",
             slider_var=self.right_pitch_var,
             entry_var=self.right_pitch_entry_var,
-            slider_min=-3.14159265359,
-            slider_max=3.14159265359,
+            slider_min=-1.0,
+            slider_max=1.0,
+            spring_return=True,
+            live_publish=True,
         )
         ttk.Button(
             right_frame,
@@ -478,15 +690,24 @@ class DebugGui:
         entry_var: tk.StringVar,
         slider_min: float = -3.14159265359,
         slider_max: float = 3.14159265359,
+        spring_return: bool = False,
+        live_publish: bool = False,
     ) -> None:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+
+        def on_scale_change(value: str) -> None:
+            float_value = float(value)
+            entry_var.set(f"{float_value:.4f}")
+            if live_publish:
+                self.node.publish_float(topic, float_value)
+                self._set_status(f"Published {topic}={float_value:.4f}")
 
         scale = ttk.Scale(
             parent,
             from_=slider_min,
             to=slider_max,
             variable=slider_var,
-            command=lambda value, ev=entry_var: ev.set(f"{float(value):.4f}"),
+            command=on_scale_change,
         )
         scale.grid(row=row, column=1, sticky=tk.EW, padx=(0, 8), pady=4)
 
@@ -512,6 +733,16 @@ class DebugGui:
             command=lambda t=topic, v=entry_var: self._publish_float_from_entry(t, v),
         ).grid(row=row, column=4, sticky=tk.EW, pady=4)
 
+        if spring_return:
+            def on_scale_release(_event) -> None:
+                slider_var.set(0.0)
+                entry_var.set("0.0000")
+                if live_publish:
+                    self.node.publish_float(topic, 0.0)
+                    self._set_status(f"Published {topic}=0.0000")
+
+            scale.bind("<ButtonRelease-1>", on_scale_release)
+
         for col in range(5):
             parent.columnconfigure(col, weight=1 if col in (1, 2) else 0)
 
@@ -520,6 +751,7 @@ class DebugGui:
         frame.pack(fill=tk.X, pady=(0, 10))
 
         rows = [
+            ("/test_mode", self.test_mode_var, "bool"),
             ("/manual_mode", self.manual_mode_var, "bool"),
             ("/left/disk_hold_state", self.left_disk_hold_state_var, "bool"),
             ("/right/disk_hold_state", self.right_disk_hold_state_var, "bool"),
@@ -653,6 +885,14 @@ class DebugGui:
         except ValueError:
             self._set_status(f"Invalid float for {topic}: {entry_var.get()!r}")
             return
+        if topic in (
+            "/left/test_yaw_angle",
+            "/left/test_pitch_angle",
+            "/right/test_yaw_angle",
+            "/right/test_pitch_angle",
+        ):
+            value = max(-1.0, min(1.0, value))
+            entry_var.set(f"{value:.4f}")
         if topic in ("/left/shoot_motor", "/right/shoot_motor"):
             value = max(0.0, min(1.0, value))
             entry_var.set(f"{value:.4f}")
@@ -716,6 +956,7 @@ class DebugGui:
         self._publish_bool(topic, checked)
 
     def _publish_all_states(self) -> None:
+        self._publish_bool("/test_mode", self.test_mode_var.get())
         self._publish_bool("/manual_mode", self.manual_mode_var.get())
         self.node.publish_bool("/left/disk_hold_state", self.left_disk_hold_state_var.get())
         self.node.publish_bool("/right/disk_hold_state", self.right_disk_hold_state_var.get())

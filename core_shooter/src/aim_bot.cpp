@@ -7,7 +7,7 @@
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float32.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
-#include "geometry_msgs/msg/point.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp"
 #include "core_msgs/msg/can.hpp"
 #include "core_msgs/msg/can_array.hpp"
 
@@ -32,6 +32,10 @@ public:
     this->declare_parameter<double>("pitch_max_angle", 3.14159265359);
     this->declare_parameter<double>("image_center_x", 0.5);
     this->declare_parameter<double>("image_center_y", 0.5);
+    this->declare_parameter<double>("image_width", 1280.0);
+    this->declare_parameter<double>("image_height", 720.0);
+    this->declare_parameter<double>("horizontal_fov_deg", 100.0);
+    this->declare_parameter<bool>("use_fov_image_tracking", true);
     this->declare_parameter<double>("image_tolerance_x", 0.02);
     this->declare_parameter<double>("image_tolerance_y", 0.02);
     this->declare_parameter<double>("yaw_image_gain", 0.5);
@@ -40,7 +44,10 @@ public:
     this->declare_parameter<double>("pitch_direction", 1.0);
     this->declare_parameter<double>("target_timeout_sec", 0.2);
     this->declare_parameter<bool>("enable_test_mode", false);
-    this->declare_parameter<double>("manual_mode_pitch_fixed_angle", 0.0);
+    this->declare_parameter<double>("test_yaw_gain", 0.05);
+    this->declare_parameter<double>("test_pitch_gain", 0.05);
+    this->declare_parameter<double>("manual_mode_yaw_fixed_angle", 0.0);
+    this->declare_parameter<double>("manual_mode_pitch_initial_angle", 0.0);
 
     // ----------------------------
     // パラメータ取得
@@ -53,6 +60,10 @@ public:
     this->get_parameter("pitch_max_angle", pitch_max_angle_);
     this->get_parameter("image_center_x", image_center_x_);
     this->get_parameter("image_center_y", image_center_y_);
+    this->get_parameter("image_width", image_width_);
+    this->get_parameter("image_height", image_height_);
+    this->get_parameter("horizontal_fov_deg", horizontal_fov_deg_);
+    this->get_parameter("use_fov_image_tracking", use_fov_image_tracking_);
     this->get_parameter("image_tolerance_x", image_tolerance_x_);
     this->get_parameter("image_tolerance_y", image_tolerance_y_);
     this->get_parameter("yaw_image_gain", yaw_image_gain_);
@@ -61,7 +72,10 @@ public:
     this->get_parameter("pitch_direction", pitch_direction_);
     this->get_parameter("target_timeout_sec", target_timeout_sec_);
     this->get_parameter("enable_test_mode", enable_test_mode_);
-    this->get_parameter("manual_mode_pitch_fixed_angle", manual_mode_pitch_fixed_angle_);
+    this->get_parameter("test_yaw_gain", test_yaw_gain_);
+    this->get_parameter("test_pitch_gain", test_pitch_gain_);
+    this->get_parameter("manual_mode_yaw_fixed_angle", manual_mode_yaw_fixed_angle_);
+    this->get_parameter("manual_mode_pitch_initial_angle", manual_mode_pitch_initial_angle_);
     this->get_parameter("pitch_motor_id", pitch_motor_id_);
     this->get_parameter("yaw_motor_id", yaw_motor_id_);
 
@@ -87,33 +101,49 @@ public:
         pitch_min_angle_, pitch_max_angle_);
       throw std::runtime_error("invalid pitch angle caps");
     }
-    if (image_tolerance_x_ < 0.0 || image_tolerance_y_ < 0.0 || target_timeout_sec_ < 0.0) {
+    if (image_width_ <= 0.0 || image_height_ <= 0.0 ||
+      test_yaw_gain_ < 0.0 || test_pitch_gain_ < 0.0 ||
+      image_tolerance_x_ < 0.0 || image_tolerance_y_ < 0.0 || target_timeout_sec_ < 0.0)
+    {
       RCLCPP_FATAL(
         get_logger(),
-        "Invalid image params: image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f",
+        "Invalid image params: image_width=%f, image_height=%f, horizontal_fov_deg=%f, test_yaw_gain=%f, test_pitch_gain=%f, image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f",
+        image_width_, image_height_, horizontal_fov_deg_, test_yaw_gain_, test_pitch_gain_,
         image_tolerance_x_, image_tolerance_y_, target_timeout_sec_);
       throw std::runtime_error("invalid aimbot image parameters");
+    }
+    if (use_fov_image_tracking_ &&
+      (horizontal_fov_deg_ <= 0.0 || horizontal_fov_deg_ >= 180.0))
+    {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid horizontal_fov_deg=%f for FOV image tracking (must be 0 < hfov < 180)",
+        horizontal_fov_deg_);
+      throw std::runtime_error("invalid aimbot horizontal fov");
     }
 
     // ----------------------------
     // Subscriber
     // ----------------------------
-    target_image_sub_ = create_subscription<geometry_msgs::msg::Point>(
+    target_image_sub_ = create_subscription<geometry_msgs::msg::PointStamped>(
       "target_image_position", 10,
       std::bind(&AimBot::targetImageCallback, this, std::placeholders::_1));
 
-    if (enable_test_mode_) {
-      test_yaw_sub_ = create_subscription<std_msgs::msg::Float32>(
-        "test_yaw_angle", 10,
-        std::bind(&AimBot::testYawCallback, this, std::placeholders::_1));
-      test_pitch_sub_ = create_subscription<std_msgs::msg::Float32>(
-        "test_pitch_angle", 10,
-        std::bind(&AimBot::testPitchCallback, this, std::placeholders::_1));
-      RCLCPP_WARN(get_logger(), "Test mode enabled: subscribing test_yaw_angle / test_pitch_angle");
-    }
+    test_mode_sub_ = create_subscription<std_msgs::msg::Bool>(
+      "/test_mode", 10, std::bind(&AimBot::testModeCallback, this, std::placeholders::_1));
+    test_yaw_sub_ = create_subscription<std_msgs::msg::Float32>(
+      "test_yaw_angle", 10,
+      std::bind(&AimBot::testYawCallback, this, std::placeholders::_1));
+    test_pitch_sub_ = create_subscription<std_msgs::msg::Float32>(
+      "test_pitch_angle", 10,
+      std::bind(&AimBot::testPitchCallback, this, std::placeholders::_1));
 
     manual_mode_sub_ = create_subscription<std_msgs::msg::Bool>(
-      "/manual_mode", 10, std::bind(&AimBot::manualModeCallback, this, std::placeholders::_1));
+      "manual_mode", 10, std::bind(&AimBot::manualModeCallback, this, std::placeholders::_1));
+    manual_pitch_sub_ = create_subscription<std_msgs::msg::Float32>(
+      // "manual_pitch_angle", 10,
+      "test_pitch_angle", 10,
+      std::bind(&AimBot::manualPitchCallback, this, std::placeholders::_1));
 
     hazard_state_sub_ = create_subscription<std_msgs::msg::Bool>(
       "hazard_status", 10, std::bind(&AimBot::hazardCallback, this, std::placeholders::_1));
@@ -133,15 +163,38 @@ public:
     timer_ = create_wall_timer(period, std::bind(&AimBot::timerCallback, this));
 
     RCLCPP_INFO(
-      get_logger(), "AimBot started. image_center=(%.3f, %.3f), image_tolerance=(%.3f, %.3f)",
-      image_center_x_, image_center_y_, image_tolerance_x_, image_tolerance_y_);
+      get_logger(),
+      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), test_mode_default=%s(topic override supported)",
+      image_width_, image_height_, use_fov_image_tracking_ ? "fov" : "gain",
+      horizontal_fov_deg_, image_tolerance_x_, image_tolerance_y_,
+      enable_test_mode_ ? "true" : "false");
   }
 
 private:
+  enum class ControlMode
+  {
+    Emergency,
+    Manual,
+    Test,
+    AutoTrack
+  };
+
   // ===== コールバック =====
   void hazardCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    hazard_detected_ = msg->data;
+    const bool prev = hazard_state_;
+    hazard_state_ = msg->data;
+
+    if (!hazard_state_ && prev) {
+      if (zero_init_after_restart_pending_) {
+        // ノード再起動後、最初の緊急停止解除時のみ yaw/pitch=0 を初期目標にする。
+        setCommandTarget(0.0, 0.0);
+        zero_init_after_restart_pending_ = false;
+        RCLCPP_INFO(
+          this->get_logger(),
+          "First emergency release after restart: initialize command target to yaw=0, pitch=0");
+      }
+    }
   }
 
   void manualModeCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -149,25 +202,45 @@ private:
     const bool prev = manual_mode_active_;
     manual_mode_active_ = msg->data;
 
-    if (manual_mode_active_ && !prev) {
-      if (!has_joint_state_) {
-        manual_mode_active_ = false;
-        RCLCPP_WARN(this->get_logger(), "Manual mode ON ignored: joint_states not received yet");
-        return;
-      }
-      manual_mode_yaw_hold_angle_ = std::clamp(yaw_angle_, yaw_min_angle_, yaw_max_angle_);
-      RCLCPP_INFO(
-        this->get_logger(), "Manual mode ON: hold yaw=%f, fixed pitch=%f",
-        manual_mode_yaw_hold_angle_, manual_mode_pitch_fixed_angle_);
-    } else if (!manual_mode_active_ && prev) {
+    if (!prev && manual_mode_active_) {
+      // Manual mode should initialize yaw/pitch only on explicit manual ON edge.
+      manual_mode_init_pending_ = true;
+    }
+
+    if (!manual_mode_active_ && prev) {
+      manual_mode_init_pending_ = false;
       RCLCPP_INFO(this->get_logger(), "Manual mode OFF");
     }
   }
 
-  void targetImageCallback(const geometry_msgs::msg::Point::SharedPtr msg)
+  void testModeCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    target_image_x_ = msg->x;
-    target_image_y_ = msg->y;
+    const bool prev_effective = isTestModeEnabled();
+    test_mode_topic_value_ = msg->data;
+    has_test_mode_topic_value_ = true;
+    const bool next_effective = isTestModeEnabled();
+    if (next_effective != prev_effective) {
+      RCLCPP_INFO(
+        this->get_logger(), "Test mode %s (source=topic, param fallback=%s)",
+        next_effective ? "ON" : "OFF", enable_test_mode_ ? "true" : "false");
+    }
+  }
+
+  void targetImageCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
+  {
+    // PointStamped semantics:
+    //   detected     -> point = <x, y, 0> (x/y are centered image coordinates)
+    //   not detected -> point = <0, 0, 1>
+    const bool detected = (msg->point.z < 0.5);
+    if (!detected) {
+      has_target_ = false;
+      target_image_x_ = 0.0;
+      target_image_y_ = 0.0;
+      return;
+    }
+
+    target_image_x_ = msg->point.x;
+    target_image_y_ = msg->point.y;
     has_target_ = true;
     last_target_time_ = this->now();
   }
@@ -182,6 +255,12 @@ private:
   {
     test_pitch_target_ = msg->data;
     has_test_pitch_target_ = true;
+  }
+
+  void manualPitchCallback(const std_msgs::msg::Float32::SharedPtr msg)
+  {
+    manual_pitch_target_ = msg->data;
+    has_manual_pitch_target_ = true;
   }
 
   void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
@@ -205,88 +284,232 @@ private:
 
   void timerCallback()
   {
-    // 緊急停止時は現在角保持
-    if (hazard_detected_) {
-      publishHoldCurrent();
-      return;
+    const bool test_mode_enabled = isTestModeEnabled();
+    ControlMode mode = ControlMode::AutoTrack;
+    if (hazard_state_) {
+      mode = ControlMode::Emergency;
+    } else if (manual_mode_active_) {
+      mode = ControlMode::Manual;
+    } else if (test_mode_enabled) {
+      mode = ControlMode::Test;
     }
 
-    if (enable_test_mode_) {
-      if (!has_test_yaw_target_ || !has_test_pitch_target_) {
-        RCLCPP_WARN_THROTTLE(
-          this->get_logger(), *this->get_clock(), 2000,
-          "test mode enabled but test yaw/pitch target not received yet");
-        publishHoldCurrent();
+    const bool entering_mode = setActiveControlMode(mode);
+
+    switch (mode) {
+      case ControlMode::Emergency:
+        if (entering_mode && has_joint_state_) {
+          // Latch actual angle once when entering emergency, then keep holding that command.
+          setCommandTarget(yaw_angle_, pitch_angle_);
+        }
+        publishCommandHold("emergency hold skipped: command target not initialized");
         return;
-      }
 
-      const float yaw_output = static_cast<float>(
-        std::clamp(test_yaw_target_, yaw_min_angle_, yaw_max_angle_));
-      motorPublish(yaw_motor_id_, yaw_output);
+      case ControlMode::Manual: {
+          if (test_mode_enabled) {
+            RCLCPP_WARN_THROTTLE(
+              this->get_logger(), *this->get_clock(), 2000,
+              "manual_mode active: overriding test_mode outputs");
+          }
+          if (entering_mode) {
+            if (manual_mode_init_pending_) {
+              // Initialize manual yaw/pitch only when /manual_mode is explicitly turned ON.
+              has_manual_pitch_target_ = false;
+              setCommandTarget(manual_mode_yaw_fixed_angle_, manual_mode_pitch_initial_angle_);
+              manual_mode_init_pending_ = false;
+              RCLCPP_INFO(
+                this->get_logger(),
+                "Manual mode ON: set yaw=%f, pitch=%f (pitch becomes controllable via manual_pitch_angle)",
+                command_yaw_angle_, command_pitch_angle_);
+            }
+          }
 
-      const float pitch_output = static_cast<float>(
-        std::clamp(test_pitch_target_, pitch_min_angle_, pitch_max_angle_));
-      motorPublish(pitch_motor_id_, pitch_output);
-      return;
+          if (!has_manual_pitch_target_) {
+            RCLCPP_WARN_THROTTLE(
+              this->get_logger(),
+              *this->get_clock(), 2000,
+              "manual_mode active but manual_pitch_angle not received yet: holding manual initial pitch command");
+          }
+          double manual_pitch = command_pitch_angle_;
+          if (has_manual_pitch_target_) {
+            const double pitch_delta = std::clamp(manual_pitch_target_, -1.0, 1.0);
+            manual_pitch = command_pitch_angle_ + pitch_direction_ * test_pitch_gain_ * pitch_delta;
+          }
+          setCommandTarget(manual_mode_yaw_fixed_angle_, manual_pitch);
+          publishCommandTarget();
+          return;
+        }
+
+      case ControlMode::Test:
+        if (entering_mode) {
+          // Require fresh test inputs after every test-mode entry to avoid reusing stale values.
+          has_test_yaw_target_ = false;
+          has_test_pitch_target_ = false;
+        }
+        if (!has_test_yaw_target_ || !has_test_pitch_target_) {
+          RCLCPP_WARN_THROTTLE(
+            this->get_logger(), *this->get_clock(), 2000,
+            "test mode enabled but test yaw/pitch target not received yet");
+          publishCommandHold("test mode hold skipped: command target not initialized");
+          return;
+        }
+        if (!ensureCommandTarget("test mode enabled but joint_states not received yet")) {
+          return;
+        }
+
+        // test input is normalized delta command [-1, 1] integrated on the internal command target.
+        {
+          const double yaw_delta = std::clamp(test_yaw_target_, -1.0, 1.0);
+          const double next_yaw = command_yaw_angle_ + yaw_direction_ * test_yaw_gain_ * yaw_delta;
+
+          const double pitch_delta = std::clamp(test_pitch_target_, -1.0, 1.0);
+          const double next_pitch =
+            command_pitch_angle_ + pitch_direction_ * test_pitch_gain_ * pitch_delta;
+
+          setCommandTarget(next_yaw, next_pitch);
+          publishCommandTarget();
+          return;
+        }
+
+      case ControlMode::AutoTrack:
+        if (!has_target_ || (this->now() - last_target_time_).seconds() > target_timeout_sec_) {
+          RCLCPP_WARN_THROTTLE(
+            this->get_logger(), *this->get_clock(), 2000,
+            "target_image_position timeout");
+          publishCommandHold("no-input hold skipped: command target not initialized");
+          return;
+        }
+
+        if (entering_mode && has_joint_state_) {
+          // Auto mode baseline is actual joint angle; pitch_offset is applied once at auto entry.
+          setCommandTarget(yaw_angle_, pitch_angle_ + pitch_offset_);
+        }
+
+        if (!ensureCommandTarget("auto track skipped: command/joint_states not available")) {
+          return;
+        }
+
+        // 入力は中心原点のピクセル座標。追尾方式はパラメータで切替。
+        {
+          const double x_error = target_image_x_;
+          const double y_error = target_image_y_;
+
+          // モータ側が位置制御を行う前提で、内部の目標角を更新する
+          double yaw_target = command_yaw_angle_;
+          double pitch_target = command_pitch_angle_;
+
+          if (use_fov_image_tracking_) {
+            constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
+            const double horizontal_fov_rad = horizontal_fov_deg_ * kDegToRad;
+            const double vertical_fov_rad = horizontal_fov_rad * (image_height_ / image_width_);
+            const double half_hfov_rad = 0.5 * horizontal_fov_rad;
+            const double half_vfov_rad = 0.5 * vertical_fov_rad;
+
+            if (std::fabs(x_error) > image_tolerance_x_) {
+              // rectilinear camera assumption:
+              // x_px in [-image_width/2, image_width/2] -> yaw offset in [-hfov/2, hfov/2]
+              const double x_norm = std::clamp((2.0 * x_error) / image_width_, -1.0, 1.0);
+              const double yaw_offset_rad = std::atan(x_norm * std::tan(half_hfov_rad));
+              const double yaw_base = has_joint_state_ ? yaw_angle_ : command_yaw_angle_;
+              yaw_target = yaw_base + yaw_direction_ * yaw_offset_rad;
+            }
+            if (std::fabs(y_error) > image_tolerance_y_) {
+              // Vertical FOV is derived from horizontal FOV by image aspect ratio.
+              const double y_norm = std::clamp((2.0 * y_error) / image_height_, -1.0, 1.0);
+              const double pitch_offset_rad = std::atan(y_norm * std::tan(half_vfov_rad));
+              const double pitch_base = has_joint_state_ ?
+                (pitch_angle_ + pitch_offset_) :
+                command_pitch_angle_;
+              pitch_target = pitch_base + pitch_direction_ * pitch_offset_rad;
+            }
+          } else {
+            if (std::fabs(x_error) > image_tolerance_x_) {
+              yaw_target += yaw_direction_ * yaw_image_gain_ * x_error;
+            }
+            if (std::fabs(y_error) > image_tolerance_y_) {
+              pitch_target += pitch_direction_ * pitch_image_gain_ * y_error;
+            }
+          }
+
+          setCommandTarget(yaw_target, pitch_target);
+          publishCommandTarget();
+          return;
+        }
     }
-
-    if (manual_mode_active_) {
-      const double yaw_output = std::clamp(
-        manual_mode_yaw_hold_angle_, yaw_min_angle_,
-        yaw_max_angle_);
-      const double pitch_output = std::clamp(
-        manual_mode_pitch_fixed_angle_, pitch_min_angle_, pitch_max_angle_);
-
-      motorPublish(yaw_motor_id_, static_cast<float>(yaw_output));
-      motorPublish(pitch_motor_id_, static_cast<float>(pitch_output));
-      return;
-    }
-
-    if (!has_target_ || (this->now() - last_target_time_).seconds() > target_timeout_sec_) {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 2000,
-        "target_image_position timeout");
-      publishHoldCurrent();
-      return;
-    }
-
-    // 画像内位置（0.0-1.0想定）から中心との差を計算
-    const double x_error = target_image_x_ - image_center_x_;
-    const double y_error = target_image_y_ - image_center_y_;
-
-    // モータ側が位置制御を行う前提で、現在角 + 画像偏差から目標角を算出
-    double yaw_target = yaw_angle_;
-    double pitch_target = pitch_angle_ + pitch_offset_;
-    if (std::fabs(x_error) > image_tolerance_x_) {
-      yaw_target += yaw_direction_ * yaw_image_gain_ * x_error;
-    }
-    if (std::fabs(y_error) > image_tolerance_y_) {
-      pitch_target += pitch_direction_ * pitch_image_gain_ * y_error;
-    }
-
-    const double yaw_output = std::clamp(yaw_target, yaw_min_angle_, yaw_max_angle_);
-    const double pitch_output = std::clamp(pitch_target, pitch_min_angle_, pitch_max_angle_);
-
-    // --- 出力Publish ---
-    std_msgs::msg::Float32 yaw_msg;
-    yaw_msg.data = static_cast<float>(yaw_output);
-    motorPublish(yaw_motor_id_, yaw_msg.data);
-
-    std_msgs::msg::Float32 pitch_msg;
-    pitch_msg.data = static_cast<float>(pitch_output);
-    motorPublish(pitch_motor_id_, pitch_msg.data);
   }
 
-  void publishHoldCurrent()
+  double clampYaw(double angle) const
   {
-    std_msgs::msg::Float32 yaw_msg;
-    yaw_msg.data = static_cast<float>(std::clamp(yaw_angle_, yaw_min_angle_, yaw_max_angle_));
-    motorPublish(yaw_motor_id_, yaw_msg.data);
+    return std::clamp(angle, yaw_min_angle_, yaw_max_angle_);
+  }
 
-    std_msgs::msg::Float32 pitch_msg;
-    pitch_msg.data = static_cast<float>(
-      std::clamp(pitch_angle_ + pitch_offset_, pitch_min_angle_, pitch_max_angle_));
-    motorPublish(pitch_motor_id_, pitch_msg.data);
+  double clampPitch(double angle) const
+  {
+    return std::clamp(angle, pitch_min_angle_, pitch_max_angle_);
+  }
+
+  void setCommandTarget(double yaw, double pitch)
+  {
+    command_yaw_angle_ = clampYaw(yaw);
+    command_pitch_angle_ = clampPitch(pitch);
+    has_command_target_ = true;
+  }
+
+  bool latchCommandTargetFromJointState(double pitch_bias = 0.0)
+  {
+    if (!has_joint_state_) {
+      return false;
+    }
+    setCommandTarget(yaw_angle_, pitch_angle_ + pitch_bias);
+    return true;
+  }
+
+  bool ensureCommandTarget(const char * warn_message)
+  {
+    if (has_command_target_) {
+      return true;
+    }
+    if (latchCommandTargetFromJointState()) {
+      return true;
+    }
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 2000, "%s", warn_message);
+    return false;
+  }
+
+  void publishCommandHold(const char * warn_message)
+  {
+    if (!has_command_target_) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000, "%s", warn_message);
+      return;
+    }
+    publishCommandTarget();
+  }
+
+  bool setActiveControlMode(ControlMode next_mode)
+  {
+    const bool changed = !has_active_control_mode_ || active_control_mode_ != next_mode;
+    active_control_mode_ = next_mode;
+    has_active_control_mode_ = true;
+    return changed;
+  }
+
+  bool isTestModeEnabled() const
+  {
+    return has_test_mode_topic_value_ ? test_mode_topic_value_ : enable_test_mode_;
+  }
+
+  void publishCommandTarget()
+  {
+    if (!has_command_target_) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "publishCommandTarget skipped: command target not initialized");
+      return;
+    }
+    motorPublish(yaw_motor_id_, static_cast<float>(command_yaw_angle_));
+    motorPublish(pitch_motor_id_, static_cast<float>(command_pitch_angle_));
   }
 
   void motorPublish(int id, float data)
@@ -300,21 +523,31 @@ private:
   }
 
   // ===== 内部変数 =====
-  bool hazard_detected_ = true;
+  bool hazard_state_ = true;
   bool has_joint_state_ = false;
 
   double yaw_angle_ = 0.0;
   double pitch_angle_ = 0.0;
-  double target_image_x_ = 0.5;
-  double target_image_y_ = 0.5;
+  double target_image_x_ = 0.0;
+  double target_image_y_ = 0.0;
   bool has_target_ = false;
   rclcpp::Time last_target_time_{0, 0, RCL_ROS_TIME};
   double test_yaw_target_ = 0.0;
   double test_pitch_target_ = 0.0;
   bool has_test_yaw_target_ = false;
   bool has_test_pitch_target_ = false;
+  bool test_mode_topic_value_ = false;
+  bool has_test_mode_topic_value_ = false;
   bool manual_mode_active_ = false;
-  double manual_mode_yaw_hold_angle_ = 0.0;
+  bool manual_mode_init_pending_ = false;
+  double manual_pitch_target_ = 0.0;
+  bool has_manual_pitch_target_ = false;
+  bool has_command_target_ = false;
+  double command_yaw_angle_ = 0.0;
+  double command_pitch_angle_ = 0.0;
+  bool zero_init_after_restart_pending_ = true;
+  bool has_active_control_mode_ = false;
+  ControlMode active_control_mode_ = ControlMode::AutoTrack;
 
   double rate_;
   double pitch_offset_;
@@ -324,6 +557,10 @@ private:
   double pitch_max_angle_;
   double image_center_x_;
   double image_center_y_;
+  double image_width_;
+  double image_height_;
+  double horizontal_fov_deg_;
+  bool use_fov_image_tracking_ = true;
   double image_tolerance_x_;
   double image_tolerance_y_;
   double yaw_image_gain_;
@@ -332,16 +569,21 @@ private:
   double pitch_direction_;
   double target_timeout_sec_;
   bool enable_test_mode_ = false;
-  double manual_mode_pitch_fixed_angle_ = 0.0;
+  double test_yaw_gain_ = 0.05;
+  double test_pitch_gain_ = 0.05;
+  double manual_mode_yaw_fixed_angle_ = 0.0;
+  double manual_mode_pitch_initial_angle_ = 0.0;
   int pitch_motor_id_;
   int yaw_motor_id_;
 
   // ROS通信
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
-  rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr target_image_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr target_image_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr test_mode_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr test_yaw_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr test_pitch_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr manual_mode_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr manual_pitch_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_state_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
   rclcpp::TimerBase::SharedPtr timer_;

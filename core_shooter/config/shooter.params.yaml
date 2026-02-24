@@ -8,6 +8,7 @@
 
         # shoot parameters
         burst_count: 3 # バースト発射数
+        manual_mode_target_side: "right" # /manual_mode を転送する先（"left" or "right"）
         shoot_interval_ms: 500 # 単発の発射間隔[ms]
         burst_interval_ms: 500 # バースト時の発射間隔[ms]
         fullauto_interval_ms: 500 # フルオート時の発射間隔[ms]
@@ -26,13 +27,12 @@
 
         # loading motor parameters
         loading_motor_speed: 6.5
-        loading_motor_initial_angle: [0.0, 0.0, 0.0] # 要素数は3固定
 
         # shoot motor parameters
         target_speed: [2000.0, 1750.0, 1500.0]
 
         # jam parameters
-        enable_jam_detection: true
+        enable_jam_detection: false
         jam_detect_time_sec: 0.1
 
         # debug parameters
@@ -43,7 +43,7 @@
         # motor ids are overridden in launch
         # disk_hold_left_motor_id: -> launch
         # disk_hold_right_motor_id: -> launch
-        remaining_disks: 0 # 初期弾数（例: 27 - loading_disk）
+        remaining_disks: 30 # 初期弾数（例: 27 - loading_disk）
         disk_thickness: 20.0 # [mm]
         sensor_height: 500.0 # [mm]
         window_size: 3 # 移動平均の窓サイズ
@@ -61,19 +61,34 @@
         rate: 30.0
 
         # test/manual mode
-        enable_test_mode: true # trueで test_yaw_angle / test_pitch_angle を購読
-        manual_mode_pitch_fixed_angle: 0.0 # manual_mode=true 時の固定 pitch 角度[rad]
+        enable_test_mode: false # test_mode topic未受信時のデフォルト値（test_mode: std_msgs/Bool が来たらtopic値を優先）
+        # test_mode: std_msgs/Bool (relative topic)
+        test_yaw_gain: 0.01 # test_mode時のyaw加算係数（manual_modeのyawは固定なので未使用）
+        test_pitch_gain: 0.005 # test/manual mode時のpitch加算係数（-1..1入力に適用）
+        manual_mode_yaw_fixed_angle: 0.0 # manual_mode遷移時に設定し、その後も固定する yaw 角度[rad]
+        manual_mode_pitch_initial_angle: 0.0 # manual_mode遷移時に設定する初期 pitch 角度[rad]
+        # manual_mode=true 時の pitch は std_msgs/Float32 の manual_pitch_angle topic で加算入力（-1..1, 0で保持）
+        # 遷移直後の pitch は manual_mode_pitch_initial_angle
 
-        # image target settings (target_image_position topic, normalized coords)
+        # image target settings
+        # target_image_position: geometry_msgs/PointStamped
+        #   detected     -> point=(x_px, y_px, 0)  [center-origin pixel coords]
+        #   not detected -> point=(0, 0, 1)
+        image_width: 1280.0
+        image_height: 720.0
+        use_fov_image_tracking: false # true: 画角+画像比率ベース, false: yaw/pitch_image_gain による加算制御
+        horizontal_fov_deg: 100.0 # 横画角[deg]。縦画角は image_height / image_width 比から導出
+        # image_tolerance_x/y はピクセル誤差ベースで効く（両方式共通）
+        # legacy params (center-origin inputでは未使用、互換のため残置)
         image_center_x: 0.5
         image_center_y: 0.5
         image_tolerance_x: 0.02
         image_tolerance_y: 0.02
         target_timeout_sec: 0.2
 
-        # image error -> angle command gain
-        yaw_image_gain: 0.5
-        pitch_image_gain: 0.5
+        # image error -> angle command gain（use_fov_image_tracking=false の時に使用）
+        yaw_image_gain: 0.00001
+        pitch_image_gain: 0.00001
         yaw_direction: 1.0
         pitch_direction: 1.0
 
