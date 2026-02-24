@@ -92,11 +92,11 @@
         yaw_direction: 1.0
         pitch_direction: 1.0
 
-        # motor angle caps [rad]
-        yaw_min_angle: -3.14159265359
-        yaw_max_angle: 3.14159265359
-        pitch_min_angle: -3.14159265359
-        pitch_max_angle: 3.14159265359
+        # motor angle caps [rad] -> launch
+        # yaw_min_angle: -3.14159265359
+        # yaw_max_angle: 3.14159265359
+        # pitch_min_angle: -3.14159265359
+        # pitch_max_angle: 3.14159265359
 
         # fixed angle offset [rad]
         pitch_offset: 0.0

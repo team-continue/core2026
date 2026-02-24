@@ -126,7 +126,10 @@ def generate_launch_description():
                 # "pitch_motor_id": 11,
                 "pitch_motor_id": 7,
                 "yaw_motor_id": 5,
-
+                # "yaw_min_angle": -3.14159265359,
+                # "yaw_max_angle": 3.14159265359,
+                "pitch_min_angle": -3.13,
+                "pitch_max_angle": 3.14,
             }
         ],
         remappings=[
@@ -145,6 +148,10 @@ def generate_launch_description():
                 # "pitch_motor_id": 7,
                 "pitch_motor_id": 8,
                 "yaw_motor_id": 6,
+                # "yaw_min_angle": -3.14159265359,
+                # "yaw_max_angle": 3.14159265359,
+                "pitch_min_angle": -3.14,
+                "pitch_max_angle": 3.14,
             }
         ],
         remappings=[
