@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>core_path_follower</name>
+  <version>0.2.0</version>
+  <description>
+    Path follower node that tracks a nav_msgs/Path using cascade PID,
+    single PID, or pure-pursuit controllers. Supports both robot-local
+    (chassis_link) and world-frame path inputs.
+  </description>
+  <maintainer email="dev@example.com">team-continue</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake_auto</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>rclpy</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
