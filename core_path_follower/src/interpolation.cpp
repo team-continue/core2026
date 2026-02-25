@@ -1,3 +1,6 @@
+// Copyright 2026 team-continue
+// SPDX-License-Identifier: Apache-2.0
+
 #include "core_path_follower/interpolation.hpp"
 
 #include <cmath>
@@ -108,4 +111,4 @@ std::vector<geometry_msgs::msg::Pose> bezierGlobal(
   return out;
 }
 }     // namespace interp
-} // namespace core_path_follower
+}  // namespace core_path_follower

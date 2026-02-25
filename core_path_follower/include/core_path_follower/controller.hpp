@@ -1,3 +1,6 @@
+// Copyright 2026 team-continue
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include <cmath>
@@ -88,4 +91,4 @@ private:
   static constexpr double kCloseThresh = 0.3;   // [m] advance-index threshold
 };
 
-} // namespace core_path_follower
+}  // namespace core_path_follower

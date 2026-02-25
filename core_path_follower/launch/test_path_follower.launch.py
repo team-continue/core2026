@@ -1,3 +1,6 @@
+# Copyright 2026 team-continue
+# SPDX-License-Identifier: Apache-2.0
+
 """Launch path_follower with test_path_publisher for standalone testing."""
 
 import os

@@ -1,3 +1,6 @@
+// Copyright 2026 team-continue
+// SPDX-License-Identifier: Apache-2.0
+
 #include "core_path_follower/path_follower_node.hpp"
 
 #include <chrono>
@@ -199,4 +202,4 @@ void PathFollowerNode::publishGoalReached()
   goal_reached_pub_->publish(msg);
 }
 
-} // namespace core_path_follower
+}  // namespace core_path_follower

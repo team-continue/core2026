@@ -1,3 +1,6 @@
+// Copyright 2026 team-continue
+// SPDX-License-Identifier: Apache-2.0
+
 #include "core_path_follower/path_follower_node.hpp"
 
 int main(int argc, char ** argv)
