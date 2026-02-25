@@ -1,3 +1,6 @@
+// Copyright 2026 team-continue
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include <memory>
@@ -57,4 +60,4 @@ private:
   int bezier_samples_;
 };
 
-} // namespace core_path_follower
+}  // namespace core_path_follower

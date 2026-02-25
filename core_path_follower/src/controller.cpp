@@ -1,3 +1,6 @@
+// Copyright 2026 team-continue
+// SPDX-License-Identifier: Apache-2.0
+
 #include "core_path_follower/controller.hpp"
 
 #include <algorithm>
@@ -223,4 +226,4 @@ double Controller::wrapAngle(double angle)
   return angle;
 }
 
-} // namespace core_path_follower
+}  // namespace core_path_follower

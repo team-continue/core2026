@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 team-continue
+# SPDX-License-Identifier: Apache-2.0
+
 """Test helper node that publishes preset paths for core_path_follower."""
 
 import math

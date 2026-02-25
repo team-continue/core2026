@@ -1,3 +1,6 @@
+// Copyright 2026 team-continue
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include <vector>
@@ -16,4 +19,4 @@ std::vector<geometry_msgs::msg::Pose> bezierGlobal(
   const std::vector<geometry_msgs::msg::Pose> & waypoints, int samples);
 
 }   // namespace interp
-} // namespace core_path_follower
+}  // namespace core_path_follower

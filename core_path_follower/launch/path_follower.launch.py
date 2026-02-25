@@ -1,3 +1,6 @@
+# Copyright 2026 team-continue
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 
 from ament_index_python.packages import get_package_share_directory
