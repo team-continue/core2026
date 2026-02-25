@@ -237,7 +237,6 @@ class TestPathPublisher(Node):
         path.header.stamp = self.get_clock().now().to_msg()
         s = self.path_scale
         for i, (x, y) in enumerate(raw):
-            nx, ny = (raw[i + 1] if i + 1 < len(raw) else raw[i - 1] if i > 0 else (x + 1, y))[:2]
             dx = (raw[i + 1][0] - x) if i + 1 < len(raw) else (x - raw[i - 1][0])
             dy = (raw[i + 1][1] - y) if i + 1 < len(raw) else (y - raw[i - 1][1])
             yaw = math.atan2(dy, dx)
