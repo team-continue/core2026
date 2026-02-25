@@ -6,14 +6,14 @@
 
 namespace core_path_follower
 {
-  namespace interp
-  {
+namespace interp
+{
 
-    std::vector<geometry_msgs::msg::Pose> splineCatmullRom(
-        const std::vector<geometry_msgs::msg::Pose> &waypoints, int samples_per_segment);
+std::vector<geometry_msgs::msg::Pose> splineCatmullRom(
+  const std::vector<geometry_msgs::msg::Pose> & waypoints, int samples_per_segment);
 
-    std::vector<geometry_msgs::msg::Pose> bezierGlobal(
-        const std::vector<geometry_msgs::msg::Pose> &waypoints, int samples);
+std::vector<geometry_msgs::msg::Pose> bezierGlobal(
+  const std::vector<geometry_msgs::msg::Pose> & waypoints, int samples);
 
-  } // namespace interp
+}   // namespace interp
 } // namespace core_path_follower
