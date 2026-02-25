@@ -8,7 +8,7 @@
     (chassis_link) and world-frame path inputs.
   </description>
   <maintainer email="dev@example.com">team-continue</maintainer>
-  <license>Apache-2.0</license>
+  <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake_auto</buildtool_depend>
 
