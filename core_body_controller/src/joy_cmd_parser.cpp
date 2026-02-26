@@ -2,7 +2,8 @@
 
 JoyCmdParser::JoyCmdParser() {}
 
-void JoyCmdParser::parse(const std_msgs::msg::ByteMultiArray &msg) {
+void JoyCmdParser::parse(const std_msgs::msg::ByteMultiArray & msg)
+{
   // remove first few elements of the array
   constexpr size_t num_ignored_elements = 4;
   constexpr size_t num_required_elements = 7;
@@ -12,7 +13,7 @@ void JoyCmdParser::parse(const std_msgs::msg::ByteMultiArray &msg) {
   }
 
   std::vector<float> data(msg.data.begin() + num_ignored_elements,
-                          msg.data.end());
+    msg.data.end());
   current_twist_.linear.x = data[0];
   current_twist_.linear.y = data[1];
 
