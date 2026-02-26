@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
@@ -231,16 +232,19 @@ sensor_msgs::msg::PointCloud2 CostmapBuildNode::removeSelfPoints(
     return cloud;
   }
 
-  std::vector<float> out_x, out_y, out_z;
-  out_x.reserve(cloud.width * cloud.height);
-  out_y.reserve(cloud.width * cloud.height);
-  out_z.reserve(cloud.width * cloud.height);
+  // 元の点群構造（全フィールド）を保持したまま、通過した点のバイト列をコピーする
+  const uint32_t point_step = cloud.point_step;
+  const size_t total_points = static_cast<size_t>(cloud.width) * cloud.height;
+
+  // 通過する点のインデックスを収集
+  std::vector<size_t> kept_indices;
+  kept_indices.reserve(total_points);
 
   sensor_msgs::PointCloud2ConstIterator<float> it_x(cloud, "x");
   sensor_msgs::PointCloud2ConstIterator<float> it_y(cloud, "y");
   sensor_msgs::PointCloud2ConstIterator<float> it_z(cloud, "z");
 
-  for (; it_x != it_x.end(); ++it_x, ++it_y, ++it_z) {
+  for (size_t i = 0; it_x != it_x.end(); ++it_x, ++it_y, ++it_z, ++i) {
     const float x = *it_x;
     const float y = *it_y;
     const float z = *it_z;
@@ -258,27 +262,24 @@ sensor_msgs::msg::PointCloud2 CostmapBuildNode::removeSelfPoints(
       continue;
     }
 
-    out_x.push_back(x);
-    out_y.push_back(y);
-    out_z.push_back(z);
+    kept_indices.push_back(i);
   }
 
-  // 中間点群を PointCloud2 にパック
+  // 元の点群と同じフィールド構造で結果を構築（全フィールド保持）
   sensor_msgs::msg::PointCloud2 result;
   result.header = cloud.header;
+  result.fields = cloud.fields;
+  result.point_step = point_step;
+  result.height = 1;
+  result.width = static_cast<uint32_t>(kept_indices.size());
+  result.row_step = result.width * point_step;
+  result.is_bigendian = cloud.is_bigendian;
+  result.is_dense = true;
+  result.data.resize(static_cast<size_t>(result.width) * point_step);
 
-  sensor_msgs::PointCloud2Modifier mod(result);
-  mod.setPointCloud2FieldsByString(1, "xyz");
-  mod.resize(out_x.size());
-
-  sensor_msgs::PointCloud2Iterator<float> o_x(result, "x");
-  sensor_msgs::PointCloud2Iterator<float> o_y(result, "y");
-  sensor_msgs::PointCloud2Iterator<float> o_z(result, "z");
-
-  for (size_t i = 0; i < out_x.size(); ++i, ++o_x, ++o_y, ++o_z) {
-    *o_x = out_x[i];
-    *o_y = out_y[i];
-    *o_z = out_z[i];
+  for (size_t out_i = 0; out_i < kept_indices.size(); ++out_i) {
+    std::memcpy(
+      &result.data[out_i * point_step], &cloud.data[kept_indices[out_i] * point_step], point_step);
   }
 
   // 自身除去済み点群を配信
