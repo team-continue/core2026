@@ -145,7 +145,7 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   pub_points_filt_ =
     create_publisher<sensor_msgs::msg::PointCloud2>(points_filt_topic_, rclcpp::SensorDataQoS());
   pub_points_no_self_ =
-    create_publisher<sensor_msgs::msg::PointCloud2>(points_no_self_topic_, rclcpp::SensorDataQoS());
+    create_publisher<sensor_msgs::msg::PointCloud2>(points_no_self_topic_, rclcpp::QoS(10).reliable());
 
   // ---------- 更新タイマー ----------
   const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, update_hz_));
