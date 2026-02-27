@@ -40,7 +40,7 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   points_filt_topic_ =
     declare_parameter<std::string>("points_filt_topic", "/lidar/points_filtered");
   points_no_self_topic_ =
-    declare_parameter<std::string>("points_no_self_topic", "/lidar/points_no_self");
+    declare_parameter<std::string>("points_no_self_topic", "/livox/lidar/no_self");
   local_topic_ = declare_parameter<std::string>("local_topic", "/costmap/local");
 
   // ---------- フレーム名 ----------
@@ -193,28 +193,29 @@ void CostmapBuildNode::onUpdate()
     return;
   }
 
-  // --- 点群を odom フレームに座標変換 ---
+  // --- Stage 1: ロボット自身の点群を除去（センサ座標系のまま） ---
+  // センサ座標系では原点 (0,0) がセンサ位置
+  auto points_no_self = removeSelfPoints(*last_points_, 0.0, 0.0);
+
+  // --- 自身除去済み点群を odom フレームに座標変換 ---
   sensor_msgs::msg::PointCloud2 points_odom;
-  if (!transformPointCloudToFrame(*last_points_, odom_frame_, points_odom)) {
+  if (!transformPointCloudToFrame(points_no_self, odom_frame_, points_odom)) {
     publishLocal();
     return;
   }
 
-  // --- センサ原点取得（get2DTranslation 失敗時はロボット位置をフォールバック） ---
+  // --- センサ原点取得（odom フレーム、filterAndMarkPoints 用） ---
   double sensor_x = robot_x, sensor_y = robot_y;
   if (!lidar_frame_.empty()) {
     get2DTranslation(odom_frame_, lidar_frame_, sensor_x, sensor_y);
   }
-
-  // --- Stage 1: ロボット自身の点群を除去 ---
-  auto points_no_self = removeSelfPoints(points_odom, sensor_x, sensor_y);
 
   // --- グリッドリセット → Stage 2: フィルタ＆マーク → 膨張 → 配信 ---
   std::fill(local_grid_.begin(), local_grid_.end(), FREE);
   occ_cells_.clear();
   voxel_used_.clear();
 
-  filterAndMarkPoints(points_no_self, sensor_x, sensor_y, robot_x, robot_y);
+  filterAndMarkPoints(points_odom, sensor_x, sensor_y, robot_x, robot_y);
   applyInflation();
   publishLocal();
 }
