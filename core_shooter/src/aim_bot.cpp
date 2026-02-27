@@ -2,6 +2,7 @@
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
+#include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -10,6 +11,7 @@
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "core_msgs/msg/can.hpp"
 #include "core_msgs/msg/can_array.hpp"
+#include "core_shooter/forbidden_region_planner.hpp"
 
 using namespace std::chrono_literals;
 
@@ -48,6 +50,18 @@ public:
     this->declare_parameter<double>("test_pitch_gain", 0.05);
     this->declare_parameter<double>("manual_mode_yaw_fixed_angle", 0.0);
     this->declare_parameter<double>("manual_mode_pitch_initial_angle", 0.0);
+    this->declare_parameter<bool>("forbidden_region_enabled", false);
+    this->declare_parameter<std::vector<double>>(
+      "forbidden_region_points_yaw",
+      std::vector<double>{});
+    this->declare_parameter<std::vector<double>>(
+      "forbidden_region_points_pitch",
+      std::vector<double>{});
+    this->declare_parameter<double>("forbidden_region_point_radius", 0.0);
+    this->declare_parameter<bool>("forbidden_region_connect_as_polyline", true);
+    this->declare_parameter<double>("forbidden_region_polyline_margin", 0.0);
+    this->declare_parameter<bool>("forbidden_region_closed_loop", false);
+    this->declare_parameter<double>("forbidden_region_detour_extra_margin", 0.02);
 
     // ----------------------------
     // パラメータ取得
@@ -76,6 +90,16 @@ public:
     this->get_parameter("test_pitch_gain", test_pitch_gain_);
     this->get_parameter("manual_mode_yaw_fixed_angle", manual_mode_yaw_fixed_angle_);
     this->get_parameter("manual_mode_pitch_initial_angle", manual_mode_pitch_initial_angle_);
+    this->get_parameter("forbidden_region_enabled", forbidden_region_enabled_);
+    this->get_parameter("forbidden_region_points_yaw", forbidden_region_points_yaw_);
+    this->get_parameter("forbidden_region_points_pitch", forbidden_region_points_pitch_);
+    this->get_parameter("forbidden_region_point_radius", forbidden_region_point_radius_);
+    this->get_parameter(
+      "forbidden_region_connect_as_polyline", forbidden_region_connect_as_polyline_);
+    this->get_parameter("forbidden_region_polyline_margin", forbidden_region_polyline_margin_);
+    this->get_parameter("forbidden_region_closed_loop", forbidden_region_closed_loop_);
+    this->get_parameter(
+      "forbidden_region_detour_extra_margin", forbidden_region_detour_extra_margin_);
     this->get_parameter("pitch_motor_id", pitch_motor_id_);
     this->get_parameter("yaw_motor_id", yaw_motor_id_);
 
@@ -121,6 +145,19 @@ public:
         horizontal_fov_deg_);
       throw std::runtime_error("invalid aimbot horizontal fov");
     }
+    if (forbidden_region_point_radius_ < 0.0 ||
+      forbidden_region_polyline_margin_ < 0.0 ||
+      forbidden_region_detour_extra_margin_ < 0.0)
+    {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid forbidden region params: point_radius=%f, polyline_margin=%f, detour_extra_margin=%f",
+        forbidden_region_point_radius_, forbidden_region_polyline_margin_,
+        forbidden_region_detour_extra_margin_);
+      throw std::runtime_error("invalid forbidden region parameters");
+    }
+
+    configureForbiddenRegionPlanner();
 
     // ----------------------------
     // Subscriber
@@ -141,8 +178,7 @@ public:
     manual_mode_sub_ = create_subscription<std_msgs::msg::Bool>(
       "manual_mode", 10, std::bind(&AimBot::manualModeCallback, this, std::placeholders::_1));
     manual_pitch_sub_ = create_subscription<std_msgs::msg::Float32>(
-      // "manual_pitch_angle", 10,
-      "test_pitch_angle", 10,
+      "manual_pitch_angle", 10,
       std::bind(&AimBot::manualPitchCallback, this, std::placeholders::_1));
 
     hazard_state_sub_ = create_subscription<std_msgs::msg::Bool>(
@@ -178,6 +214,43 @@ private:
     Test,
     AutoTrack
   };
+
+  void configureForbiddenRegionPlanner()
+  {
+    core_shooter::ForbiddenRegionPlanner::Config config;
+    config.enabled = forbidden_region_enabled_;
+    config.points_yaw = forbidden_region_points_yaw_;
+    config.points_pitch = forbidden_region_points_pitch_;
+    config.point_radius = forbidden_region_point_radius_;
+    config.connect_as_polyline = forbidden_region_connect_as_polyline_;
+    config.polyline_margin = forbidden_region_polyline_margin_;
+    config.closed_loop = forbidden_region_closed_loop_;
+    config.detour_extra_margin = forbidden_region_detour_extra_margin_;
+    config.yaw_min_angle = yaw_min_angle_;
+    config.yaw_max_angle = yaw_max_angle_;
+    config.pitch_min_angle = pitch_min_angle_;
+    config.pitch_max_angle = pitch_max_angle_;
+
+    try {
+      forbidden_region_planner_.setConfig(config);
+    } catch (const std::exception & e) {
+      RCLCPP_FATAL(
+        get_logger(), "Failed to configure forbidden region planner: %s", e.what());
+      throw;
+    }
+
+    if (forbidden_region_enabled_ && forbidden_region_planner_.boundaryPointCount() == 0) {
+      RCLCPP_WARN(
+        get_logger(),
+        "forbidden_region_enabled=true but no boundary points configured; planner disabled effectively");
+    }
+    if (forbidden_region_closed_loop_ && forbidden_region_planner_.boundaryPointCount() < 3) {
+      RCLCPP_WARN(
+        get_logger(),
+        "forbidden_region_closed_loop=true requires >=3 points (current=%zu); using open polyline",
+        forbidden_region_planner_.boundaryPointCount());
+    }
+  }
 
   // ===== コールバック =====
   void hazardCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -450,8 +523,13 @@ private:
 
   void setCommandTarget(double yaw, double pitch)
   {
-    command_yaw_angle_ = clampYaw(yaw);
-    command_pitch_angle_ = clampPitch(pitch);
+    // Forbidden region planning is evaluated in joint_state measured angle space.
+    // If joint_states are not available yet, planner falls back to target-only adjustment.
+    const auto adjusted = forbidden_region_planner_.adjustTarget(
+      yaw, pitch,
+      has_joint_state_, yaw_angle_, pitch_angle_);
+    command_yaw_angle_ = adjusted.yaw;
+    command_pitch_angle_ = adjusted.pitch;
     has_command_target_ = true;
   }
 
@@ -500,6 +578,21 @@ private:
     return has_test_mode_topic_value_ ? test_mode_topic_value_ : enable_test_mode_;
   }
 
+  const char * controlModeName(ControlMode mode) const
+  {
+    switch (mode) {
+      case ControlMode::Emergency:
+        return "Emergency";
+      case ControlMode::Manual:
+        return "Manual";
+      case ControlMode::Test:
+        return "Test";
+      case ControlMode::AutoTrack:
+      default:
+        return "AutoTrack";
+    }
+  }
+
   void publishCommandTarget()
   {
     if (!has_command_target_) {
@@ -510,6 +603,22 @@ private:
     }
     motorPublish(yaw_motor_id_, static_cast<float>(command_yaw_angle_));
     motorPublish(pitch_motor_id_, static_cast<float>(command_pitch_angle_));
+
+    // Log both command target and measured joint state for debugging.
+    if (has_joint_state_) {
+      RCLCPP_INFO_THROTTLE(
+        this->get_logger(), *this->get_clock(), 500,
+        "[%s] cmd(yaw=%.4f,pitch=%.4f) joint(yaw=%.4f,pitch=%.4f) err(yaw=%.4f,pitch=%.4f)",
+        controlModeName(active_control_mode_),
+        command_yaw_angle_, command_pitch_angle_,
+        yaw_angle_, pitch_angle_,
+        command_yaw_angle_ - yaw_angle_, command_pitch_angle_ - pitch_angle_);
+    } else {
+      RCLCPP_INFO_THROTTLE(
+        this->get_logger(), *this->get_clock(), 500,
+        "[%s] cmd(yaw=%.4f,pitch=%.4f) joint=unavailable",
+        controlModeName(active_control_mode_), command_yaw_angle_, command_pitch_angle_);
+    }
   }
 
   void motorPublish(int id, float data)
@@ -573,8 +682,17 @@ private:
   double test_pitch_gain_ = 0.05;
   double manual_mode_yaw_fixed_angle_ = 0.0;
   double manual_mode_pitch_initial_angle_ = 0.0;
+  bool forbidden_region_enabled_ = false;
+  std::vector<double> forbidden_region_points_yaw_;
+  std::vector<double> forbidden_region_points_pitch_;
+  double forbidden_region_point_radius_ = 0.0;
+  bool forbidden_region_connect_as_polyline_ = true;
+  double forbidden_region_polyline_margin_ = 0.0;
+  bool forbidden_region_closed_loop_ = false;
+  double forbidden_region_detour_extra_margin_ = 0.02;
   int pitch_motor_id_;
   int yaw_motor_id_;
+  core_shooter::ForbiddenRegionPlanner forbidden_region_planner_;
 
   // ROS通信
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;

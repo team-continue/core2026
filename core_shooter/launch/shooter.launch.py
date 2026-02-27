@@ -22,6 +22,16 @@ def generate_launch_description():
         "config",
         "shooter.params.yaml"
     )
+    left_forbidden_region_params = os.path.join(
+        get_package_share_directory("core_shooter"),
+        "config",
+        "left_aim_forbidden_region.memo.yaml"
+    )
+    right_forbidden_region_params = os.path.join(
+        get_package_share_directory("core_shooter"),
+        "config",
+        "right_aim_forbidden_region.memo.yaml"
+    )
     hazard_remaps = ("hazard_status", "/system/emergency/hazard_status")
 
     shooter_cmd_gate_node = Node(
@@ -122,6 +132,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             shooter_params,
+            left_forbidden_region_params,
             {
                 # "pitch_motor_id": 11,
                 "pitch_motor_id": 7,
@@ -144,6 +155,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             shooter_params,
+            right_forbidden_region_params,
             {
                 # "pitch_motor_id": 7,
                 "pitch_motor_id": 8,

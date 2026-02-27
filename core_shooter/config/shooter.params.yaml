@@ -85,6 +85,23 @@
         image_tolerance_x: 0.02
         image_tolerance_y: 0.02
         target_timeout_sec: 0.2
+        max_yaw_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
+        max_pitch_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
+
+        # forbidden region avoidance (joint_state実測角ベースの yaw/pitch 空間)
+        forbidden_region_enabled: false
+        # 境界点（順序付き）。yaw/pitch を同じ長さで与える
+        forbidden_region_points_yaw: []
+        forbidden_region_points_pitch: []
+        # 点近傍禁止 [rad]
+        forbidden_region_point_radius: 0.0
+        # 線分近傍禁止（pointsを順に結ぶ） [rad]
+        forbidden_region_connect_as_polyline: true
+        forbidden_region_polyline_margin: 0.0
+        # true のとき最後の点と最初の点も接続（閉ループ）。まずは open polyline 推奨
+        forbidden_region_closed_loop: false
+        # 端回り回避の追加マージン [rad]
+        forbidden_region_detour_extra_margin: 0.02
 
         # image error -> angle command gain（use_fov_image_tracking=false の時に使用）
         yaw_image_gain: 0.00001
