@@ -1,0 +1,3 @@
+geometry_msgs/Point position
+geometry_msgs/Quaternion orientation
+float64 distance_to_obstable

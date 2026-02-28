@@ -12,3 +12,7 @@ Pull requests以外でのmainコミットは禁止です．
 ### パッケージ名
 パッケージ名は`core_hoge`
 にしましょう，タブ補完で一覧で出たら何も考えなくて良いので．
+
+## Formatting (CI)
+Push時にCIが`ament_clang_format`を実行し、必要ならブランチへ自動コミットします。
+mainブランチには自動pushしません。
