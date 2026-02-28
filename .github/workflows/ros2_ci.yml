@@ -44,7 +44,9 @@ jobs:
         run: apt-get install ros-${{ matrix.rosdistro }}-diagnostic-updater
 
       - name: Install SOEM
-        run: ros2_ws/src/${{ github.event.repository.name }}/core_hardware/install_soem.sh
+        run: |
+          apt-get install -y curl unzip
+          bash ros2_ws/src/${{ github.event.repository.name }}/core_hardware/install_soem.sh
 
       - name: Build tests
         id: build_test
