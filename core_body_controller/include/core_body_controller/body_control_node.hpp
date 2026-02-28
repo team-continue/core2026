@@ -77,8 +77,8 @@ class BodyControlNode : public rclcpp::Node {
   float body_target_angle_ = 0;
   double latest_body_angle_ = 0;
 
-  double ACCERATION = 3;  // m/s
-  double ROTATION_ACCERATION = 3 * M_PI;
+  double ACCELERATION = 3;  // m/s
+  double ROTATION_ACCELERATION = 3 * M_PI;
   double YAW_ROTATION_VELOCITY = 4 * M_PI;  // yaw
   double AUTO_ROTATION_VELOCITY = 1 * M_PI;
 

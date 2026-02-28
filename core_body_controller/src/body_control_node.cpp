@@ -1,8 +1,12 @@
 #include "core_body_controller/body_control_node.hpp"
 
+#include <algorithm>
+
+constexpr double TIMER_PERIOD = 0.01; // 10 ms
+
 BodyControlNode::BodyControlNode() : Node("body_control_node") {
   body_control_command_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx", 10);
-  timer_ = this->create_wall_timer(std::chrono::milliseconds(10),
+  timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<int>(TIMER_PERIOD * 1000)),
                                    std::bind(&BodyControlNode::timer_callback, this));
   cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
       "cmd_vel", 10, [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
@@ -41,26 +45,28 @@ BodyControlNode::BodyControlNode() : Node("body_control_node") {
 }
 
 void BodyControlNode::timer_callback() {
-  if (cmd_vel_.linear.x < latest_twist_.linear.x) {
-    cmd_vel_.linear.x += ACCERATION * 0.01;
-  } else if (cmd_vel_.linear.x > latest_twist_.linear.x) {
-    cmd_vel_.linear.x -= ACCERATION * 0.01;
+  if (emergency_stop_flag_) {
+    RCLCPP_ERROR(this->get_logger(), "Emergency stop flag is set");
+    emergency_stop();
+    return;
   }
 
-  if (cmd_vel_.linear.y < latest_twist_.linear.y) {
-    cmd_vel_.linear.y += ACCERATION * 0.01;
-  } else if (cmd_vel_.linear.y > latest_twist_.linear.y) {
-    cmd_vel_.linear.y -= ACCERATION * 0.01;
-  }
+  auto apply_rate_limit = [](double current, double target, double max_step_per_tick) {
+    const double error = target - current;
+    const double clamped_step = std::clamp(error, -max_step_per_tick, max_step_per_tick);
+    return current + clamped_step;
+  };
+
+  const double linear_step = ACCELERATION * TIMER_PERIOD;
+  cmd_vel_.linear.x = apply_rate_limit(cmd_vel_.linear.x, latest_twist_.linear.x, linear_step);
+  cmd_vel_.linear.y = apply_rate_limit(cmd_vel_.linear.y, latest_twist_.linear.y, linear_step);
 
   if (rotation_flag_) {
     cmd_vel_.angular.z = AUTO_ROTATION_VELOCITY;
   } else {
-    if (cmd_vel_.angular.z < latest_twist_.angular.z) {
-      cmd_vel_.angular.z += ACCERATION * 0.01;
-    } else if (cmd_vel_.angular.z > latest_twist_.angular.z) {
-      cmd_vel_.angular.z -= ACCERATION * 0.01;
-    }
+    const double angular_step = ROTATION_ACCELERATION * TIMER_PERIOD;
+    cmd_vel_.angular.z =
+        apply_rate_limit(cmd_vel_.angular.z, latest_twist_.angular.z, angular_step);
   }
 
   if (std::abs(cmd_vel_.linear.x) < 0.01) {
@@ -71,12 +77,6 @@ void BodyControlNode::timer_callback() {
   }
   if (std::abs(cmd_vel_.angular.z) < 0.01) {
     cmd_vel_.angular.z = 0;
-  }
-
-  if (emergency_stop_flag_) {
-    RCLCPP_ERROR(this->get_logger(), "Emergency stop flag is set");
-    emergency_stop();
-    return;
   }
 
   if (rotation_flag_) {
@@ -140,13 +140,16 @@ std::vector<float> BodyControlNode::invert_kinematics_calc(const geometry_msgs::
   //
 
   wheel_velocities[0] =
-      (-vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) / WHEEL_RADIUS;
-  wheel_velocities[1] =
       (-vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) / WHEEL_RADIUS;
-  wheel_velocities[2] =
+  wheel_velocities[1] =
       (vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) / WHEEL_RADIUS;
-  wheel_velocities[3] =
+  wheel_velocities[2] =
       (vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) / WHEEL_RADIUS;
+  wheel_velocities[3] =
+      (-vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) / WHEEL_RADIUS;
+  RCLCPP_INFO(this->get_logger(),
+              "Calculated wheel velocities: [%f, %f, %f, %f]",
+              wheel_velocities[0], wheel_velocities[1], wheel_velocities[2], wheel_velocities[3]);
   return wheel_velocities;
 }
 
