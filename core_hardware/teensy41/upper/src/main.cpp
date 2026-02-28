@@ -1,193 +1,239 @@
-#include <Arduino.h>
-#include <Wire.h>
-#include <FlexCAN_T4.h>
-
-#include "pi.h"
-#include "packet.h"
-#include  "imu.h"
-#include "feetech.h"
 #include "can2.h"
-#include "can3.h"
-#include "esc.h"
-#include "damiao.h"
-#include "robostride.h"
 
-#define PIN_EMERGENCY 19
-#define PORT_WIRELESS Serial5
-#define LEN_WIRELESS 1024
+enum TestCmd {
+  CMD_DISABLE = 0,
+  CMD_VELOCITY = 2,
+  CMD_MOTION = 3,
+  CMD_GAIN = 4
+};
 
-Imu im(false);
+static int g_cmd[CAN2_NUM_MOTOR];
+static float target_vel[CAN2_NUM_MOTOR];
+static float target_pos[CAN2_NUM_MOTOR];
+static float gain_cur_kp[CAN2_NUM_MOTOR];
+static float gain_cur_ki[CAN2_NUM_MOTOR];
+static float gain_kp[CAN2_NUM_MOTOR];
+static float gain_kd[CAN2_NUM_MOTOR];
 
-CAN_message_t msg2, msg3;
-STS sts;
-unsigned long prev_connect_ros2_ts_=0;
-bool connect_ros2 = false;
-uint8_t wireless[LEN_WIRELESS] = {0};
-uint8_t hardware_enable[1] = {0};
-uint8_t destory[1] = {0};
-uint8_t damege[1] = {0};
-int quat[3] = {0};
-unsigned long prev_ts = 0;
-int counter1 = 0, counter2 = 0, led=0;
-int len_wireless = 0;
-uint8_t wirelessbuffer_[MAX_DATA_LENGTH];
+static uint32_t last_print_ms = 0;
+static char serial_line[64] = {0};
+static size_t serial_line_len = 0;
 
-// LED timer
-void led_timer_cb();
-void imu_timer_cb();
-IntervalTimer led_timer;
-IntervalTimer imu_timer;
-
-// PCから受信時に一度呼ばれるやつ
-void packet_FrameCallBack(){
-  // rosと接続中
-  prev_connect_ros2_ts_ = millis();
-  // PCに送信するデータを登録
-  for(int i =0;i<CAN3_NUM_MOTOR;++i){
-    float f[6] = {
-      0,
-      can3_motor[i]->motor_state.torque_nm,
-      can3_motor[i]->motor_ref.velocity_rad_s,
-      can3_motor[i]->motor_state.velocity_rad_s,
-      can3_motor[i]->motor_ref.position_rad,
-      can3_motor[i]->motor_state.position_rad
-    };
-    packet_setFloat(i, f, 6);
+static void initTestState() {
+  for (int i = 0; i < CAN2_NUM_MOTOR; ++i) {
+    g_cmd[i] = CMD_MOTION;
+    target_vel[i] = 3.0f;
+    target_pos[i] = 3.14f;
+    gain_cur_kp[i] = 0.125f;
+    gain_cur_ki[i] = 0.0158f;
+    gain_kp[i] = 500.0f;
+    gain_kd[i] = 5.0f;
   }
-  for(int i =0;i<CAN2_NUM_MOTOR;++i){
-    float f[6] = {
-      0,
-      can2_motor[i].feedback.torque_nm,
-      can2_motor[i].ref.velocity_rad_s,
-      can2_motor[i].feedback.velocity_rad_s,
-      can2_motor[i].ref.position_rad,
-      can2_motor[i].feedback.position_rad
-    };
-    packet_setFloat(i + CAN3_NUM_MOTOR, f, 6);
-  }
-
-  for(int i =0;i<LEN_SERVO;++i){
-    float f[6] = {
-      0,
-      sts.servos[i].current,
-      sts.servos[i].ref_vel,
-      sts.servos[i].vel,
-      sts.servos[i].ref_pos,
-      sts.servos[i].pos
-    };
-    packet_setFloat(i+CAN3_NUM_MOTOR+CAN2_NUM_MOTOR, f, 6);
-  }
-
-  // damege
-  packet_setUint8(100, damege, 1); 
-  // destory
-  packet_setUint8(101, destory, 1);
-  // wireless
-  while(PORT_WIRELESS.available()){
-    wireless[len_wireless] = PORT_WIRELESS.read();
-    if(wireless[len_wireless] == '\n'){
-      packet_setUint8(102, wireless, len_wireless);
-      len_wireless = 0;
-    }
-    if(len_wireless == LEN_WIRELESS-2){
-      len_wireless = 0;
-    }
-    len_wireless++;
-  }
-  // imu
-  packet_setInt32(103, quat, 3); 
-  hardware_enable[0] = damiao_motor[0].connect ? 0 : 1;
-  packet_setUint8(104, hardware_enable, 1);
-  packet_send();
 }
 
-// // PCから受信時にパケットごとに呼ばれるやつ
-void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len){
-  switch(id){
-    case 0:
-    case 1:
-    case 2:
-    case 3:
-      can3_motor[id]->setPacketFrame(data, len);
-      break;
-    case 4:
-      robostride_can3[id-4].setPacketFrame(data, len);
-      break;
-    case 5:
-    case 6:
-      can2_motor[id-5].setPacketFrame(data, len);
-      break;
-    case 7:
-    case 8:
-    case 9:
-    case 10:
-    case 11:
-    case 12:
-    case 13:
-    case 14:
-      if(len>=1){
-        sts.servos[id - 7].ref_pos = data[len - 1];
-        break;
+static void printHelp() {
+  Serial.println("keys: 0=disable-all +/-=vel-all");
+  Serial.println("cmd : m<id> d");
+  Serial.println("cmd : m<id> v <rad_s>");
+  Serial.println("cmd : m<id> p <rad>");
+  Serial.println("cmd : m<id> g <cur_kp> <cur_ki> <kp> <kd>");
+  Serial.println("ex  : m0 v 3.0 / m1 p 1.57");
+}
+
+static bool validMotorId(const int id) {
+  return (id >= 0) && (id < CAN2_NUM_MOTOR);
+}
+
+static bool handleSingleKey(const char key) {
+  switch (key) {
+    case '0':
+      for (int i = 0; i < CAN2_NUM_MOTOR; ++i) {
+        g_cmd[i] = CMD_DISABLE;
       }
-    case 15:
-    case 16:
-      if(len >= 1){
-        if(data[0] < 0){
-          // esc.init();
-        }else{
-          esc[id - 15].write(data[len - 1]);
+      Serial.println("[cmd] all motors disable");
+      return true;
+    case '+':
+      for (int i = 0; i < CAN2_NUM_MOTOR; ++i) {
+        target_vel[i] += 0.5f;
+        g_cmd[i] = CMD_VELOCITY;
+      }
+      Serial.printf("[cmd] all motors target_vel=%.2f\n", target_vel[0]);
+      return true;
+    case '-':
+      for (int i = 0; i < CAN2_NUM_MOTOR; ++i) {
+        target_vel[i] -= 0.5f;
+        if (target_vel[i] < 0.0f) {
+          target_vel[i] = 0.0f;
         }
+        g_cmd[i] = CMD_VELOCITY;
       }
-      break;
-    case 17:
-      if(len>=1)
-        digitalWrite(PIN_EMERGENCY, data[len-1] != 0.f);
-      break;
+      Serial.printf("[cmd] all motors target_vel=%.2f\n", target_vel[0]);
+      return true;
     default:
-      break;
+      return false;
   }
 }
 
-void setup(void) {
-  // 非常停止
-  pinMode(PIN_EMERGENCY, OUTPUT);
-  // LED
-  pinMode(LED_BUILTIN, OUTPUT);
-
-  packet_begin();
-  PORT_WIRELESS.begin(115200);
-  PORT_WIRELESS.addMemoryForRead(&wirelessbuffer_, sizeof(wirelessbuffer_));
-  im.init();
-  sts.init();
-//   can2_init();
-//   can3_init();
-//   esc_init();
-
-  led_timer.begin(led_timer_cb, 50 * 1000); //20Hz
-  imu_timer.begin(imu_timer_cb, 10 * 1000); //100Hz
-}
-
-void imu_timer_cb(){
-   im.getQuat(quat);
-}
-
-void led_timer_cb(){
-  // ros2と接続しているか確認
-  connect_ros2 = (millis() - prev_connect_ros2_ts_) < 500;
-  if(!connect_ros2){
-    digitalWrite(LED_BUILTIN, HIGH);
-    sts.disable = true;
-    packet_send();
-  }else{
-    led = !led;
-    digitalWrite(LED_BUILTIN, led);
-    sts.disable = false;
+static bool handleMotorCommand(const char *line) {
+  int id = -1;
+  char op = '\0';
+  if (sscanf(line, "m%d %c", &id, &op) != 2) {
+    return false;
   }
+  if (!validMotorId(id)) {
+    Serial.printf("[err] invalid motor id: %d (valid: 0-%d)\n", id, CAN2_NUM_MOTOR - 1);
+    return true;
+  }
+
+  if (op == 'd') {
+    g_cmd[id] = CMD_DISABLE;
+    Serial.printf("[cmd] M%d disable\n", id);
+    return true;
+  }
+  if (op == 'v') {
+    float vel = 0.0f;
+    if (sscanf(line, "m%d %c %f", &id, &op, &vel) == 3) {
+      target_vel[id] = vel;
+      g_cmd[id] = CMD_VELOCITY;
+      Serial.printf("[cmd] M%d velocity vel=%.3f\n", id, target_vel[id]);
+      return true;
+    }
+    return false;
+  }
+  if (op == 'p') {
+    float pos = 0.0f;
+    if (sscanf(line, "m%d %c %f", &id, &op, &pos) == 3) {
+      target_pos[id] = pos;
+      g_cmd[id] = CMD_MOTION;
+      Serial.printf("[cmd] M%d motion pos=%.3f\n", id, target_pos[id]);
+      return true;
+    }
+    return false;
+  }
+  if (op == 'g') {
+    float cur_kp = 0.0f;
+    float cur_ki = 0.0f;
+    float kp = 0.0f;
+    float kd = 0.0f;
+    if (sscanf(line, "m%d %c %f %f %f %f", &id, &op, &cur_kp, &cur_ki, &kp, &kd) == 6) {
+      gain_cur_kp[id] = cur_kp;
+      gain_cur_ki[id] = cur_ki;
+      gain_kp[id] = kp;
+      gain_kd[id] = kd;
+      g_cmd[id] = CMD_GAIN;
+      Serial.printf("[cmd] M%d gain update one-shot\n", id);
+      return true;
+    }
+    return false;
+  }
+
+  return false;
+}
+
+static void handleSerial() {
+  while (Serial.available()) {
+    const char c = (char)Serial.read();
+    if (c == '\r') {
+      continue;
+    }
+
+    if (serial_line_len == 0 && !Serial.available() && handleSingleKey(c)) {
+      continue;
+    }
+
+    if (c != '\n') {
+      if (serial_line_len < (sizeof(serial_line) - 1)) {
+        serial_line[serial_line_len++] = c;
+      }
+      continue;
+    }
+
+    serial_line[serial_line_len] = '\0';
+    if (serial_line_len == 0) {
+      continue;
+    }
+
+    bool ok = false;
+    if (serial_line_len == 1) {
+      ok = handleSingleKey(serial_line[0]);
+    } else {
+      ok = handleMotorCommand(serial_line);
+    }
+    if (!ok) {
+      printHelp();
+    }
+
+    serial_line_len = 0;
+  }
+}
+
+static void printStatus() {
+  if (millis() - last_print_ms < 200) {
+    return;
+  }
+  last_print_ms = millis();
+
+  for (int i = 0; i < CAN2_NUM_MOTOR; ++i) {
+    Serial.printf("M%d connect_ros2=%d mode=%d rp=%.4f rv=%.4f p=%.4f v=%.4f torque=%.4f temp=%.1f Kp=%.2f Ki=%.2f\n",
+                  i,
+                  (int)can2_robostride[i].connect_ros2,
+                  can2_robostride[i].ref.mode,
+                  can2_robostride[i].ref.position_rad,
+                  can2_robostride[i].ref.velocity_rad_s,
+                  can2_robostride[i].feedback.position_rad,
+                    can2_robostride[i].feedback.velocity_rad_s,
+                    can2_robostride[i].feedback.torque_nm,
+                    can2_robostride[i].feedback.temp_mos,
+                    can2_robostride[i].ref.kp_vel,
+                    can2_robostride[i].ref.ki_vel);
+    // Serial.printf("M%d connect_ros2=%d mode=%d
+  }
+}
+
+static void applyMotorCommand(const int motor_id) {
+  float data[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  int len = 0;
+
+  if (g_cmd[motor_id] == CMD_DISABLE) {
+    len = 1;
+  } else if (g_cmd[motor_id] == CMD_VELOCITY) {
+    data[1] = target_vel[motor_id];
+    len = 1;
+  } else if (g_cmd[motor_id] == CMD_MOTION) {
+    data[0] = target_pos[motor_id];
+    len = 1;
+  } else if (g_cmd[motor_id] == CMD_GAIN) {
+    data[0] = gain_cur_kp[motor_id];
+    data[1] = gain_cur_ki[motor_id];
+    data[2] = gain_kp[motor_id];
+    data[3] = gain_kd[motor_id];
+    len = 4;
+  }
+
+  can2_robostride[motor_id].setPacketFrame(data, len);
+
+//   if (g_cmd[motor_id] == CMD_GAIN) {
+//     g_cmd[motor_id] = CMD_DISABLE;
+//   }
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+  Serial.println("=== CAN2 RoboStride multi-motor test ===");
+
+  initTestState();
+
+  can2_init();
+
+  printHelp();
 }
 
 void loop() {
-  packet_update();
-  sts.loop();
-//   can2_loop();
-//   can3_loop();
+  handleSerial();
+  printStatus();
+  for (int i = 0; i < CAN2_NUM_MOTOR; ++i) {
+    applyMotorCommand(i);
+  }
+  can2_loop();
 }

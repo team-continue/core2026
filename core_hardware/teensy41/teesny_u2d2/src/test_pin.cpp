@@ -6,7 +6,7 @@
 
 #define CMD_PORT              Serial      // USB
 // #define DBG_PORT              Serial2     // UART1
-#define DXL_PORT              Serial2
+#define DXL_PORT              Serial7
 uint32_t dxl_baud=              1000000;
 
 #define DXL_LED_TX            13

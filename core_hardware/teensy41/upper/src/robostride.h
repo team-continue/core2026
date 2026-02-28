@@ -153,6 +153,9 @@ FCTP_CLASS class RoboStride : public MotorBase {
     float prev_raw_position_rad_ = 0.f;
     bool first_feedback_received_ = true;
 
+    float mit_velocity_command_rad_s_ = 0.f; // For velocity control mode
+    float mit_torque_command_nm_ = 0.f; // For torque control mode
+
 public:
     MotorState &feedback;
     MotorRef &ref;
@@ -166,9 +169,10 @@ public:
         feedback(motor_state),
         ref(motor_ref)
     {
+        ref.position_rad = 3.14;
         ref.kp_vel = 2.0f;
         ref.ki_vel = 0.021f;
-        ref.kp_pos = 10.0f;
+        ref.kp_pos = 1.0f;
         ref.kd_pos = 0.0f;
     }
     ~RoboStride(){}
@@ -177,7 +181,7 @@ public:
     // Requested APIs
     // ===========
 
-    bool init(float current_max, float torque_max, float acc_limit = 100.0f, uint8_t init_run_mode = Speed_control_mode){
+    bool init(float mit_torque, float mit_speed, uint8_t init_run_mode, bool set_gain){
         Serial.printf("[RoboStride:init] start (motor_id=%u)\n", motor_id_);
         auto log_step = [&](const char* step, bool ok) -> bool {
             Serial.print("[RoboStride:init] ");
@@ -185,91 +189,102 @@ public:
             Serial.println(ok ? " OK" : " FAIL");
             return ok;
         };
-        configured_run_mode_ = (init_run_mode == PosPP_control_mode) ? PosPP_control_mode : Speed_control_mode;
+        configured_run_mode_ = init_run_mode;
+        mit_torque_command_nm_ = mit_torque;
+        mit_velocity_command_rad_s_ = mit_speed;
 
         // Any missing parameter response => init failure
-        if(!log_step("Get param 0x7005(run_mode)", Get_RobStrite_Motor_parameter(0x7005))) return false;
-        if(!log_step("Get param 0x7010(cur_kp)", Get_RobStrite_Motor_parameter(0x7010))) return false;
-        if(!log_step("Get param 0x7011(cur_ki)", Get_RobStrite_Motor_parameter(0x7011))) return false;
-        if(!log_step("Get param 0x7014(cur_filt_gain)", Get_RobStrite_Motor_parameter(0x7014))) return false;
+        // if(!log_step("Get param 0x7005(run_mode)", Get_RobStrite_Motor_parameter(0x7005))) return false;
+        // if(!log_step("Get param 0x7010(cur_kp)", Get_RobStrite_Motor_parameter(0x7010))) return false;
+        // if(!log_step("Get param 0x7011(cur_ki)", Get_RobStrite_Motor_parameter(0x7011))) return false;
+        // if(!log_step("Get param 0x7014(cur_filt_gain)", Get_RobStrite_Motor_parameter(0x7014))) return false;
 
-        // ---- velocity loop ----
-        if(!log_step("Get param 0x701F(spd_kp)", Get_RobStrite_Motor_parameter(0x701F))) return false;
-        if(!log_step("Get param 0x7020(spd_ki)", Get_RobStrite_Motor_parameter(0x7020))) return false;
-        if(!log_step("Get param 0x7021(spd_filt_gain)", Get_RobStrite_Motor_parameter(0x7021))) return false;
+        // // ---- velocity loop ----
+        // if(!log_step("Get param 0x701F(spd_kp)", Get_RobStrite_Motor_parameter(0x701F))) return false;
+        // if(!log_step("Get param 0x7020(spd_ki)", Get_RobStrite_Motor_parameter(0x7020))) return false;
+        // if(!log_step("Get param 0x7021(spd_filt_gain)", Get_RobStrite_Motor_parameter(0x7021))) return false;
 
-        // ---- position loop ----
-        if(!log_step("Get param 0x701E(loc_kp)", Get_RobStrite_Motor_parameter(0x701E))) return false;
+        // // ---- position loop ----
+        // if(!log_step("Get param 0x701E(loc_kp)", Get_RobStrite_Motor_parameter(0x701E))) return false;
 
-        delayMicroseconds(1000);
+        // delay(300);
 
         // Ensure motor is disabled at startup for safety
         // Disenable_Motor(0);
-        // delayMicroseconds(1000);
+        // delay(300);
 
         // Disenable_Motor(0);
-        // delayMicroseconds(1000);
+        // delay(300);
 
-        if(configured_run_mode_ == PosPP_control_mode){
-            if(!log_step("Set run_mode=PosPP(0x7005)", Set_RobStrite_Motor_parameter(drw.run_mode.index, PosPP_control_mode, Set_mode))) return false;
-        }else{
-            if(!log_step("Set run_mode=Speed(0x7005)", Set_RobStrite_Motor_parameter(drw.run_mode.index, Speed_control_mode, Set_mode))) return false;
+        if(!log_step("Set run_mode(0x7005)", Set_RobStrite_Motor_parameter(drw.run_mode.index, configured_run_mode_, Set_mode))) return false;
+        delay(100);
+
+        // if(!log_step("Get run_mode(0x7005)", Get_RobStrite_Motor_parameter(drw.run_mode.index))) return false;
+        // delay(300);
+        // drw.run_mode.data = (float)configured_run_mode_;
+
+        if(set_gain){
+            // Speed Kp Gain
+            if(!log_step("Set spd_kp(0x701F)", Set_RobStrite_Motor_parameter(drw.spd_kp.index, ref.kp_vel, Set_parameter))) return false;
+            delay(100);
+            if(!log_step("Get spd_kp(0x701F)", Get_RobStrite_Motor_parameter(drw.spd_kp.index))) return false;
+            delay(100);
+            if (fabsf(drw.spd_kp.data - ref.kp_vel) > 1e-3f) {
+                Serial.printf("[RoboStride:init] spd_kp mismatch set=%.5f get=%.5f\n", ref.kp_vel, drw.spd_kp.data);
+                return false;
+            }else{
+                Serial.printf("[RoboStride:init] spd_kp set/get match: %.5f\n", ref.kp_vel);
+            }
+            // Speed Ki Gain
+            if(!log_step("Set spd_ki(0x7020)", Set_RobStrite_Motor_parameter(drw.spd_ki.index, ref.ki_vel, Set_parameter))) return false;
+            delay(100);
+            if(!log_step("Get spd_ki(0x7020)", Get_RobStrite_Motor_parameter(drw.spd_ki.index))) return false;
+            delay(100);
+            if (fabsf(drw.spd_ki.data - ref.ki_vel) > 1e-3f) {
+                Serial.printf("[RoboStride:init] spd_ki mismatch set=%.5f get=%.5f\n", ref.ki_vel, drw.spd_ki.data);
+                return false;
+            }else{
+                Serial.printf("[RoboStride:init] spd_ki set/get match: %.5f\n", ref.ki_vel);
+            }
+            // Position Kp Gain
+            if(!log_step("Set loc_kp(0x701E)", Set_RobStrite_Motor_parameter(drw.loc_kp.index, ref.kp_pos, Set_parameter))) return false;
+            delay(100);
+            if(!log_step("Get loc_kp(0x701E)", Get_RobStrite_Motor_parameter(drw.loc_kp.index))) return false;
+            delay(100);
+            if (fabsf(drw.loc_kp.data - ref.kp_pos) > 1e-3f) {
+                Serial.printf("[RoboStride:init] loc_kp mismatch set=%.5f get=%.5f\n", ref.kp_pos, drw.loc_kp.data);
+                return false;
+            }else{
+                Serial.printf("[RoboStride:init] loc_kp set/get match: %.5f\n", ref.kp_pos);
+            }
+
+            // acc limit
+            if(!log_step("Set acc(0x7026)", Set_RobStrite_Motor_parameter(0X7026, acc_limit, Set_parameter))) return false;
+             delay(300);
+
+            // speed limit
+            if(!log_step("Set vel_limit(0x7022)", Set_RobStrite_Motor_parameter(0X7022, mit_speed, Set_parameter))) return false;
+            delay(300);
         }
-        delayMicroseconds(1000);
 
-        if(!log_step("Get run_mode(0x7005)", Get_RobStrite_Motor_parameter(drw.run_mode.index))) return false;
-        delayMicroseconds(1000);
-        drw.run_mode.data = (float)configured_run_mode_;
+        // if(!log_step("Enable motor", enable_motor())) return false;
 
-        if(!log_step("Set spd_kp(0x701F)", Set_RobStrite_Motor_parameter(drw.spd_kp.index, ref.kp_vel, Set_parameter))) return false;
-        delayMicroseconds(1000);
-        if(!log_step("Get spd_kp(0x701F)", Get_RobStrite_Motor_parameter(drw.spd_kp.index))) return false;
-        delayMicroseconds(1000);
-        if (fabsf(drw.spd_kp.data - ref.kp_vel) > 1e-3f) {
-            Serial.printf("[RoboStride:init] spd_kp mismatch set=%.5f get=%.5f\n", ref.kp_vel, drw.spd_kp.data);
-            return false;
-        }
+        // // Example: set some limits (kept from your original)
+        // if(!log_step("Set limit_cur=27A(0x7018)", Set_RobStrite_Motor_parameter(0X7018, 27.0f, Set_parameter))) return false;
+        // delay(300);
 
-        if(!log_step("Set spd_ki(0x7020)", Set_RobStrite_Motor_parameter(drw.spd_ki.index, ref.ki_vel, Set_parameter))) return false;
-        delayMicroseconds(1000);
-        if(!log_step("Get spd_ki(0x7020)", Get_RobStrite_Motor_parameter(drw.spd_ki.index))) return false;
-        delayMicroseconds(1000);
-        if (fabsf(drw.spd_ki.data - ref.ki_vel) > 1e-3f) {
-            Serial.printf("[RoboStride:init] spd_ki mismatch set=%.5f get=%.5f\n", ref.ki_vel, drw.spd_ki.data);
-            return false;
-        }
 
-        if(!log_step("Set loc_kp(0x701E)", Set_RobStrite_Motor_parameter(drw.loc_kp.index, ref.kp_pos, Set_parameter))) return false;
-        delayMicroseconds(1000);
-        if(!log_step("Get loc_kp(0x701E)", Get_RobStrite_Motor_parameter(drw.loc_kp.index))) return false;
-        delayMicroseconds(1000);
-        if (fabsf(drw.loc_kp.data - ref.kp_pos) > 1e-3f) {
-            Serial.printf("[RoboStride:init] loc_kp mismatch set=%.5f get=%.5f\n", ref.kp_pos, drw.loc_kp.data);
-            return false;
-        }
+        // Serial.printf("Switched run_mode, Now: %d\n", (int)drw.run_mode.data);
 
-        if(!log_step("Enable motor", enable_motor())) return false;
+        // if(!log_step("Set torque_max(0x700B)", Set_RobStrite_Motor_parameter(0X700B, torque_max, Set_parameter))) return false;
+        // delay(300);
 
-        // Example: set some limits (kept from your original)
-        if(!log_step("Set limit_cur=27A(0x7018)", Set_RobStrite_Motor_parameter(0X7018, 27.0f, Set_parameter))) return false;
-        delayMicroseconds(1000);
-
-        if(!log_step("Set acc(0x7026)", Set_RobStrite_Motor_parameter(0X7026, acc_limit, Set_parameter))) return false;
-        delayMicroseconds(1000);
-        Serial.printf("Switched run_mode, Now: %d\n", (int)drw.run_mode.data);
-
-        if(!log_step("Set torque_max(0x700B)", Set_RobStrite_Motor_parameter(0X700B, torque_max, Set_parameter))) return false;
-        delayMicroseconds(1000);
-
-        if(!log_step("Set current_max(0x7018)", Set_RobStrite_Motor_parameter(0X7018, current_max, Set_parameter))) return false;
-        delayMicroseconds(1000);
-
-        if(!log_step("Set vel_limit(0x7022)", Set_RobStrite_Motor_parameter(0X7022, 1000, Set_parameter))) return false;
-        delayMicroseconds(1000);
+        // if(!log_step("Set current_max(0x7018)", Set_RobStrite_Motor_parameter(0X7018, current_max, Set_parameter))) return false;
+        // delay(300);
 
         // Optional: enable once to get feedback frames flowing (depends on device behavior)
         if(!log_step("Enable motor (final)", enable_motor())) return false;
-        delayMicroseconds(1000);
+        delay(300);
 
         // Seed timestamp so we don't instantly timeout
         last_recv_ros2_ts_ms_ = millis();
@@ -291,7 +306,11 @@ public:
             case 3:
                 ref.mode = (configured_run_mode_ == PosPP_control_mode) ? 3 : 2; // position or velocity based on configured mode
                 last_recv_ros2_ts_ms_ = millis();
-                ref.velocity_rad_s = data[len-1];
+                if(configured_run_mode_ == PosPP_control_mode){
+                    ref.position_rad = data[len-1];
+                }else{
+                    ref.velocity_rad_s = data[len-1];
+                }
                 break;
 
             // case 3:
@@ -339,28 +358,28 @@ public:
         }
 
         // Gain sync: optimistic local update after non-blocking write.
-        if (ref.kp_vel != drw.spd_kp.data) {
-            Set_RobStrite_Motor_parameter(drw.spd_kp.index, ref.kp_vel, Set_parameter, false);
-            drw.spd_kp.data = ref.kp_vel;
-            return;
-        }
-        if (ref.ki_vel != drw.spd_ki.data) {
-            Set_RobStrite_Motor_parameter(drw.spd_ki.index, ref.ki_vel, Set_parameter, false);
-            drw.spd_ki.data = ref.ki_vel;
-            return;
-        }
-        if (ref.kp_pos != drw.loc_kp.data) {
-            Set_RobStrite_Motor_parameter(drw.loc_kp.index, ref.kp_pos, Set_parameter, false);
-            drw.loc_kp.data = ref.kp_pos;
-            return;
-        }
+        // if (ref.kp_vel != drw.spd_kp.data) {
+        //     Set_RobStrite_Motor_parameter(drw.spd_kp.index, ref.kp_vel, Set_parameter, false);
+        //     drw.spd_kp.data = ref.kp_vel;
+        //     return;
+        // }
+        // if (ref.ki_vel != drw.spd_ki.data) {
+        //     Set_RobStrite_Motor_parameter(drw.spd_ki.index, ref.ki_vel, Set_parameter, false);
+        //     drw.spd_ki.data = ref.ki_vel;
+        //     return;
+        // }
+        // if (ref.kp_pos != drw.loc_kp.data) {
+        //     Set_RobStrite_Motor_parameter(drw.loc_kp.index, ref.kp_pos, Set_parameter, false);
+        //     drw.loc_kp.data = ref.kp_pos;
+        //     return;
+        // }
 
         // ---- control ----
         switch(mode){
             case 0: {
                 if (configured_run_mode_ == PosPP_control_mode) {
                     // Hold current angle in PosPP mode.
-                    send_pospp_mode_command(feedback.position_rad, false);
+                    send_motion_command(mit_torque_command_nm_, 3.14, mit_velocity_command_rad_s_, ref.kp_pos, ref.kd_pos, false);
                 } else {
                     send_velocity_mode_command(0, false);
                 }
@@ -377,6 +396,14 @@ public:
             case 3: {
                 if (configured_run_mode_ == PosPP_control_mode) {
                     // Position control in PosPP mode: command target angle only.
+                    // send_motion_command(
+                    //     mit_torque_command_nm_,
+                    //     ref.position_rad,
+                    //     mit_velocity_command_rad_s_,
+                    //     ref.kp_pos,
+                    //     ref.kd_pos,
+                    //     false
+                    // );
                     send_pospp_mode_command(ref.position_rad, false);
                 }
                 break;
@@ -668,14 +695,14 @@ private:
                              bool wait_response = true)
     {
         // Ensure run_mode = move_control_mode (0) if required
-        if(drw.run_mode.data != 0){
-            Disenable_Motor(0, wait_response);
-            delayMicroseconds(1000);
-            Set_RobStrite_Motor_parameter(0X7005, move_control_mode, Set_mode, wait_response);
-            delayMicroseconds(1000);
-            Get_RobStrite_Motor_parameter(0x7005, wait_response);
-            delayMicroseconds(1000);
-        }
+        // if(drw.run_mode.data != 0){
+        //     Disenable_Motor(0, wait_response);
+        //     delayMicroseconds(1000);
+        //     Set_RobStrite_Motor_parameter(0X7005, move_control_mode, Set_mode, wait_response);
+        //     delayMicroseconds(1000);
+        //     Get_RobStrite_Motor_parameter(0x7005, wait_response);
+        //     delayMicroseconds(1000);
+        // }
 
         const auto &op = ACTUATOR_OPERATION_MAPPING.at(static_cast<ActuatorType>(actuator_type_));
 

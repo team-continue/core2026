@@ -1,188 +1,190 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <FlexCAN_T4.h>
+
+#include "pi.h"
+#include "packet.h"
+// #include  "imu.h"
+#include "feetech.h"
+#include "can1.h"
 #include "can2.h"
+#include "esc.h"
+#include "damiao.h"
+#include "robostride.h"
+#include "pin.h"
 
-// test mode
-// 0:disable (len=0/1)
-// 2:velocity (len=2)
-// 3:motion   (len=3)
-// 4:gains    (len=4)  ※あなたの実装は gain更新はmodeを変えない（ref.modeはそのまま）なので、
-//                      “一回だけ送って、次の周期から別モード”みたいに使う
-static int g_cmd = 0;
+// Imu im(false);
 
-// params
-static float target_vel = 3.0f;   // rad/s
-static float target_pos = 3.14f;   // rad
+CAN_message_t msg2, msg3;
+STS sts;
+unsigned long prev_connect_ros2_ts_=0;
+bool connect_ros2 = false;
+uint8_t wireless[LEN_WIRELESS] = {0};
+uint8_t hardware_enable[1] = {0};
+uint8_t destory[1] = {0};
+uint8_t damege[1] = {0};
+int quat[3] = {0};
+unsigned long prev_ts = 0;
+int counter1 = 0, counter2 = 0, led=0;
+int len_wireless = 0;
+uint8_t wirelessbuffer_[MAX_DATA_LENGTH];
 
-static float gain_cur_kp = 0.125f; // 例
-static float gain_cur_ki = 0.0158f;
-static float gain_kp     = 500.0f;
-static float gain_kd     = 5.0f;
+// LED timer
+void led_timer_cb();
+// void imu_timer_cb();
+IntervalTimer led_timer;
+// IntervalTimer imu_timer;
 
-static uint32_t last_print_ms = 0;
-static char serial_line[64] = {0};
-static size_t serial_line_len = 0;
+// PCから受信時に一度呼ばれるやつ
+void packet_FrameCallBack(){
+  // rosと接続中
+  prev_connect_ros2_ts_ = millis();
+  // PCに送信するデータを登録
+  for(int i =0;i<CAN1_NUM_MOTOR;++i){
+    float f[6] = {
+      0,
+      can1_motor[i]->motor_state.torque_nm,
+      can1_motor[i]->motor_ref.velocity_rad_s,
+      can1_motor[i]->motor_state.velocity_rad_s,
+      can1_motor[i]->motor_ref.position_rad,
+      can1_motor[i]->motor_state.position_rad
+    };
+    packet_setFloat(i, f, 6);
+  }
+  for(int i =0;i<CAN2_NUM_MOTOR;++i){
+    float f[6] = {
+      0,
+      can2_motor[i].feedback.torque_nm,
+      can2_motor[i].ref.velocity_rad_s,
+      can2_motor[i].feedback.velocity_rad_s,
+      can2_motor[i].ref.position_rad,
+      can2_motor[i].feedback.position_rad
+    };
+    packet_setFloat(i + CAN1_NUM_MOTOR, f, 6);
+  }
 
-static void printHelp() {
-  Serial.println("keys: 0=disable 1=velocity 2=motion 3=gain +/-=vel");
-  Serial.println("cmd : 2 <vel_rad_s> | 3 <pos_rad> [vel_rad_s] | p <rad>");
+  for(int i =0;i<LEN_SERVO;++i){
+    float f[6] = {
+      0,
+      sts.servos[i].current,
+      sts.servos[i].ref_vel,
+      sts.servos[i].vel,
+      sts.servos[i].ref_pos,
+      sts.servos[i].pos
+    };
+    packet_setFloat(i+CAN1_NUM_MOTOR+CAN2_NUM_MOTOR, f, 6);
+  }
+
+  // damege
+  packet_setUint8(100, damege, 1); 
+  // destory
+  packet_setUint8(101, destory, 1);
+  // wireless
+  while(PORT_WIRELESS.available()){
+    wireless[len_wireless] = PORT_WIRELESS.read();
+    if(wireless[len_wireless] == '\n'){
+      packet_setUint8(102, wireless, len_wireless);
+      len_wireless = 0;
+    }
+    if(len_wireless == LEN_WIRELESS-2){
+      len_wireless = 0;
+    }
+    len_wireless++;
+  }
+  // imu
+  packet_setInt32(103, quat, 3); 
+  hardware_enable[0] = damiao_motor[0].connect ? 0 : 1;
+  packet_setUint8(104, hardware_enable, 1);
+  packet_send();
 }
 
-static bool handleSingleKey(const char key) {
-  switch (key) {
-    case '0':
-      g_cmd = 0;
-      Serial.println("[cmd] disable");
-      return true;
-    case '2':
-      g_cmd = 2;
-      Serial.printf("[cmd] velocity vel=%.2f\n", target_vel);
-      return true;
-    case '3':
-      g_cmd = 3;
-      Serial.printf("[cmd] motion pos=%.3f vel=%.2f\n", target_pos, target_vel);
-      return true;
-    case '4':
-      g_cmd = 4;
-      Serial.println("[cmd] gain update (one-shot)");
-      return true;
-    case '+':
-      target_vel += 0.5f;
-      Serial.printf("[cmd] target_vel=%.2f\n", target_vel);
-      return true;
-    case '-':
-      target_vel = max(0.0f, target_vel - 0.5f);
-      Serial.printf("[cmd] target_vel=%.2f\n", target_vel);
-      return true;
+// // PCから受信時にパケットごとに呼ばれるやつ
+void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len){
+  switch(id){
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+      can1_motor[id]->setPacketFrame(data, len);
+      break;
+    case 4:
+      robostride_can1[id-4].setPacketFrame(data, len);
+      break;
+    case 5:
+    case 6:
+      can2_motor[id-5].setPacketFrame(data, len);
+      break;
+    case 7:
+    case 8:
+    case 9:
+    case 10:
+    case 11:
+    case 12:
+    case 13:
+    case 14:
+      if(len>=1){
+        sts.servos[id - 7].ref_pos = data[len - 1];
+        break;
+      }
+    case 15:
+    case 16:
+      if(len >= 1){
+        if(data[0] < 0){
+          // esc.init();
+        }else{
+          esc[id - 15].write(data[len - 1]);
+        }
+      }
+      break;
+    case 17:
+      if(len>=1)
+        digitalWrite(PIN_EMERGENCY, data[len-1] != 0.f);
+      break;
     default:
-      return false;
+      break;
   }
 }
 
-static bool isImmediateSingleKey(const char key) {
-  return key == '0' || key == '4' || key == '+' || key == '-';
+void setup(void) {
+  // 非常停止
+  pinMode(PIN_EMERGENCY, OUTPUT);
+  // LED
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  packet_begin();
+  PORT_WIRELESS.begin(115200);
+  PORT_WIRELESS.addMemoryForRead(&wirelessbuffer_, sizeof(wirelessbuffer_));
+  // im.init();
+  sts.init();
+  // can2_init();
+//   can3_init();
+//   esc_init();
+
+  led_timer.begin(led_timer_cb, 50 * 1000); //20Hz
+  // imu_timer.begin(imu_timer_cb, 10 * 1000); //100Hz
 }
 
-static void handleSerial() {
-  while (Serial.available()) {
-    const char c = (char)Serial.read();
-    if (c == '\r') continue;
+// void imu_timer_cb(){
+//    im.getQuat(quat);
+// }
 
-    // Keep existing one-key workflow without requiring newline.
-    if (serial_line_len == 0 && !Serial.available() && isImmediateSingleKey(c) && handleSingleKey(c)) {
-      continue;
-    }
-
-    if (c != '\n') {
-      if (serial_line_len < (sizeof(serial_line) - 1)) {
-        serial_line[serial_line_len++] = c;
-      }
-      continue;
-    }
-
-    serial_line[serial_line_len] = '\0';
-    if (serial_line_len == 0) {
-      continue;
-    }
-
-    if (serial_line_len == 1) {
-      if (!handleSingleKey(serial_line[0])) {
-        printHelp();
-      }
-    } else {
-      float pos = 0.0f;
-      float vel = 0.0f;
-      if (sscanf(serial_line, "2 %f", &vel) == 1 || sscanf(serial_line, "2%f", &vel) == 1) {
-        target_vel = vel;
-        g_cmd = 2;
-        Serial.printf("[cmd] velocity vel=%.3f rad/s\n", target_vel);
-      } else if (sscanf(serial_line, "3 %f %f", &pos, &vel) == 2) {
-        target_pos = pos;
-        target_vel = vel;
-        g_cmd = 3;
-        Serial.printf("[cmd] motion pos=%.3f rad vel=%.3f rad/s\n", target_pos, target_vel);
-      } else if (sscanf(serial_line, "3 %f", &pos) == 1 || sscanf(serial_line, "3%f", &pos) == 1) {
-        target_pos = pos;
-        g_cmd = 3;
-        Serial.printf("[cmd] motion pos=%.3f rad vel=%.3f rad/s\n", target_pos, target_vel);
-      } else if (sscanf(serial_line, "p %f", &pos) == 1 || sscanf(serial_line, "p%f", &pos) == 1) {
-        target_pos = pos;
-        g_cmd = 3;
-        Serial.printf("[cmd] target_pos=%.3f rad (motion)\n", target_pos);
-      } else {
-        printHelp();
-      }
-    }
-
-    serial_line_len = 0;
+void led_timer_cb(){
+  // ros2と接続しているか確認
+  connect_ros2 = (millis() - prev_connect_ros2_ts_) < 500;
+  if(!connect_ros2){
+    digitalWrite(LED_BUILTIN, HIGH);
+    sts.disable = true;
+    packet_send();
+  }else{
+    led = !led;
+    digitalWrite(LED_BUILTIN, led);
+    sts.disable = false;
   }
-}
-
-static void printStatus() {
-  if (millis() - last_print_ms < 200) return;
-  last_print_ms = millis();
-
-  Serial.printf("connect_ros2=%d  mode=%d, pos=%.4f  vel=%.4f  tq=%.4f  temp=%.1f, Kp=%.2f, Ki=%.2f\n",
-                (int)can2_robostride[0].connect_ros2,
-                can2_robostride[0].ref.mode,
-                can2_robostride[0].feedback.position_rad,
-                can2_robostride[0].feedback.velocity_rad_s,
-                can2_robostride[0].feedback.torque_nm,
-                can2_robostride[0].feedback.temp_mos,
-                can2_robostride[0].ref.kp_vel,
-                can2_robostride[0].ref.ki_vel);
-}
-
-void setup() {
-  Serial.begin(115200);
-  delay(200);
-  Serial.println("=== RoboStride test: init/setPacketFrame/writeCanFrame ===");
-
-  can2_init();
-
-  printHelp();
 }
 
 void loop() {
-  handleSerial();
-  printStatus();
-  can2_loop();
-
-  // ---- setPacketFrame 用のデータ作成 ----
-  // あなたの setPacketFrame() の仕様:
-  // len=0/1: disable
-  // len=2: velocity  data[1]=vel
-  // len=3: motion(PosPP) data[1]=pos
-  // len=4: gain set  data[0]=cur_kp, data[1]=cur_ki, data[2]=motion_kp, data[3]=motion_kd
-  float data[4] = {0};
-
-  int len = 0;
-
-  if (g_cmd == 0) {
-    // disable
-    len = 0;
-    can2_robostride[0].setPacketFrame(data, len);
-  }
-  else if (g_cmd == 2) {
-    // velocity mode
-    data[1] = target_vel;
-    len = 2;
-    can2_robostride[0].setPacketFrame(data, len);
-  }
-  else if (g_cmd == 3) {
-    // motion mode (PosPP): angle only
-    data[1] = target_pos;
-    len = 3;
-    can2_robostride[0].setPacketFrame(data, len);
-  }
-  else if (g_cmd == 4) {
-    // gain update (one-shot)
-    data[0] = gain_cur_kp;
-    data[1] = gain_cur_ki;
-    data[2] = gain_kp;
-    data[3] = gain_kd;
-    len = 4;
-    can2_robostride[0].setPacketFrame(data, len);
-
-    // 次周期からは motion に戻す（好みで velocity にしてもOK）
-    g_cmd = 0;
-  }
+  packet_update();
+  sts.loop();
+  // can2_loop();
+//   can3_loop();
 }

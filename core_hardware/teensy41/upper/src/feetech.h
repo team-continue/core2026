@@ -3,6 +3,7 @@
 #include "wiring.h"
 #include "pi.h"
 #include <cstring>
+#include "pin.h"
 
 #define STS_CONTROL_DT 0.02f
 #define STS_LIMIT_VEL_STS3215 ((67.0f / 60.0f) * 2.0f * M_PI)
@@ -63,9 +64,9 @@ class STS {
   }
 
   void init() {
-    Serial2.begin(1000000);
-    Serial2.addMemoryForRead(bigserialbuffer_, sizeof(bigserialbuffer_));
-    while (!Serial2) {
+    SERVO_SERIAL.begin(1000000);
+    SERVO_SERIAL.addMemoryForRead(bigserialbuffer_, sizeof(bigserialbuffer_));
+    while (!SERVO_SERIAL) {
     }
     delay(1000);
     prev_connect_ts_ = millis();
@@ -137,15 +138,15 @@ class STS {
 
  private:
   void syncReadData() {
-    if (!Serial2.available()) {
+    if (!SERVO_SERIAL.available()) {
       return;
     }
 
-    while (Serial2.available()) {
+    while (SERVO_SERIAL.available()) {
       if (buffer_data_num >= MAX_DATA_LENGTH) {
         buffer_data_num = 0;
       }
-      buffer[buffer_data_num++] = (byte)Serial2.read();
+      buffer[buffer_data_num++] = (byte)SERVO_SERIAL.read();
     }
 
     int parse_i = 0;
@@ -304,8 +305,8 @@ class STS {
     message[6] = len;
     memcpy(message + 7, ids, len_id);
     message[7 + len_id] = sts_calcCkSum(message, 8 + len_id);
-    Serial2.write(message, 8 + len_id);
-    Serial2.flush();
+    SERVO_SERIAL.write(message, 8 + len_id);
+    SERVO_SERIAL.flush();
   }
 
   void sts_syncWrite(byte *ids, byte len_id, byte index, byte len, byte *data) {
@@ -323,8 +324,8 @@ class STS {
       memcpy(message + start_addr + 1, data + i * len, len);
     }
     message[7 + (len + 1) * len_id] = sts_calcCkSum(message, 8 + (len + 1) * len_id);
-    Serial2.write(message, 8 + (len + 1) * len_id);
-    Serial2.flush();
+    SERVO_SERIAL.write(message, 8 + (len + 1) * len_id);
+    SERVO_SERIAL.flush();
   }
 
   void sts_writeVel(byte id, float data) {
@@ -355,8 +356,8 @@ class STS {
     message[5] = index;
     memcpy(message + 6, data, len);
     message[6 + len] = sts_calcCkSum(message, 7 + len);
-    Serial2.write(message, 7 + len);
-    Serial2.flush();
+    SERVO_SERIAL.write(message, 7 + len);
+    SERVO_SERIAL.flush();
   }
 
   void sts_writeReg(byte id, byte index, byte data) {

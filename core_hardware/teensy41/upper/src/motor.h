@@ -5,13 +5,13 @@
 
 struct MotorRef {
   int mode = 0;
-  float position_rad = 0.0f;
+  float position_rad = 3.14f;
   float velocity_rad_s = 0.0f;
   float velocity_limit_rad_s = 0.0f;
   float torque_nm = 0.0f;
-  float kp_vel = 0.0f;
-  float ki_vel = 0.0f;
-  float kp_pos = 0.0f;
+  float kp_vel = 2.0f;
+  float ki_vel = 0.021f;
+  float kp_pos = 10.0f;
   float kd_pos = 0.0f;
 };
 

@@ -34,9 +34,7 @@ class ESC{
 };
 
 #define ESC_NUM 2
-#define ESC1_PIN 35
-#define ESC2_PIN 24
-ESC esc[ESC_NUM] = {ESC(ESC1_PIN), ESC(ESC2_PIN)};
+ESC esc[ESC_NUM] = {ESC(PIN_ESC1), ESC(PIN_ESC2)};
 void esc_init(){
   for(int i=0;i<ESC_NUM;++i){
     esc[i].begin();
