@@ -3,6 +3,22 @@
 #include <algorithm>
 
 BodyControlNode::BodyControlNode() : Node("body_control_node") {
+  ACCELERATION = this->declare_parameter<double>("acceleration", ACCELERATION);
+  ROTATION_ACCELERATION =
+    this->declare_parameter<double>("rotation_acceleration", ROTATION_ACCELERATION);
+  YAW_ROTATION_VELOCITY =
+    this->declare_parameter<double>("yaw_rotation_velocity", YAW_ROTATION_VELOCITY);
+  AUTO_ROTATION_VELOCITY =
+    this->declare_parameter<double>("auto_rotation_velocity", AUTO_ROTATION_VELOCITY);
+
+  body_angle_pid_ = PID(1, 0, 0, YAW_ROTATION_VELOCITY, -YAW_ROTATION_VELOCITY);
+
+  RCLCPP_INFO(this->get_logger(),
+        "Loaded params: acceleration=%.3f, rotation_acceleration=%.3f, "
+        "yaw_rotation_velocity=%.3f, auto_rotation_velocity=%.3f",
+        ACCELERATION, ROTATION_ACCELERATION, YAW_ROTATION_VELOCITY,
+        AUTO_ROTATION_VELOCITY);
+
   body_control_command_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx", 10);
   timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<int>(TIMER_PERIOD * 1000)),
                                    std::bind(&BodyControlNode::timer_callback, this));
