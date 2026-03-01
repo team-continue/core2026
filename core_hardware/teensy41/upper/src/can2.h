@@ -11,7 +11,6 @@
 #define CAN2_RS05_SPEED_LIMIT 1.0 // rad/s
 #define CAN2_RS05_ACC_LIMIT 3.0f // rad/s^2
 #define CAN2_RS05_INIT_RUN_MODE PosPP_control_mode
-
 #define CAN2_RS5_SET_GAIN false
 #define CAN2_RS5_CHECK_GAIN false
 
