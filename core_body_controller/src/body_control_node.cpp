@@ -2,8 +2,6 @@
 
 #include <algorithm>
 
-constexpr double TIMER_PERIOD = 0.01; // 10 ms
-
 BodyControlNode::BodyControlNode() : Node("body_control_node") {
   body_control_command_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx", 10);
   timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<int>(TIMER_PERIOD * 1000)),
@@ -61,13 +59,9 @@ void BodyControlNode::timer_callback() {
   cmd_vel_.linear.x = apply_rate_limit(cmd_vel_.linear.x, latest_twist_.linear.x, linear_step);
   cmd_vel_.linear.y = apply_rate_limit(cmd_vel_.linear.y, latest_twist_.linear.y, linear_step);
 
-  if (rotation_flag_) {
-    cmd_vel_.angular.z = AUTO_ROTATION_VELOCITY;
-  } else {
-    const double angular_step = ROTATION_ACCELERATION * TIMER_PERIOD;
-    cmd_vel_.angular.z =
-        apply_rate_limit(cmd_vel_.angular.z, latest_twist_.angular.z, angular_step);
-  }
+  const double angular_step = ROTATION_ACCELERATION * TIMER_PERIOD;
+  const double target_angular_z = rotation_flag_ ? AUTO_ROTATION_VELOCITY : latest_twist_.angular.z;
+  cmd_vel_.angular.z = apply_rate_limit(cmd_vel_.angular.z, target_angular_z, angular_step);
 
   if (std::abs(cmd_vel_.linear.x) < 0.01) {
     cmd_vel_.linear.x = 0;
@@ -120,8 +114,8 @@ std::vector<float> BodyControlNode::invert_kinematics_calc(const geometry_msgs::
   std::vector<float> wheel_velocities(4);
 
   constexpr float WHEEL_RADIUS = 0.13 / 2;
-  // tentatively set the same value to width and length
-  constexpr float BODY_WIDTH = 0.5304;
+  constexpr float SQRT2 = 1.41421356237f;
+  constexpr float BODY_WIDTH = 0.5304f;
 
   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 200,
                        "Got cmd_vel: linear.x=%f, linear.y=%f, angular.z=%f, body_angle=%f",
@@ -140,13 +134,17 @@ std::vector<float> BodyControlNode::invert_kinematics_calc(const geometry_msgs::
   //
 
   wheel_velocities[0] =
-      (vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - BODY_WIDTH * omega) / WHEEL_RADIUS;
+      (vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH * omega) /
+      WHEEL_RADIUS;
   wheel_velocities[1] =
-      (vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - BODY_WIDTH * omega) / WHEEL_RADIUS;
+      (vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH * omega) /
+      WHEEL_RADIUS;
   wheel_velocities[2] =
-      (-vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - BODY_WIDTH * omega) / WHEEL_RADIUS;
+      (-vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH * omega) /
+      WHEEL_RADIUS;
   wheel_velocities[3] =
-      (-vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - BODY_WIDTH * omega) / WHEEL_RADIUS;
+      (-vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH * omega) /
+      WHEEL_RADIUS;
   return wheel_velocities;
 }
 
