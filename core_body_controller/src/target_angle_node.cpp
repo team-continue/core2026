@@ -81,7 +81,7 @@ private:
   PID pid_ = PID(2.595048087059986, 0.0, std::chrono::duration<double>(TIMER_PERIOD).count());
   double gimbalControl();
 
-  constexpr static double INITIAL_TARGET_ANGLE = -1.90;
+  constexpr static double INITIAL_TARGET_ANGLE = 0.0;
 
   rclcpp::TimerBase::SharedPtr timer_;
   void timer_callback();

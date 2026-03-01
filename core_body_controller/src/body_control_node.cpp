@@ -123,9 +123,9 @@ std::vector<float> BodyControlNode::invert_kinematics_calc(const geometry_msgs::
   // tentatively set the same value to width and length
   constexpr float BODY_WIDTH = 0.5304;
 
-  RCLCPP_INFO(this->get_logger(),
-              "Got cmd_vel: linear.x=%f, linear.y=%f, angular.z=%f, body_angle=%f",
-              cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z, body_angle);
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 200,
+                       "Got cmd_vel: linear.x=%f, linear.y=%f, angular.z=%f, body_angle=%f",
+                       cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z, body_angle);
 
   // Rotate velocity vector to body frame
   float vx_body = cmd_vel.linear.x * cos(body_angle) + cmd_vel.linear.y * sin(body_angle);
@@ -140,13 +140,13 @@ std::vector<float> BodyControlNode::invert_kinematics_calc(const geometry_msgs::
   //
 
   wheel_velocities[0] =
-      (vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) / WHEEL_RADIUS;
+      (vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - BODY_WIDTH * omega) / WHEEL_RADIUS;
   wheel_velocities[1] =
-      (vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) / WHEEL_RADIUS;
+      (vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - BODY_WIDTH * omega) / WHEEL_RADIUS;
   wheel_velocities[2] =
-      (-vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) / WHEEL_RADIUS;
+      (-vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - BODY_WIDTH * omega) / WHEEL_RADIUS;
   wheel_velocities[3] =
-      (-vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) + BODY_WIDTH * omega) / WHEEL_RADIUS;
+      (-vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - BODY_WIDTH * omega) / WHEEL_RADIUS;
   return wheel_velocities;
 }
 
