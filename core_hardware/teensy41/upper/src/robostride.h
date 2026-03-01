@@ -178,6 +178,8 @@ public:
         ref(motor_ref)
     {
         ref.position_rad = 3.14;
+        ref.velocity_rad_s = 0.0f;
+        ref.torque_nm = 0.0f;
         ref.kp_vel = 2.0f;
         ref.ki_vel = 0.021f;
         ref.kp_pos = 10.0f;

@@ -11,7 +11,8 @@ byte serial4RXbuffer[MAX_LEN];
 
 class Client{
   public:
-    uint8_t hp=100;
+    volatile uint8_t hp=100;
+    volatile int destoy = 0;
     uint8_t recv_data[MAX_LEN];
     char hp_char[2];
     int recv_len = 0;
@@ -22,6 +23,7 @@ class Client{
       PORT_SERIAL.addMemoryForRead(serial4RXbuffer, MAX_LEN);
     }
     void update(){
+      destoy = digitalRead(PIN_DESTROY);
       while(PORT_SERIAL.available()){
         uint8_t now = PORT_SERIAL.read();
         recv_data[recv_len++] = now;
@@ -44,3 +46,5 @@ class Client{
       }
     }
 };
+
+Client client;

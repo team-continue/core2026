@@ -14,7 +14,7 @@ def generate_launch_description():
             package='core_hardware',
             executable='core_hardware_usb',
             output="screen",
-            parameters=[{'port': "/dev/teensy"}]
+            parameters=[{'port': "/dev/ttyACM0"}]
         )
     return LaunchDescription([
         # core_hardware_ecat,

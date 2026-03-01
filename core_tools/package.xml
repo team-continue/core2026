@@ -7,7 +7,6 @@
   <maintainer email="pizac.twitter@gmail.com">pizac</maintainer>
   <license>Apache 2.0</license>
 
-  <depend>python3-qwt</depend>
   <depend>core_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>visualization_msgs</depend>
