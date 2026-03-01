@@ -8,9 +8,11 @@
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64.hpp"
 
-class PID {
- public:
-  PID(double kp, double ki, double kd, double max, double min) {
+class PID
+{
+public:
+  PID(double kp, double ki, double kd, double max, double min)
+  {
     kp_ = kp;
     ki_ = ki;
     kd_ = kd;
@@ -19,7 +21,8 @@ class PID {
     integral_ = 0;
     previous_error_ = 0;
   }
-  double calculate(double target, double current) {
+  double calculate(double target, double current)
+  {
     double error = target - current;
     integral_ += error;
     double derivative = error - previous_error_;
@@ -33,7 +36,7 @@ class PID {
     return output;
   }
 
- private:
+private:
   double kp_;
   double ki_;
   double kd_;
@@ -43,20 +46,21 @@ class PID {
   double previous_error_;
 };
 
-class BodyControlNode : public rclcpp::Node {
- public:
+class BodyControlNode : public rclcpp::Node
+{
+public:
   BodyControlNode();
 
- private:
+private:
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr
-      body_control_command_pub_;
+    body_control_command_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_stop_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
-      sub_shooter_angle_;
+    sub_shooter_angle_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr
-      body_target_angle_sub_;
+    body_target_angle_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr body_omega_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr rotation_flag_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pad_up_sub_;
@@ -64,14 +68,14 @@ class BodyControlNode : public rclcpp::Node {
 
   void timer_callback();
   std::vector<float> invert_kinematics_calc(
-      const geometry_msgs::msg::Twist &cmd_vel, const float &body_angle = 0);
+    const geometry_msgs::msg::Twist & cmd_vel, const float & body_angle = 0);
   core_msgs::msg::CANArray gen_body_control_command(
-      const std::vector<float> &body_control_command);
+    const std::vector<float> & body_control_command);
   void emergency_stop();
 
   geometry_msgs::msg::Twist cmd_vel_;
   geometry_msgs::msg::Twist latest_twist_;
-  bool emergency_stop_flag_ = false;
+  bool emergency_stop_flag_ = true;
   bool rotation_flag_ = false;
   float body_angle_ = 0;
   float body_target_angle_ = 0;
@@ -83,5 +87,5 @@ class BodyControlNode : public rclcpp::Node {
   double AUTO_ROTATION_VELOCITY = 1 * M_PI;
 
   PID body_angle_pid_ =
-      PID(1, 0, 0, YAW_ROTATION_VELOCITY, -YAW_ROTATION_VELOCITY);
+    PID(1, 0, 0, YAW_ROTATION_VELOCITY, -YAW_ROTATION_VELOCITY);
 };
