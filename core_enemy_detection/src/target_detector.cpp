@@ -13,9 +13,8 @@ targetDetector::targetDetector() :
         // coordPub = this->create_publisher<geometry_msgs::msg::PoseArray>("enemy_image_Coords", 10);
         dpInfoPub = this->create_publisher<core_msgs::msg::DamagePanelInfoArray>("damage_panels_infomation", 1);
         // tf = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+        parameter_callback_handle_ = this->add_on_set_parameters_callback(std::bind(&targetDetector::changeParameter, this, _1));
         declareParameters();
-        kernelForLed = cv::Mat::ones(paramName["led_kernel_matrix_size"][0], paramName["led_kernel_matrix_size"][1], CV_8U);
-        kernelForPanel = cv::Mat::ones(paramName["panel_kernel_matrix_size"][0], paramName["panel_kernel_matrix_size"][1], CV_8U);
         // calc = new image2camera_vector_angle::vec2agCalculator(calibrationFilePath);
     }
 
@@ -34,10 +33,13 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
 
     // subscribeされたイメージ取得
     rawImage = cv_bridge::toCvShare(imgMsg, "bgr8")->image;
+    float xRatio = (float)image_size[0] / (float)rawImage.size().width;
+    float yRatio = (float)image_size[1] / (float)rawImage.size().height;
+    cv::resize(rawImage, Image, cv::Size(image_size[0], image_size[1]), xRatio, yRatio);
 
     // hsv画像&lab画像に変換
-    cv::cvtColor(rawImage, hsvImage, cv::COLOR_BGR2HSV);
-    cv::cvtColor(rawImage, labImage, cv::COLOR_BGR2Lab);
+    cv::cvtColor(Image, hsvImage, cv::COLOR_BGR2HSV);
+    cv::cvtColor(Image, labImage, cv::COLOR_BGR2Lab);
 
 
     // 色抽出
@@ -74,91 +76,103 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
     dpInfoPub->publish(dpMsg);
 
     /*** 確認用 ***/
-    // publishImage("test_rawImage", rawImage, "bgr8");
-    // publishImage("mask_red", ledMaskImage, "mono8");
-    // publishImage("mask_panel", panelMaskImage, "mono8");
-    // publishImage("labeled_led", ledLabelMap.image, "mono8");
-    // publishImage("labeled_panel", panelLabelMap.image, "mono8");
-    // publishResultImage();
+    publishImage("test_rawImage", Image, "bgr8");
+    publishImage("mask_red", ledMaskImage, "mono8");
+    publishImage("mask_panel", panelMaskImage, "mono8");
+    publishImage("labeled_led", ledLabelMap.image, "mono8");
+    publishImage("labeled_panel", panelLabelMap.image, "mono8");
+    publishResultImage();
     
-    // std::cout << damagePanels.size() << std::endl;  // 検出したダメパ数確認
-    // for(auto i = damagePanels.begin(); i != damagePanels.end(); i++){
-    //     std::cout << i->x << " " << i->y << " " << i->area << std::endl;
-    // }
+}
 
-    
-    // // enemy_selectorにpublish(手動制御アシスト用)
-    // geometry_msgs::msg::PoseArray dpPosition;
-    // for(int i = 0; i < (int)panelCoord.size(); i++){
-    //     geometry_msgs::msg::Pose pose;
-    //     pose.position.x = panelCoord[i][0];
-    //     pose.position.y = panelCoord[i][1];
-    //     pose.position.z = 0.0;
-    //     coords.poses.push_back(pose);
-    // }
-    // coordPub->publish(coords);
- 
-    // // とりあえずバウンドボックスが一番大きい座標をtfにbroadcast (オートタレット用)
-    // int maxIndex;
-    // int cnt = 0;
-    // int maxPixcel = 0;
-    // for(auto itr = panelStats.begin(); itr != panelStats.end(); itr++){
-    //     if(maxPixcel < itr->at(cv::CC_STAT_AREA)){
-    //         maxPixcel = itr->at(cv::CC_STAT_AREA);
-    //         maxIndex = cnt;
-    //     }
-    //     cnt++;
-    // }
-    
-    
-    // /*** 確認用 ***/
-    // auto citr = panelCoord[maxIndex].begin();
-    // auto pitr = panelStats[maxIndex].begin();
-    // cv::circle(rawImage, cv::Point2d((int)citr[0], (int)citr[1]), 10, cv::Scalar(0,255,255), -1);
-    // cv::rectangle(rawImage, cv::Point(pitr[0], pitr[1]), cv::Point(pitr[0] + pitr[2], pitr[1] + pitr[3]), cv::Scalar(0, 255, 255));
-    // publishImage("debug", rawImage, "bgr8");
-    // /*************/
+rcl_interfaces::msg::SetParametersResult targetDetector::changeParameter(const std::vector<rclcpp::Parameter> &parameters){
 
-    // // イメージ座標からカメラ画像に変換
-    // std::vector<double> enemyPosi;
-    // if(calc->calculate(panelCoord[maxIndex], enemyPosi) == false)
-    //     return;
-    
-    // geometry_msgs::msg::TransformStamped stamped;
-    // tf2::Matrix3x3 eulerMat;
-    // tf2::Quaternion quat;
-    // eulerMat.setRPY(0, calc->getAngle_pitch(), calc->getAngle_yaw());
-    // eulerMat.getRotation(quat);
-
-    // stamped.header.stamp = this->now();
-    // stamped.header.frame_id = "camera1_link";
-    // stamped.child_frame_id = "close_enemy_vector";
-    // stamped.transform.translation.x = calc->getVector().position.x;  // Z camera
-    // stamped.transform.translation.y = calc->getVector().position.y;  // X camera
-    // stamped.transform.translation.z = calc->getVector().position.z;  // Y camera
-    // stamped.transform.rotation.x = quat.getX();
-    // stamped.transform.rotation.y = quat.getY();
-    // stamped.transform.rotation.z = quat.getZ();
-    // stamped.transform.rotation.w = quat.getW();
-    // tf->sendTransform(stamped);
-
-    // geometry_msgs::msg::TransformStamped stampedPose;
-    // stampedPose.header.stamp = this->now();
-    // stampedPose.child_frame_id = "close_enemy_position";
-    // stampedPose.header.frame_id = "camera1_link";
-    // stampedPose.transform.translation.x = enemyPosi[0];  // Z camera
-    // stampedPose.transform.translation.y = enemyPosi[1];  // X camera
-    // stampedPose.transform.translation.z = enemyPosi[2];  // Y camera
-    // stampedPose.transform.rotation.x = quat.getX();
-    // stampedPose.transform.rotation.y = quat.getY();
-    // stampedPose.transform.rotation.z = quat.getZ();
-    // stampedPose.transform.rotation.w = quat.getW();
-    // tf->sendTransform(stampedPose);
-
-    // // std::cout << "x :" << stampedPose.transform.translation.x << std::endl;
-    // // std::cout << "y :" << stampedPose.transform.translation.y << std::endl;
-    // // std::cout << "z :" << stampedPose.transform.translation.z << std::endl;
-
+    auto result = rcl_interfaces::msg::SetParametersResult();
+    for(auto &param : parameters){
+        std::string name = param.get_name();
+        if(name == "team"){
+            auto paramValue = param.as_integer_array();
+            mode = static_cast<int32_t>(paramValue[0]);
+            result.successful = true;
+        }else if(name == "image_size"){
+            declareIntArray(image_size, param.as_integer_array());
+            result.successful = true;
+        }else if(name == "red_range_lower1"){
+            auto paramValue =  param.as_integer_array();
+            if((0 <= (int)paramValue[0] && (int)paramValue[0] < red_range_upper1[0]) || (0 <= (int)paramValue[1] && (int)paramValue[1] < red_range_upper1[1]) || (0 <= (int)paramValue[2] && (int)paramValue[2] < red_range_upper1[2])){
+                declareIntArray(red_range_lower1, paramValue);
+                result.successful = true;
+            }else{
+                result.successful = false;
+            }
+        }else if(name == "red_range_lower2"){
+            auto paramValue =  param.as_integer_array();
+            if((0 <= (int)paramValue[0] && (int)paramValue[0] < red_range_upper2[0]) || (0 <= (int)paramValue[1] && (int)paramValue[1] < red_range_upper2[1]) || (0 <= (int)paramValue[2] && (int)paramValue[2] < red_range_upper2[2])){
+                declareIntArray(red_range_lower2, paramValue);
+                result.successful = true;
+            }else{
+                result.successful = false;
+            }
+        }else if(name == "red_range_upper1"){
+            auto paramValue =  param.as_integer_array();
+            if((180 >= (int)paramValue[0] && (int)paramValue[0] > red_range_lower1[0]) || (255 >= (int)paramValue[1] && (int)paramValue[1] > red_range_lower1[1]) || (255 >= (int)paramValue[2] && (int)paramValue[2] > red_range_lower1[2])){
+                declareIntArray(red_range_upper1, paramValue);
+                result.successful = true;
+            }else{
+                result.successful = false;
+            }
+        }else if(name == "red_range_upper2"){
+            auto paramValue =  param.as_integer_array();
+            if((180 >= (int)paramValue[0] && (int)paramValue[0] > red_range_lower2[0]) ||(255 >= (int)paramValue[1] && (int)paramValue[1] > red_range_lower2[1]) || (255 >= (int)paramValue[2] && (int)paramValue[2] > red_range_lower2[2])){
+                declareIntArray(red_range_upper2, paramValue);
+                result.successful = true;
+            }else{
+                result.successful = false;
+            }
+        }else if(name == "blue_range_lower"){
+            auto paramValue =  param.as_integer_array();
+            if((0 <= (int)paramValue[0] && (int)paramValue[0] < blue_range_upper[0]) || (0 <= (int)paramValue[1] && (int)paramValue[1] < blue_range_upper[1]) || (0 <= (int)paramValue[2] && (int)paramValue[2] < blue_range_upper[2])){
+                std::cout << "aaa" << std::endl;
+                declareIntArray(blue_range_lower, paramValue);
+                result.successful = true;
+            }else{
+                result.successful = false;
+            }
+        }else if(name == "blue_range_upper"){
+            auto paramValue =  param.as_integer_array();
+            if((180 >= (int)paramValue[0] && (int)paramValue[0] > blue_range_lower[0]) || (255 >= (int)paramValue[1] && (int)paramValue[1] > blue_range_lower[1]) || (255 >= (int)paramValue[2] && (int)paramValue[2] > blue_range_lower[2])){
+                declareIntArray(blue_range_upper, paramValue);
+                result.successful = true;
+            }else{
+                result.successful = false;
+            }
+        }else if(name == "panel_lab_range_lower"){
+            auto paramValue =  param.as_integer_array();
+            if((0 <= (int)paramValue[0] && (int)paramValue[0] < panel_lab_range_upper[0]) || ((0 <= (int)paramValue[1] && (int)paramValue[1] < panel_lab_range_upper[1]) || (0 <= (int)paramValue[2] && (int)paramValue[2] > panel_lab_range_upper[2]))){
+                declareIntArray(panel_lab_range_lower, paramValue);
+                result.successful = true;
+            }else{
+                result.successful = false;
+            }
+        }else if(name == "panel_lab_range_upper"){
+            auto paramValue =  param.as_integer_array();
+            if((100 >= (int)paramValue[0] && (int)paramValue[0] > panel_lab_range_lower[0]) || (255 >= (int)paramValue[1] && (int)paramValue[1] > panel_lab_range_lower[1]) || (255 >= (int)paramValue[2] && (int)paramValue[2] > panel_lab_range_lower[2])){
+                declareIntArray(panel_lab_range_upper, paramValue);
+                result.successful = true;
+            }else{
+                result.successful = false;
+            }
+        }else if(name == "led_kernel_matrix_size"){
+            kernel_for_led = cv::Mat::ones(param.as_integer_array()[0], param.as_integer_array()[1], CV_8U);
+            result.successful = true;
+        }else if(name == "panel_kernel_matrix_size"){
+            kernel_for_panel = cv::Mat::ones(param.as_integer_array()[0], param.as_integer_array()[1], CV_8U);
+            result.successful = true;
+        }else{
+            result.successful = true;
+        }
+    }
+    return result;
 }
 
 void targetDetector::resetDamagePanelInfo(){
@@ -170,35 +184,35 @@ void targetDetector::extractHsvRange(){
     if(mode == 0){
         // hsv画像に対する検出
         cv::Mat mask1, mask2;
-        cv::inRange(hsvImage, paramName["red_range_lower1"], paramName["red_range_upper1"], mask1);
-        cv::inRange(hsvImage, paramName["red_range_lower2"], paramName["red_range_upper2"], mask2);
+        cv::inRange(hsvImage, red_range_lower1, red_range_upper1, mask1);
+        cv::inRange(hsvImage, red_range_lower2, red_range_upper2, mask2);
         cv::bitwise_or(mask1, mask2, ledMaskImage);
         // publishImage("red1", mask1, "mono8");
         // publishImage("red2", mask2, "mono8");
 
         // lab画像に対する検出
-        // cv::inRange(labImage, paramName["red_lab_range_lower"], paramName["red_lab_range_upper"], ledMaskImage);
+        // cv::inRange(labImage, params["red_lab_range_lower"], params["red_lab_range_upper"], ledMaskImage);
         
     }else{
-        cv::inRange(hsvImage, paramName["blue_range_lower"], paramName["blue_range_upper"], ledMaskImage);
+        cv::inRange(hsvImage, blue_range_lower, blue_range_upper, ledMaskImage);
     }
     // hsv画像に対する検出
-    // cv::inRange(hsvImage, paramName["panel_hsv_range_lower"], paramName["panel_hsv_range_upper"], panelMaskImage);
+    // cv::inRange(hsvImage, params["panel_hsv_range_lower"], params["panel_hsv_range_upper"], panelMaskImage);
     
     // lab画像に対する検出
     cv::Mat dst;
     cv::medianBlur(labImage, dst, 3);
-    cv::inRange(dst, paramName["panel_lab_range_lower"], paramName["panel_lab_range_upper"], panelMaskImage);
+    cv::inRange(dst, panel_lab_range_lower, panel_lab_range_upper, panelMaskImage);
 }
 
 void targetDetector::applyMorphology(){
     cv::Mat dst;
 
-    cv::morphologyEx(ledMaskImage, dst, cv::MORPH_OPEN, kernelForLed);
-    cv::morphologyEx(dst, ledLabelMap.image, cv::MORPH_CLOSE, kernelForLed);
+    cv::morphologyEx(ledMaskImage, dst, cv::MORPH_OPEN, kernel_for_led);
+    cv::morphologyEx(dst, ledLabelMap.image, cv::MORPH_CLOSE, kernel_for_led);
 
-    cv::morphologyEx(panelMaskImage, dst, cv::MORPH_OPEN, kernelForPanel);
-    cv::morphologyEx(dst, panelLabelMap.image, cv::MORPH_CLOSE, kernelForPanel);
+    cv::morphologyEx(panelMaskImage, dst, cv::MORPH_OPEN, kernel_for_panel);
+    cv::morphologyEx(dst, panelLabelMap.image, cv::MORPH_CLOSE, kernel_for_panel);
 }
 
 bool targetDetector::detectDamagePanel(){
@@ -260,7 +274,7 @@ bool targetDetector::detectDamagePanel(){
 void targetDetector::publishResultImage(){
     for(auto itr = damagePanels.begin(); itr != damagePanels.end(); itr++){
         cv::rectangle(
-            rawImage, 
+            Image, 
             cv::Rect(
                 cv::Point(itr->left, itr->top),
                 cv::Point(itr->left + itr->width, itr->top + itr->height)
@@ -269,14 +283,14 @@ void targetDetector::publishResultImage(){
             2
         );
         cv::circle(
-            rawImage,
+            Image,
             cv::Point(itr->x, itr->y),
             3,
             cv::Scalar(0, 255, 255),
             -1
         );
     }
-    publishImage("result", rawImage, "bgr8");
+    publishImage("result", Image, "bgr8");
 }
 
 
@@ -310,8 +324,21 @@ void targetDetector::addPublisher(std::vector<std::string> tn){
 }
 
 void targetDetector::declareParameters(){
-    for(auto itr = paramName.begin(); itr != paramName.end(); itr++){
+    for(auto itr = params.begin(); itr != params.end(); itr++){
         this->declare_parameter(itr->first, itr->second);
     }
+    kernel_for_led = cv::Mat::ones(this->get_parameter("led_kernel_matrix_size").as_integer_array()[0], this->get_parameter("led_kernel_matrix_size").as_integer_array()[1], CV_8U);
+    kernel_for_panel = cv::Mat::ones(this->get_parameter("panel_kernel_matrix_size").as_integer_array()[0], this->get_parameter("panel_kernel_matrix_size").as_integer_array()[1], CV_8U);
+    declareIntArray(red_range_lower1, this->get_parameter("red_range_lower1").as_integer_array());
+    declareIntArray(red_range_lower2, this->get_parameter("red_range_lower2").as_integer_array());
+    declareIntArray(red_range_upper1, this->get_parameter("red_range_upper1").as_integer_array());
+    declareIntArray(red_range_upper2, this->get_parameter("red_range_upper2").as_integer_array());
+    declareIntArray(blue_range_lower, this->get_parameter("blue_range_lower").as_integer_array());
+    declareIntArray(blue_range_upper, this->get_parameter("blue_range_upper").as_integer_array());
+    declareIntArray(panel_lab_range_lower, this->get_parameter("panel_lab_range_lower").as_integer_array());
+    declareIntArray(panel_lab_range_upper, this->get_parameter("panel_lab_range_upper").as_integer_array());
 }
 
+void targetDetector::declareIntArray(std::vector<int> &var, std::vector<int64_t> param){
+    var.assign(param.begin(), param.end());
+}
