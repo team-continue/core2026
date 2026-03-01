@@ -23,9 +23,9 @@ BodyControlNode::BodyControlNode() : Node("body_control_node") {
   timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<int>(TIMER_PERIOD * 1000)),
                                    std::bind(&BodyControlNode::timer_callback, this));
   cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-      "cmd_vel", 10, [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
-        latest_twist_ = *msg;
-      });
+    "cmd_vel", 10, [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
+      latest_twist_ = *msg;
+    });
   emergency_stop_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "/system/emergency/hazard_status", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
         emergency_stop_flag_ = msg->data;
@@ -37,25 +37,25 @@ BodyControlNode::BodyControlNode() : Node("body_control_node") {
       });
   body_omega_ = this->create_publisher<std_msgs::msg::Float64>("body_omega", 10);
   rotation_flag_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "rotation_flag", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
-        rotation_flag_ = msg->data;
-      });
+    "rotation_flag", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
+      rotation_flag_ = msg->data;
+    });
   sub_shooter_angle_ = this->create_subscription<sensor_msgs::msg::JointState>(
       "joint_states", 10, [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
         latest_body_angle_ = msg->position[4];
       });
   pad_up_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "pad/up", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
-        if (msg->data) {
-          AUTO_ROTATION_VELOCITY = 1 * M_PI;
-        }
-      });
+    "pad/up", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
+      if (msg->data) {
+        AUTO_ROTATION_VELOCITY = 1 * M_PI;
+      }
+    });
   pad_up_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "pad/up", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
-        if (msg->data) {
-          AUTO_ROTATION_VELOCITY = 2 * M_PI;
-        }
-      });
+    "pad/up", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
+      if (msg->data) {
+        AUTO_ROTATION_VELOCITY = 2 * M_PI;
+      }
+    });
 }
 
 void BodyControlNode::timer_callback() {
@@ -104,7 +104,8 @@ void BodyControlNode::timer_callback() {
   body_omega_->publish(body_omega_msg);
 }
 
-void BodyControlNode::emergency_stop() {
+void BodyControlNode::emergency_stop()
+{
   RCLCPP_ERROR(this->get_logger(), "Emergency stop flag is set");
   core_msgs::msg::CANArray body_control_command_array;
   for (size_t i = 0; i < 4; i++) {
@@ -177,7 +178,8 @@ BodyControlNode::gen_body_control_command(const std::vector<float>& wheel_vel) {
   return body_control_commands;
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char * argv[])
+{
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<BodyControlNode>());
   rclcpp::shutdown();

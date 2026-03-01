@@ -7,11 +7,12 @@
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float32.hpp"
 
-class TempJoyParser : public rclcpp::Node {
- public:
+class TempJoyParser : public rclcpp::Node
+{
+public:
   TempJoyParser();
 
- private:
+private:
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
   // rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
@@ -34,7 +35,7 @@ class TempJoyParser : public rclcpp::Node {
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pad_l3_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pad_r3_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr
-      pad_r_stick_vertical_pub_;
+    pad_r_stick_vertical_pub_;
 
   rclcpp::TimerBase::SharedPtr timer_;
   void timer_callback();
@@ -42,9 +43,11 @@ class TempJoyParser : public rclcpp::Node {
   sensor_msgs::msg::Joy latest_joy_msg_;
 
   std::vector<bool> button_flip_flag_;
-  void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg) {
+  void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
+  {
     if (msg->axes.size() != latest_joy_msg_.axes.size() ||
-        msg->buttons.size() != latest_joy_msg_.buttons.size()) {
+      msg->buttons.size() != latest_joy_msg_.buttons.size())
+    {
       latest_joy_msg_ = *msg;
       button_flip_flag_.resize(msg->buttons.size());
       for (long unsigned int i = 0; i < button_flip_flag_.size(); i++) {
@@ -60,12 +63,14 @@ class TempJoyParser : public rclcpp::Node {
   }
 };
 
-TempJoyParser::TempJoyParser() : Node("temp_joy_parser") {
+TempJoyParser::TempJoyParser()
+: Node("temp_joy_parser")
+{
   joy_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
-      "joy", 10,
-      std::bind(&TempJoyParser::joy_callback, this, std::placeholders::_1));
+    "joy", 10,
+    std::bind(&TempJoyParser::joy_callback, this, std::placeholders::_1));
   cmd_vel_pub_ =
-      this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
+    this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
   // can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx",
   // 10);
 
@@ -74,33 +79,35 @@ TempJoyParser::TempJoyParser() : Node("temp_joy_parser") {
   pad_l1_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/l1", 10);
   pad_l2_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/l2", 10);
   pad_triangle_pub_ =
-      this->create_publisher<std_msgs::msg::Bool>("pad/triangle", 10);
+    this->create_publisher<std_msgs::msg::Bool>("pad/triangle", 10);
   pad_circle_pub_ =
-      this->create_publisher<std_msgs::msg::Bool>("pad/circle", 10);
+    this->create_publisher<std_msgs::msg::Bool>("pad/circle", 10);
   pad_cross_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/cross", 10);
   pad_square_pub_ =
-      this->create_publisher<std_msgs::msg::Bool>("pad/square", 10);
+    this->create_publisher<std_msgs::msg::Bool>("pad/square", 10);
   pad_up_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/up", 10);
   pad_down_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/down", 10);
   pad_left_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/left", 10);
   pad_right_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/right", 10);
   pad_ps_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/ps", 10);
   pad_options_pub_ =
-      this->create_publisher<std_msgs::msg::Bool>("pad/options", 10);
+    this->create_publisher<std_msgs::msg::Bool>("pad/options", 10);
   pad_share_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/share", 10);
   pad_l3_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/l3", 10);
   pad_r3_pub_ = this->create_publisher<std_msgs::msg::Bool>("pad/r3", 10);
   pad_r_stick_vertical_pub_ = this->create_publisher<std_msgs::msg::Float32>(
-      "pad/r_stick_vertical", 10);
+    "pad/r_stick_vertical", 10);
 
   timer_ =
-      this->create_wall_timer(std::chrono::milliseconds(10),
-                              std::bind(&TempJoyParser::timer_callback, this));
+    this->create_wall_timer(
+    std::chrono::milliseconds(10),
+    std::bind(&TempJoyParser::timer_callback, this));
   latest_joy_msg_.axes.resize(8);
   latest_joy_msg_.buttons.resize(11);
 }
 
-void TempJoyParser::timer_callback() {
+void TempJoyParser::timer_callback()
+{
   auto cmd_vel = geometry_msgs::msg::Twist();
   cmd_vel.linear.x = latest_joy_msg_.axes[1];
   cmd_vel.linear.y = latest_joy_msg_.axes[0];
@@ -224,7 +231,8 @@ void TempJoyParser::timer_callback() {
   }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char * argv[])
+{
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<TempJoyParser>());
   rclcpp::shutdown();

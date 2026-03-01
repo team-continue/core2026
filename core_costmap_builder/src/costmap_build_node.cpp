@@ -9,7 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
-
+#include <cstring>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
@@ -39,6 +39,8 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   points_in_topic_ = declare_parameter<std::string>("points_in_topic", "/lidar/points");
   points_filt_topic_ =
     declare_parameter<std::string>("points_filt_topic", "/lidar/points_filtered");
+  points_no_self_topic_ =
+    declare_parameter<std::string>("points_no_self_topic", "/livox/lidar/no_self");
   local_topic_ = declare_parameter<std::string>("local_topic", "/costmap/local");
 
   // ---------- フレーム名 ----------
@@ -57,6 +59,7 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   min_z_m_ = declare_parameter<double>("min_z_m", 0.10);
   max_z_m_ = declare_parameter<double>("max_z_m", 1.60);
   voxel_leaf_m_ = declare_parameter<double>("voxel_leaf_m", 0.05);
+  self_crop_min_range_m_ = declare_parameter<double>("self_crop_min_range_m", 0.30);
   min_range_m_ = declare_parameter<double>("min_range_m", 0.30);
   max_range_m_ = declare_parameter<double>("max_range_m", 6.0);
 
@@ -79,6 +82,7 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   points_timeout_sec_ = declare_parameter<double>("points_timeout_sec", 0.2);
   tf_timeout_ms_ = declare_parameter<int>("tf_timeout_ms", 50);
   publish_filtered_points_ = declare_parameter<bool>("publish_filtered_points", true);
+  publish_no_self_points_ = declare_parameter<bool>("publish_no_self_points", true);
   max_debug_points_ = declare_parameter<int>("max_debug_points", 20000);
 
   // ---------- ローカルグリッド初期化 ----------
@@ -93,7 +97,7 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   // ---------- インフレーションカーネルの事前計算 ----------
   // ロボットから inflation_radius_m_ 以内のセルに対してコスト値を計算し、
   // テーブルに保存しておく。毎サイクルはこのテーブルを走査するだけで済む
-  min_range_sq_ = min_range_m_ * min_range_m_;
+  self_crop_min_range_sq_ = self_crop_min_range_m_ * self_crop_min_range_m_;
   max_range_sq_ = max_range_m_ * max_range_m_;
   {
     const int r_infl = static_cast<int>(std::ceil(inflation_radius_m_ / resolution_m_));
@@ -104,10 +108,14 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
     for (int dy = -r_infl; dy <= r_infl; ++dy) {
       for (int dx = -r_infl; dx <= r_infl; ++dx) {
         // 自分自身のセルはスキップ（occupied で既に LETHAL）
-        if (dx == 0 && dy == 0) {continue;}
+        if (dx == 0 && dy == 0) {
+          continue;
+        }
 
         const double dist_sq = (dx * dx + dy * dy) * resolution_m_ * resolution_m_;
-        if (dist_sq > infl_sq) {continue;}
+        if (dist_sq > infl_sq) {
+          continue;
+        }
 
         int8_t cost;
         if (dist_sq <= robot_sq) {
@@ -136,14 +144,16 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   pub_local_ = create_publisher<nav_msgs::msg::OccupancyGrid>(local_topic_, 10);
   pub_points_filt_ =
     create_publisher<sensor_msgs::msg::PointCloud2>(points_filt_topic_, rclcpp::SensorDataQoS());
+  pub_points_no_self_ =
+    create_publisher<sensor_msgs::msg::PointCloud2>(points_no_self_topic_, rclcpp::QoS(10).reliable());
 
   // ---------- 更新タイマー ----------
   const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, update_hz_));
   timer_ = create_wall_timer(period, std::bind(&CostmapBuildNode::onUpdate, this));
 
   RCLCPP_INFO(
-    get_logger(), "costmap_build_node started: local=%dx%d res=%.3f window=%.1fx%.1fm",
-    size_x_, size_y_, resolution_m_, local_width_m_, local_height_m_);
+    get_logger(), "costmap_build_node started: local=%dx%d res=%.3f window=%.1fx%.1fm", size_x_,
+    size_y_, resolution_m_, local_width_m_, local_height_m_);
 }
 
 // ===========================================================================
@@ -171,7 +181,9 @@ void CostmapBuildNode::onUpdate()
 {
   // --- ロボット位置を取得しローリングウィンドウ原点を更新 ---
   double robot_x = 0.0, robot_y = 0.0;
-  if (!get2DTranslation(odom_frame_, base_frame_, robot_x, robot_y)) {return;}
+  if (!get2DTranslation(odom_frame_, base_frame_, robot_x, robot_y)) {
+    return;
+  }
   local_origin_x_ = robot_x - local_width_m_ * 0.5;
   local_origin_y_ = robot_y - local_height_m_ * 0.5;
 
@@ -181,20 +193,24 @@ void CostmapBuildNode::onUpdate()
     return;
   }
 
-  // --- 点群を odom フレームに座標変換 ---
+  // --- Stage 1: ロボット自身の点群を除去（センサ座標系のまま） ---
+  // センサ座標系では原点 (0,0) がセンサ位置
+  auto points_no_self = removeSelfPoints(*last_points_, 0.0, 0.0);
+
+  // --- 自身除去済み点群を odom フレームに座標変換 ---
   sensor_msgs::msg::PointCloud2 points_odom;
-  if (!transformPointCloudToFrame(*last_points_, odom_frame_, points_odom)) {
+  if (!transformPointCloudToFrame(points_no_self, odom_frame_, points_odom)) {
     publishLocal();
     return;
   }
 
-  // --- センサ原点取得（get2DTranslation 失敗時はロボット位置をフォールバック） ---
+  // --- センサ原点取得（odom フレーム、filterAndMarkPoints 用） ---
   double sensor_x = robot_x, sensor_y = robot_y;
   if (!lidar_frame_.empty()) {
     get2DTranslation(odom_frame_, lidar_frame_, sensor_x, sensor_y);
   }
 
-  // --- グリッドリセット → フィルタ＆マーク → 膨張 → 配信 ---
+  // --- グリッドリセット → Stage 2: フィルタ＆マーク → 膨張 → 配信 ---
   std::fill(local_grid_.begin(), local_grid_.end(), FREE);
   occ_cells_.clear();
   voxel_used_.clear();
@@ -205,13 +221,84 @@ void CostmapBuildNode::onUpdate()
 }
 
 // ===========================================================================
-// 点群フィルタリング＆マーキング
-// クロップ / 高さ / 距離 / ボクセル重複を適用し、通過した点を LETHAL にマーキング
+// Stage 1: ロボット自身の点群除去
+// NaN/Inf 除去 と センサ原点から self_crop_min_range_m_ 以内の点を除去し、
+// 中間点群を構築・配信する
+// ===========================================================================
+sensor_msgs::msg::PointCloud2 CostmapBuildNode::removeSelfPoints(
+  const sensor_msgs::msg::PointCloud2 & cloud, double sensor_x, double sensor_y)
+{
+  if (!hasField(cloud, "x") || !hasField(cloud, "y") || !hasField(cloud, "z")) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "PointCloud2 has no x/y/z fields.");
+    return cloud;
+  }
+
+  // 元の点群構造（全フィールド）を保持したまま、通過した点のバイト列をコピーする
+  const uint32_t point_step = cloud.point_step;
+  const size_t total_points = static_cast<size_t>(cloud.width) * cloud.height;
+
+  // 通過する点のインデックスを収集
+  std::vector<size_t> kept_indices;
+  kept_indices.reserve(total_points);
+
+  sensor_msgs::PointCloud2ConstIterator<float> it_x(cloud, "x");
+  sensor_msgs::PointCloud2ConstIterator<float> it_y(cloud, "y");
+  sensor_msgs::PointCloud2ConstIterator<float> it_z(cloud, "z");
+
+  for (size_t i = 0; it_x != it_x.end(); ++it_x, ++it_y, ++it_z, ++i) {
+    const float x = *it_x;
+    const float y = *it_y;
+    const float z = *it_z;
+
+    // NaN / Inf 除去
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+      continue;
+    }
+
+    // センサ原点からの距離が self_crop_min_range_m_ 以内 → ロボット自身とみなし除去
+    const double dx = static_cast<double>(x) - sensor_x;
+    const double dy = static_cast<double>(y) - sensor_y;
+    const double rsq = dx * dx + dy * dy;
+    if (rsq < self_crop_min_range_sq_) {
+      continue;
+    }
+
+    kept_indices.push_back(i);
+  }
+
+  // 元の点群と同じフィールド構造で結果を構築（全フィールド保持）
+  sensor_msgs::msg::PointCloud2 result;
+  result.header = cloud.header;
+  result.fields = cloud.fields;
+  result.point_step = point_step;
+  result.height = 1;
+  result.width = static_cast<uint32_t>(kept_indices.size());
+  result.row_step = result.width * point_step;
+  result.is_bigendian = cloud.is_bigendian;
+  result.is_dense = true;
+  result.data.resize(static_cast<size_t>(result.width) * point_step);
+
+  for (size_t out_i = 0; out_i < kept_indices.size(); ++out_i) {
+    std::memcpy(
+      &result.data[out_i * point_step], &cloud.data[kept_indices[out_i] * point_step], point_step);
+  }
+
+  // 自身除去済み点群を配信
+  if (publish_no_self_points_) {
+    pub_points_no_self_->publish(result);
+  }
+
+  return result;
+}
+
+// ===========================================================================
+// Stage 2: 点群フィルタリング＆マーキング
+// XYクロップ / 高さ / 最大距離 / ボクセル重複を適用し、通過した点を LETHAL にマーキング
+// (自身の点群は Stage 1 で既に除去済み)
 // ===========================================================================
 void CostmapBuildNode::filterAndMarkPoints(
-  const sensor_msgs::msg::PointCloud2 & cloud,
-  double sensor_x, double sensor_y,
-  double robot_x, double robot_y)
+  const sensor_msgs::msg::PointCloud2 & cloud, double sensor_x, double sensor_y, double robot_x,
+  double robot_y)
 {
   if (!hasField(cloud, "x") || !hasField(cloud, "y") || !hasField(cloud, "z")) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "PointCloud2 has no x/y/z fields.");
@@ -235,27 +322,40 @@ void CostmapBuildNode::filterAndMarkPoints(
     const float y = *it_y;
     const float z = *it_z;
 
-    // NaN / Inf 除去
-    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {continue;}
+    // NaN / Inf 除去 (念のため再チェック)
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+      continue;
+    }
 
     // XYクロップ
-    if (std::fabs(static_cast<double>(x) - robot_x) > crop_xy_m_) {continue;}
-    if (std::fabs(static_cast<double>(y) - robot_y) > crop_xy_m_) {continue;}
+    if (std::fabs(static_cast<double>(x) - robot_x) > crop_xy_m_) {
+      continue;
+    }
+    if (std::fabs(static_cast<double>(y) - robot_y) > crop_xy_m_) {
+      continue;
+    }
 
     // 高さフィルタ
-    if (z < min_z_m_ || z > max_z_m_) {continue;}
+    if (z < min_z_m_ || z > max_z_m_) {
+      continue;
+    }
 
-    // 距離フィルタ（二乗比較で sqrt 回避）
+    // 最大距離フィルタ（二乗比較で sqrt 回避）
+    // 最小距離は Stage 1 で既に除去済み
     const double dx = static_cast<double>(x) - sensor_x;
     const double dy = static_cast<double>(y) - sensor_y;
     const double rsq = dx * dx + dy * dy;
-    if (rsq < min_range_sq_ || rsq > max_range_sq_) {continue;}
+    if (rsq > max_range_sq_) {
+      continue;
+    }
 
     // ボクセルダウンサンプリング
     const int32_t vx = static_cast<int32_t>(std::floor(static_cast<double>(x) / voxel_leaf_m_));
     const int32_t vy = static_cast<int32_t>(std::floor(static_cast<double>(y) / voxel_leaf_m_));
     const int32_t vz = static_cast<int32_t>(std::floor(static_cast<double>(z) / voxel_leaf_m_));
-    if (!voxel_used_.emplace(VoxelKey{vx, vy, vz}).second) {continue;}
+    if (!voxel_used_.emplace(VoxelKey{vx, vy, vz}).second) {
+      continue;
+    }
 
     // デバッグ点群（上限付き）
     if (publish_filtered_points_ && static_cast<int>(dbg_x.size()) < max_debug_points_) {
@@ -276,14 +376,10 @@ void CostmapBuildNode::filterAndMarkPoints(
 // PointCloud2 に指定名フィールドが含まれるか確認する
 // ===========================================================================
 bool CostmapBuildNode::hasField(
-  const sensor_msgs::msg::PointCloud2 & cloud,
-  const std::string & name) const
+  const sensor_msgs::msg::PointCloud2 & cloud, const std::string & name) const
 {
   return std::any_of(
-    cloud.fields.begin(), cloud.fields.end(),
-    [&name](const auto & f) {
-      return f.name == name;
-    });
+    cloud.fields.begin(), cloud.fields.end(), [&name](const auto & f) { return f.name == name; });
 }
 
 // ===========================================================================
@@ -291,20 +387,18 @@ bool CostmapBuildNode::hasField(
 // 取得できなかった場合は false を返す
 // ===========================================================================
 bool CostmapBuildNode::get2DTranslation(
-  const std::string & target, const std::string & source,
-  double & x, double & y)
+  const std::string & target, const std::string & source, double & x, double & y)
 {
   try {
     const auto tf = tf_buffer_.lookupTransform(
-      target, source, tf2::TimePointZero,
-      std::chrono::milliseconds(tf_timeout_ms_));
+      target, source, tf2::TimePointZero, std::chrono::milliseconds(tf_timeout_ms_));
     x = tf.transform.translation.x;
     y = tf.transform.translation.y;
     return true;
   } catch (const tf2::TransformException & ex) {
     RCLCPP_WARN_THROTTLE(
-      get_logger(), *get_clock(), 2000, "TF failed (%s <- %s): %s",
-      target.c_str(), source.c_str(), ex.what());
+      get_logger(), *get_clock(), 2000, "TF failed (%s <- %s): %s", target.c_str(), source.c_str(),
+      ex.what());
     return false;
   }
 }
@@ -319,8 +413,7 @@ bool CostmapBuildNode::get2DTranslation(
 // in.header.stamp で引くと変換が必ず失敗するため、最新 TF を使用する。
 // ===========================================================================
 bool CostmapBuildNode::transformPointCloudToFrame(
-  const sensor_msgs::msg::PointCloud2 & in,
-  const std::string & target_frame,
+  const sensor_msgs::msg::PointCloud2 & in, const std::string & target_frame,
   sensor_msgs::msg::PointCloud2 & out)
 {
   try {
@@ -363,7 +456,9 @@ void CostmapBuildNode::setOccupied(double wx, double wy)
   }
   const int idx = lidx(ix, iy);
   // 既に LETHAL のセルは重複登録しない（同一2Dセルへの複数点を排除）
-  if (local_grid_[idx] == LETHAL) {return;}
+  if (local_grid_[idx] == LETHAL) {
+    return;
+  }
   local_grid_[idx] = LETHAL;
   occ_cells_.emplace_back(ix, iy);
 }
@@ -380,7 +475,9 @@ void CostmapBuildNode::applyInflation()
     for (const auto & k : inflation_kernel_) {
       const int nx = cx + k.dx;
       const int ny = cy + k.dy;
-      if (nx < 0 || nx >= size_x_ || ny < 0 || ny >= size_y_) {continue;}
+      if (nx < 0 || nx >= size_x_ || ny < 0 || ny >= size_y_) {
+        continue;
+      }
       auto & cell = local_grid_[lidx(nx, ny)];
       cell = std::max(cell, k.cost);
     }
@@ -414,9 +511,7 @@ void CostmapBuildNode::publishLocal()
 // xyz のみの PointCloud2 を構築して配信する
 // ===========================================================================
 void CostmapBuildNode::publishFilteredPoints(
-  const std::vector<float> & xs,
-  const std::vector<float> & ys,
-  const std::vector<float> & zs)
+  const std::vector<float> & xs, const std::vector<float> & ys, const std::vector<float> & zs)
 {
   sensor_msgs::msg::PointCloud2 cloud;
   cloud.header.stamp = now();

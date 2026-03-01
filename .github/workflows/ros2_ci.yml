@@ -51,6 +51,11 @@ jobs:
       - name: Install ament-clang-format
         run: apt-get install -y ros-${{ matrix.rosdistro }}-ament-clang-format clang-format
 
+      - name: Install SOEM
+        run: |
+          apt-get install -y curl unzip
+          bash /ros2_ws/src/core2026/core_hardware/install_soem.sh
+
       - name: Build tests
         id: build_test
         run: |

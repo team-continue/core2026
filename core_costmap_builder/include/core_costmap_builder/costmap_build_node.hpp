@@ -8,15 +8,14 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
-#include <string>
-#include <unordered_set>
-#include <utility>
-#include <vector>
-
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 // ボクセルダウンサンプリング用の格子キー
 // 3D空間を voxel_leaf_m 刻みの整数格子に分割し、
@@ -27,7 +26,7 @@ struct VoxelKey
   int32_t iy;
   int32_t iz;
 
-  bool operator==(const VoxelKey & o) const {return ix == o.ix && iy == o.iy && iz == o.iz;}
+  bool operator==(const VoxelKey & o) const { return ix == o.ix && iy == o.iy && iz == o.iz; }
 };
 
 // VoxelKey のハッシュ関数（unordered_set で使用）
@@ -77,13 +76,11 @@ private:
 
   /// @brief 2フレーム間の2D並進（x, y）を取得する
   bool get2DTranslation(
-    const std::string & target, const std::string & source, double & x,
-    double & y);
+    const std::string & target, const std::string & source, double & x, double & y);
 
   /// @brief 点群を指定フレームに座標変換する
   bool transformPointCloudToFrame(
-    const sensor_msgs::msg::PointCloud2 & in,
-    const std::string & target_frame,
+    const sensor_msgs::msg::PointCloud2 & in, const std::string & target_frame,
     sensor_msgs::msg::PointCloud2 & out);
 
   // --- 点群ユーティリティ ---
@@ -91,11 +88,14 @@ private:
   /// @brief PointCloud2 に指定名のフィールドが存在するか確認する
   bool hasField(const sensor_msgs::msg::PointCloud2 & cloud, const std::string & name) const;
 
-  /// @brief 点群をフィルタリングし、通過した点をグリッドにマーキング・デバッグ配信する
+  /// @brief ロボット自身の点群を除去し、中間点群を構築・配信する (Stage 1)
+  sensor_msgs::msg::PointCloud2 removeSelfPoints(
+    const sensor_msgs::msg::PointCloud2 & cloud, double sensor_x, double sensor_y);
+
+  /// @brief 点群をフィルタリングし、通過した点をグリッドにマーキング・デバッグ配信する (Stage 2)
   void filterAndMarkPoints(
-    const sensor_msgs::msg::PointCloud2 & cloud,
-    double sensor_x, double sensor_y,
-    double robot_x, double robot_y);
+    const sensor_msgs::msg::PointCloud2 & cloud, double sensor_x, double sensor_y, double robot_x,
+    double robot_y);
 
   // --- グリッド操作 ---
 
@@ -103,7 +103,7 @@ private:
   bool worldToLocalCell(double wx, double wy, int & ix, int & iy) const;
 
   /// @brief セル座標 (ix, iy) を1次元インデックスに変換する（行優先）
-  inline int lidx(int ix, int iy) const {return iy * size_x_ + ix;}
+  inline int lidx(int ix, int iy) const { return iy * size_x_ + ix; }
 
   /// @brief 指定ワールド座標のセルを LETHAL にし、occ_cells_ に追加する
   void setOccupied(double wx, double wy);
@@ -118,8 +118,7 @@ private:
 
   /// @brief フィルタ後の点群をデバッグ用にパブリッシュする
   void publishFilteredPoints(
-    const std::vector<float> & xs, const std::vector<float> & ys,
-    const std::vector<float> & zs);
+    const std::vector<float> & xs, const std::vector<float> & ys, const std::vector<float> & zs);
 
 private:
   // --- OccupancyGrid のセル値定数 ---
@@ -132,45 +131,50 @@ private:
   tf2_ros::TransformListener tf_listener_;  // TFリスナー
 
   // --- サブスクライバ / パブリッシャ ---
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_points_;    // 入力点群
-  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_local_;         // コストマップ
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_points_;  // 入力点群
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr pub_local_;       // コストマップ
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_points_filt_;  // デバッグ点群
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+    pub_points_no_self_;                // 自身除去済み点群
   rclcpp::TimerBase::SharedPtr timer_;  // 更新タイマー
 
   // --- トピック名 / フレーム名 ---
   std::string points_in_topic_;                        // 入力点群トピック
   std::string points_filt_topic_, local_topic_;        // 出力トピック
+  std::string points_no_self_topic_;                   // 自身除去済みトピック
   std::string odom_frame_, base_frame_, lidar_frame_;  // 座標フレーム
 
   // --- パラメータ ---
-  double local_width_m_{10.0};       // ローリングウィンドウの幅 [m]
-  double local_height_m_{10.0};      // ローリングウィンドウの高さ [m]
-  double resolution_m_{0.05};        // セル解像度 [m/cell]
-  double update_hz_{15.0};           // 更新周波数 [Hz]
+  double local_width_m_{10.0};   // ローリングウィンドウの幅 [m]
+  double local_height_m_{10.0};  // ローリングウィンドウの高さ [m]
+  double resolution_m_{0.05};    // セル解像度 [m/cell]
+  double update_hz_{15.0};       // 更新周波数 [Hz]
 
-  double crop_xy_m_{6.0};            // ロボット中心からのXYクロップ範囲 [m]
-  double min_z_m_{0.10};             // 有効な点の最小Z高さ [m]（odomフレーム基準）
-  double max_z_m_{1.60};             // 有効な点の最大Z高さ [m]
-  double voxel_leaf_m_{0.05};        // ボクセルダウンサンプリングの格子サイズ [m]
-  double min_range_m_{0.30};         // センサからの最小有効距離 [m]
-  double max_range_m_{6.0};          // センサからの最大有効距離 [m]
+  double crop_xy_m_{6.0};      // ロボット中心からのXYクロップ範囲 [m]
+  double min_z_m_{0.10};       // 有効な点の最小Z高さ [m]（odomフレーム基準）
+  double max_z_m_{1.60};       // 有効な点の最大Z高さ [m]
+  double voxel_leaf_m_{0.05};  // ボクセルダウンサンプリングの格子サイズ [m]
+  double self_crop_min_range_m_{0.30};  // 自身除去用の最小距離 [m] (Stage 1)
+  double min_range_m_{0.30};  // センサからの最小有効距離 [m] (後方互換用、Stage 1 で使用)
+  double max_range_m_{6.0};  // センサからの最大有効距離 [m]
 
   double robot_radius_m_{0.71};      // ロボット半径 [m]（この内側は LETHAL）
   double inflation_radius_m_{0.90};  // インフレーション半径 [m]
 
-  double points_timeout_sec_{0.2};   // 点群タイムアウト [秒]
-  int tf_timeout_ms_{50};            // TF待ちタイムアウト [ms]
+  double points_timeout_sec_{0.2};  // 点群タイムアウト [秒]
+  int tf_timeout_ms_{50};           // TF待ちタイムアウト [ms]
 
   bool publish_filtered_points_{true};  // デバッグ用フィルタ点群を出すか
+  bool publish_no_self_points_{true};   // 自身除去済み点群を出すか
   int max_debug_points_{20000};         // デバッグ点群の最大点数
 
-  double min_range_sq_{0.09};   // min_range_m_ の二乗（高速比較用）
-  double max_range_sq_{36.0};   // max_range_m_ の二乗（高速比較用）
+  double self_crop_min_range_sq_{0.09};  // self_crop_min_range_m_ の二乗
+  double max_range_sq_{36.0};            // max_range_m_ の二乗（高速比較用）
 
   // --- ローカルグリッド ---
-  int size_x_{0}, size_y_{0};                          // グリッドのセル数
-  double local_origin_x_{0.0}, local_origin_y_{0.0};   // グリッド原点のワールド座標
-  std::vector<int8_t> local_grid_;                      // コストマップ本体
+  int size_x_{0}, size_y_{0};                         // グリッドのセル数
+  double local_origin_x_{0.0}, local_origin_y_{0.0};  // グリッド原点のワールド座標
+  std::vector<int8_t> local_grid_;                    // コストマップ本体
 
   // --- 事前計算済みバッファ（毎サイクル再利用） ---
   std::vector<InflationCell> inflation_kernel_;            // インフレーションカーネル
