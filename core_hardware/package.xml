@@ -17,6 +17,7 @@
   <depend>unzip</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>curl</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -51,7 +51,7 @@ class HaruHardware : public rclcpp::Node {
             "can/tx", 10, std::bind(&HaruHardware ::can_cb, this, _1));
         timer_ = this->create_wall_timer(10ms, std::bind(&HaruHardware::timer_cb, this));
 
-        joint_states_.name = std::vector<std::string>{"wheel1", "wheel2", "wheel3", "wheel4", "rotate", "bottom", "up", "left", "right"};
+        joint_states_.name = std::vector<std::string>{};
         joint_states_.effort.resize(JOINT_NUM, 0);
         joint_states_.velocity.resize(JOINT_NUM, 0);
         joint_states_.position.resize(JOINT_NUM, 0);
@@ -59,11 +59,10 @@ class HaruHardware : public rclcpp::Node {
 
    private:
     void timer_cb() {
-        int uint8_len, flt_len, rx_len, i;
-        float* flt_addr;
-        uint8_t can_id, *uint8_addr;
-        int* int_addr;
-        double q1, q2, q3, q0;
+        int uint8_len=0, flt_len=0, rx_len=0, i=0;
+        float* flt_addr=nullptr;
+        uint8_t can_id=0, *uint8_addr=nullptr;
+        // int *int_addr=nullptr;
 
         core_msgs::msg::CANArray can_array;
 
@@ -87,7 +86,7 @@ class HaruHardware : public rclcpp::Node {
                     flt_len = uint8_len / 4;
                     uint8_addr = &rx_data_[i + 2];
                     flt_addr = (float*)uint8_addr;
-                    int_addr = (int*)uint8_addr;
+                    // int_addr = (int*)uint8_addr;
                     i += (uint8_len + 2);
                     if(uint8_len == 0){
                         // 何もしない

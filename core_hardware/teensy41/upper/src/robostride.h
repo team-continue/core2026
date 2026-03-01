@@ -164,20 +164,23 @@ FCTP_CLASS class RoboStride : public MotorBase {
     float mit_velocity_command_rad_s_ = 0.f; // For velocity control mode
     float mit_torque_command_nm_ = 0.f; // For torque control mode
 
+    float pos_offset_ = 0.0f;
+
 public:
     MotorState &feedback;
     MotorRef &ref;
     data_read_write drw;
 
-    RoboStride(FlexCAN_T4<_bus, _rxSize, _txSize> *can, uint8_t master_id, uint8_t motor_id, int actuator_type) :
+    RoboStride(FlexCAN_T4<_bus, _rxSize, _txSize> *can, uint8_t master_id, uint8_t motor_id, int actuator_type, float pos_offset) :
         master_id_(master_id),
         motor_id_(motor_id),
         actuator_type_(actuator_type),
         can_(can),
         feedback(motor_state),
-        ref(motor_ref)
+        ref(motor_ref),
+        pos_offset_(pos_offset)
     {
-        ref.position_rad = 3.14;
+        ref.position_rad = 0.0f;
         ref.velocity_rad_s = 0.0f;
         ref.torque_nm = 0.0f;
         ref.kp_vel = 2.0f;
@@ -368,7 +371,7 @@ public:
             case 0: {
                 if (configured_run_mode_ == PosPP_control_mode) {
                     // Hold current angle in PosPP mode.
-                    send_pospp_mode_command(3.14, false);
+                    send_pospp_mode_command(0.0f + pos_offset_, false);
                 } else {
                     send_velocity_mode_command(0, false);
                 }
@@ -393,7 +396,7 @@ public:
                     //     ref.kd_pos,
                     //     false
                     // );
-                    send_pospp_mode_command(ref.position_rad, false);
+                    send_pospp_mode_command(ref.position_rad + pos_offset_, false);
                 }
                 break;
             }
@@ -479,7 +482,7 @@ private:
 
             accumulated_position_rad_ = (static_cast<float>(position_turns_) * full_range) + current_raw_pos;
             prev_raw_position_rad_ = current_raw_pos;
-            feedback.position_rad = accumulated_position_rad_;
+            feedback.position_rad = accumulated_position_rad_ - pos_offset_;
             feedback.velocity_rad_s = uint_to_float(vel_u16, -(float)op.velocity, (float)op.velocity, 16);
             feedback.torque_nm = uint_to_float(tor_u16, -(float)op.torque, (float)op.torque, 16);
             feedback.temp_mos = (float)temp_u16 * 0.1f;

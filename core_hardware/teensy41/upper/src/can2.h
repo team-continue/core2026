@@ -13,13 +13,15 @@
 #define CAN2_RS05_INIT_RUN_MODE PosPP_control_mode
 #define CAN2_RS5_SET_GAIN false
 #define CAN2_RS5_CHECK_GAIN false
+#define CAN2_RS5_OFFSET_POSITION_1 (M_PI + 1.25f)
+#define CAN2_RS5_OFFSET_POSITION_2 (M_PI + 0.1f)
 
 volatile bool can2_waiting_reply = false;
 
 FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> can2;
 RoboStride<CAN2, RX_SIZE_256, TX_SIZE_16> can2_motor[CAN2_NUM_MOTOR] = {
-  RoboStride(&can2, 253, 0x01, (int)ActuatorType::ROBSTRIDE_05),
-  RoboStride(&can2, 253, 0x02, (int)ActuatorType::ROBSTRIDE_05)
+  RoboStride(&can2, 253, 0x01, (int)ActuatorType::ROBSTRIDE_05, CAN2_RS5_OFFSET_POSITION_1),
+  RoboStride(&can2, 253, 0x02, (int)ActuatorType::ROBSTRIDE_05, CAN2_RS5_OFFSET_POSITION_2)
 };
 RoboStride<CAN2, RX_SIZE_256, TX_SIZE_16> *can2_robostride = can2_motor;  // backward compatibility
 // CAN2 受信割り込み処理
