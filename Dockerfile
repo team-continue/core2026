@@ -1,15 +1,41 @@
-FROM osrf/ros:humble-desktop
+FROM ros:humble-ros-base
+
+SHELL ["/bin/bash", "-c"]
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Base tools for dependency resolution and workspace build.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-rosdep \
+    python3-colcon-common-extensions \
+    && rm -rf /var/lib/apt/lists/*
+
+# rosdep init may already be configured in some base images.
+RUN rosdep init 2>/dev/null || true
 
 # For my own packages.
 WORKDIR /ros2_ws
-COPY . /ros2_ws/src/core2026
+# Copy only package manifests first (keep directory hierarchy) to maximize cache hit for dependency install.
+COPY core_body_controller/package.xml /ros2_ws/src/core2026/core_body_controller/package.xml
+COPY core_costmap_builder/package.xml /ros2_ws/src/core2026/core_costmap_builder/package.xml
+COPY core_hardware/package.xml /ros2_ws/src/core2026/core_hardware/package.xml
+COPY core_launch/package.xml /ros2_ws/src/core2026/core_launch/package.xml
+COPY core_msgs/package.xml /ros2_ws/src/core2026/core_msgs/package.xml
+COPY core_path_follower/package.xml /ros2_ws/src/core2026/core_path_follower/package.xml
+COPY core_test/package.xml /ros2_ws/src/core2026/core_test/package.xml
+COPY core_tools/package.xml /ros2_ws/src/core2026/core_tools/package.xml
 RUN set -eo pipefail \
     && source /opt/ros/humble/setup.bash \
     && rosdep update \
     && apt-get update \
     && rosdep install --from-paths src --ignore-src --rosdistro humble -y \
-    && colcon build --base-paths /ros2_ws \
     && rm -rf /var/lib/apt/lists/*
+
+# Then copy source code and build.
+COPY . /ros2_ws/src/core2026
+RUN set -eo pipefail \
+    && source /opt/ros/humble/setup.bash \
+    && colcon build --base-paths /ros2_ws
 
 RUN apt update && apt install -y --no-install-recommends \
     python3-pip \
@@ -17,8 +43,8 @@ RUN apt update && apt install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir pythonQwt
 
 #ワークスペースのビルド
-RUN . /opt/ros/humble/setup.bash && \
-   colcon build --symlink-install
+# RUN . /opt/ros/humble/setup.bash && \
+#    colcon build --symlink-install
 
 RUN echo '. /opt/ros/humble/setup.bash' >> /root/.bashrc && \
     echo 'export ROS2_WS=ros2_ws' >> /root/.bashrc && \

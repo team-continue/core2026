@@ -37,7 +37,7 @@
      </rect>
     </property>
     <property name="title">
-     <string>電流</string>
+     <string>Current</string>
     </property>
     <widget class="QwtPlot" name="curr_plot">
      <property name="geometry">
@@ -59,7 +59,7 @@
       </rect>
      </property>
      <property name="text">
-      <string>最大 :</string>
+      <string>Max:</string>
      </property>
     </widget>
     <widget class="QDoubleSpinBox" name="curr_limit_max">
@@ -113,7 +113,7 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>70</y>
+       <y>55</y>
        <width>113</width>
        <height>29</height>
       </rect>
@@ -129,7 +129,7 @@
      <property name="geometry">
       <rect>
        <x>140</x>
-       <y>70</y>
+       <y>55</y>
        <width>51</width>
        <height>31</height>
       </rect>
@@ -142,21 +142,63 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>40</y>
-       <width>71</width>
+       <y>30</y>
+       <width>160</width>
        <height>31</height>
       </rect>
      </property>
      <property name="text">
-      <string>目標値</string>
+      <string>Target (/can/tx)</string>
+      </property>
+     </widget>
+    <widget class="QLabel" name="curr_rx_target_label">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>88</y>
+       <width>160</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Target (/can/rx)</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="curr_rx_target_box">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>113</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="curr_rx_target_unit">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>113</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>A</string>
      </property>
     </widget>
     <widget class="QLabel" name="label_16">
      <property name="geometry">
       <rect>
        <x>140</x>
-       <y>150</y>
-       <width>61</width>
+       <y>170</y>
+       <width>51</width>
        <height>31</height>
       </rect>
      </property>
@@ -168,20 +210,20 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>120</y>
-       <width>71</width>
+       <y>145</y>
+       <width>180</width>
        <height>31</height>
       </rect>
      </property>
      <property name="text">
-      <string>測定値</string>
-     </property>
-    </widget>
+      <string>Measured (/can/rx)</string>
+      </property>
+     </widget>
     <widget class="QLineEdit" name="curr_state">
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>150</y>
+       <y>170</y>
        <width>113</width>
        <height>29</height>
       </rect>
@@ -214,7 +256,7 @@
      </rect>
     </property>
     <property name="title">
-     <string>速度</string>
+     <string>Speed</string>
     </property>
     <widget class="QwtPlot" name="vel_plot">
      <property name="geometry">
@@ -322,7 +364,7 @@
       </rect>
      </property>
      <property name="text">
-      <string>最大 :</string>
+      <string>Max:</string>
      </property>
     </widget>
     <widget class="QDoubleSpinBox" name="vel_limit_max">
@@ -345,20 +387,20 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>40</y>
-       <width>71</width>
+       <y>30</y>
+       <width>160</width>
        <height>31</height>
       </rect>
      </property>
      <property name="text">
-      <string>目標値</string>
-     </property>
-    </widget>
+      <string>Target (/can/tx)</string>
+      </property>
+     </widget>
     <widget class="QLabel" name="label_17">
      <property name="geometry">
       <rect>
        <x>140</x>
-       <y>70</y>
+       <y>55</y>
        <width>51</width>
        <height>31</height>
       </rect>
@@ -371,7 +413,7 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>70</y>
+       <y>55</y>
        <width>113</width>
        <height>29</height>
       </rect>
@@ -387,8 +429,8 @@
      <property name="geometry">
       <rect>
        <x>140</x>
-       <y>150</y>
-       <width>61</width>
+       <y>170</y>
+       <width>51</width>
        <height>31</height>
       </rect>
      </property>
@@ -400,7 +442,7 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>150</y>
+       <y>170</y>
        <width>113</width>
        <height>29</height>
       </rect>
@@ -416,13 +458,55 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>120</y>
-       <width>71</width>
+       <y>145</y>
+       <width>180</width>
        <height>31</height>
       </rect>
      </property>
      <property name="text">
-      <string>測定値</string>
+      <string>Measured (/can/rx)</string>
+      </property>
+     </widget>
+    <widget class="QLabel" name="vel_rx_target_label">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>88</y>
+       <width>160</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Target (/can/rx)</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="vel_rx_target_box">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>113</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="vel_rx_target_unit">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>113</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>rad/s</string>
      </property>
     </widget>
    </widget>
@@ -436,7 +520,7 @@
      </rect>
     </property>
     <property name="title">
-     <string>位置</string>
+     <string>Position</string>
     </property>
     <widget class="QwtPlot" name="pos_plot">
      <property name="geometry">
@@ -521,7 +605,7 @@
       </rect>
      </property>
      <property name="text">
-      <string>最大 :</string>
+      <string>Max:</string>
      </property>
     </widget>
     <widget class="QLabel" name="label_4">
@@ -534,7 +618,7 @@
       </rect>
      </property>
      <property name="text">
-      <string>最小 :</string>
+      <string>Min:</string>
      </property>
     </widget>
     <widget class="QDoubleSpinBox" name="pos_limit_max">
@@ -579,7 +663,7 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>150</y>
+       <y>170</y>
        <width>113</width>
        <height>29</height>
       </rect>
@@ -595,20 +679,20 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>120</y>
-       <width>71</width>
+       <y>145</y>
+       <width>180</width>
        <height>31</height>
       </rect>
      </property>
      <property name="text">
-      <string>測定値</string>
-     </property>
-    </widget>
+      <string>Measured (/can/rx)</string>
+      </property>
+     </widget>
     <widget class="QLabel" name="label_12">
      <property name="geometry">
       <rect>
        <x>140</x>
-       <y>150</y>
+       <y>170</y>
        <width>51</width>
        <height>31</height>
       </rect>
@@ -621,7 +705,7 @@
      <property name="geometry">
       <rect>
        <x>140</x>
-       <y>70</y>
+       <y>55</y>
        <width>51</width>
        <height>31</height>
       </rect>
@@ -634,20 +718,20 @@
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>40</y>
-       <width>71</width>
+       <y>30</y>
+       <width>160</width>
        <height>31</height>
       </rect>
      </property>
      <property name="text">
-      <string>目標値</string>
-     </property>
-    </widget>
+      <string>Target (/can/tx)</string>
+      </property>
+     </widget>
     <widget class="QLineEdit" name="pos_ref_box">
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>70</y>
+       <y>55</y>
        <width>113</width>
        <height>29</height>
       </rect>
@@ -657,6 +741,48 @@
      </property>
      <property name="readOnly">
       <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="pos_rx_target_label">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>88</y>
+       <width>160</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Target (/can/rx)</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="pos_rx_target_box">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>113</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="pos_rx_target_unit">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>113</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>rad</string>
      </property>
     </widget>
    </widget>
@@ -670,7 +796,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>停止</string>
+     <string>Stop</string>
     </property>
     <property name="shortcut">
      <string>Space</string>
@@ -686,10 +812,36 @@
      </rect>
     </property>
     <property name="text">
-     <string>ゲインを設定</string>
+     <string>Set Gain</string>
     </property>
     <property name="shortcut">
      <string>Space</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="mode_status_label">
+    <property name="geometry">
+     <rect>
+      <x>360</x>
+      <y>95</y>
+      <width>220</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Mode: Position</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="tx_status_label">
+    <property name="geometry">
+     <rect>
+      <x>360</x>
+      <y>125</y>
+      <width>220</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>100Hz: Disabled (Space)</string>
     </property>
    </widget>
   </widget>
