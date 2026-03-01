@@ -90,7 +90,7 @@ rcl_interfaces::msg::SetParametersResult targetDetector::changeParameter(const s
     auto result = rcl_interfaces::msg::SetParametersResult();
     for(auto &param : parameters){
         std::string name = param.get_name();
-        if(name == "team"){
+        if(name == "enemy"){
             auto paramValue = param.as_integer_array();
             mode = static_cast<int32_t>(paramValue[0]);
             result.successful = true;
