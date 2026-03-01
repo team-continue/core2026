@@ -10,8 +10,12 @@
 #define CAN1_NUM_MOTOR (CAN1_NUM_DAMIAO + CAN1_NUM_ROBOSTRIDE)
 #define CAN1_RESEND_INTERVAL_MS 1
 #define CAN1_TIMEOUT_MS 1000
-#define CAN1_RS06_CURRENT_MAX 10.0f
-#define CAN1_RS06_TORQUE_MAX 10.0f
+#define CAN2_RS05_SPEED_LIMIT 1.0 // rad/s
+#define CAN2_RS05_ACC_LIMIT 3.0f // rad/s^2
+#define CAN2_RS05_INIT_RUN_MODE PosPP_control_mode
+#define CAN2_RS5_SET_GAIN false
+#define CAN2_RS5_CHECK_GAIN false
+
 
 volatile bool can1_waiting_reply = false;
 
@@ -64,7 +68,7 @@ void can1_init() {
 
     for (size_t i = 0; i < CAN1_NUM_ROBOSTRIDE; ++i) {
       delay(100);
-      if (!robostride_can1[i].init(CAN1_RS06_CURRENT_MAX, CAN1_RS06_TORQUE_MAX)) {
+      if (!robostride_can1[i].init(CAN2_RS05_SPEED_LIMIT, CAN2_RS05_ACC_LIMIT, CAN2_RS05_INIT_RUN_MODE, CAN2_RS5_SET_GAIN, CAN2_RS5_CHECK_GAIN)) {
         Serial.print("Error: RoboStride(can1) ");
         Serial.print(i + 1);
         Serial.println(" Init Failed!");

@@ -10,7 +10,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake_auto REQUIRED)
-find_package(core_msgs REQUIRED)
 
 ament_auto_find_build_dependencies()
 
@@ -26,13 +25,13 @@ if(NOT TARGET soem)
 endif()
 
 #ノード追加
-ament_auto_add_executable(core_hardware src/core_hardware.cpp)
+# ament_auto_add_executable(core_hardware src/core_hardware.cpp)
 ament_auto_add_executable(core_hardware_usb src/core_hardware_usb.cpp)
-target_link_libraries(core_hardware soem)
-target_include_directories(core_hardware 
-  PRIVATE 
-  $<TARGET_PROPERTY:soem,INTERFACE_INCLUDE_DIRECTORIES>
-)
+# # target_link_libraries(core_hardware soem)
+# target_include_directories(core_hardware 
+#   PRIVATE 
+#   $<TARGET_PROPERTY:soem,INTERFACE_INCLUDE_DIRECTORIES>
+# )
 
 target_link_libraries(core_hardware_usb 
   ${core_msgs_LIBRARIES}

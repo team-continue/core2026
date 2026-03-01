@@ -44,6 +44,7 @@
 #define Communication_Type_GetSingleParameter    0x11  // 读取单个参数
 #define Communication_Type_SetSingleParameter    0x12  // 设定单个参数
 #define Communication_Type_ErrorFeedback         0x15  // 故障反馈帧
+#define Communication_Type_SetBaudRate           0x17  // 设置电机波特率（重启生效）
 
 static const uint16_t Index_List[] = {
     0X7005, 0X7006, 0X700A, 0X700B, 0X7010, 0X7011, 0X7014, 0X7016, 0X7017, 0X7018,
@@ -66,6 +67,13 @@ enum class ActuatorType {
     ROBSTRIDE_04 = 4,
     ROBSTRIDE_05 = 5,
     ROBSTRIDE_06 = 6
+};
+
+enum class RoboStrideBaudRate : uint8_t {
+    BAUD_1M = 0x01,
+    BAUD_500K = 0x02,
+    BAUD_250K = 0x03,
+    BAUD_125K = 0x04,
 };
 
 struct ActuatorOperation {
@@ -172,7 +180,7 @@ public:
         ref.position_rad = 3.14;
         ref.kp_vel = 2.0f;
         ref.ki_vel = 0.021f;
-        ref.kp_pos = 1.0f;
+        ref.kp_pos = 10.0f;
         ref.kd_pos = 0.0f;
     }
     ~RoboStride(){}
@@ -181,7 +189,32 @@ public:
     // Requested APIs
     // ===========
 
-    bool init(float mit_torque, float mit_speed, uint8_t init_run_mode, bool set_gain){
+    bool Set_Baud_Rate(RoboStrideBaudRate baud_rate, bool wait_response = false){
+        CAN_message_t w_msg{};
+        w_msg.id = (Communication_Type_SetBaudRate << 24) | (master_id_ << 8) | motor_id_;
+        w_msg.flags.extended = 1;
+        w_msg.len = 8;
+
+        // RoboStride private protocol: fixed key sequence + baud command byte.
+        w_msg.buf[0] = 0x01;
+        w_msg.buf[1] = 0x02;
+        w_msg.buf[2] = 0x03;
+        w_msg.buf[3] = 0x04;
+        w_msg.buf[4] = 0x05;
+        w_msg.buf[5] = 0x06;
+        w_msg.buf[6] = static_cast<uint8_t>(baud_rate);
+        w_msg.buf[7] = 0x00;
+
+        if(can_->write(w_msg) != 1){
+            return false;
+        }
+        if(!wait_response){
+            return true;
+        }
+        return receive_status_frame();
+    }
+
+    bool init(float speed_limit, float acc_limit, uint8_t init_run_mode, bool set_gain, bool check_gain){
         Serial.printf("[RoboStride:init] start (motor_id=%u)\n", motor_id_);
         auto log_step = [&](const char* step, bool ok) -> bool {
             Serial.print("[RoboStride:init] ");
@@ -189,102 +222,62 @@ public:
             Serial.println(ok ? " OK" : " FAIL");
             return ok;
         };
+        auto set_param = [&](uint16_t idx, float value, char set_mode=Set_parameter) -> bool {
+            if(!log_step("Set parameter", Set_RobStrite_Motor_parameter(idx, value, set_mode))) {
+                Serial.printf("[RoboStride:init] Failed to set parameter 0x%04X\n", idx);
+                return false;
+            }
+            delay(500);
+            return true;
+        };
+        auto check_param = [&](data_read_write_one &eeprom, float expected) -> bool {
+            if(!log_step("Get parameter", Get_RobStrite_Motor_parameter(eeprom.index))) {
+                Serial.printf("[RoboStride:init] Failed to get parameter 0x%04X\n", eeprom.index);
+                return false;
+            }
+            if (fabsf(eeprom.data - expected) > 1e-3f) {
+                Serial.printf("[RoboStride:init] Parameter mismatch for 0x%04X: expected=%.5f actual=%.5f\n", eeprom.index, expected, eeprom.data);
+                return false;
+            }
+            Serial.printf("[RoboStride:init] Parameter match for 0x%04X: %.5f\n", eeprom.index, eeprom.data);
+            return true;
+        };
+        auto enableMotor = [&]() -> bool {
+            if(!log_step("Enable motor", enable_motor())) return false;
+            delay(500);
+            return true;
+        };
+        auto disableMotor = [&]() -> bool {
+            if(!log_step("Disable motor", Disenable_Motor(0))) return false;
+            delay(500);
+            return true;
+        };
         configured_run_mode_ = init_run_mode;
-        mit_torque_command_nm_ = mit_torque;
-        mit_velocity_command_rad_s_ = mit_speed;
+        
+        disableMotor();
 
-        // Any missing parameter response => init failure
-        // if(!log_step("Get param 0x7005(run_mode)", Get_RobStrite_Motor_parameter(0x7005))) return false;
-        // if(!log_step("Get param 0x7010(cur_kp)", Get_RobStrite_Motor_parameter(0x7010))) return false;
-        // if(!log_step("Get param 0x7011(cur_ki)", Get_RobStrite_Motor_parameter(0x7011))) return false;
-        // if(!log_step("Get param 0x7014(cur_filt_gain)", Get_RobStrite_Motor_parameter(0x7014))) return false;
+        if(!set_param(drw.run_mode.index, (float)configured_run_mode_, Set_mode)) return false;
+        if(!check_param(drw.run_mode, (float)configured_run_mode_)) return false;
 
-        // // ---- velocity loop ----
-        // if(!log_step("Get param 0x701F(spd_kp)", Get_RobStrite_Motor_parameter(0x701F))) return false;
-        // if(!log_step("Get param 0x7020(spd_ki)", Get_RobStrite_Motor_parameter(0x7020))) return false;
-        // if(!log_step("Get param 0x7021(spd_filt_gain)", Get_RobStrite_Motor_parameter(0x7021))) return false;
-
-        // // ---- position loop ----
-        // if(!log_step("Get param 0x701E(loc_kp)", Get_RobStrite_Motor_parameter(0x701E))) return false;
-
-        // delay(300);
-
-        // Ensure motor is disabled at startup for safety
-        // Disenable_Motor(0);
-        // delay(300);
-
-        // Disenable_Motor(0);
-        // delay(300);
-
-        if(!log_step("Set run_mode(0x7005)", Set_RobStrite_Motor_parameter(drw.run_mode.index, configured_run_mode_, Set_mode))) return false;
-        delay(100);
-
-        // if(!log_step("Get run_mode(0x7005)", Get_RobStrite_Motor_parameter(drw.run_mode.index))) return false;
-        // delay(300);
-        // drw.run_mode.data = (float)configured_run_mode_;
 
         if(set_gain){
             // Speed Kp Gain
-            if(!log_step("Set spd_kp(0x701F)", Set_RobStrite_Motor_parameter(drw.spd_kp.index, ref.kp_vel, Set_parameter))) return false;
-            delay(100);
-            if(!log_step("Get spd_kp(0x701F)", Get_RobStrite_Motor_parameter(drw.spd_kp.index))) return false;
-            delay(100);
-            if (fabsf(drw.spd_kp.data - ref.kp_vel) > 1e-3f) {
-                Serial.printf("[RoboStride:init] spd_kp mismatch set=%.5f get=%.5f\n", ref.kp_vel, drw.spd_kp.data);
-                return false;
-            }else{
-                Serial.printf("[RoboStride:init] spd_kp set/get match: %.5f\n", ref.kp_vel);
-            }
-            // Speed Ki Gain
-            if(!log_step("Set spd_ki(0x7020)", Set_RobStrite_Motor_parameter(drw.spd_ki.index, ref.ki_vel, Set_parameter))) return false;
-            delay(100);
-            if(!log_step("Get spd_ki(0x7020)", Get_RobStrite_Motor_parameter(drw.spd_ki.index))) return false;
-            delay(100);
-            if (fabsf(drw.spd_ki.data - ref.ki_vel) > 1e-3f) {
-                Serial.printf("[RoboStride:init] spd_ki mismatch set=%.5f get=%.5f\n", ref.ki_vel, drw.spd_ki.data);
-                return false;
-            }else{
-                Serial.printf("[RoboStride:init] spd_ki set/get match: %.5f\n", ref.ki_vel);
-            }
-            // Position Kp Gain
-            if(!log_step("Set loc_kp(0x701E)", Set_RobStrite_Motor_parameter(drw.loc_kp.index, ref.kp_pos, Set_parameter))) return false;
-            delay(100);
-            if(!log_step("Get loc_kp(0x701E)", Get_RobStrite_Motor_parameter(drw.loc_kp.index))) return false;
-            delay(100);
-            if (fabsf(drw.loc_kp.data - ref.kp_pos) > 1e-3f) {
-                Serial.printf("[RoboStride:init] loc_kp mismatch set=%.5f get=%.5f\n", ref.kp_pos, drw.loc_kp.data);
-                return false;
-            }else{
-                Serial.printf("[RoboStride:init] loc_kp set/get match: %.5f\n", ref.kp_pos);
-            }
-
-            // acc limit
-            if(!log_step("Set acc(0x7026)", Set_RobStrite_Motor_parameter(0X7026, acc_limit, Set_parameter))) return false;
-             delay(300);
-
-            // speed limit
-            if(!log_step("Set vel_limit(0x7022)", Set_RobStrite_Motor_parameter(0X7022, mit_speed, Set_parameter))) return false;
-            delay(300);
+            if(!set_param(drw.spd_kp.index, ref.kp_vel)) return false;
+            if(!set_param(drw.spd_ki.index, ref.ki_vel)) return false;
+            if(!set_param(drw.loc_kp.index, ref.kp_pos)) return false;
+            // if(!set_param(drw.acc_limit.index, acc_limit)) return false;
+            // if(!set_param(drw.speed_limit.index, speed_limit)) return false;
         }
 
-        // if(!log_step("Enable motor", enable_motor())) return false;
+        if(check_gain){
+            if(!check_param(drw.spd_kp, ref.kp_vel)) return false;
+            if(!check_param(drw.spd_ki, ref.ki_vel)) return false;
+            if(!check_param(drw.loc_kp, ref.kp_pos)) return false;
+            // if(!check_param(drw.acc_limit, acc_limit)) return false;
+            // if(!check_param(drw.speed_limit, speed_limit)) return false;
+        }
 
-        // // Example: set some limits (kept from your original)
-        // if(!log_step("Set limit_cur=27A(0x7018)", Set_RobStrite_Motor_parameter(0X7018, 27.0f, Set_parameter))) return false;
-        // delay(300);
-
-
-        // Serial.printf("Switched run_mode, Now: %d\n", (int)drw.run_mode.data);
-
-        // if(!log_step("Set torque_max(0x700B)", Set_RobStrite_Motor_parameter(0X700B, torque_max, Set_parameter))) return false;
-        // delay(300);
-
-        // if(!log_step("Set current_max(0x7018)", Set_RobStrite_Motor_parameter(0X7018, current_max, Set_parameter))) return false;
-        // delay(300);
-
-        // Optional: enable once to get feedback frames flowing (depends on device behavior)
-        if(!log_step("Enable motor (final)", enable_motor())) return false;
-        delay(300);
+        enableMotor();
 
         // Seed timestamp so we don't instantly timeout
         last_recv_ros2_ts_ms_ = millis();
@@ -312,12 +305,6 @@ public:
                     ref.velocity_rad_s = data[len-1];
                 }
                 break;
-
-            // case 3:
-            //     ref.mode = 3; // position (PosPP)
-            //     last_recv_ros2_ts_ms_ = millis();
-            //     ref.position_rad   = data[1];
-            //     break;
 
             case 4:
                 // param/gain update packet
@@ -379,7 +366,7 @@ public:
             case 0: {
                 if (configured_run_mode_ == PosPP_control_mode) {
                     // Hold current angle in PosPP mode.
-                    send_motion_command(mit_torque_command_nm_, 3.14, mit_velocity_command_rad_s_, ref.kp_pos, ref.kd_pos, false);
+                    send_pospp_mode_command(3.14, false);
                 } else {
                     send_velocity_mode_command(0, false);
                 }
@@ -416,46 +403,40 @@ public:
 
 private:
     bool decodeCanFrame(const CAN_message_t &r_msg, ReceiveResult &result){
-        // まずは extended を基本とする（ただし切り分け中ならログ出すのもアリ）
         if (!r_msg.flags.extended) {
             return false;
         }
 
         const uint32_t can_id = r_msg.id;
-
-        // 仕様: bit28..24 = communication type (5bit)
         const uint8_t comm_type = (uint8_t)((can_id >> 24) & 0x1F);
-
-        // data area 2 = bit23..8
+        const uint8_t id_src = (uint8_t)((can_id >> 8) & 0xFF);   // bit15..8
+        const uint8_t id_dst = (uint8_t)(can_id & 0xFF);          // bit7..0
         const uint16_t data_area2 = (uint16_t)((can_id >> 8) & 0xFFFF);
 
-        // data area 1 = bit7..0
-        const uint8_t  data_area1 = (uint8_t)(can_id & 0xFF);
-
-        // 便利: bit15..8 / bit7..0 を個別に見たい場面が多い
-        const uint8_t id_mid = (uint8_t)((can_id >> 8) & 0xFF);  // bit15..8
-        const uint8_t id_lsb = data_area1;                       // bit7..0
-
-        // ----------------------------
-        // ★ここが肝：モータIDの場所が type により変わる/実装差がある
-        // なので「どこかに motor_id_ が出ていれば通す」方式にする（互換優先）
-        // ----------------------------
-        bool match_motor = (id_lsb == motor_id_) || (id_mid == motor_id_) || ((data_area2 & 0xFF) == motor_id_);
-        bool match_master = (id_lsb == master_id_) || (id_mid == master_id_) || ((data_area2 & 0xFF) == master_id_);
-
-        // 返信は「master宛」表現だったり「motor表現」だったりが混ざるので、どちらか一致で通す
-        if (!(match_motor || match_master)) {
+        // Receive side accepts only reply-direction frames.
+        // reply: bit15..8 = motor CAN_ID, bit7..0 = host/master CAN_ID
+        bool id_ok = false;
+        switch (comm_type) {
+            case Communication_Type_MotorRequest:        // type 2
+            case Communication_Type_GetSingleParameter:  // type 17 reply
+            case Communication_Type_ErrorFeedback:       // type 21
+                id_ok = (id_src == motor_id_) && (id_dst == master_id_);
+                break;
+            case Communication_Type_Get_ID:              // type 0 reply
+                // Type 0 reply uses 0xFE in bit7..0 per manual.
+                id_ok = (id_src == motor_id_) && ((id_dst == 0xFE) || (id_dst == master_id_));
+                break;
+            default:
+                return false;
+        }
+        if (!id_ok) {
             return false;
         }
 
         result.communication_type = comm_type;
         result.extra_data = data_area2;
+        result.host_id = id_dst;
 
-        // host_id の意味が曖昧なので、とりあえず “返信先/相手判定に使えそうな側” を入れておく
-        // （必要ならここは後で確定させる）
-        result.host_id = id_lsb;
-
-        // error / pattern は今の取り方を維持（※仕様と完全一致かは別途確認）
         error_code_ = (uint8_t)((can_id >> 16) & 0x3F);
         pattern_    = (uint8_t)((can_id >> 22) & 0x03);
 
