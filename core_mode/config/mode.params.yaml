@@ -1,0 +1,8 @@
+/**:
+  ros__parameters:
+    # emergency_handler
+
+    # diagnostic:
+    microcontroller_diagnostic_time: 2000 # マイコンのタイムアウト[ms]
+    receiver_diagnostic_time: 2000 # receiverのタイムアウト[ms]
+    diagnostic_cycle: 50 # diagnosticする周期[ms]
