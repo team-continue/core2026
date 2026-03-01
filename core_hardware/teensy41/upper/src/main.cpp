@@ -174,9 +174,10 @@ static void printStatus() {
   last_print_ms = millis();
 
   for (int i = 0; i < CAN2_NUM_MOTOR; ++i) {
-    Serial.printf("M%d connect_ros2=%d mode=%d rp=%.4f rv=%.4f p=%.4f v=%.4f torque=%.4f temp=%.1f Kp=%.2f Ki=%.2f\n",
+    Serial.printf("M%d connect_ros2=%d connect_can=%d mode=%d rp=%.4f rv=%.4f p=%.4f v=%.4f torque=%.4f temp=%.1f Kp=%.2f Ki=%.2f\n",
                   i,
                   (int)can2_robostride[i].connect_ros2,
+                  (int)can2_robostride[i].connect_can,
                   can2_robostride[i].ref.mode,
                   can2_robostride[i].ref.position_rad,
                   can2_robostride[i].ref.velocity_rad_s,
