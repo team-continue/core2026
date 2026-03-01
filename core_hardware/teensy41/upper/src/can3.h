@@ -15,6 +15,7 @@
 #define CAN3_RS05_INIT_RUN_MODE Speed_control_mode
 #define CAN3_RS5_SET_GAIN false
 #define CAN3_RS5_CHECK_GAIN false
+#define CAN3_RS5_OFFSET_POSITION 0.0f
 
 
 volatile bool can3_waiting_reply = false;
@@ -27,7 +28,7 @@ Damiao<CAN3, RX_SIZE_256, TX_SIZE_16> damiao_motor[CAN3_NUM_DAMIAO] = {
   Damiao(&can3, 0x14, 4)
 };
 RoboStride<CAN3, RX_SIZE_256, TX_SIZE_16> robostride_can3[CAN3_NUM_ROBOSTRIDE] = {
-  RoboStride(&can3, 0x01, 0x01, (int)ActuatorType::ROBSTRIDE_06)
+  RoboStride(&can3, 0x01, 0x01, (int)ActuatorType::ROBSTRIDE_06, CAN3_RS5_OFFSET_POSITION)
 };
 
 MotorBase *can3_motor[CAN3_NUM_MOTOR] = {

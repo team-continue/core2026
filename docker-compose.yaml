@@ -9,12 +9,10 @@ services:
     stdin_open: true          # 標準入力を開いたままにする
     privileged: true # 多くのGUI/GPU設定で権限の問題を避けるために設定
     ipc: host # ホストのIPC名前空間を使用
-    runtime: nvidia
     environment:
       - DISPLAY=${DISPLAY}             # ホストのディスプレイ番号をコンテナに渡す
       - QT_X11_NO_MITSHM=1           # Qtアプリケーションでのエラーを回避
       - XDG_RUNTIME_DIR=/tmp/runtime/  # Wayland互換性のための設定
-      - NVIDIA_VISIBLE_DEVICES=all
       - ROS_DOMAIN_ID
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix  # X11ソケットの共有

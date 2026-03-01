@@ -31,15 +31,9 @@ RUN set -eo pipefail \
     && rosdep install --from-paths src --ignore-src --rosdistro humble -y \
     && rm -rf /var/lib/apt/lists/*
 
-# Then copy source code and build.
-COPY . /ros2_ws/src/core2026
-RUN set -eo pipefail \
-    && source /opt/ros/humble/setup.bash \
-    && colcon build --base-paths /ros2_ws
-
 RUN apt update && apt install -y --no-install-recommends \
-    python3-pip libgl1\
-    && rm -rf /var/lib/apt/lists/*
+    python3-pip libgl1 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 libxcb-shape0 libxkbcommon-x11-0 libx11-xcb1 && \
+    rm -rf /var/lib/apt/lists/*
 RUN pip3 install --no-cache-dir pythonQwt pyqt5-tools
 
 #ワークスペースのビルド
