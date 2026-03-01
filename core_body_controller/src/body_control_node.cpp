@@ -149,16 +149,16 @@ std::vector<float> BodyControlNode::invert_kinematics_calc(const geometry_msgs::
   //
 
   wheel_velocities[0] =
-      (vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH / 2 * omega) /
+      - (vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH / 2 * omega) /
       WHEEL_RADIUS;
   wheel_velocities[1] =
-      (vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH / 2 * omega) /
+      - (vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH / 2 * omega) /
       WHEEL_RADIUS;
   wheel_velocities[2] =
-      (-vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH / 2 * omega) /
+      - (-vx_body * cos(M_PI / 4) + vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH / 2 * omega) /
       WHEEL_RADIUS;
   wheel_velocities[3] =
-      (-vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH / 2 * omega) /
+      - (-vx_body * cos(M_PI / 4) - vy_body * sin(M_PI / 4) - SQRT2 * BODY_WIDTH / 2 * omega) /
       WHEEL_RADIUS;
   return wheel_velocities;
 }
