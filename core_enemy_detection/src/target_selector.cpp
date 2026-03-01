@@ -12,36 +12,65 @@ targetSelector::targetSelector() :
     dpInfoSub = this->create_subscription<core_msgs::msg::DamagePanelInfoArray>(
         "damage_panels_infomation", 10, std::bind(&targetSelector::selectTarget, this, _1));
     targetPointPub = this->create_publisher<geometry_msgs::msg::PointStamped>("damage_panel_pose", 1);
+    parameter_callback_handle_ = this->add_on_set_parameters_callback(std::bind(&targetSelector::changeParameter, this, _1));
+    this->declare_parameter("image_size", std::vector<int64_t>{1280, 720});
+    declareIntArray(imageSize, this->get_parameter("image_size").as_integer_array());
 }
 
 void targetSelector::selectTarget(const core_msgs::msg::DamagePanelInfoArray dpMsg){
     timeStamp = dpMsg.header.stamp;
     damagePanels = dpMsg.array;
     // std::cout << (this->now() - timeStamp).seconds() << std::endl;
-    if((this->now() - timeStamp).seconds() > 0.1 || damagePanels.size() > 0){
+    if(damagePanels.size() <= 0){
+        flag = false;
         return;
     }
 
     int maxArea = 0;
-
     for(auto itr = damagePanels.begin(); itr != damagePanels.end(); itr++){
         if(maxArea < itr->area){
             target = *itr;
             maxArea = itr->area;
         }
     }
+    flag = true;
     // std::cout << target.x << " " << target.y << " " << maxArea << std::endl;
+    
 }
 
 void targetSelector::publishTargetPoint(){
+    if(flag){
+        auto dpPointMsg = geometry_msgs::msg::PointStamped();
+        dpPointMsg.header.stamp = timeStamp;
+        dpPointMsg.point.x = target.x - imageSize[0] / 2;
+        dpPointMsg.point.y = target.y - imageSize[1] / 2;
+        dpPointMsg.point.z = 0.0;
+        targetPointPub->publish(dpPointMsg);
+        return;
+    }else{
+        auto dpPointMsg = geometry_msgs::msg::PointStamped();
+        dpPointMsg.header.stamp = timeStamp;
+        dpPointMsg.point.x = 0.0;
+        dpPointMsg.point.y = 0.0;
+        dpPointMsg.point.z = 1.0;
+        targetPointPub->publish(dpPointMsg);
+        return;
+    }
+}
+
+rcl_interfaces::msg::SetParametersResult targetSelector::changeParameter(const std::vector<rclcpp::Parameter> &parameters){
+    auto result = rcl_interfaces::msg::SetParametersResult();
+    result.successful = true;
+
+    for(const auto &param : parameters){
+        declareIntArray(imageSize, param.as_integer_array());
+    }
     
-    auto dpPointMsg = geometry_msgs::msg::PointStamped();
-    dpPointMsg.header.stamp = timeStamp;
-    dpPointMsg.point.x = target.x;
-    dpPointMsg.point.y = target.y;
-    dpPointMsg.point.z = 0.0;
-    targetPointPub->publish(dpPointMsg);
-    return;
+    return result;
+}
+
+void targetSelector::declareIntArray(std::vector<int> &var, std::vector<int64_t> param){
+    var.assign(param.begin(), param.end());
 }
 
 //     // gui -> camera座標
