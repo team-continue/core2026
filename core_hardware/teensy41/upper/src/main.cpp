@@ -4,18 +4,16 @@
 
 #include "pi.h"
 #include "packet.h"
-// #include  "imu.h"
 #include "feetech.h"
-#include "can1.h"
+#include "can3.h"
 #include "can2.h"
 #include "esc.h"
 #include "damiao.h"
 #include "robostride.h"
 #include "pin.h"
 
-// Imu im(false);
+#define DEFAULT_EMERGENCY_STATE HIGH
 
-CAN_message_t msg2, msg3;
 STS sts;
 unsigned long prev_connect_ros2_ts_=0;
 bool connect_ros2 = false;
@@ -23,7 +21,6 @@ uint8_t wireless[LEN_WIRELESS] = {0};
 uint8_t hardware_enable[1] = {0};
 uint8_t destory[1] = {0};
 uint8_t damege[1] = {0};
-int quat[3] = {0};
 unsigned long prev_ts = 0;
 int counter1 = 0, counter2 = 0, led=0;
 int len_wireless = 0;
@@ -31,23 +28,21 @@ uint8_t wirelessbuffer_[MAX_DATA_LENGTH];
 
 // LED timer
 void led_timer_cb();
-// void imu_timer_cb();
 IntervalTimer led_timer;
-// IntervalTimer imu_timer;
 
 // PCから受信時に一度呼ばれるやつ
 void packet_FrameCallBack(){
   // rosと接続中
   prev_connect_ros2_ts_ = millis();
   // PCに送信するデータを登録
-  for(int i =0;i<CAN1_NUM_MOTOR;++i){
+  for(int i =0;i<CAN3_NUM_MOTOR;++i){
     float f[6] = {
       0,
-      can1_motor[i]->motor_state.torque_nm,
-      can1_motor[i]->motor_ref.velocity_rad_s,
-      can1_motor[i]->motor_state.velocity_rad_s,
-      can1_motor[i]->motor_ref.position_rad,
-      can1_motor[i]->motor_state.position_rad
+      can3_motor[i]->motor_state.torque_nm,
+      can3_motor[i]->motor_ref.velocity_rad_s,
+      can3_motor[i]->motor_state.velocity_rad_s,
+      can3_motor[i]->motor_ref.position_rad,
+      can3_motor[i]->motor_state.position_rad
     };
     packet_setFloat(i, f, 6);
   }
@@ -60,7 +55,7 @@ void packet_FrameCallBack(){
       can2_motor[i].ref.position_rad,
       can2_motor[i].feedback.position_rad
     };
-    packet_setFloat(i + CAN1_NUM_MOTOR, f, 6);
+    packet_setFloat(i + CAN3_NUM_MOTOR, f, 6);
   }
 
   for(int i =0;i<LEN_SERVO;++i){
@@ -72,7 +67,7 @@ void packet_FrameCallBack(){
       sts.servos[i].ref_pos,
       sts.servos[i].pos
     };
-    packet_setFloat(i+CAN1_NUM_MOTOR+CAN2_NUM_MOTOR, f, 6);
+    packet_setFloat(i+CAN3_NUM_MOTOR+CAN2_NUM_MOTOR, f, 6);
   }
 
   // damege
@@ -91,8 +86,6 @@ void packet_FrameCallBack(){
     }
     len_wireless++;
   }
-  // imu
-  packet_setInt32(103, quat, 3); 
   hardware_enable[0] = damiao_motor[0].connect ? 0 : 1;
   packet_setUint8(104, hardware_enable, 1);
   packet_send();
@@ -105,10 +98,8 @@ void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len
     case 1:
     case 2:
     case 3:
-      can1_motor[id]->setPacketFrame(data, len);
-      break;
-    case 4:
-      robostride_can1[id-4].setPacketFrame(data, len);
+    // case 4:
+      can3_motor[id]->setPacketFrame(data, len);
       break;
     case 5:
     case 6:
@@ -124,21 +115,22 @@ void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len
     case 14:
       if(len>=1){
         sts.servos[id - 7].ref_pos = data[len - 1];
-        break;
       }
+      break;
     case 15:
-    case 16:
+    // case 16:
       if(len >= 1){
         if(data[0] < 0){
           // esc.init();
         }else{
-          esc[id - 15].write(data[len - 1]);
+          esc.write(data[len - 1]);
         }
       }
       break;
     case 17:
-      if(len>=1)
+      if(len>=1){
         digitalWrite(PIN_EMERGENCY, data[len-1] != 0.f);
+      }
       break;
     default:
       break;
@@ -148,25 +140,20 @@ void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len
 void setup(void) {
   // 非常停止
   pinMode(PIN_EMERGENCY, OUTPUT);
+  digitalWrite(PIN_EMERGENCY, DEFAULT_EMERGENCY_STATE);
   // LED
   pinMode(LED_BUILTIN, OUTPUT);
 
   packet_begin();
   PORT_WIRELESS.begin(115200);
   PORT_WIRELESS.addMemoryForRead(&wirelessbuffer_, sizeof(wirelessbuffer_));
-  // im.init();
   sts.init();
-  // can1_init();
+  can3_init();
   can2_init();
-//   esc_init();
+  esc.init();
 
   led_timer.begin(led_timer_cb, 50 * 1000); //20Hz
-  // imu_timer.begin(imu_timer_cb, 10 * 1000); //100Hz
 }
-
-// void imu_timer_cb(){
-//    im.getQuat(quat);
-// }
 
 void led_timer_cb(){
   // ros2と接続しているか確認
@@ -185,6 +172,6 @@ void led_timer_cb(){
 void loop() {
   packet_update();
   sts.loop();
-  // can1_loop();
+  can3_loop();
   can2_loop();
 }

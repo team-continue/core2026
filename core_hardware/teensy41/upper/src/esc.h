@@ -1,7 +1,8 @@
-#include "wiring.h"
 #pragma once
 
+#include <Arduino.h>
 #include "Servo.h"
+#include "pin.h"
 
 #define MAX_SIGNAL 2000  //PWM信号における最大のパルス幅[マイクロ秒]
 #define MIN_SIGNAL 1000  //PWM信号における最小のパルス幅[マイクロ秒]
@@ -12,10 +13,8 @@ class ESC{
   int _pin;
   public:
     ESC(int pin): _pin(pin){}
-    void begin(){
-      _esc.attach(_pin);  // attaches the servo on pin 20
-    }
     void init(){
+      _esc.attach(_pin);  // attaches the servo on pin 20
       delay(1000);
       // Serial.println("Writing maximum output.");
       _esc.writeMicroseconds(MAX_SIGNAL);  //ESCへ最大のパルス幅を指示します
@@ -33,11 +32,4 @@ class ESC{
     }
 };
 
-#define ESC_NUM 2
-ESC esc[ESC_NUM] = {ESC(PIN_ESC1), ESC(PIN_ESC2)};
-void esc_init(){
-  for(int i=0;i<ESC_NUM;++i){
-    esc[i].begin();
-    esc[i].init();
-  }
-}
+ESC esc= ESC(PIN_ESC2);

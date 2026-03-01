@@ -48,12 +48,12 @@ class STS {
     const float default_origin[LEN_SERVO] = {
       M_PI,
       M_PI,
+      M_PI+1.1,
+      M_PI-0.2,
       M_PI,
       M_PI,
-      M_PI,
-      M_PI,
-      M_PI,
-      M_PI,
+      M_PI-0.3,
+      M_PI-0.4,
     };
     for (int i = 0; i < LEN_SERVO; ++i) {
       servos[i].id = i + 1;

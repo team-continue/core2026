@@ -38,9 +38,9 @@ RUN set -eo pipefail \
     && colcon build --base-paths /ros2_ws
 
 RUN apt update && apt install -y --no-install-recommends \
-    python3-pip \
+    python3-pip libgl1\
     && rm -rf /var/lib/apt/lists/*
-RUN pip3 install --no-cache-dir pythonQwt
+RUN pip3 install --no-cache-dir pythonQwt pyqt5-tools
 
 #ワークスペースのビルド
 # RUN . /opt/ros/humble/setup.bash && \

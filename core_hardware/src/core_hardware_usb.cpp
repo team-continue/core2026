@@ -2,7 +2,6 @@
 #include "core_msgs/msg/can.hpp"
 #include "core_msgs/msg/can_array.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/u_int8.hpp"
@@ -19,7 +18,6 @@ class HaruHardware : public rclcpp::Node {
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr str_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr destroy_pub_;
     rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr hp_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr hardware_emergency_pub_;
 
     rclcpp::Subscription<core_msgs::msg::CANArray>::SharedPtr can_sub_;
@@ -35,7 +33,6 @@ class HaruHardware : public rclcpp::Node {
     std_msgs::msg::String wireless_;
     std_msgs::msg::Bool destroy_;
     std_msgs::msg::UInt8 hp_;
-    sensor_msgs::msg::Imu imu_;
     std_msgs::msg::Bool hardware_emergency_;
 
    public:
@@ -48,7 +45,6 @@ class HaruHardware : public rclcpp::Node {
         str_pub_ = this->create_publisher<std_msgs::msg::String>("wireless", 10);
         destroy_pub_ = this->create_publisher<std_msgs::msg::Bool>("destroy", 10);
         hp_pub_ = this->create_publisher<std_msgs::msg::UInt8>("hp", 10);
-        imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("imu", 10);
         hardware_emergency_pub_ = this->create_publisher<std_msgs::msg::Bool>("hardware_emergency", 10);
 
         can_sub_ = this->create_subscription<core_msgs::msg::CANArray>(
@@ -117,17 +113,6 @@ class HaruHardware : public rclcpp::Node {
                         // wireless
                         wireless_.data = std::string((char*)uint8_addr, uint8_len);
                         str_pub_->publish(wireless_);
-                    } else if (can_id == 103 && flt_len == 3) {
-                        //imu
-                        q1 = ((double)int_addr[0]) / 1073741824.0;  // Convert to double. Divide by 2^30
-                        q2 = ((double)int_addr[1]) / 1073741824.0;  // Convert to double. Divide by 2^30
-                        q3 = ((double)int_addr[2]) / 1073741824.0;  // Convert to double. Divide by 2^30
-                        q0 = sqrt(1.0 - ((q1 * q1) + (q2 * q2) + (q3 * q3)));
-                        imu_.orientation.x = q1;
-                        imu_.orientation.y = q2;
-                        imu_.orientation.z = q3;
-                        imu_.orientation.w = q0;
-                        imu_pub_->publish(imu_);
                     } else if (can_id == 104 && uint8_len == 1) {
                         hardware_emergency_.data = (uint8_addr[0] == 1);
                         hardware_emergency_pub_->publish(hardware_emergency_);
