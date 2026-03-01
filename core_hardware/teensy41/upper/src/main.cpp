@@ -98,10 +98,8 @@ void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len
     case 1:
     case 2:
     case 3:
+    // case 4:
       can3_motor[id]->setPacketFrame(data, len);
-      break;
-    case 4:
-      // robostride_can3[id-4].setPacketFrame(data, len);
       break;
     case 5:
     case 6:
@@ -117,8 +115,8 @@ void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len
     case 14:
       if(len>=1){
         sts.servos[id - 7].ref_pos = data[len - 1];
-        break;
       }
+      break;
     case 15:
     // case 16:
       if(len >= 1){
@@ -130,8 +128,9 @@ void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len
       }
       break;
     case 17:
-      if(len>=1)
+      if(len>=1){
         digitalWrite(PIN_EMERGENCY, data[len-1] != 0.f);
+      }
       break;
     default:
       break;
