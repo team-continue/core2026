@@ -81,10 +81,12 @@ private:
   float body_target_angle_ = 0;
   double latest_body_angle_ = 0;
 
-  double ACCERATION = 3;  // m/s
-  double ROTATION_ACCERATION = 3 * M_PI;
+  double ACCELERATION = 2;  // m/s
+  double ROTATION_ACCELERATION = 1 * M_PI;
   double YAW_ROTATION_VELOCITY = 4 * M_PI;  // yaw
-  double AUTO_ROTATION_VELOCITY = 1 * M_PI;
+  double AUTO_ROTATION_VELOCITY = 0.3 * M_PI;
+
+  static constexpr double TIMER_PERIOD = 0.01; // 10 ms
 
   PID body_angle_pid_ =
     PID(1, 0, 0, YAW_ROTATION_VELOCITY, -YAW_ROTATION_VELOCITY);

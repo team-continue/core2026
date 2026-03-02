@@ -52,4 +52,9 @@ endif()
 # add_backward(body_control_node)
 # add_backward(velocity_publisher_node)
 
+# Install launch files
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
 ament_auto_package()
