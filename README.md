@@ -16,3 +16,15 @@ Pull requests以外でのmainコミットは禁止です．
 ## Formatting (CI)
 Push時にCIが`ament_clang_format`を実行し、必要ならブランチへ自動コミットします。
 mainブランチには自動pushしません。
+
+## 使い方 (ロボットの起動)
+```bash
+ros2 launch core_launch navigation.launch.py
+ros2 launch core_body_controller body_controller.launch.py
+
+# 実機
+ros2 launch core_hardware core_hardware.launch.py
+
+# シミュレータ
+ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=0.0.0.0
+```

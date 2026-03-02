@@ -11,6 +11,8 @@
 
   <depend>launch</depend>
   <depend>launch_ros</depend>
+  <exec_depend>core_mppi</exec_depend>
+  <exec_depend>core_costmap_builder</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>joint_state_publisher</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
