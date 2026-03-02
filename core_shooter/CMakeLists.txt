@@ -37,7 +37,6 @@ ament_auto_add_executable(magazine_manager
 
 ament_auto_add_executable(aim_bot
   src/aim_bot.cpp
-  src/forbidden_region_planner.cpp
 )
 
 install(

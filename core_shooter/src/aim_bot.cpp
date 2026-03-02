@@ -11,7 +11,6 @@
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "core_msgs/msg/can.hpp"
 #include "core_msgs/msg/can_array.hpp"
-#include "core_shooter/forbidden_region_planner.hpp"
 
 using namespace std::chrono_literals;
 
@@ -577,8 +576,6 @@ private:
   double manual_mode_pitch_initial_angle_ = 0.0;
   int pitch_motor_id_;
   int yaw_motor_id_;
-  core_shooter::ForbiddenRegionPlanner forbidden_region_planner_;
-
   // ROS通信
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr target_image_sub_;

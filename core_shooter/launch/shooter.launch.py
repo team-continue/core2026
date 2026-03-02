@@ -22,16 +22,6 @@ def generate_launch_description():
         "config",
         "shooter.params.yaml"
     )
-    left_forbidden_region_params = os.path.join(
-        get_package_share_directory("core_shooter"),
-        "config",
-        "left_aim_forbidden_region.memo.yaml"
-    )
-    right_forbidden_region_params = os.path.join(
-        get_package_share_directory("core_shooter"),
-        "config",
-        "right_aim_forbidden_region.memo.yaml"
-    )
     hazard_remaps = ("hazard_status", "/system/emergency/hazard_status")
 
     shooter_cmd_gate_node = Node(
@@ -58,8 +48,7 @@ def generate_launch_description():
             shooter_params,
             {
                 "shoot_motor_id": 15,
-                # "loading_motor_id": 12
-                "loading_motor_id": 9
+                "loading_motor_id": 12,
             }
         ],
         remappings=[
@@ -76,8 +65,7 @@ def generate_launch_description():
             shooter_params,
             {
                 "shoot_motor_id": 16,
-                # "loading_motor_id": 8
-                "loading_motor_id": 10
+                "loading_motor_id": 8,
             }
         ],
         remappings=[
@@ -93,10 +81,8 @@ def generate_launch_description():
         parameters=[
             shooter_params,
             {
-                # "disk_hold_left_motor_id": 13,
-                # "disk_hold_right_motor_id": 14
-                "disk_hold_left_motor_id": 11,
-                "disk_hold_right_motor_id": 12
+                "disk_hold_left_motor_id": 14,
+                "disk_hold_right_motor_id": 13
             }
         ],
         remappings=[
@@ -113,10 +99,8 @@ def generate_launch_description():
         parameters=[
             shooter_params,
             {
-                # "disk_hold_left_motor_id": 9,
-                # "disk_hold_right_motor_id": 10
-                "disk_hold_left_motor_id": 13,
-                "disk_hold_right_motor_id": 14
+                "disk_hold_left_motor_id": 10,
+                "disk_hold_right_motor_id": 9
             }
         ],
         remappings=[
@@ -132,10 +116,8 @@ def generate_launch_description():
         output="screen",
         parameters=[
             shooter_params,
-            left_forbidden_region_params,
             {
-                # "pitch_motor_id": 11,
-                "pitch_motor_id": 7,
+                "pitch_motor_id": 11,
                 "yaw_motor_id": 5,
                 # "yaw_min_angle": -3.14159265359,
                 # "yaw_max_angle": 3.14159265359,
@@ -155,10 +137,8 @@ def generate_launch_description():
         output="screen",
         parameters=[
             shooter_params,
-            right_forbidden_region_params,
             {
-                # "pitch_motor_id": 7,
-                "pitch_motor_id": 8,
+                "pitch_motor_id": 7,
                 "yaw_motor_id": 6,
                 # "yaw_min_angle": -3.14159265359,
                 # "yaw_max_angle": 3.14159265359,
