@@ -11,6 +11,7 @@
 
 #include <deque>
 #include <cmath>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -54,9 +55,22 @@ public:
     //========================================
     this->declare_parameter<int>("disk_hold_right_motor_id", 100);
     this->declare_parameter<int>("disk_hold_left_motor_id", 101);
+    this->declare_parameter<std::vector<double>>(
+      "disk_hold_motor_left_angle", std::vector<double>{0.0, 1.0});
+    this->declare_parameter<std::vector<double>>(
+      "disk_hold_motor_right_angle", std::vector<double>{0.0, 1.0});
 
     this->get_parameter("disk_hold_right_motor_id", disk_hold_right_motor_id_);
     this->get_parameter("disk_hold_left_motor_id", disk_hold_left_motor_id_);
+    this->get_parameter("disk_hold_motor_left_angle", disk_hold_motor_left_angle_);
+    this->get_parameter("disk_hold_motor_right_angle", disk_hold_motor_right_angle_);
+    if (disk_hold_motor_left_angle_.size() != 2 || disk_hold_motor_right_angle_.size() != 2) {
+      RCLCPP_FATAL(
+        this->get_logger(),
+        "Invalid disk_hold_motor_*_angle size: left=%zu right=%zu (expected 2:[close,open])",
+        disk_hold_motor_left_angle_.size(), disk_hold_motor_right_angle_.size());
+      throw std::runtime_error("invalid disk_hold_motor_*_angle size");
+    }
 
     //========================================
     // regrip parameters
@@ -64,7 +78,6 @@ public:
     this->declare_parameter<bool>("regrip_enabled", true);
     this->declare_parameter<int>("regrip_release_ms", 200);
 
-    // 下段残2でregripは仕様固定（必要ならパラメータ化OK）
     this->get_parameter("regrip_enabled", regrip_enabled_);
     this->get_parameter("regrip_release_ms", regrip_release_ms_);
     if (regrip_release_ms_ < 0) {
@@ -403,9 +416,14 @@ private:
   //========================================
   void publish_hold_command(bool hold)
   {
-    const float cmd = hold ? 0.0f : 1.0f;
-    motorPublish(disk_hold_left_motor_id_, cmd);
-    motorPublish(disk_hold_right_motor_id_, cmd);
+    constexpr size_t CLOSE_INDEX = 0;
+    constexpr size_t OPEN_INDEX = 1;
+    const size_t index = hold ? CLOSE_INDEX : OPEN_INDEX;
+    const float left_angle = static_cast<float>(disk_hold_motor_left_angle_[index]);
+    const float right_angle = static_cast<float>(disk_hold_motor_right_angle_[index]);
+
+    motorPublish(disk_hold_left_motor_id_, left_angle);
+    motorPublish(disk_hold_right_motor_id_, right_angle);
   }
 
   void motorPublish(int id, float data)
@@ -457,6 +475,8 @@ private:
   // disk hold motor params
   int disk_hold_left_motor_id_ = 101;
   int disk_hold_right_motor_id_ = 100;
+  std::vector<double> disk_hold_motor_left_angle_{0.0, 1.0};   // [close, open]
+  std::vector<double> disk_hold_motor_right_angle_{0.0, 1.0};  // [close, open]
 
   // disk hold state
   bool hold_request_on_ = false;  // operator request from disk_hold_state topic

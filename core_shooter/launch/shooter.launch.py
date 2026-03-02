@@ -82,7 +82,9 @@ def generate_launch_description():
             shooter_params,
             {
                 "disk_hold_left_motor_id": 14,
-                "disk_hold_right_motor_id": 13
+                "disk_hold_right_motor_id": 13,
+                "disk_hold_motor_left_angle": [0.0, -0.2],
+                "disk_hold_motor_right_angle": [0.0, 0.2],
             }
         ],
         remappings=[
@@ -100,7 +102,9 @@ def generate_launch_description():
             shooter_params,
             {
                 "disk_hold_left_motor_id": 10,
-                "disk_hold_right_motor_id": 9
+                "disk_hold_right_motor_id": 9,
+                "disk_hold_motor_left_angle": [0.0, -0.2],
+                "disk_hold_motor_right_angle": [0.0, 0.2],
             }
         ],
         remappings=[

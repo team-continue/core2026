@@ -48,8 +48,10 @@
                 sensor_height: 500.0 # [mm]
                 window_size: 3 # 移動平均の窓サイズ
                 regrip_enabled: true
-                regrip_release_ms: 200
+                regrip_release_ms: 1000
                 hold_disable_height_margin_mm: 0.5
+                # disk_hold_motor_left_angle:  -> launch [0.0, -0.2] # [close, open]
+                # disk_hold_motor_right_angle: -> launch [0.0, 0.2] # [close, open]
 
                 # ========================================
                 # AimBot
