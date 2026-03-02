@@ -18,8 +18,8 @@ This package provides a path planner node that:
 | ---------------- | --------------------------- | ------------------------------------ |
 | `/map`           | `nav_msgs/OccupancyGrid`    | Global map for path planning         |
 | `/local_costmap` | `nav_msgs/OccupancyGrid`    | Local costmap for obstacle avoidance |
-| `/start`         | `geometry_msgs/PoseStamped` | Start pose for planning              |
-| `/goal`          | `geometry_msgs/PoseStamped` | Goal pose for planning               |
+| `/start_pose`    | `geometry_msgs/PoseStamped` | Start pose for planning              |
+| `/goal_pose`     | `geometry_msgs/PoseStamped` | Goal pose for planning               |
 
 ### Published Topics
 
@@ -33,8 +33,8 @@ This package provides a path planner node that:
 | --------------------- | ------ | ---------------- | ------------------------------------------------- |
 | `global_map_topic`    | string | `/map`           | Topic name for global map                         |
 | `local_costmap_topic` | string | `/local_costmap` | Topic name for local costmap                      |
-| `start_topic`         | string | `/start`         | Topic name for start pose                         |
-| `goal_topic`          | string | `/goal`          | Topic name for goal pose                          |
+| `start_topic`         | string | `/start_pose`    | Topic name for start pose                         |
+| `goal_topic`          | string | `/goal_pose`     | Topic name for goal pose                          |
 | `path_topic`          | string | `/planned_path`  | Topic name for output path                        |
 | `occupied_threshold`  | int    | `50`             | Threshold for considering a cell occupied (0-100) |
 | `allow_unknown`       | bool   | `false`          | Whether to allow planning through unknown cells   |
@@ -68,7 +68,7 @@ ros2 run core_path_planner path_planner_node --ros-args \
 └─────────────────────────────────────────────────────────────┘
         ▲                ▲               ▲           │
         │                │               │           │
-   /map (global)   /local_costmap   /start, /goal   │
+   /map (global)   /local_costmap   /start_pose, /goal_pose   │
                                                      ▼
                                               /planned_path
 ```

@@ -44,7 +44,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        # debug_odom_to_base,
-        # debug_base_to_livox,
+        debug_odom_to_base,
+        debug_base_to_livox,
         costmap_build,
     ])
