@@ -16,6 +16,10 @@ PathPlannerNode::PathPlannerNode(const rclcpp::NodeOptions & options)
   path_topic_ = declare_parameter<std::string>("path_topic", "/planned_path");
   local_frame_id_ =
     declare_parameter<std::string>("local_frame_id", "chassis_link");
+  publish_in_global_frame_ =
+    declare_parameter<bool>("publish_in_global_frame", false);
+  global_frame_id_ =
+    declare_parameter<std::string>("global_frame_id", "odom");
   occupied_threshold_ = declare_parameter<int>("occupied_threshold", 50);
   allow_unknown_ = declare_parameter<bool>("allow_unknown", true);
   use_diagonal_ = declare_parameter<bool>("use_diagonal", true);
@@ -57,8 +61,12 @@ PathPlannerNode::PathPlannerNode(const rclcpp::NodeOptions & options)
 void PathPlannerNode::onGlobalMapReceived(
   const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
 {
+  bool first_map = !global_map_.has_value();
   global_map_ = *msg;
-  RCLCPP_INFO(get_logger(), "Global map received");
+  if (first_map) {
+    RCLCPP_INFO(get_logger(), "Global map received: %ux%u, res=%.3f",
+      msg->info.width, msg->info.height, msg->info.resolution);
+  }
   // tryPlan();
 }
 
@@ -66,7 +74,7 @@ void PathPlannerNode::onLocalCostmapReceived(
   const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
 {
   planner_.setLocalCostmap(*msg);
-  RCLCPP_INFO(get_logger(), "Local costmap received");
+  RCLCPP_DEBUG(get_logger(), "Local costmap received");
   tryPlan();
 }
 
@@ -74,7 +82,7 @@ void PathPlannerNode::onStartPoseReceived(
   const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
   start_pose_ = *msg;
-  RCLCPP_INFO(get_logger(), "Start pose received");
+  RCLCPP_DEBUG(get_logger(), "Start pose received");
   tryPlan();
 }
 
@@ -88,7 +96,7 @@ void PathPlannerNode::onGoalPoseReceived(
 
 void PathPlannerNode::tryPlan()
 {
-  RCLCPP_INFO(get_logger(), "Attempting to plan path");
+  RCLCPP_DEBUG(get_logger(), "Attempting to plan path");
 
   if (!global_map_.has_value() || !start_pose_.has_value() ||
     !goal_pose_.has_value())
@@ -100,15 +108,33 @@ void PathPlannerNode::tryPlan()
 
   switch (result.status) {
     case PathPlanner::Status::kStartOrGoalOutOfBounds:
-      RCLCPP_WARN(get_logger(), "Start or goal outside global map bounds.");
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+        "Start or goal outside global map bounds. "
+        "start=(%.2f, %.2f) goal=(%.2f, %.2f) "
+        "map_origin=(%.2f, %.2f) map_size=%ux%u res=%.5f",
+        start_pose_->pose.position.x, start_pose_->pose.position.y,
+        goal_pose_->pose.position.x, goal_pose_->pose.position.y,
+        global_map_->info.origin.position.x,
+        global_map_->info.origin.position.y,
+        global_map_->info.width, global_map_->info.height,
+        global_map_->info.resolution);
       return;
     case PathPlanner::Status::kStartOrGoalOccupied:
-      RCLCPP_WARN(get_logger(), "Start or goal is occupied.");
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+        "Start or goal is occupied. "
+        "start=(%.2f, %.2f) goal=(%.2f, %.2f)",
+        start_pose_->pose.position.x, start_pose_->pose.position.y,
+        goal_pose_->pose.position.x, goal_pose_->pose.position.y);
       return;
     case PathPlanner::Status::kNoPath:
       RCLCPP_WARN(get_logger(), "Failed to find path.");
       return;
     case PathPlanner::Status::kOk:
+      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+        "Path planned: %zu waypoints, start=(%.2f, %.2f) goal=(%.2f, %.2f)",
+        result.path.size(),
+        start_pose_->pose.position.x, start_pose_->pose.position.y,
+        goal_pose_->pose.position.x, goal_pose_->pose.position.y);
       publishPath(result.path);
       break;
   }
@@ -119,7 +145,8 @@ void PathPlannerNode::publishPath(
 {
   nav_msgs::msg::Path path_msg;
   path_msg.header.stamp = now();
-  path_msg.header.frame_id = local_frame_id_;
+  path_msg.header.frame_id =
+    publish_in_global_frame_ ? global_frame_id_ : local_frame_id_;
   path_msg.poses.reserve(path_cells.size());
 
   const auto & map = *global_map_;
@@ -130,15 +157,20 @@ void PathPlannerNode::publishPath(
     double global_y = 0.0;
     planner_.gridToWorld(map, cell, global_x, global_y);
 
-    // Transform to local coordinates
-    double local_x = 0.0;
-    double local_y = 0.0;
-    transformToLocal(global_x, global_y, robot_pose, local_x, local_y);
-
     geometry_msgs::msg::PoseStamped pose;
     pose.header = path_msg.header;
-    pose.pose.position.x = local_x;
-    pose.pose.position.y = local_y;
+
+    if (publish_in_global_frame_) {
+      pose.pose.position.x = global_x;
+      pose.pose.position.y = global_y;
+    } else {
+      double local_x = 0.0;
+      double local_y = 0.0;
+      transformToLocal(global_x, global_y, robot_pose, local_x, local_y);
+      pose.pose.position.x = local_x;
+      pose.pose.position.y = local_y;
+    }
+
     pose.pose.position.z = 0.0;
     pose.pose.orientation.w = 1.0;
     path_msg.poses.push_back(pose);

@@ -1,0 +1,90 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Value: true
+
+    - Class: rviz_default_plugins/Map
+      Name: Global Map
+      Enabled: true
+      Topic:
+        Value: /map
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Value: true
+
+    - Class: rviz_default_plugins/Map
+      Name: Local Costmap
+      Enabled: true
+      Topic:
+        Value: /costmap/local
+        Depth: 1
+        Durability Policy: Volatile
+        Reliability Policy: Best Effort
+      Alpha: 0.5
+      Value: true
+
+    - Class: rviz_default_plugins/Path
+      Name: Global Path
+      Enabled: true
+      Topic:
+        Value: /planned_path
+        Depth: 5
+      Color: 0; 255; 0
+      Line Style: Lines
+      Line Width: 0.05
+      Value: true
+
+    - Class: rviz_default_plugins/Odometry
+      Name: Robot Pose
+      Enabled: true
+      Topic:
+        Value: /odom
+        Depth: 5
+      Arrow Length: 0.5
+      Color: 255; 0; 0
+      Keep: 1
+      Value: true
+
+    - Class: rviz_default_plugins/Pose
+      Name: Goal
+      Enabled: true
+      Topic:
+        Value: /goal_pose
+        Depth: 5
+      Color: 0; 0; 255
+      Arrow Length: 0.8
+      Value: true
+
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Value: true
+
+  Global Options:
+    Fixed Frame: odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/SetGoal
+      Topic: /goal_pose
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: TopDownOrtho
+      X: 0
+      Y: 0
+      Scale: 50

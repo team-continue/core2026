@@ -49,6 +49,8 @@ private:
   std::string goal_topic_;
   std::string path_topic_;
   std::string local_frame_id_;
+  bool publish_in_global_frame_;
+  std::string global_frame_id_;
   int occupied_threshold_;
   bool allow_unknown_;
   bool use_diagonal_;
