@@ -64,7 +64,8 @@ void PathPlannerNode::onGlobalMapReceived(
   bool first_map = !global_map_.has_value();
   global_map_ = *msg;
   if (first_map) {
-    RCLCPP_INFO(get_logger(), "Global map received: %ux%u, res=%.3f",
+    RCLCPP_INFO(
+      get_logger(), "Global map received: %ux%u, res=%.3f",
       msg->info.width, msg->info.height, msg->info.resolution);
   }
   // tryPlan();
@@ -108,7 +109,8 @@ void PathPlannerNode::tryPlan()
 
   switch (result.status) {
     case PathPlanner::Status::kStartOrGoalOutOfBounds:
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 2000,
         "Start or goal outside global map bounds. "
         "start=(%.2f, %.2f) goal=(%.2f, %.2f) "
         "map_origin=(%.2f, %.2f) map_size=%ux%u res=%.5f",
@@ -120,7 +122,8 @@ void PathPlannerNode::tryPlan()
         global_map_->info.resolution);
       return;
     case PathPlanner::Status::kStartOrGoalOccupied:
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 2000,
         "Start or goal is occupied. "
         "start=(%.2f, %.2f) goal=(%.2f, %.2f)",
         start_pose_->pose.position.x, start_pose_->pose.position.y,
@@ -130,7 +133,8 @@ void PathPlannerNode::tryPlan()
       RCLCPP_WARN(get_logger(), "Failed to find path.");
       return;
     case PathPlanner::Status::kOk:
-      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+      RCLCPP_INFO_THROTTLE(
+        get_logger(), *get_clock(), 5000,
         "Path planned: %zu waypoints, start=(%.2f, %.2f) goal=(%.2f, %.2f)",
         result.path.size(),
         start_pose_->pose.position.x, start_pose_->pose.position.y,
