@@ -15,8 +15,8 @@ class MapServerNode(Node):
 
         self.declare_parameter('image_path', 'global_map.png')
         self.declare_parameter('resolution', 0.05)  # 5cm/px
-        self.declare_parameter('origin_x', -3.6)
-        self.declare_parameter('origin_y', -18.3)
+        self.declare_parameter('origin_x', 0.0)
+        self.declare_parameter('origin_y', 0.0)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('occupied_thresh', 0.65)

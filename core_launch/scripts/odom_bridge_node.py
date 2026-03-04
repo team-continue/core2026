@@ -47,7 +47,7 @@ class OdomBridgeNode(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
 
         self._logged_first = False
-        self.get_logger().info('Odom bridge node started (90deg CCW rotation)')
+        self.get_logger().info('Odom bridge node started (pass-through + offset)')
 
     def on_sim_odom(self, msg: Odometry):
         stamp = self.get_clock().now().to_msg()
@@ -57,12 +57,10 @@ class OdomBridgeNode(Node):
         rz = msg.pose.pose.position.z
         rq = msg.pose.pose.orientation
 
-        # Rotate 90° CCW to align sim coordinates with map frame
-        # sim right (-Y) → map +X, sim forward (+X) → map +Y
-        ox = -ry + self.offset_x
-        oy = rx + self.offset_y
-        yaw = _quat_yaw(rq) + math.pi / 2.0
-        oq = _yaw_to_quat(yaw)
+        # Map is pre-rotated to align with sim axes; only offset needed
+        ox = rx + self.offset_x
+        oy = ry + self.offset_y
+        oq = rq
 
         # Log first received pose
         if not self._logged_first:
@@ -70,9 +68,9 @@ class OdomBridgeNode(Node):
             self.get_logger().info(
                 f'First sim_odom: ({rx:.2f}, {ry:.2f}, {rz:.2f}), '
                 f'yaw: {math.degrees(_quat_yaw(rq)):.1f}deg → '
-                f'map: ({ox:.2f}, {oy:.2f}), yaw: {math.degrees(yaw):.1f}deg')
+                f'map: ({ox:.2f}, {oy:.2f})')
 
-        # Re-publish as /odom (rotated to match map frame)
+        # Re-publish as /odom
         odom = Odometry()
         odom.header.stamp = stamp
         odom.header.frame_id = self.odom_frame
@@ -81,9 +79,8 @@ class OdomBridgeNode(Node):
         odom.pose.pose.position.y = oy
         odom.pose.pose.position.z = rz
         odom.pose.pose.orientation = oq
-        # Rotate twist as well
-        odom.twist.twist.linear.x = -msg.twist.twist.linear.y
-        odom.twist.twist.linear.y = msg.twist.twist.linear.x
+        odom.twist.twist.linear.x = msg.twist.twist.linear.x
+        odom.twist.twist.linear.y = msg.twist.twist.linear.y
         odom.twist.twist.linear.z = msg.twist.twist.linear.z
         odom.twist.twist.angular = msg.twist.twist.angular
         self.odom_pub.publish(odom)

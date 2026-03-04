@@ -78,7 +78,7 @@ def generate_launch_description():
         parameters=[{
             'image_path': LaunchConfiguration('map_image'),
             'resolution': 0.025,
-            'origin_x': -1.8,
+            'origin_x': -13.675,
             'origin_y': -9.15,
         }],
     )
@@ -90,7 +90,7 @@ def generate_launch_description():
         name='odom_bridge_node',
         output='screen',
         parameters=[{
-            'offset_x': 12.1,
+            'offset_x': 0.0,
             'offset_y': 0.0,
         }],
     )
