@@ -90,8 +90,8 @@ def generate_launch_description():
         name='odom_bridge_node',
         output='screen',
         parameters=[{
-            'sim_init_x': 0.0,
-            'sim_init_y': 0.3,
+            'init_x': -10.7,
+            'init_y': 5.9,
         }],
     )
 
