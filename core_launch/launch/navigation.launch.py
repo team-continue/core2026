@@ -1,12 +1,16 @@
-"""Integration test launch: path_planner + costmap_builder + MPPI."""
+"""Navigation launch: path_planner + costmap_builder + MPPI."""
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.conditions import IfCondition
+from launch.substitutions import (
+    LaunchConfiguration, PathJoinSubstitution, PythonExpression,
+)
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
@@ -29,7 +33,24 @@ def generate_launch_description():
             core_launch_share, 'global_map.png'),
         description='Path to global_map.png',
     )
-    # 1. ROS-TCP-Endpoint (Unity bridge)
+
+    odom_source_arg = DeclareLaunchArgument(
+        'odom_source',
+        default_value='sim',
+        description='Odometry source: "sim" (Unity /sim_odom) or "fastlio" (/Odometry)',
+    )
+
+    init_yaw_arg = DeclareLaunchArgument(
+        'init_yaw',
+        default_value='0.0',
+        description='Initial yaw in odom frame [rad] (used in fastlio mode)',
+    )
+
+    # Condition: odom_source == "fastlio"
+    is_fastlio = PythonExpression(
+        ["'", LaunchConfiguration('odom_source'), "' == 'fastlio'"])
+
+    # 1a. ROS-TCP-Endpoint (Unity bridge) -- always launched
     tcp_endpoint = Node(
         package='ros_tcp_endpoint',
         executable='default_server_endpoint',
@@ -39,6 +60,21 @@ def generate_launch_description():
             'ROS_IP': '127.0.0.1',
             'ROS_TCP_PORT': 10000,
         }],
+    )
+
+    # 1b. FAST-LIO -- only in fastlio mode
+    # FindPackageShare はノード実行時に評価されるため、
+    # fast_lio 未インストール環境でも sim モードなら問題なし
+    fast_lio_node = Node(
+        package='fast_lio',
+        executable='fastlio_mapping',
+        name='fastlio_mapping',
+        output='screen',
+        parameters=[
+            PathJoinSubstitution([
+                FindPackageShare('fast_lio'), 'config', 'mid360.yaml']),
+        ],
+        condition=IfCondition(is_fastlio),
     )
 
     # 2. Static TF: map -> odom (identity)
@@ -83,15 +119,17 @@ def generate_launch_description():
         }],
     )
 
-    # 5. Odom bridge (sim_odom -> odom + TF + start_pose, Unity→ROS conversion)
+    # 5. Odom bridge (sim_odom or FAST-LIO -> odom + TF + start_pose)
     odom_bridge = Node(
         package='core_launch',
         executable='odom_bridge_node.py',
         name='odom_bridge_node',
         output='screen',
         parameters=[{
+            'odom_source': LaunchConfiguration('odom_source'),
             'init_x': -10.7,
             'init_y': 5.9,
+            'init_yaw': LaunchConfiguration('init_yaw'),
         }],
     )
 
@@ -139,7 +177,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         map_image_arg,
+        odom_source_arg,
+        init_yaw_arg,
         tcp_endpoint,
+        fast_lio_node,
         static_tf_map_odom,
         static_tf_base_livox,
         map_server,

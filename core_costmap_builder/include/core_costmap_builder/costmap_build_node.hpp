@@ -183,6 +183,8 @@ private:
 
   // --- 最新データ ---
   sensor_msgs::msg::PointCloud2::SharedPtr last_points_;  // 最新の受信点群
+  sensor_msgs::msg::PointCloud2 last_points_no_self_;     // 自身除去済み点群キャッシュ
+  bool has_points_no_self_{false};                         // キャッシュ有効フラグ
   builtin_interfaces::msg::Time last_points_stamp_{};     // 受信時刻
 };
 

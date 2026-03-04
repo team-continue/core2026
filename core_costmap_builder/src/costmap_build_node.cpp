@@ -171,6 +171,12 @@ void CostmapBuildNode::onPoints(const sensor_msgs::msg::PointCloud2::SharedPtr m
 {
   last_points_ = msg;
   last_points_stamp_ = this->now();
+
+  // 即座に自身除去し発行（TF不要 — センサ座標系で動作）
+  // FAST-LIO が /livox/lidar/no_self を必要とするため、
+  // TF の有無に関係なくここで発行する（循環参照防止）
+  last_points_no_self_ = removeSelfPoints(*msg, 0.0, 0.0);
+  has_points_no_self_ = true;
 }
 
 // ===========================================================================
@@ -187,18 +193,16 @@ void CostmapBuildNode::onUpdate()
   local_origin_y_ = robot_y - local_height_m_ * 0.5;
 
   // --- 点群鮮度チェック（未受信 or タイムアウト → グリッド更新なしで配信） ---
-  if (!last_points_ || (this->now() - last_points_stamp_).seconds() > points_timeout_sec_) {
+  if (!has_points_no_self_ || (this->now() - last_points_stamp_).seconds() > points_timeout_sec_) {
     publishLocal();
     return;
   }
 
-  // --- Stage 1: ロボット自身の点群を除去（センサ座標系のまま） ---
-  // センサ座標系では原点 (0,0) がセンサ位置
-  auto points_no_self = removeSelfPoints(*last_points_, 0.0, 0.0);
+  // --- Stage 1 は onPoints() で実施済み（キャッシュ使用） ---
 
   // --- 自身除去済み点群を odom フレームに座標変換 ---
   sensor_msgs::msg::PointCloud2 points_odom;
-  if (!transformPointCloudToFrame(points_no_self, odom_frame_, points_odom)) {
+  if (!transformPointCloudToFrame(last_points_no_self_, odom_frame_, points_odom)) {
     publishLocal();
     return;
   }
