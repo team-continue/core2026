@@ -31,13 +31,13 @@ class OdomBridgeNode(Node):
 
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_link')
-        self.declare_parameter('offset_x', 0.0)
-        self.declare_parameter('offset_y', 0.0)
+        self.declare_parameter('sim_init_x', 0.0)
+        self.declare_parameter('sim_init_y', 0.0)
 
         self.odom_frame = self.get_parameter('odom_frame').value
         self.base_frame = self.get_parameter('base_frame').value
-        self.offset_x = self.get_parameter('offset_x').value
-        self.offset_y = self.get_parameter('offset_y').value
+        self.sim_init_x = self.get_parameter('sim_init_x').value
+        self.sim_init_y = self.get_parameter('sim_init_y').value
 
         self.sub = self.create_subscription(
             Odometry, '/sim_odom', self.on_sim_odom, 10)
@@ -47,7 +47,8 @@ class OdomBridgeNode(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
 
         self._logged_first = False
-        self.get_logger().info('Odom bridge node started (pass-through + offset)')
+        self.get_logger().info(
+            f'Odom bridge started (Unity→ROS, sim_init=({self.sim_init_x}, {self.sim_init_y}))')
 
     def on_sim_odom(self, msg: Odometry):
         stamp = self.get_clock().now().to_msg()
@@ -57,10 +58,12 @@ class OdomBridgeNode(Node):
         rz = msg.pose.pose.position.z
         rq = msg.pose.pose.orientation
 
-        # Map is pre-rotated to align with sim axes; only offset needed
-        ox = rx + self.offset_x
-        oy = ry + self.offset_y
-        oq = rq
+        # Unity ground plane → ROS: X=forward, Y=left
+        # Unity: sim_x=right, sim_y=forward → ROS: ros_x=forward, ros_y=left
+        ox = -(ry - self.sim_init_y)
+        oy = (rx - self.sim_init_x)
+        yaw = _quat_yaw(rq) + math.pi / 2.0
+        oq = _yaw_to_quat(yaw)
 
         # Log first received pose
         if not self._logged_first:
@@ -68,7 +71,7 @@ class OdomBridgeNode(Node):
             self.get_logger().info(
                 f'First sim_odom: ({rx:.2f}, {ry:.2f}, {rz:.2f}), '
                 f'yaw: {math.degrees(_quat_yaw(rq)):.1f}deg → '
-                f'map: ({ox:.2f}, {oy:.2f})')
+                f'ROS: ({ox:.2f}, {oy:.2f}), yaw: {math.degrees(yaw):.1f}deg')
 
         # Re-publish as /odom
         odom = Odometry()
@@ -79,8 +82,9 @@ class OdomBridgeNode(Node):
         odom.pose.pose.position.y = oy
         odom.pose.pose.position.z = rz
         odom.pose.pose.orientation = oq
-        odom.twist.twist.linear.x = msg.twist.twist.linear.x
-        odom.twist.twist.linear.y = msg.twist.twist.linear.y
+        # Rotate velocity the same way as position
+        odom.twist.twist.linear.x = -msg.twist.twist.linear.y
+        odom.twist.twist.linear.y = msg.twist.twist.linear.x
         odom.twist.twist.linear.z = msg.twist.twist.linear.z
         odom.twist.twist.angular = msg.twist.twist.angular
         self.odom_pub.publish(odom)

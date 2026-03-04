@@ -83,15 +83,15 @@ def generate_launch_description():
         }],
     )
 
-    # 5. Odom bridge (sim_odom -> odom + TF + start_pose)
+    # 5. Odom bridge (sim_odom -> odom + TF + start_pose, Unity→ROS conversion)
     odom_bridge = Node(
         package='core_launch',
         executable='odom_bridge_node.py',
         name='odom_bridge_node',
         output='screen',
         parameters=[{
-            'offset_x': 0.0,
-            'offset_y': 0.0,
+            'sim_init_x': 0.0,
+            'sim_init_y': 0.3,
         }],
     )
 
