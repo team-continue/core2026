@@ -17,7 +17,6 @@ install(DIRECTORY
 install(PROGRAMS
   scripts/map_server_node.py
   scripts/odom_bridge_node.py
-  scripts/goal_publisher_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

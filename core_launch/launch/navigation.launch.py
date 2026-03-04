@@ -14,7 +14,6 @@ def generate_launch_description():
     mppi_share = get_package_share_directory('core_mppi')
     costmap_share = get_package_share_directory('core_costmap_builder')
 
-    scripts_dir = os.path.join(core_launch_share, 'scripts')
     rviz_config = os.path.join(
         core_launch_share, 'config', 'integration_test.rviz')
     mppi_params = os.path.join(mppi_share, 'param', 'default_params.yaml')
