@@ -14,7 +14,7 @@
   <exec_depend>core_mppi</exec_depend>
   <exec_depend>core_costmap_builder</exec_depend>
   <exec_depend>core_path_planner</exec_depend>
-  <exec_depend>ros_tcp_endpoint</exec_depend>
+
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>rviz2</exec_depend>
