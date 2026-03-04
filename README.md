@@ -19,12 +19,21 @@ mainブランチには自動pushしません。
 
 ## 使い方 (ロボットの起動)
 ```bash
+# ナビゲーションシミュレータモード（デフォルト: /sim_odom使用）
 ros2 launch core_launch navigation.launch.py
+
+# ナビゲーションFAST-LIOモード（実機LiDAR: /Odometry使用）
+ros2 launch core_launch navigation.launch.py odom_source:=fastlio
+
+# ナビゲーションFAST-LIOモード + 初期ヨー指定
+ros2 launch core_launch navigation.launch.py odom_source:=fastlio init_yaw:=1.5708
+
+# ボディコントローラ
 ros2 launch core_body_controller body_controller.launch.py
 
-# 実機
+# 実機ハードウェア
 ros2 launch core_hardware core_hardware.launch.py
 
-# シミュレータ
+# ROS-TCP-Endpointの起動
 ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=0.0.0.0
 ```
