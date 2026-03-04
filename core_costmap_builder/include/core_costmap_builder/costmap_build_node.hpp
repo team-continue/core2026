@@ -158,8 +158,8 @@ private:
   double min_range_m_{0.30};  // センサからの最小有効距離 [m] (後方互換用、Stage 1 で使用)
   double max_range_m_{6.0};  // センサからの最大有効距離 [m]
 
-  double robot_radius_m_{0.71};      // ロボット半径 [m]（この内側は LETHAL）
-  double inflation_radius_m_{0.90};  // インフレーション半径 [m]
+  double inflation_radius_m_{0.90};  // 障害物からの膨張半径 [m]（LETHAL ゾーン）
+  double decay_margin_m_{0.30};      // LETHAL ゾーン外側の線形減衰幅 [m]
 
   double points_timeout_sec_{0.2};  // 点群タイムアウト [秒]
   int tf_timeout_ms_{50};           // TF待ちタイムアウト [ms]

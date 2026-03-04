@@ -63,19 +63,18 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   min_range_m_ = declare_parameter<double>("min_range_m", 0.30);
   max_range_m_ = declare_parameter<double>("max_range_m", 6.0);
 
-  // ---------- ロボット形状 / インフレーション ----------
-  robot_radius_m_ = declare_parameter<double>("robot_radius_m", 0.71);
+  // ---------- インフレーション ----------
   inflation_radius_m_ = declare_parameter<double>("inflation_radius_m", 0.90);
+  decay_margin_m_ = declare_parameter<double>("decay_margin_m", 0.30);
 
-  // inflation_radius_m_ が robot_radius_m_ 以下だと range_diff が 0 以下になり
-  // ゼロ除算が発生するため、最低でも 1 セル分の余裕を持たせる
-  if (inflation_radius_m_ <= robot_radius_m_) {
-    inflation_radius_m_ = robot_radius_m_ + resolution_m_;
+  // decay_margin_m_ が 0 以下だと減衰ゾーンの計算でゼロ除算が発生するため、
+  // 最低でも 1 セル分の余裕を持たせる
+  if (decay_margin_m_ <= 0.0) {
+    decay_margin_m_ = resolution_m_;
     RCLCPP_WARN(
       get_logger(),
-      "inflation_radius_m (%.3f) <= robot_radius_m (%.3f): "
-      "auto-corrected to %.3f",
-      inflation_radius_m_ - resolution_m_, robot_radius_m_, inflation_radius_m_);
+      "decay_margin_m <= 0: auto-corrected to %.3f",
+      decay_margin_m_);
   }
 
   // ---------- 動作パラメータ ----------
@@ -100,31 +99,31 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   self_crop_min_range_sq_ = self_crop_min_range_m_ * self_crop_min_range_m_;
   max_range_sq_ = max_range_m_ * max_range_m_;
   {
-    const int r_infl = static_cast<int>(std::ceil(inflation_radius_m_ / resolution_m_));
+    const double total_radius = inflation_radius_m_ + decay_margin_m_;
+    const int r_total = static_cast<int>(std::ceil(total_radius / resolution_m_));
     const double infl_sq = inflation_radius_m_ * inflation_radius_m_;
-    const double robot_sq = robot_radius_m_ * robot_radius_m_;
-    const double range_diff = inflation_radius_m_ - robot_radius_m_;
+    const double total_sq = total_radius * total_radius;
 
-    for (int dy = -r_infl; dy <= r_infl; ++dy) {
-      for (int dx = -r_infl; dx <= r_infl; ++dx) {
+    for (int dy = -r_total; dy <= r_total; ++dy) {
+      for (int dx = -r_total; dx <= r_total; ++dx) {
         // 自分自身のセルはスキップ（occupied で既に LETHAL）
         if (dx == 0 && dy == 0) {
           continue;
         }
 
         const double dist_sq = (dx * dx + dy * dy) * resolution_m_ * resolution_m_;
-        if (dist_sq > infl_sq) {
+        if (dist_sq > total_sq) {
           continue;
         }
 
         int8_t cost;
-        if (dist_sq <= robot_sq) {
-          // ロボット半径以内 → 致命的コスト
+        if (dist_sq <= infl_sq) {
+          // インフレーション半径以内 → 致命的コスト
           cost = LETHAL;
         } else {
-          // ロボット半径〜インフレーション半径 → 線形減衰コスト
+          // インフレーション半径〜総半径 → 線形減衰コスト
           const double dist = std::sqrt(dist_sq);
-          const double t = (inflation_radius_m_ - dist) / range_diff;
+          const double t = (total_radius - dist) / decay_margin_m_;
           cost = static_cast<int8_t>(std::round(t * (LETHAL - 1)));
         }
         inflation_kernel_.push_back({dx, dy, cost});
