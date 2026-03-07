@@ -24,11 +24,6 @@ targetDetector::targetDetector() :
  * @param msg 受け取ったメッセージ
  */
 void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr imgMsg){
-    timeStamp = cv_bridge::toCvShare(imgMsg, "bgr8")->header.stamp;
-    if((this->now() - timeStamp).seconds() > 0.1){
-        return;
-    }
-
     resetDamagePanelInfo();
 
     // subscribeされたイメージ取得

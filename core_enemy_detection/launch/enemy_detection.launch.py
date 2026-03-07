@@ -2,6 +2,7 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 
 def generate_launch_description():
+    target_detector_param_file = os.path.join(pkg_dir, 'launch', 'target_detector_parameter.yaml')
     return LaunchDescription([
         # target_detector ノード
         Node(
@@ -9,6 +10,7 @@ def generate_launch_description():
             executable='target_detector',
             name='target_detector',
             output='screen',
+            parameters=[target_detector_param_file],
             remappings=[
                 ('/raw_image', '/image_input'),        # 入力トピックを remap
             ]
