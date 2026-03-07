@@ -14,12 +14,12 @@ def generate_launch_description():
     )
     input_topic_arg = DeclareLaunchArgument(
         'input_topic',
-        default_value='/image_input',
+        default_value='image_input',
         description='Input camera topic for this turret'
     )
     output_topic_arg = DeclareLaunchArgument(
         'output_topic',
-        default_value='/target_pose',
+        default_value='target_pose',
         description='Targete Pose topic for this turret'
     )
 
@@ -45,7 +45,7 @@ def generate_launch_description():
             output='screen',
             parameters=[param_file],
             remappings=[
-                ('/raw_image', input_topic),
+                ('raw_image/compressed', input_topic),
             ]
         ),
 
@@ -57,7 +57,7 @@ def generate_launch_description():
             namespace=turret_name,
             output='screen',
             remappings=[
-                ('/damage_panel_pose', output_topic),
+                ('damage_panel_pose', output_topic),
             ]
         ),
     ])
