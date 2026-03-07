@@ -10,8 +10,23 @@ find_package(ament_cmake REQUIRED)
 install(DIRECTORY
   launch
   urdf
+  config
   DESTINATION share/${PROJECT_NAME}
 )
+
+install(PROGRAMS
+  scripts/map_server_node.py
+  scripts/odom_bridge_node.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install global map image if present
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../global_map.png")
+  install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../global_map.png"
+    DESTINATION share/${PROJECT_NAME}
+  )
+endif()
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

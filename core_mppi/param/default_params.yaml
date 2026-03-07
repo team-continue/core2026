@@ -1,0 +1,28 @@
+core_mppi_node:
+  ros__parameters:
+    path_topic: "/planned_path"
+    odom_topic: "/odom"
+    local_costmap_topic: "/costmap/local"
+    global_costmap_topic: "/costmap/global"
+    cmd_vel_topic: "/cmd_vel"
+    control_rate: 20.0
+
+    mppi.samples: 160
+    mppi.horizon_steps: 12
+    mppi.dt: 0.08
+    mppi.temperature: 1.0
+
+    mppi.noise_vx: 0.25
+    mppi.noise_vy: 0.25
+    mppi.noise_wz: 0.8
+
+    mppi.max_vx: 1.0
+    mppi.max_vy: 1.0
+    mppi.max_wz: 3.14
+
+    mppi.w_path: 3.0
+    mppi.w_goal: 8.0
+    mppi.w_obstacle: 18.0
+    mppi.w_control: 0.3
+    mppi.w_smooth: 0.8
+    mppi.unknown_cost: 0.5

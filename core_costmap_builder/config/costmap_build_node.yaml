@@ -17,7 +17,7 @@ costmap_build_node:
 
     # ----- point filtering (PCLなし) -----
     crop_xy_m: 6.0           # ロボ周り±6mだけ使う
-    min_z_m: 0.15
+    min_z_m: 0.25
     max_z_m: 1.60
     voxel_leaf_m: 0.05       # Mid-360なら 5cm 推奨
 
@@ -25,9 +25,9 @@ costmap_build_node:
     min_range_m: 0.6            # (後方互換用、self_crop_min_range_m と同値推奨)
     max_range_m: 6.0
 
-    # ----- robot / inflation -----
-    robot_radius_m: 0.71     # 1.0m角想定の半径寄せ（おすすめ値）
-    inflation_radius_m: 0.90
+    # ----- inflation -----
+    inflation_radius_m: 0.50 # 障害物からの膨張半径（LETHAL ゾーン）[m]
+    decay_margin_m: 0.30     # LETHAL ゾーン外側の線形減衰幅 [m]
 
     # ----- behavior -----
     points_timeout_sec: 0.2  # 点群止まったら更新停止

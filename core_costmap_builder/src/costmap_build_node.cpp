@@ -63,19 +63,18 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   min_range_m_ = declare_parameter<double>("min_range_m", 0.30);
   max_range_m_ = declare_parameter<double>("max_range_m", 6.0);
 
-  // ---------- ロボット形状 / インフレーション ----------
-  robot_radius_m_ = declare_parameter<double>("robot_radius_m", 0.71);
+  // ---------- インフレーション ----------
   inflation_radius_m_ = declare_parameter<double>("inflation_radius_m", 0.90);
+  decay_margin_m_ = declare_parameter<double>("decay_margin_m", 0.30);
 
-  // inflation_radius_m_ が robot_radius_m_ 以下だと range_diff が 0 以下になり
-  // ゼロ除算が発生するため、最低でも 1 セル分の余裕を持たせる
-  if (inflation_radius_m_ <= robot_radius_m_) {
-    inflation_radius_m_ = robot_radius_m_ + resolution_m_;
+  // decay_margin_m_ が 0 以下だと減衰ゾーンの計算でゼロ除算が発生するため、
+  // 最低でも 1 セル分の余裕を持たせる
+  if (decay_margin_m_ <= 0.0) {
+    decay_margin_m_ = resolution_m_;
     RCLCPP_WARN(
       get_logger(),
-      "inflation_radius_m (%.3f) <= robot_radius_m (%.3f): "
-      "auto-corrected to %.3f",
-      inflation_radius_m_ - resolution_m_, robot_radius_m_, inflation_radius_m_);
+      "decay_margin_m <= 0: auto-corrected to %.3f",
+      decay_margin_m_);
   }
 
   // ---------- 動作パラメータ ----------
@@ -100,31 +99,31 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   self_crop_min_range_sq_ = self_crop_min_range_m_ * self_crop_min_range_m_;
   max_range_sq_ = max_range_m_ * max_range_m_;
   {
-    const int r_infl = static_cast<int>(std::ceil(inflation_radius_m_ / resolution_m_));
+    const double total_radius = inflation_radius_m_ + decay_margin_m_;
+    const int r_total = static_cast<int>(std::ceil(total_radius / resolution_m_));
     const double infl_sq = inflation_radius_m_ * inflation_radius_m_;
-    const double robot_sq = robot_radius_m_ * robot_radius_m_;
-    const double range_diff = inflation_radius_m_ - robot_radius_m_;
+    const double total_sq = total_radius * total_radius;
 
-    for (int dy = -r_infl; dy <= r_infl; ++dy) {
-      for (int dx = -r_infl; dx <= r_infl; ++dx) {
+    for (int dy = -r_total; dy <= r_total; ++dy) {
+      for (int dx = -r_total; dx <= r_total; ++dx) {
         // 自分自身のセルはスキップ（occupied で既に LETHAL）
         if (dx == 0 && dy == 0) {
           continue;
         }
 
         const double dist_sq = (dx * dx + dy * dy) * resolution_m_ * resolution_m_;
-        if (dist_sq > infl_sq) {
+        if (dist_sq > total_sq) {
           continue;
         }
 
         int8_t cost;
-        if (dist_sq <= robot_sq) {
-          // ロボット半径以内 → 致命的コスト
+        if (dist_sq <= infl_sq) {
+          // インフレーション半径以内 → 致命的コスト
           cost = LETHAL;
         } else {
-          // ロボット半径〜インフレーション半径 → 線形減衰コスト
+          // インフレーション半径〜総半径 → 線形減衰コスト
           const double dist = std::sqrt(dist_sq);
-          const double t = (inflation_radius_m_ - dist) / range_diff;
+          const double t = (total_radius - dist) / decay_margin_m_;
           cost = static_cast<int8_t>(std::round(t * (LETHAL - 1)));
         }
         inflation_kernel_.push_back({dx, dy, cost});
@@ -172,6 +171,12 @@ void CostmapBuildNode::onPoints(const sensor_msgs::msg::PointCloud2::SharedPtr m
 {
   last_points_ = msg;
   last_points_stamp_ = this->now();
+
+  // 即座に自身除去し発行（TF不要 — センサ座標系で動作）
+  // FAST-LIO が /livox/lidar/no_self を必要とするため、
+  // TF の有無に関係なくここで発行する（循環参照防止）
+  last_points_no_self_ = removeSelfPoints(*msg, 0.0, 0.0);
+  has_points_no_self_ = true;
 }
 
 // ===========================================================================
@@ -188,18 +193,16 @@ void CostmapBuildNode::onUpdate()
   local_origin_y_ = robot_y - local_height_m_ * 0.5;
 
   // --- 点群鮮度チェック（未受信 or タイムアウト → グリッド更新なしで配信） ---
-  if (!last_points_ || (this->now() - last_points_stamp_).seconds() > points_timeout_sec_) {
+  if (!has_points_no_self_ || (this->now() - last_points_stamp_).seconds() > points_timeout_sec_) {
     publishLocal();
     return;
   }
 
-  // --- Stage 1: ロボット自身の点群を除去（センサ座標系のまま） ---
-  // センサ座標系では原点 (0,0) がセンサ位置
-  auto points_no_self = removeSelfPoints(*last_points_, 0.0, 0.0);
+  // --- Stage 1 は onPoints() で実施済み（キャッシュ使用） ---
 
   // --- 自身除去済み点群を odom フレームに座標変換 ---
   sensor_msgs::msg::PointCloud2 points_odom;
-  if (!transformPointCloudToFrame(points_no_self, odom_frame_, points_odom)) {
+  if (!transformPointCloudToFrame(last_points_no_self_, odom_frame_, points_odom)) {
     publishLocal();
     return;
   }

@@ -158,8 +158,8 @@ private:
   double min_range_m_{0.30};  // センサからの最小有効距離 [m] (後方互換用、Stage 1 で使用)
   double max_range_m_{6.0};  // センサからの最大有効距離 [m]
 
-  double robot_radius_m_{0.71};      // ロボット半径 [m]（この内側は LETHAL）
-  double inflation_radius_m_{0.90};  // インフレーション半径 [m]
+  double inflation_radius_m_{0.90};  // 障害物からの膨張半径 [m]（LETHAL ゾーン）
+  double decay_margin_m_{0.30};      // LETHAL ゾーン外側の線形減衰幅 [m]
 
   double points_timeout_sec_{0.2};  // 点群タイムアウト [秒]
   int tf_timeout_ms_{50};           // TF待ちタイムアウト [ms]
@@ -183,6 +183,8 @@ private:
 
   // --- 最新データ ---
   sensor_msgs::msg::PointCloud2::SharedPtr last_points_;  // 最新の受信点群
+  sensor_msgs::msg::PointCloud2 last_points_no_self_;     // 自身除去済み点群キャッシュ
+  bool has_points_no_self_{false};                         // キャッシュ有効フラグ
   builtin_interfaces::msg::Time last_points_stamp_{};     // 受信時刻
 };
 
