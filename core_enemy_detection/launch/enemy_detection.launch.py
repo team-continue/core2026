@@ -5,7 +5,7 @@ import os
 
 def generate_launch_description():
     pkg_dir = get_package_share_directory('core_enemy_detection')
-    target_detector_param_file = os.path.join(pkg_dir, 'launch', 'target_detector_parameter.yaml')
+    target_detector_param_file = os.path.join(pkg_dir, 'config', 'target_detector_parameter.yaml')
     return LaunchDescription([
         # target_detector ノード
         Node(
