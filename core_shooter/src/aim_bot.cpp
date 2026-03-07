@@ -2,6 +2,8 @@
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
@@ -49,6 +51,14 @@ public:
     this->declare_parameter<double>("test_pitch_gain", 0.05);
     this->declare_parameter<double>("manual_mode_yaw_fixed_angle", 0.0);
     this->declare_parameter<double>("manual_mode_pitch_initial_angle", 0.0);
+    this->declare_parameter<bool>("enable_zone_angle_limit", false);
+    this->declare_parameter<double>("zone.yaw_zone1_start", -3.14159265359);
+    this->declare_parameter<double>("zone.yaw_boundary", 0.0);
+    this->declare_parameter<double>("zone.yaw_zone2_end", 3.14159265359);
+    this->declare_parameter<double>("zone.pitch_lower_limit", -3.14159265359);
+    this->declare_parameter<double>("zone.pitch_zone2_upper", 0.52359877559);
+    this->declare_parameter<double>("zone.pitch_zone1_upper", 3.14159265359);
+    this->declare_parameter<double>("control.hysteresis_rad", 0.017453292519943295);
 
     // ----------------------------
     // パラメータ取得
@@ -79,6 +89,14 @@ public:
     this->get_parameter("manual_mode_pitch_initial_angle", manual_mode_pitch_initial_angle_);
     this->get_parameter("pitch_motor_id", pitch_motor_id_);
     this->get_parameter("yaw_motor_id", yaw_motor_id_);
+    this->get_parameter("enable_zone_angle_limit", enable_zone_angle_limit_);
+    this->get_parameter("zone.yaw_zone1_start", zone_yaw_zone1_start_);
+    this->get_parameter("zone.yaw_boundary", zone_yaw_boundary_);
+    this->get_parameter("zone.yaw_zone2_end", zone_yaw_zone2_end_);
+    this->get_parameter("zone.pitch_lower_limit", zone_pitch_lower_limit_);
+    this->get_parameter("zone.pitch_zone2_upper", zone_pitch_zone2_upper_);
+    this->get_parameter("zone.pitch_zone1_upper", zone_pitch_zone1_upper_);
+    this->get_parameter("control.hysteresis_rad", control_hysteresis_rad_);
 
     if (rate_ <= 0.0) {
       RCLCPP_FATAL(get_logger(), "Invalid rate=%f (must be > 0)", rate_);
@@ -121,6 +139,20 @@ public:
         "Invalid horizontal_fov_deg=%f for FOV image tracking (must be 0 < hfov < 180)",
         horizontal_fov_deg_);
       throw std::runtime_error("invalid aimbot horizontal fov");
+    }
+    {
+      std::string zone_config_error;
+      if (!validateZoneConfig(
+          zone_yaw_zone1_start_, zone_yaw_boundary_, zone_yaw_zone2_end_,
+          zone_pitch_lower_limit_, zone_pitch_zone2_upper_, zone_pitch_zone1_upper_,
+          control_hysteresis_rad_, zone_config_error))
+      {
+        RCLCPP_FATAL(
+          get_logger(),
+          "Invalid zone angle limit parameters: %s",
+          zone_config_error.c_str());
+        throw std::runtime_error("invalid aimbot zone angle limit parameters");
+      }
     }
 
     // ----------------------------
@@ -178,6 +210,12 @@ private:
     Manual,
     Test,
     AutoTrack
+  };
+  enum class YawZone
+  {
+    OutOfRange,
+    Zone1,
+    Zone2
   };
 
   // ===== コールバック =====
@@ -250,18 +288,21 @@ private:
   {
     test_yaw_target_ = msg->data;
     has_test_yaw_target_ = true;
+    last_test_yaw_time_ = this->now();
   }
 
   void testPitchCallback(const std_msgs::msg::Float32::SharedPtr msg)
   {
     test_pitch_target_ = msg->data;
     has_test_pitch_target_ = true;
+    last_test_pitch_time_ = this->now();
   }
 
   void manualPitchCallback(const std_msgs::msg::Float32::SharedPtr msg)
   {
     manual_pitch_target_ = msg->data;
     has_manual_pitch_target_ = true;
+    last_manual_pitch_time_ = this->now();
   }
 
   void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
@@ -301,7 +342,7 @@ private:
       case ControlMode::Emergency:
         if (entering_mode && has_joint_state_) {
           // Latch actual angle once when entering emergency, then keep holding that command.
-          setCommandTarget(yaw_angle_, pitch_angle_);
+          setCommandTargetRaw(yaw_angle_, pitch_angle_);
         }
         publishCommandHold("emergency hold skipped: command target not initialized");
         return;
@@ -331,10 +372,21 @@ private:
               *this->get_clock(), 2000,
               "manual_mode active but manual_pitch_angle not received yet: holding manual initial pitch command");
           }
+          bool manual_input_timed_out = false;
+          if (has_manual_pitch_target_ && isTimedOut(last_manual_pitch_time_)) {
+            manual_input_timed_out = true;
+            has_manual_pitch_target_ = false;
+            RCLCPP_WARN_THROTTLE(
+              this->get_logger(),
+              *this->get_clock(), 2000,
+              "manual pitch input timed out: hold current pitch");
+          }
           double manual_pitch = command_pitch_angle_;
           if (has_manual_pitch_target_) {
             const double pitch_delta = std::clamp(manual_pitch_target_, -1.0, 1.0);
             manual_pitch = command_pitch_angle_ + pitch_direction_ * test_pitch_gain_ * pitch_delta;
+          } else if (manual_input_timed_out && has_joint_state_) {
+            manual_pitch = pitch_angle_;
           }
           setCommandTarget(manual_mode_yaw_fixed_angle_, manual_pitch);
           publishCommandTarget();
@@ -346,6 +398,15 @@ private:
           // Require fresh test inputs after every test-mode entry to avoid reusing stale values.
           has_test_yaw_target_ = false;
           has_test_pitch_target_ = false;
+        }
+        if ((has_test_yaw_target_ && isTimedOut(last_test_yaw_time_)) ||
+          (has_test_pitch_target_ && isTimedOut(last_test_pitch_time_)))
+        {
+          has_test_yaw_target_ = false;
+          has_test_pitch_target_ = false;
+          holdCurrentAngle(
+            "test input timed out and joint_states not received yet: cannot hold current angle");
+          return;
         }
         if (!has_test_yaw_target_ || !has_test_pitch_target_) {
           RCLCPP_WARN_THROTTLE(
@@ -377,7 +438,7 @@ private:
           RCLCPP_WARN_THROTTLE(
             this->get_logger(), *this->get_clock(), 2000,
             "target_image_position timeout");
-          publishCommandHold("no-input hold skipped: command target not initialized");
+          holdCurrentAngle("auto timeout: joint_states not received yet, cannot hold current angle");
           return;
         }
 
@@ -449,10 +510,114 @@ private:
     return std::clamp(angle, pitch_min_angle_, pitch_max_angle_);
   }
 
+  bool validateZoneConfig(
+    double yaw_zone1_start, double yaw_boundary, double yaw_zone2_end,
+    double pitch_lower_limit, double pitch_zone2_upper, double pitch_zone1_upper,
+    double hysteresis_rad, std::string & reason) const
+  {
+    if (!(yaw_zone1_start < yaw_boundary && yaw_boundary < yaw_zone2_end)) {
+      reason = "zone.yaw_zone1_start < zone.yaw_boundary < zone.yaw_zone2_end is required";
+      return false;
+    }
+    if (!(pitch_lower_limit < pitch_zone2_upper && pitch_zone2_upper < pitch_zone1_upper)) {
+      reason =
+        "zone.pitch_lower_limit < zone.pitch_zone2_upper < zone.pitch_zone1_upper is required";
+      return false;
+    }
+    if (hysteresis_rad < 0.0) {
+      reason = "control.hysteresis_rad must be >= 0";
+      return false;
+    }
+    const double zone1_width = yaw_boundary - yaw_zone1_start;
+    const double zone2_width = yaw_zone2_end - yaw_boundary;
+    if (hysteresis_rad >= zone1_width || hysteresis_rad >= zone2_width) {
+      reason = "control.hysteresis_rad is too large for configured yaw zones";
+      return false;
+    }
+
+    const double effective_pitch_lower = std::max(pitch_min_angle_, pitch_lower_limit);
+    const double effective_pitch_upper_zone2 = std::min(pitch_max_angle_, pitch_zone2_upper);
+    const double effective_pitch_upper_zone1 = std::min(pitch_max_angle_, pitch_zone1_upper);
+    if (effective_pitch_lower > effective_pitch_upper_zone2 ||
+      effective_pitch_lower > effective_pitch_upper_zone1)
+    {
+      reason = "zone pitch limits conflict with pitch_min_angle/pitch_max_angle";
+      return false;
+    }
+    return true;
+  }
+
+  YawZone classifyYawZone(double yaw)
+  {
+    if (yaw < zone_yaw_zone1_start_ || yaw > zone_yaw_zone2_end_) {
+      return YawZone::OutOfRange;
+    }
+
+    const double hysteresis_rad = control_hysteresis_rad_;
+    const YawZone reference_zone = has_last_yaw_zone_ ?
+      last_yaw_zone_ :
+      (yaw <= zone_yaw_boundary_ ? YawZone::Zone1 : YawZone::Zone2);
+
+    if (reference_zone == YawZone::Zone1) {
+      return yaw > (zone_yaw_boundary_ + hysteresis_rad) ? YawZone::Zone2 : YawZone::Zone1;
+    }
+    return yaw < (zone_yaw_boundary_ - hysteresis_rad) ? YawZone::Zone1 : YawZone::Zone2;
+  }
+
+  double getZonePitchUpper(YawZone zone, double yaw) const
+  {
+    if (zone == YawZone::Zone2) {
+      return zone_pitch_zone2_upper_;
+    }
+    // 境界上は安全側（Zone2上限）を優先
+    if (yaw >= zone_yaw_boundary_) {
+      return zone_pitch_zone2_upper_;
+    }
+    return zone_pitch_zone1_upper_;
+  }
+
+  std::pair<double, double> applyZoneAngleLimit(double yaw, double pitch)
+  {
+    double limited_yaw = clampYaw(yaw);
+    double limited_pitch = clampPitch(pitch);
+
+    if (!enable_zone_angle_limit_) {
+      return {limited_yaw, limited_pitch};
+    }
+
+    limited_yaw = std::clamp(limited_yaw, zone_yaw_zone1_start_, zone_yaw_zone2_end_);
+    const YawZone zone = classifyYawZone(limited_yaw);
+    if (zone == YawZone::OutOfRange) {
+      return {limited_yaw, limited_pitch};
+    }
+
+    const double pitch_lower = std::max(pitch_min_angle_, zone_pitch_lower_limit_);
+    const double pitch_upper = std::min(pitch_max_angle_, getZonePitchUpper(zone, limited_yaw));
+    if (pitch_lower > pitch_upper) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "zone pitch limits are invalid after merge with pitch caps. fallback to base clamp only.");
+      return {limited_yaw, clampPitch(pitch)};
+    }
+
+    limited_pitch = std::clamp(limited_pitch, pitch_lower, pitch_upper);
+    has_last_yaw_zone_ = true;
+    last_yaw_zone_ = zone;
+    return {limited_yaw, limited_pitch};
+  }
+
   void setCommandTarget(double yaw, double pitch)
   {
-    command_yaw_angle_ = clampYaw(yaw);
-    command_pitch_angle_ = clampPitch(pitch);
+    const auto [limited_yaw, limited_pitch] = applyZoneAngleLimit(yaw, pitch);
+    command_yaw_angle_ = limited_yaw;
+    command_pitch_angle_ = limited_pitch;
+    has_command_target_ = true;
+  }
+
+  void setCommandTargetRaw(double yaw, double pitch)
+  {
+    command_yaw_angle_ = yaw;
+    command_pitch_angle_ = pitch;
     has_command_target_ = true;
   }
 
@@ -476,6 +641,21 @@ private:
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 2000, "%s", warn_message);
     return false;
+  }
+
+  bool isTimedOut(const rclcpp::Time & last_time) const
+  {
+    return (this->now() - last_time).seconds() > target_timeout_sec_;
+  }
+
+  void holdCurrentAngle(const char * warn_message)
+  {
+    if (!has_joint_state_) {
+      publishCommandHold(warn_message);
+      return;
+    }
+    setCommandTargetRaw(yaw_angle_, pitch_angle_);
+    publishCommandTarget();
   }
 
   void publishCommandHold(const char * warn_message)
@@ -543,6 +723,7 @@ private:
   bool manual_mode_init_pending_ = false;
   double manual_pitch_target_ = 0.0;
   bool has_manual_pitch_target_ = false;
+  rclcpp::Time last_manual_pitch_time_{0, 0, RCL_ROS_TIME};
   bool has_command_target_ = false;
   double command_yaw_angle_ = 0.0;
   double command_pitch_angle_ = 0.0;
@@ -572,8 +753,20 @@ private:
   bool enable_test_mode_ = false;
   double test_yaw_gain_ = 0.05;
   double test_pitch_gain_ = 0.05;
+  rclcpp::Time last_test_yaw_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_test_pitch_time_{0, 0, RCL_ROS_TIME};
   double manual_mode_yaw_fixed_angle_ = 0.0;
   double manual_mode_pitch_initial_angle_ = 0.0;
+  bool enable_zone_angle_limit_ = false;
+  double zone_yaw_zone1_start_ = -3.14159265359;
+  double zone_yaw_boundary_ = 0.0;
+  double zone_yaw_zone2_end_ = 3.14159265359;
+  double zone_pitch_lower_limit_ = -3.14159265359;
+  double zone_pitch_zone2_upper_ = 0.52359877559;
+  double zone_pitch_zone1_upper_ = 3.14159265359;
+  double control_hysteresis_rad_ = 0.017453292519943295;
+  bool has_last_yaw_zone_ = false;
+  YawZone last_yaw_zone_ = YawZone::Zone1;
   int pitch_motor_id_;
   int yaw_motor_id_;
   // ROS通信

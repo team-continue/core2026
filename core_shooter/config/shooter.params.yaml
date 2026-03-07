@@ -102,5 +102,17 @@
                 # pitch_min_angle: -3.14159265359
                 # pitch_max_angle: 3.14159265359
 
+                # zone-based angle limiter（現在のモータ出力指令に対して適用）
+                enable_zone_angle_limit: false # trueで zone.* 制限を有効化
+                zone:
+                        yaw_zone1_start: -3.14159265359 # a [rad]
+                        yaw_boundary: 0.0 # b [rad]
+                        yaw_zone2_end: 3.14159265359 # c [rad]
+                        pitch_lower_limit: -3.14159265359 # x [rad]
+                        pitch_zone2_upper: 0.52359877559 # y [rad]
+                        pitch_zone1_upper: 3.14159265359 # z [rad]
+                control:
+                        hysteresis_rad: 0.017453292519943295 # ゾーン切替ヒステリシス [rad]
+
                 # fixed angle offset [rad]
                 pitch_offset: 0.0
