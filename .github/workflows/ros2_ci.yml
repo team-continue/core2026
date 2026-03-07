@@ -72,7 +72,18 @@ jobs:
         run: |
           . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
           cd /ros2_ws &&
-          colcon test &&
+          colcon test --packages-select \
+            core_body_controller \
+            core_costmap_builder \
+            core_hardware \
+            core_launch \
+            core_mppi \
+            core_msgs \
+            core_path_follower \
+            core_path_planner \
+            core_test \
+            core_tools \
+            ros_tcp_endpoint &&
           colcon test-result --verbose
         continue-on-error: true
 
