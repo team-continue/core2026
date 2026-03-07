@@ -40,12 +40,12 @@ def generate_launch_description():
         Node(
             package='core_enemy_detection',
             executable='target_detector',
-            name=[turret_name, '_target_detector'],
+            name=['target_detector'],
             namespace=turret_name,
             output='screen',
             parameters=[param_file],
             remappings=[
-                ('/raw_image', [turret_name, input_topic]),
+                ('/raw_image', input_topic),
             ]
         ),
 
@@ -53,11 +53,11 @@ def generate_launch_description():
         Node(
             package='core_enemy_detection',
             executable='target_selector',
-            name=[turret_name, '_target_selector'],
+            name=['target_selector'],
             namespace=turret_name,
             output='screen',
             remappings=[
-                ('/damage_panel_pose', [turret_name, output_topic]),
+                ('/damage_panel_pose', output_topic),
             ]
         ),
     ])

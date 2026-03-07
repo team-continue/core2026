@@ -13,7 +13,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             'turret_name':'left',
-            'input_topic':'/left/turret_camera_left/color/image',
+            'input_topic':'/turret_camera_left/color/image',
             'output_topic':'/left/target_pose'
         }.items()
     )
