@@ -8,10 +8,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
-#include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
-#include <tf2/LinearMath/Matrix3x3.h>
-#include <tf2/LinearMath/Quaternion.h>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <core_msgs/msg/damage_panel_info_array.hpp>
 
@@ -77,7 +74,6 @@ private:
     image_transport::Subscriber imgSub;
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr coordPub;
     rclcpp::Publisher<core_msgs::msg::DamagePanelInfoArray>::SharedPtr dpInfoPub;
-    std::shared_ptr<tf2_ros::TransformBroadcaster> tf;
 
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_handle_;
     rcl_interfaces::msg::SetParametersResult changeParameter(const std::vector<rclcpp::Parameter>&);

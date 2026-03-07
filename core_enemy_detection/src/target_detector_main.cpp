@@ -1,7 +1,7 @@
 #include <memory>
 
-#include "rclcpp/rclcpp.hpp"
-#include "target_detector.hpp"
+#include <rclcpp/rclcpp.hpp>
+#include "core_enemy_detection/target_detector.hpp"
 
 int main(int argc, char * argv[])
 {
