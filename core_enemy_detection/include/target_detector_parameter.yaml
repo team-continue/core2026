@@ -1,0 +1,72 @@
+/target_detector:
+  ros__parameters:
+    aw_image:
+      mode: unchanged
+    blue_range_lower:
+    - 105
+    - 64
+    - 255
+    blue_range_upper:
+    - 135
+    - 255
+    - 255
+    image_size:
+    - 620
+    - 480
+    led_kernel_matrix_size:
+    - 5
+    - 5
+    panel_hsv_range_lower:
+    - 75
+    - 70
+    - 55
+    panel_hsv_range_upper:
+    - 100
+    - 170
+    - 95
+    panel_kernel_matrix_size:
+    - 20
+    - 20
+    panel_lab_range_lower:
+    - 60
+    - 110
+    - 110
+    panel_lab_range_upper:
+    - 75
+    - 140
+    - 140
+    qos_overrides:
+      /parameter_events:
+        publisher:
+          depth: 1000
+          durability: volatile
+          history: keep_last
+          reliability: reliable
+    red_lab_range_lower:
+    - 230
+    - 0
+    - 105
+    red_lab_range_upper:
+    - 255
+    - 255
+    - 145
+    red_range_lower1:
+    - 0
+    - 125
+    - 125
+    red_range_lower2:
+    - 175
+    - 125
+    - 125
+    red_range_upper1:
+    - 10
+    - 255
+    - 255
+    red_range_upper2:
+    - 180
+    - 255
+    - 255
+    team:
+    - 0
+    use_sim_time: false
+
