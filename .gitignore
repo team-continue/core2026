@@ -54,6 +54,9 @@ CATKIN_IGNORE
 
 .vscode/
 
+vendor
+
+
 <<<<<<< HEAD
 install/
 build/

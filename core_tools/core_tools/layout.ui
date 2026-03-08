@@ -1,0 +1,859 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1000</width>
+    <height>800</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <widget class="QLabel" name="label">
+    <property name="geometry">
+     <rect>
+      <x>30</x>
+      <y>30</y>
+      <width>131</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>CAN ID(0~225) :</string>
+    </property>
+   </widget>
+   <widget class="QGroupBox" name="groupBox">
+    <property name="geometry">
+     <rect>
+      <x>30</x>
+      <y>560</y>
+      <width>961</width>
+      <height>211</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>Current</string>
+    </property>
+    <widget class="QwtPlot" name="curr_plot">
+     <property name="geometry">
+      <rect>
+       <x>410</x>
+       <y>40</y>
+       <width>531</width>
+       <height>161</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_9">
+     <property name="geometry">
+      <rect>
+       <x>250</x>
+       <y>40</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Max:</string>
+     </property>
+    </widget>
+    <widget class="QDoubleSpinBox" name="curr_limit_max">
+     <property name="geometry">
+      <rect>
+       <x>310</x>
+       <y>40</y>
+       <width>77</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="maximum">
+      <double>10.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>10.000000000000000</double>
+     </property>
+    </widget>
+    <widget class="QSlider" name="curr_ref_slider">
+     <property name="geometry">
+      <rect>
+       <x>199</x>
+       <y>30</y>
+       <width>31</width>
+       <height>171</height>
+      </rect>
+     </property>
+     <property name="minimum">
+      <number>-100</number>
+     </property>
+     <property name="maximum">
+      <number>100</number>
+     </property>
+     <property name="singleStep">
+      <number>5</number>
+     </property>
+     <property name="value">
+      <number>0</number>
+     </property>
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="tickPosition">
+      <enum>QSlider::TicksBelow</enum>
+     </property>
+     <property name="tickInterval">
+      <number>50</number>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="curr_ref_box">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>55</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_21">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>55</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>A</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_22">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>30</y>
+       <width>160</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Target (/can/tx)</string>
+      </property>
+     </widget>
+    <widget class="QLabel" name="curr_rx_target_label">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>88</y>
+       <width>160</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Target (/can/rx)</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="curr_rx_target_box">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>113</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="curr_rx_target_unit">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>113</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>A</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_16">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>170</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>A</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_15">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>145</y>
+       <width>180</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Measured (/can/rx)</string>
+      </property>
+     </widget>
+    <widget class="QLineEdit" name="curr_state">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>170</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </widget>
+   <widget class="QSpinBox" name="can_id">
+    <property name="geometry">
+     <rect>
+      <x>160</x>
+      <y>30</y>
+      <width>51</width>
+      <height>31</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QGroupBox" name="groupBox_2">
+    <property name="geometry">
+     <rect>
+      <x>30</x>
+      <y>350</y>
+      <width>961</width>
+      <height>211</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>Speed</string>
+    </property>
+    <widget class="QwtPlot" name="vel_plot">
+     <property name="geometry">
+      <rect>
+       <x>410</x>
+       <y>40</y>
+       <width>531</width>
+       <height>161</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QDoubleSpinBox" name="vel_gain_p">
+     <property name="geometry">
+      <rect>
+       <x>310</x>
+       <y>40</y>
+       <width>77</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="value">
+      <double>2.000000000000000</double>
+     </property>
+    </widget>
+    <widget class="QDoubleSpinBox" name="vel_gain_i">
+     <property name="geometry">
+      <rect>
+       <x>310</x>
+       <y>90</y>
+       <width>77</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="value">
+      <double>1.000000000000000</double>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_5">
+     <property name="geometry">
+      <rect>
+       <x>270</x>
+       <y>40</y>
+       <width>31</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>P  :</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_6">
+     <property name="geometry">
+      <rect>
+       <x>270</x>
+       <y>90</y>
+       <width>30</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>I   :</string>
+     </property>
+    </widget>
+    <widget class="QSlider" name="vel_ref_slider">
+     <property name="geometry">
+      <rect>
+       <x>199</x>
+       <y>30</y>
+       <width>31</width>
+       <height>171</height>
+      </rect>
+     </property>
+     <property name="minimum">
+      <number>-100</number>
+     </property>
+     <property name="maximum">
+      <number>100</number>
+     </property>
+     <property name="pageStep">
+      <number>5</number>
+     </property>
+     <property name="value">
+      <number>0</number>
+     </property>
+     <property name="tracking">
+      <bool>true</bool>
+     </property>
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="tickPosition">
+      <enum>QSlider::TicksBelow</enum>
+     </property>
+     <property name="tickInterval">
+      <number>50</number>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_7">
+     <property name="geometry">
+      <rect>
+       <x>250</x>
+       <y>140</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Max:</string>
+     </property>
+    </widget>
+    <widget class="QDoubleSpinBox" name="vel_limit_max">
+     <property name="geometry">
+      <rect>
+       <x>310</x>
+       <y>140</y>
+       <width>77</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="maximum">
+      <double>60.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>60.000000000000000</double>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_18">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>30</y>
+       <width>160</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Target (/can/tx)</string>
+      </property>
+     </widget>
+    <widget class="QLabel" name="label_17">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>55</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>rad/s</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="vel_ref_box">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>55</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_14">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>170</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>rad/s</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="vel_state">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>170</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_13">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>145</y>
+       <width>180</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Measured (/can/rx)</string>
+      </property>
+     </widget>
+    <widget class="QLabel" name="vel_rx_target_label">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>88</y>
+       <width>160</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Target (/can/rx)</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="vel_rx_target_box">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>113</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="vel_rx_target_unit">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>113</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>rad/s</string>
+     </property>
+    </widget>
+   </widget>
+   <widget class="QGroupBox" name="groupBox_3">
+    <property name="geometry">
+     <rect>
+      <x>30</x>
+      <y>140</y>
+      <width>961</width>
+      <height>211</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>Position</string>
+    </property>
+    <widget class="QwtPlot" name="pos_plot">
+     <property name="geometry">
+      <rect>
+       <x>410</x>
+       <y>40</y>
+       <width>531</width>
+       <height>161</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QDoubleSpinBox" name="pos_gain_p">
+     <property name="geometry">
+      <rect>
+       <x>310</x>
+       <y>40</y>
+       <width>77</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="value">
+      <double>20.000000000000000</double>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_2">
+     <property name="geometry">
+      <rect>
+       <x>270</x>
+       <y>40</y>
+       <width>31</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>P  :</string>
+     </property>
+    </widget>
+    <widget class="QSlider" name="pos_ref_slider">
+     <property name="geometry">
+      <rect>
+       <x>199</x>
+       <y>30</y>
+       <width>31</width>
+       <height>171</height>
+      </rect>
+     </property>
+     <property name="toolTipDuration">
+      <number>-1</number>
+     </property>
+     <property name="layoutDirection">
+      <enum>Qt::LeftToRight</enum>
+     </property>
+     <property name="minimum">
+      <number>-100</number>
+     </property>
+     <property name="maximum">
+      <number>100</number>
+     </property>
+     <property name="pageStep">
+      <number>5</number>
+     </property>
+     <property name="value">
+      <number>0</number>
+     </property>
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="tickPosition">
+      <enum>QSlider::TicksBelow</enum>
+     </property>
+     <property name="tickInterval">
+      <number>50</number>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_3">
+     <property name="geometry">
+      <rect>
+       <x>250</x>
+       <y>90</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Max:</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_4">
+     <property name="geometry">
+      <rect>
+       <x>250</x>
+       <y>140</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Min:</string>
+     </property>
+    </widget>
+    <widget class="QDoubleSpinBox" name="pos_limit_max">
+     <property name="geometry">
+      <rect>
+       <x>310</x>
+       <y>90</y>
+       <width>77</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="minimum">
+      <double>-1000000000000000000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000000000000000000000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>10.000000000000000</double>
+     </property>
+    </widget>
+    <widget class="QDoubleSpinBox" name="pos_limit_min">
+     <property name="geometry">
+      <rect>
+       <x>310</x>
+       <y>140</y>
+       <width>77</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="minimum">
+      <double>-1000000000000000000.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>1000000000000000000000.000000000000000</double>
+     </property>
+     <property name="value">
+      <double>-10.000000000000000</double>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="pos_state">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>170</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_11">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>145</y>
+       <width>180</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Measured (/can/rx)</string>
+      </property>
+     </widget>
+    <widget class="QLabel" name="label_12">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>170</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>rad</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_19">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>55</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>rad</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_20">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>30</y>
+       <width>160</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Target (/can/tx)</string>
+      </property>
+     </widget>
+    <widget class="QLineEdit" name="pos_ref_box">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>55</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="pos_rx_target_label">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>88</y>
+       <width>160</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Target (/can/rx)</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="pos_rx_target_box">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>113</y>
+       <width>113</width>
+       <height>29</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="pos_rx_target_unit">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>113</y>
+       <width>51</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>rad</string>
+     </property>
+    </widget>
+   </widget>
+   <widget class="QPushButton" name="stop_btn">
+    <property name="geometry">
+     <rect>
+      <x>810</x>
+      <y>100</y>
+      <width>181</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Stop</string>
+    </property>
+    <property name="shortcut">
+     <string>Space</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="gain_btn">
+    <property name="geometry">
+     <rect>
+      <x>600</x>
+      <y>100</y>
+      <width>181</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Set Gain</string>
+    </property>
+    <property name="shortcut">
+     <string>Space</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="mode_status_label">
+    <property name="geometry">
+     <rect>
+      <x>360</x>
+      <y>95</y>
+      <width>220</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Mode: Position</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="tx_status_label">
+    <property name="geometry">
+     <rect>
+      <x>360</x>
+      <y>125</y>
+      <width>220</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>100Hz: Disabled (Space)</string>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>QwtPlot</class>
+   <extends>QFrame</extends>
+   <header>qwt_plot.h</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
