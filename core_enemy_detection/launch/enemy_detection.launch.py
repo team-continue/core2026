@@ -29,7 +29,7 @@ def generate_launch_description():
 
     # パラメータ YAML のフルパス
     pkg_dir = get_package_share_directory('core_enemy_detection')
-    param_file = os.path.join(pkg_dir, 'config', 'target_detector_parameter.yaml')
+    param_file = os.path.join(pkg_dir, 'config', 'sim_param.yaml')
 
     return LaunchDescription([
         turret_name_arg,
