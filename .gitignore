@@ -55,3 +55,13 @@ CATKIN_IGNORE
 .vscode/
 
 vendor
+
+
+<<<<<<< HEAD
+install/
+build/
+log/
+.gitignore
+=======
+vendor
+>>>>>>> origin/feature/hardware
