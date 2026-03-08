@@ -1,5 +1,5 @@
 #include "rst.h"
-#include "pinout.h"
+#include "pin.h"
 #include <Arduino.h>
 
 void rst_setup(void){

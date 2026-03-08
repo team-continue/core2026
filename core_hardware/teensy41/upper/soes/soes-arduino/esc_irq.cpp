@@ -1,5 +1,5 @@
 #include "esc_irq.h"
-#include "pinout.h"
+#include "pin.h"
 #include <Arduino.h>
 
 void irq_interrupt_enable(void){

@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 
-#include "pinout.h"
+#include "pin.h"
 
 void spi_setup(void){
     SPIX_ESC.begin();

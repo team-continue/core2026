@@ -26,6 +26,9 @@
 #define ROBOSTRIDE_ROS2_TIMEOUT  1000 // ms
 #define ROBOSTRIDE_CAN_TIMEOUT   100  // ms
 
+// init delay
+#define ROBOSTRIDE_INIT_DELAY_MS 100
+
 #define SC_MAX 23.0f
 #define SC_MIN 0.0f
 #define SV_MAX 20.0f
@@ -232,7 +235,7 @@ public:
                 Serial.printf("[RoboStride:init] Failed to set parameter 0x%04X\n", idx);
                 return false;
             }
-            delay(500);
+            delay(ROBOSTRIDE_INIT_DELAY_MS);
             return true;
         };
         auto check_param = [&](data_read_write_one &eeprom, float expected) -> bool {
@@ -249,12 +252,12 @@ public:
         };
         auto enableMotor = [&]() -> bool {
             if(!log_step("Enable motor", enable_motor())) return false;
-            delay(500);
+            delay(ROBOSTRIDE_INIT_DELAY_MS);
             return true;
         };
         auto disableMotor = [&]() -> bool {
             if(!log_step("Disable motor", Disenable_Motor(0))) return false;
-            delay(500);
+            delay(ROBOSTRIDE_INIT_DELAY_MS);
             return true;
         };
         configured_run_mode_ = init_run_mode;

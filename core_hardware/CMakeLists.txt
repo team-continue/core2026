@@ -80,15 +80,28 @@ if(NOT TARGET soem)
 endif()
 
 #ノード追加
-# ament_auto_add_executable(core_hardware src/core_hardware.cpp)
+ament_auto_add_executable(
+  core_hardware
+  src/core_hardware.cpp
+  src/ecat.cpp
+  teensy41/upper/soes/soes-esi/objectlist.c
+)
 ament_auto_add_executable(core_hardware_usb src/core_hardware_usb.cpp)
-# # target_link_libraries(core_hardware soem)
-# target_include_directories(core_hardware 
-#   PRIVATE 
-#   $<TARGET_PROPERTY:soem,INTERFACE_INCLUDE_DIRECTORIES>
-# )
 
-target_link_libraries(core_hardware_usb 
+target_include_directories(core_hardware
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/teensy41/upper/soes/soes-esi
+    ${CMAKE_CURRENT_SOURCE_DIR}/teensy41/upper/soes/soes
+    $<TARGET_PROPERTY:soem,INTERFACE_INCLUDE_DIRECTORIES>
+)
+
+target_link_libraries(core_hardware
+  soem
+  ${core_msgs_LIBRARIES}
+)
+
+target_link_libraries(core_hardware_usb
   ${core_msgs_LIBRARIES}
 )
 
