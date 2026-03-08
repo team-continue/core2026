@@ -5,7 +5,7 @@ from tkinter import ttk
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSHistoryPolicy, QoSProfile
+from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile
 from core_msgs.msg import CAN, CANArray
 from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import JointState
@@ -20,12 +20,17 @@ class DebugTopicPublisher(Node):
         self.joint_states_listener = None
         self.can_tx_listener = None
         self.monitor_qos = QoSProfile(history=QoSHistoryPolicy.KEEP_LAST, depth=1)
+        self.hazard_qos = QoSProfile(
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        )
 
         self.bool_publishers = {
             "/test_mode": self.create_publisher(Bool, "/test_mode", 10),
             "/manual_mode": self.create_publisher(Bool, "/manual_mode", 10),
             "/system/emergency/hazard_status": self.create_publisher(
-                Bool, "/system/emergency/hazard_status", 10
+                Bool, "/system/emergency/hazard_status", self.hazard_qos
             ),
             "/left_shoot_once": self.create_publisher(Bool, "/left_shoot_once", 10),
             "/left_shoot_burst": self.create_publisher(Bool, "/left_shoot_burst", 10),
