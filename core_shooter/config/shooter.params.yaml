@@ -69,6 +69,8 @@
                 test_pitch_gain: 0.005 # test/manual mode時のpitch加算係数（-1..1入力に適用）
                 manual_mode_yaw_fixed_angle: 0.0 # manual_mode遷移時に設定し、その後も固定する yaw 角度[rad]
                 manual_mode_pitch_initial_angle: 0.0 # manual_mode遷移時に設定する初期 pitch 角度[rad]
+                startup_release_yaw_angle: 0.0 # ノード再起動後、最初の非常停止解除時に設定する yaw 角度[rad]
+                startup_release_pitch_angle: 0.0 # ノード再起動後、最初の非常停止解除時に設定する pitch 角度[rad]
                 # manual_mode=true 時の pitch は std_msgs/Float32 の manual_pitch_angle topic で加算入力（-1..1, 0で保持）
                 # 遷移直後の pitch は manual_mode_pitch_initial_angle
 

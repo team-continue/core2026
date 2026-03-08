@@ -51,6 +51,8 @@ public:
     this->declare_parameter<double>("test_pitch_gain", 0.05);
     this->declare_parameter<double>("manual_mode_yaw_fixed_angle", 0.0);
     this->declare_parameter<double>("manual_mode_pitch_initial_angle", 0.0);
+    this->declare_parameter<double>("startup_release_yaw_angle", 0.0);
+    this->declare_parameter<double>("startup_release_pitch_angle", 0.0);
     this->declare_parameter<bool>("enable_zone_angle_limit", false);
     this->declare_parameter<double>("zone.yaw_zone1_start", -3.14159265359);
     this->declare_parameter<double>("zone.yaw_boundary", 0.0);
@@ -87,6 +89,8 @@ public:
     this->get_parameter("test_pitch_gain", test_pitch_gain_);
     this->get_parameter("manual_mode_yaw_fixed_angle", manual_mode_yaw_fixed_angle_);
     this->get_parameter("manual_mode_pitch_initial_angle", manual_mode_pitch_initial_angle_);
+    this->get_parameter("startup_release_yaw_angle", startup_release_yaw_angle_);
+    this->get_parameter("startup_release_pitch_angle", startup_release_pitch_angle_);
     this->get_parameter("pitch_motor_id", pitch_motor_id_);
     this->get_parameter("yaw_motor_id", yaw_motor_id_);
     this->get_parameter("enable_zone_angle_limit", enable_zone_angle_limit_);
@@ -197,10 +201,11 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), test_mode_default=%s(topic override supported)",
+      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
       image_width_, image_height_, use_fov_image_tracking_ ? "fov" : "gain",
       horizontal_fov_deg_, image_tolerance_x_, image_tolerance_y_,
-      enable_test_mode_ ? "true" : "false");
+      enable_test_mode_ ? "true" : "false",
+      startup_release_yaw_angle_, startup_release_pitch_angle_);
   }
 
 private:
@@ -225,13 +230,14 @@ private:
     hazard_state_ = msg->data;
 
     if (!hazard_state_ && prev) {
-      if (zero_init_after_restart_pending_) {
-        // ノード再起動後、最初の緊急停止解除時のみ yaw/pitch=0 を初期目標にする。
-        setCommandTarget(0.0, 0.0);
-        zero_init_after_restart_pending_ = false;
+      if (startup_release_init_pending_) {
+        // ノード再起動後、最初の緊急停止解除時のみ設定済みの原点へ初期化する。
+        setCommandTarget(startup_release_yaw_angle_, startup_release_pitch_angle_);
+        startup_release_init_pending_ = false;
         RCLCPP_INFO(
           this->get_logger(),
-          "First emergency release after restart: initialize command target to yaw=0, pitch=0");
+          "First emergency release after restart: initialize command target to yaw=%f, pitch=%f",
+          command_yaw_angle_, command_pitch_angle_);
       }
     }
   }
@@ -455,10 +461,14 @@ private:
         {
           const double x_error = target_image_x_;
           const double y_error = target_image_y_;
+          const double yaw_base = has_joint_state_ ? yaw_angle_ : command_yaw_angle_;
+          const double pitch_base = has_joint_state_ ?
+            (pitch_angle_ + pitch_offset_) :
+            command_pitch_angle_;
 
-          // モータ側が位置制御を行う前提で、内部の目標角を更新する
-          double yaw_target = command_yaw_angle_;
-          double pitch_target = command_pitch_angle_;
+          // AutoTrack は現在角ベースの比例補正にして、画像ノイズでのドリフトを防ぐ。
+          double yaw_target = yaw_base;
+          double pitch_target = pitch_base;
 
           if (use_fov_image_tracking_) {
             constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
@@ -472,24 +482,20 @@ private:
               // x_px in [-image_width/2, image_width/2] -> yaw offset in [-hfov/2, hfov/2]
               const double x_norm = std::clamp((2.0 * x_error) / image_width_, -1.0, 1.0);
               const double yaw_offset_rad = std::atan(x_norm * std::tan(half_hfov_rad));
-              const double yaw_base = has_joint_state_ ? yaw_angle_ : command_yaw_angle_;
               yaw_target = yaw_base + yaw_direction_ * yaw_offset_rad;
             }
             if (std::fabs(y_error) > image_tolerance_y_) {
               // Vertical FOV is derived from horizontal FOV by image aspect ratio.
               const double y_norm = std::clamp((2.0 * y_error) / image_height_, -1.0, 1.0);
               const double pitch_offset_rad = std::atan(y_norm * std::tan(half_vfov_rad));
-              const double pitch_base = has_joint_state_ ?
-                (pitch_angle_ + pitch_offset_) :
-                command_pitch_angle_;
               pitch_target = pitch_base + pitch_direction_ * pitch_offset_rad;
             }
           } else {
             if (std::fabs(x_error) > image_tolerance_x_) {
-              yaw_target += yaw_direction_ * yaw_image_gain_ * x_error;
+              yaw_target = yaw_base + yaw_direction_ * yaw_image_gain_ * x_error;
             }
             if (std::fabs(y_error) > image_tolerance_y_) {
-              pitch_target += pitch_direction_ * pitch_image_gain_ * y_error;
+              pitch_target = pitch_base + pitch_direction_ * pitch_image_gain_ * y_error;
             }
           }
 
@@ -727,7 +733,7 @@ private:
   bool has_command_target_ = false;
   double command_yaw_angle_ = 0.0;
   double command_pitch_angle_ = 0.0;
-  bool zero_init_after_restart_pending_ = true;
+  bool startup_release_init_pending_ = true;
   bool has_active_control_mode_ = false;
   ControlMode active_control_mode_ = ControlMode::AutoTrack;
 
@@ -757,6 +763,8 @@ private:
   rclcpp::Time last_test_pitch_time_{0, 0, RCL_ROS_TIME};
   double manual_mode_yaw_fixed_angle_ = 0.0;
   double manual_mode_pitch_initial_angle_ = 0.0;
+  double startup_release_yaw_angle_ = 0.0;
+  double startup_release_pitch_angle_ = 0.0;
   bool enable_zone_angle_limit_ = false;
   double zone_yaw_zone1_start_ = -3.14159265359;
   double zone_yaw_boundary_ = 0.0;
