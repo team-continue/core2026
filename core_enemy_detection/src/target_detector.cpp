@@ -234,10 +234,10 @@ bool targetDetector::detectDamagePanel(){
             double ledPointY = ledRow[1];
 
             if(ledPointX >= pnlLeft && ledPointX <= pnlLeft + pnlWidth){
-                if(ledPointY >= pnlTop - pnlHeight * 0.2){
+                if(ledPointY >= pnlTop - pnlHeight * 0.5 && ledPointY <= pnlTop + pnlHeight * 0.5){
                     upperFlag = true;
                 }
-                if(ledPointY <= pnlTop + pnlHeight + pnlHeight * 0.2){
+                if(ledPointY >= pnlTop + pnlHeight * 0.5 && ledPointY <= pnlTop + pnlHeight * 1.5){
                     lowerFlag = true;
                 }
             }
