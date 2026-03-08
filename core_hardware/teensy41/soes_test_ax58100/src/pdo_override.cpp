@@ -19,8 +19,8 @@
 
 #define et1100 1
 
-#define PDO_RX_TR_SIZE (ADDR_SIZE + WAIT_SIZE + sizeof(Obj.Target_position))
-#define PDO_TX_TR_SIZE (ADDR_SIZE + sizeof(Obj.Position_actual))
+#define PDO_RX_TR_SIZE (ADDR_SIZE + WAIT_SIZE + sizeof(Obj.test_value_rx))
+#define PDO_TX_TR_SIZE (ADDR_SIZE + sizeof(Obj.test_value_tx))
 
 #define PD0_BUFFER_SIZE (PDO_RX_TR_SIZE > PDO_TX_TR_SIZE ? PDO_RX_TR_SIZE : PDO_TX_TR_SIZE)
 #define RX_PADDING_SIZE     (8 - ADDR_SIZE - WAIT_SIZE)
@@ -58,19 +58,23 @@ void rxpdo_override(void){
         COE_pdoUnpack(rx_buffer_coe, ESCvar.sm2mappings, SMmap2);
     }
 
-    // static int i = 0;
-    // if(++i % 100 == 0){
+    // loop back
+    // static unsigned long prev_print_ms = millis();
+    // if (millis() - prev_print_ms > 1000){
+    //     prev_print_ms = millis();
     //     Serial.print("RXPDO received: ");
-    //     for(int j=0; j<PDO_RX_TR_SIZE; j++){
-    //         Serial.print(rx_buffer_spi[j], HEX);
-    //         Serial.print(" ");
-    //     }
-    //     Serial.println();
+    //     Serial.println(Obj.test_value_rx);
     // }
+
+    Obj.test_value_tx = Obj.test_value_rx;
+
+    // Serial.print("RXPDO received: ");
 }
 
 // slave to master 
 void txpdo_override(void){
+    Obj.test_value_tx++;
+
     memset(tx_buffer_spi, 0, PDO_TX_TR_SIZE);
     // 書き込みアドレス設定
     uint16_t address = ESC_SM3_sma;
@@ -86,5 +90,4 @@ void txpdo_override(void){
     spi_select(et1100);
     spi_write(et1100, tx_buffer_spi, PDO_TX_TR_SIZE); /* send address + data */
     spi_unselect(et1100);
-    // Serial.println("TXPDO sent");
 }
