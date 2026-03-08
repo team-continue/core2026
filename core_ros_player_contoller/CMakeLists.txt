@@ -7,10 +7,11 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 add_executable(wireless_parser_node src/main.cpp)
-ament_target_dependencies(wireless_parser_node rclcpp std_msgs)
+ament_target_dependencies(wireless_parser_node rclcpp std_msgs geometry_msgs)
 
 install(TARGETS
   wireless_parser_node
