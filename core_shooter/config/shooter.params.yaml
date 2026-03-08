@@ -105,16 +105,23 @@
                 # pitch_max_angle: 3.14159265359
 
                 # zone-based angle limiter（現在のモータ出力指令に対して適用）
-                enable_zone_angle_limit: false # trueで zone.* 制限を有効化
-                zone:
-                        yaw_zone1_start: -3.14159265359 # a [rad]
-                        yaw_boundary: 0.0 # b [rad]
-                        yaw_zone2_end: 3.14159265359 # c [rad]
-                        pitch_lower_limit: -3.14159265359 # x [rad]
-                        pitch_zone2_upper: 0.52359877559 # y [rad]
-                        pitch_zone1_upper: 3.14159265359 # z [rad]
-                control:
-                        hysteresis_rad: 0.017453292519943295 # ゾーン切替ヒステリシス [rad]
+                enable_zone_angle_limit: true # trueで zone.* 制限を有効化
+                # zone:
+                #         yaw_reversed: false # true のとき zone 判定用 yaw を符号反転
+                #         yaw_zone1_start: -0.573 # a [rad]
+                #         yaw_boundary: -0.3 # b [rad]
+                #         yaw_zone2_end: 0.3 # c [rad]
+                #         yaw_zone3_end: 2.5 # d [rad]
+                #         pitch_lower_limit: 0.0 # Zone1 lower [rad]
+                #         pitch_zone2_upper: 3.14159265359 # Zone1 upper [rad]
+                #         pitch_zone2_lower: -3.14159265359 # Zone2 lower [rad]
+                #         pitch_zone2_upper_limit: 3.14159265359 # Zone2 upper [rad]
+                #         pitch_zone3_lower: -3.14159265359 # Zone3 lower [rad]
+                #         pitch_zone3_upper: 0.0 # Zone3 upper [rad]
+                #         pitch_zone1_upper: 3.14159265359 # legacy upper [rad]
+                # control:
+                #         hysteresis_rad: 0.017453292519943295 # ゾーン切替ヒステリシス [rad]
+                #         pitch_correct_tolerance: 0.01 # 補正完了判定 [rad]
 
                 # fixed angle offset [rad]
                 pitch_offset: 0.0
