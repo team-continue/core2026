@@ -5,24 +5,41 @@ services:
       dockerfile: Dockerfile
     image: core:latest
     container_name: core_container
-    tty: true                 # 対話的なプロンプトを維持
-    stdin_open: true          # 標準入力を開いたままにする
-    privileged: true # 多くのGUI/GPU設定で権限の問題を避けるために設定
-    ipc: host # ホストのIPC名前空間を使用
+    tty: true
+    stdin_open: true
+
+    # EtherCAT / SOEM 向け
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
+    # 必要なら残す。cap_addで足りるなら消してよい
+    # privileged: true
+
+    ipc: host
+
     environment:
-      - DISPLAY=${DISPLAY}             # ホストのディスプレイ番号をコンテナに渡す
-      - QT_X11_NO_MITSHM=1           # Qtアプリケーションでのエラーを回避
-      - XDG_RUNTIME_DIR=/tmp/runtime/  # Wayland互換性のための設定
-      - ROS_DOMAIN_ID
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - XDG_RUNTIME_DIR=/tmp/runtime/
+      - ROS_DOMAIN_ID=0
+
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix  # X11ソケットの共有
-      - ${HOME}/.Xauthority:/root/.Xauthority:ro # X認証情報（ホストでxhostを実行済みの場合）
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
       - .:/ros2_ws/src/
-      - ros2_install_data:/ros2_ws/install # install フォルダを名前付きボリュームで永続化
-      - ros2_build_data:/ros2_ws/build     # build フォルダを名前付きボリュームで永続化
-      - /dev/ttyACM0:/dev/teensy # Teensyデバイスへのアクセスを許可
+      - ros2_install_data:/ros2_ws/install
+      - ros2_build_data:/ros2_ws/build
+
     working_dir: /ros2_ws
-    command: bash -c "/ros2_ws/src/core_hardware/install_soem.sh && sleep infinity"
+    command: bash -c "sleep infinity"
+
+    # 任意: リアルタイム寄りにするなら
+    ulimits:
+      rtprio: 99
+      memlock: -1
+
 volumes:
   ros2_install_data:
   ros2_build_data:

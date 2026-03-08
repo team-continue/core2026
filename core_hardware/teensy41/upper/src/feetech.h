@@ -8,7 +8,7 @@
 #define STS_CONTROL_DT 0.02f
 #define STS_LIMIT_VEL_STS3215 ((67.0f / 60.0f) * 2.0f * M_PI)
 #define STS_LIMIT_VEL_STS3020 ((100.0f / 60.0f) * 2.0f * M_PI)
-#define STS_PID_P 5
+#define STS_PID_P 2.0
 
 #define STS_CONTROL_INTERVAL_US 10000UL
 #define STS_CONNECT_TIMEOUT_MS 1000UL
