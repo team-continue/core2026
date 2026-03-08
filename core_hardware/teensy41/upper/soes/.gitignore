@@ -3,5 +3,7 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
-soes-esi/*
-!README.md
+soes-esi/eeprom.hex
+soes-esi/core2026_upper.xml
+soes-esi/eeprom.bin
+soes-esi/eeprom.h
