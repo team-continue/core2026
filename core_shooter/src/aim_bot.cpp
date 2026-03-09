@@ -193,8 +193,7 @@ public:
     manual_mode_sub_ = create_subscription<std_msgs::msg::Bool>(
       "manual_mode", 10, std::bind(&AimBot::manualModeCallback, this, std::placeholders::_1));
     manual_pitch_sub_ = create_subscription<std_msgs::msg::Float32>(
-      // "manual_pitch_angle", 10,
-      "test_pitch_angle", 10,
+      "manual_pitch_angle", 10,
       std::bind(&AimBot::manualPitchCallback, this, std::placeholders::_1));
 
     hazard_state_sub_ = create_subscription<std_msgs::msg::Bool>(
@@ -478,7 +477,8 @@ private:
           RCLCPP_WARN_THROTTLE(
             this->get_logger(), *this->get_clock(), 2000,
             "target_image_position timeout");
-          publishCommandHold("auto timeout: joint_states not received yet, cannot hold current angle");
+          publishCommandHold(
+            "auto timeout: joint_states not received yet, cannot hold current angle");
           return;
         }
 
@@ -581,7 +581,8 @@ private:
       yaw_boundary < yaw_zone2_end &&
       yaw_zone2_end < yaw_zone3_end))
     {
-      reason = "zone.yaw_zone1_start < zone.yaw_boundary < zone.yaw_zone2_end < zone.yaw_zone3_end is required";
+      reason =
+        "zone.yaw_zone1_start < zone.yaw_boundary < zone.yaw_zone2_end < zone.yaw_zone3_end is required";
       return false;
     }
     const bool pitch_ab_valid = pitch_lower_limit != pitch_zone2_upper;
@@ -602,7 +603,9 @@ private:
     const double zone1_width = yaw_boundary - yaw_zone1_start;
     const double zone2_width = yaw_zone2_end - yaw_boundary;
     const double zone3_width = yaw_zone3_end - yaw_zone2_end;
-    if (hysteresis_rad >= zone1_width || hysteresis_rad >= zone2_width || hysteresis_rad >= zone3_width) {
+    if (hysteresis_rad >= zone1_width || hysteresis_rad >= zone2_width ||
+      hysteresis_rad >= zone3_width)
+    {
       reason = "control.hysteresis_rad is too large for configured yaw zones";
       return false;
     }
@@ -721,7 +724,9 @@ private:
         correction_target_pitch_,
         std::max(pitch_min_angle_, corr_pitch_min),
         std::min(pitch_max_angle_, corr_pitch_max));
-      if (std::fabs(feedback_pitch - correction_target_pitch_) <= control_pitch_correct_tolerance_) {
+      if (std::fabs(feedback_pitch - correction_target_pitch_) <=
+        control_pitch_correct_tolerance_)
+      {
         pitch_correction_mode_ = PitchCorrectionMode::None;
         correction_target_zone_ = YawZone::OutOfRange;
       }
@@ -737,8 +742,10 @@ private:
 
     const YawZone zone = classifyYawZone(target_zone_yaw);
     const auto [zone_pitch_lower, zone_pitch_upper] = getZonePitchLimits(zone);
-    const double pitch_lower = std::max(pitch_min_angle_, std::min(zone_pitch_lower, zone_pitch_upper));
-    const double pitch_upper = std::min(pitch_max_angle_, std::max(zone_pitch_lower, zone_pitch_upper));
+    const double pitch_lower =
+      std::max(pitch_min_angle_, std::min(zone_pitch_lower, zone_pitch_upper));
+    const double pitch_upper =
+      std::min(pitch_max_angle_, std::max(zone_pitch_lower, zone_pitch_upper));
     if (pitch_lower > pitch_upper) {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 2000,

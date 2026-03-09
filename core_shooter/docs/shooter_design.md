@@ -82,7 +82,7 @@ flowchart LR
     U3["/left|right/test_yaw_angle<br/>/left|right/test_pitch_angle"]
     U4["/left|right/target_image_position"]
     U5["/left|right/shoot_motor"]
-    U6["/left|right/disk_hold_state, /left|right/reloading"]
+    U6["/left|right/disk_hold_state, /left|right/reloading, /left|right/reloading_increment"]
   end
 
   subgraph Sensors["Robot Sensors / System"]
@@ -175,7 +175,7 @@ flowchart TB
     LJAM["jam"]
     LSM["shoot_motor"]
     LDIS["distance"]
-    LREL["reloading"]
+    LREL["reloading / reloading_increment"]
     LHOLDREQ["disk_hold_state"]
     LREM["remaining_disk"]
     LTGT["target_image_position"]
@@ -193,7 +193,7 @@ flowchart TB
     RJAM["jam"]
     RSM["shoot_motor"]
     RDIS["distance"]
-    RREL["reloading"]
+    RREL["reloading / reloading_increment"]
     RHOLDREQ["disk_hold_state"]
     RREM["remaining_disk"]
     RTGT["target_image_position"]
@@ -220,6 +220,8 @@ flowchart TB
   HZ --> RMM
   HZ --> LAB
   HZ --> RAB
+  TM --> LSC
+  TM --> RSC
   TM --> LAB
   TM --> RAB
 
@@ -348,6 +350,8 @@ flowchart TD
 - `jam` (`std_msgs/Bool`)
   - フォトリフレクタ入力。継続時間でジャム判定（`jam_detect_time_sec`）
 - `hazard_status` (`std_msgs/Bool`, launchで `/system/emergency/hazard_status`)
+- `/test_mode` (`std_msgs/Bool`) : グローバル
+  - 有効時は `shoot motor active` 条件をバイパス
 - `shoot_cmd` (`std_msgs/Int32`) from `shooter_cmd_gate`
 - `shoot_motor` (`std_msgs/Float32`)
   - UI入力を閾値で3段速度にマッピングして発射モータへ送信
@@ -386,7 +390,9 @@ flowchart TD
   - 単発 / バースト / フルオートで interval を使い分け
 - `isShootMotorRotationCommandActive() == true`
   - `shoot_motor > 0` を受けてから一定遅延後に有効化
+  - ただし `test_mode == true` の間はこの条件をバイパス
 - ジャム検出が無効 または ジャムなし
+  - ただし `test_mode == true` の間はこの条件をバイパス
 
 ### 7.3 `magazine_manager`
 
@@ -400,8 +406,10 @@ flowchart TD
 
 - `shoot_status` (`std_msgs/Bool`)
   - 立上りで「1発消費」とみなして減算
-- `reloading` (`std_msgs/Int8`)
-  - 手動/外部から補給数を加算
+- `reloading` (`std_msgs/Bool`)
+  - `true` を受信したら残弾数を `remaining_disks` パラメータ値まで回復
+- `reloading_increment` (`std_msgs/Int8`)
+  - 手動/外部から補給数を加算（`remaining_disks` を上限に clamp）
 - `disk_distance_sensor` (`std_msgs/Int32`, launchで `distance`)
   - `REGRIP_RELEASING` 中のみ移動平均に取り込み
 - `disk_hold_state` (`std_msgs/Bool`)
@@ -426,7 +434,7 @@ flowchart TD
 
 - `HOLDING` 中の射撃回数が 10 回以上で `REGRIP_RELEASING` に遷移（`regrip_enabled=true` 時）
 - release 期間中のみ距離センサ移動平均を更新
-- 窓が揃ったら `remainingDiskEstimator(0)` でセンサ同期
+- 窓が揃ったら `remainingDiskEstimator(0)` でセンサ同期（`remaining_disks` を上限に clamp）
 - 時間経過後 `HOLDING` に復帰
 
 ### 7.4 `aim_bot`
@@ -615,6 +623,7 @@ flowchart LR
   - `/left|right/test_yaw_angle`, `/left|right/test_pitch_angle`
   - `/left|right/shoot_motor`
   - `/left|right/reloading`
+  - `/left|right/reloading_increment`
   - `/left|right/target_image_position`
   - `/left|right/disk_hold_state`
 - 直接 CAN 注入:

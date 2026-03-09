@@ -32,8 +32,11 @@ def generate_launch_description():
         parameters=[shooter_params],
         remappings=[
             ("manual_mode", "/manual_mode"),
+            ("manual_pitch", "/manual_pitch"),
             ("left_manual_mode", "/left/manual_mode"),
+            ("left_manual_pitch_angle", "/left/manual_pitch_angle"),
             ("right_manual_mode", "/right/manual_mode"),
+            ("right_manual_pitch_angle", "/right/manual_pitch_angle"),
             ("left_shoot_cmd", "/left/shoot_cmd"),
             ("right_shoot_cmd", "/right/shoot_cmd"),
         ]

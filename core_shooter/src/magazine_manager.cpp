@@ -34,6 +34,13 @@ public:
     this->get_parameter("sensor_height", sensor_height_);
     this->get_parameter("window_size", window_size_);
 
+    if (remaining_disks_ < 0 || remaining_disks_ > 127) {
+      RCLCPP_FATAL(
+        this->get_logger(),
+        "Invalid remaining_disks=%d (must be in [0, 127])",
+        remaining_disks_);
+      throw std::runtime_error("invalid remaining_disks");
+    }
     if (window_size_ <= 0) {
       RCLCPP_FATAL(
         this->get_logger(), "Invalid window_size=%d (must be > 0)", window_size_);
@@ -44,6 +51,8 @@ public:
         this->get_logger(), "Invalid disk_thickness=%f (must be > 0)", disk_thickness_);
       throw std::runtime_error("invalid disk_thickness");
     }
+
+    remaining_disks_ = remaining_disks_;
 
     RCLCPP_INFO(
       this->get_logger(),
@@ -99,9 +108,13 @@ public:
       "shoot_status", 10,
       std::bind(&MagazineManager::shootStatusCallback, this, std::placeholders::_1));
 
-    reloading_sub_ = this->create_subscription<std_msgs::msg::Int8>(
+    reloading_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "reloading", 10,
       std::bind(&MagazineManager::reloadingCallback, this, std::placeholders::_1));
+
+    reloading_increment_sub_ = this->create_subscription<std_msgs::msg::Int8>(
+      "reloading_increment", 10,
+      std::bind(&MagazineManager::reloadingIncrementCallback, this, std::placeholders::_1));
 
     disk_distance_sensor_sub_ = this->create_subscription<std_msgs::msg::Int32>(
       "disk_distance_sensor", 10,
@@ -171,11 +184,20 @@ private:
     }
   }
 
-  void reloadingCallback(std_msgs::msg::Int8::SharedPtr msg)
+  void reloadingCallback(std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if (msg->data) {
+      remaining_disks_ = remaining_disks_;
+      remainingDisksPublish(remaining_disks_);
+    }
+  }
+
+  void reloadingIncrementCallback(std_msgs::msg::Int8::SharedPtr msg)
   {
     if (msg->data > 0) {
       // 押さえの影響でセンサは信用できない想定 → ここでは同期しない
-      remaining_disks_ += msg->data;
+      remaining_disks_ = clampRemainingDisks(
+        remaining_disks_ + msg->data, "reloading_increment");
       remainingDisksPublish(remaining_disks_);
     }
   }
@@ -238,25 +260,36 @@ private:
       }
 
       int estimated = std::round(estimated_stack_height_mm_ / disk_thickness_);
-      if (estimated < 0) {
-        estimated = 0;
-      }
-      if (estimated > 127) {
-        RCLCPP_WARN_THROTTLE(
-          this->get_logger(), *this->get_clock(), 2000,
-          "disk estimate overflow (%d) -> clamp to 127", estimated);
-        estimated = 127;
-      }
-
-      remaining_disks_ = estimated;
+      remaining_disks_ = clampRemainingDisks(estimated, "sensor estimate");
 
       // 冗長チェック用に保持（最後に「見えた」値）
-      last_sensor_estimated_disks_ = estimated;
+      last_sensor_estimated_disks_ = remaining_disks_;
       last_sensor_height_mm_ = estimated_stack_height_mm_;
 
       remainingDisksPublish(remaining_disks_);
       return;
     }
+  }
+
+  int clampRemainingDisks(int value, const char * source)
+  {
+    if (value < 0) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "%s produced %d remaining disks. Clamp to 0.",
+        source, value);
+      return 0;
+    }
+
+    if (value > remaining_disks_) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "%s produced %d remaining disks. Clamp to remaining_disks=%d.",
+        source, value, remaining_disks_);
+      return remaining_disks_;
+    }
+
+    return value;
   }
 
   void remainingDisksPublish(int data)
@@ -441,7 +474,8 @@ private:
   // Subscription valids
   //========================================
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_status_sub_;
-  rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr reloading_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reloading_sub_;
+  rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr reloading_increment_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr disk_distance_sensor_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hold_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_status_sub_;
@@ -467,6 +501,7 @@ private:
   // parameter valids
   //========================================
   // magazine
+  int remaining_disks_ = 27;
   int remaining_disks_ = 27;
   double disk_thickness_ = 1.0;
   double sensor_height_ = 100.0;

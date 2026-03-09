@@ -43,7 +43,7 @@
                 # motor ids are overridden in launch
                 # disk_hold_left_motor_id: -> launch
                 # disk_hold_right_motor_id: -> launch
-                remaining_disks: 30 # 初期弾数（例: 27 - loading_disk）
+                remaining_disks: 30 # 初期弾数 / 満タン時の弾数
                 disk_thickness: 20.0 # [mm]
                 sensor_height: 500.0 # [mm]
                 window_size: 3 # 移動平均の窓サイズ
@@ -63,7 +63,7 @@
                 rate: 30.0
 
                 # test/manual mode
-                enable_test_mode: false # test_mode topic未受信時のデフォルト値（test_mode: std_msgs/Bool が来たらtopic値を優先）
+                enable_test_mode: false # test_mode topic未受信時のデフォルト値（aim_bot / shooter_controller ともに test_mode: std_msgs/Bool を優先）
                 # test_mode: std_msgs/Bool (relative topic)
                 test_yaw_gain: 0.01 # test_mode時のyaw加算係数（manual_modeのyawは固定なので未使用）
                 test_pitch_gain: 0.005 # test/manual mode時のpitch加算係数（-1..1入力に適用）
@@ -106,6 +106,7 @@
 
                 # zone-based angle limiter（現在のモータ出力指令に対して適用）
                 enable_zone_angle_limit: true # trueで zone.* 制限を有効化
+                # →launch
                 # zone:
                 #         yaw_reversed: false # true のとき zone 判定用 yaw を符号反転
                 #         yaw_zone1_start: -0.573 # a [rad]

@@ -43,6 +43,7 @@ public:
     this->declare_parameter<int>("burst_interval_ms", 500);
     this->declare_parameter<int>("fullauto_interval_ms", 500);
     this->declare_parameter<double>("shoot_motor_rotation_cmd_activation_delay_sec", 2.0);
+    this->declare_parameter<bool>("enable_test_mode", false);
 
     this->get_parameter("burst_count", burst_count_);
     this->get_parameter("shoot_interval_ms", shoot_interval_ms_);
@@ -51,6 +52,7 @@ public:
     this->get_parameter(
       "shoot_motor_rotation_cmd_activation_delay_sec",
       shoot_motor_rotation_cmd_activation_delay_sec_);
+    this->get_parameter("enable_test_mode", enable_test_mode_);
     if (
       burst_count_ <= 0 || shoot_interval_ms_ < 0 || burst_interval_ms_ < 0 ||
       fullauto_interval_ms_ < 0 ||
@@ -66,9 +68,9 @@ public:
 
     RCLCPP_INFO(
       this->get_logger(),
-      "burst: %d, shoot_interval_ms: %d, burst_interval_ms: %d, fullauto_interval_ms: %d, shoot_motor_rotation_cmd_activation_delay_sec: %.3f",
+      "burst: %d, shoot_interval_ms: %d, burst_interval_ms: %d, fullauto_interval_ms: %d, shoot_motor_rotation_cmd_activation_delay_sec: %.3f, test_mode_default=%s(topic override supported)",
       burst_count_, shoot_interval_ms_, burst_interval_ms_, fullauto_interval_ms_,
-      shoot_motor_rotation_cmd_activation_delay_sec_);
+      shoot_motor_rotation_cmd_activation_delay_sec_, enable_test_mode_ ? "true" : "false");
 
     //========================================
     // panel limit parameters
@@ -168,6 +170,9 @@ public:
     hazard_status_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "hazard_status", 10,
       std::bind(&ShooterController::hazardStatusCallback, this, std::placeholders::_1));
+    test_mode_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+      "/test_mode", 10,
+      std::bind(&ShooterController::testModeCallback, this, std::placeholders::_1));
 
     //========================================
     // subscribers shoot cmd
@@ -262,6 +267,20 @@ private:
     if (previous_hazard_state && !hazard_state_) {
       shoot_completed_ = true;
       RCLCPP_INFO(get_logger(), "Clear Emergency, Set shoot_completed_ TRUE");
+    }
+  }
+
+  void testModeCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    const bool previous_effective = isTestModeEnabled();
+    test_mode_topic_value_ = msg->data;
+    has_test_mode_topic_value_ = true;
+    const bool next_effective = isTestModeEnabled();
+    if (next_effective != previous_effective) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "Test mode %s in shooter_controller (source=topic, param fallback=%s)",
+        next_effective ? "ON" : "OFF", enable_test_mode_ ? "true" : "false");
     }
   }
 
@@ -443,9 +462,11 @@ private:
   bool canShoot()
   {
     // hazard_status=true は危険状態なので射撃不可
-    const bool jam_ok = !enable_jam_detection_ || !isJamDetected();
+    const bool test_mode_enabled = isTestModeEnabled();
+    const bool jam_ok = test_mode_enabled || !enable_jam_detection_ || !isJamDetected();
+    const bool shoot_motor_ready = test_mode_enabled || isShootMotorRotationCommandActive();
     return !hazard_state_ && isValidAngle() && isShootIntervalElapsed() &&
-           isShootMotorRotationCommandActive() && jam_ok;
+           shoot_motor_ready && jam_ok;
   }
 
   bool isValidAngle()
@@ -500,6 +521,11 @@ private:
   bool isShootMotorRotationCommandActive() const
   {
     return shoot_motor_rotation_cmd_active_;
+  }
+
+  bool isTestModeEnabled() const
+  {
+    return has_test_mode_topic_value_ ? test_mode_topic_value_ : enable_test_mode_;
   }
 
   void updateShootMotorRotationCommandFlag()
@@ -589,6 +615,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr jam_sensor_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_status_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr test_mode_sub_;
 
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr shoot_cmd_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr shoot_motor_sub_;
@@ -620,6 +647,8 @@ private:
   bool jam_photo_reflector_raw_ = false;
 
   bool hazard_state_ = true;
+  bool test_mode_topic_value_ = false;
+  bool has_test_mode_topic_value_ = false;
   bool shoot_motor_rotation_cmd_requested_ = false;
   bool shoot_motor_rotation_cmd_active_ = false;
   rclcpp::Time shoot_motor_rotation_cmd_start_time_ = now();
@@ -650,6 +679,7 @@ private:
 
   double jam_detect_time_sec_;
   bool enable_jam_detection_ = true;
+  bool enable_test_mode_ = false;
   double shoot_motor_rotation_cmd_activation_delay_sec_ = 2.0;
 
   //========================================
