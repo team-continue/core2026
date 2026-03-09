@@ -1,11 +1,13 @@
 site_name: core2026 ドキュメント
 site_description: CoRE2026 ロボット ROS2 プロジェクトドキュメント
-repo_url: https://github.com/RRST-NHK-Project/core2026
+repo_url: https://github.com/team-continue/core2026
 repo_name: core2026
 
 theme:
   name: material
   language: ja
+  logo: assets/continue_logo.png
+  favicon: assets/continue_logo.png
   palette:
     - scheme: default
       primary: indigo
