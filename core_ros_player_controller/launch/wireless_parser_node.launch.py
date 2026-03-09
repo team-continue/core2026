@@ -40,6 +40,16 @@ def generate_launch_description():
         default_value="/left/shoot_once",
         description="Output topic to remap /left/shoot_once",
     )
+    reloading_arg = DeclareLaunchArgument(
+        "reloading",
+        default_value="/reloading",
+        description="Output topic to remap /reloading",
+    )
+    hazard_status_arg = DeclareLaunchArgument(
+        "hazard_status",
+        default_value="/system/emergency/hazard_status",
+        description="Output topic to remap /system/emergency/hazard_status",
+    )
     test_mode_arg = DeclareLaunchArgument(
         "test_mode",
         default_value="/test_mode",
@@ -59,6 +69,8 @@ def generate_launch_description():
             ("/manual_pitch", LaunchConfiguration("manual_pitch")),
             ("/shoot_motor", LaunchConfiguration("shoot_motor")),
             ("/left/shoot_once", LaunchConfiguration("left_shoot_once")),
+            ("/reloading", LaunchConfiguration("reloading")),
+            ("/system/emergency/hazard_status", LaunchConfiguration("hazard_status")),
             ("/test_mode", LaunchConfiguration("test_mode")),
         ],
     )
@@ -71,6 +83,8 @@ def generate_launch_description():
         manual_pitch_arg,
         shoot_motor_arg,
         left_shoot_once_arg,
+        reloading_arg,
+        hazard_status_arg,
         test_mode_arg,
         node,
     ])
