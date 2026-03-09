@@ -1,0 +1,80 @@
+site_name: core2026 ドキュメント
+site_description: CoRE2026 ロボット ROS2 プロジェクトドキュメント
+repo_url: https://github.com/RRST-NHK-Project/core2026
+repo_name: core2026
+
+theme:
+  name: material
+  language: ja
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: ダークモードに切替
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: ライトモードに切替
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+  - mermaid2
+
+nav:
+  - ホーム: index.md
+  - はじめに:
+    - クイックスタート: getting-started/quick-start.md
+    - Docker環境: getting-started/docker.md
+    - Unityシミュレータ: getting-started/unity-sim.md
+  - アーキテクチャ:
+    - システム概要: architecture/overview.md
+    - TFフレームと座標系: architecture/tf-tree.md
+    - トピック・メッセージ一覧: architecture/topics.md
+  - パッケージ:
+    - core_launch: packages/core_launch.md
+    - core_msgs: packages/core_msgs.md
+    - core_path_planner: packages/core_path_planner.md
+    - core_mppi: packages/core_mppi.md
+    - core_path_follower: packages/core_path_follower.md
+    - core_costmap_builder: packages/core_costmap_builder.md
+    - core_body_controller: packages/core_body_controller.md
+    - core_hardware: packages/core_hardware.md
+    - core_tools: packages/core_tools.md
+    - core_test: packages/core_test.md
+    - ROS-TCP-Endpoint: packages/ros_tcp_endpoint.md
+  - ガイド:
+    - ナビゲーション起動: guides/navigation.md
+    - パラメータチューニング: guides/tuning.md
+    - ハードウェアセットアップ: guides/hardware-setup.md
+  - 開発:
+    - 開発ワークフロー: contributing/workflow.md
+    - コードスタイル: contributing/code-style.md
