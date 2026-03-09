@@ -25,13 +25,13 @@ def generate_launch_description():
         costmap_share, 'config', 'costmap_build_node.yaml')
 
     # --- Launch arguments ---
-    # Default: look for global_map.png installed alongside core_launch share,
+    # Default: look for map image installed alongside core_launch share,
     # but typically users should pass the actual path via launch argument.
     map_image_arg = DeclareLaunchArgument(
         'map_image',
         default_value=os.path.join(
-            core_launch_share, 'global_map.png'),
-        description='Path to global_map.png',
+            core_launch_share, 'square_wall_10m_400px.png'),
+        description='Path to map image (PNG)',
     )
 
     odom_source_arg = DeclareLaunchArgument(
@@ -114,8 +114,10 @@ def generate_launch_description():
         parameters=[{
             'image_path': LaunchConfiguration('map_image'),
             'resolution': 0.025,
-            'origin_x': -13.675,
-            'origin_y': -9.15,
+            # 'origin_x': -13.675,
+            'origin_x': -5.0,
+            # 'origin_y': -9.15,
+            'origin_y': -1.0,
         }],
     )
 

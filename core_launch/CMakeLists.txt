@@ -21,9 +21,9 @@ install(PROGRAMS
 )
 
 # Install global map image if present
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../global_map.png")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../square_wall_10m_400px.png")
   install(FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/../global_map.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../square_wall_10m_400px.png"
     DESTINATION share/${PROJECT_NAME}
   )
 endif()
