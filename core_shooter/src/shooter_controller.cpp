@@ -173,6 +173,9 @@ public:
     test_mode_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "/test_mode", 10,
       std::bind(&ShooterController::testModeCallback, this, std::placeholders::_1));
+    regrip_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+      "regrip_active", 10,
+      std::bind(&ShooterController::regripActiveCallback, this, std::placeholders::_1));
 
     //========================================
     // subscribers shoot cmd
@@ -282,6 +285,16 @@ private:
         "Test mode %s in shooter_controller (source=topic, param fallback=%s)",
         next_effective ? "ON" : "OFF", enable_test_mode_ ? "true" : "false");
     }
+  }
+
+  void regripActiveCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if (regrip_active_ != msg->data) {
+      RCLCPP_INFO(
+        this->get_logger(), "Regrip %s -> shooting %s",
+        msg->data ? "ACTIVE" : "INACTIVE", msg->data ? "blocked" : "allowed");
+    }
+    regrip_active_ = msg->data;
   }
 
   //========================================
@@ -465,7 +478,8 @@ private:
     const bool test_mode_enabled = isTestModeEnabled();
     const bool jam_ok = test_mode_enabled || !enable_jam_detection_ || !isJamDetected();
     const bool shoot_motor_ready = test_mode_enabled || isShootMotorRotationCommandActive();
-    return !hazard_state_ && isValidAngle() && isShootIntervalElapsed() &&
+    const bool regrip_ok = test_mode_enabled || !regrip_active_;
+    return !hazard_state_ && regrip_ok && isValidAngle() && isShootIntervalElapsed() &&
            shoot_motor_ready && jam_ok;
   }
 
@@ -616,6 +630,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr jam_sensor_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_status_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr test_mode_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr regrip_active_sub_;
 
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr shoot_cmd_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr shoot_motor_sub_;
@@ -649,6 +664,7 @@ private:
   bool hazard_state_ = true;
   bool test_mode_topic_value_ = false;
   bool has_test_mode_topic_value_ = false;
+  bool regrip_active_ = false;
   bool shoot_motor_rotation_cmd_requested_ = false;
   bool shoot_motor_rotation_cmd_active_ = false;
   rclcpp::Time shoot_motor_rotation_cmd_start_time_ = now();

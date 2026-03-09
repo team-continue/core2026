@@ -177,6 +177,7 @@ flowchart TB
     LDIS["distance"]
     LREL["reloading / reloading_increment"]
     LHOLDREQ["disk_hold_state"]
+    LRG["regrip_active"]
     LREM["remaining_disk"]
     LTGT["target_image_position"]
     LTY["test_yaw_angle"]
@@ -195,6 +196,7 @@ flowchart TB
     RDIS["distance"]
     RREL["reloading / reloading_increment"]
     RHOLDREQ["disk_hold_state"]
+    RRG["regrip_active"]
     RREM["remaining_disk"]
     RTGT["target_image_position"]
     RTY["test_yaw_angle"]
@@ -229,6 +231,8 @@ flowchart TB
   RJAM --> RSC
   LSM --> LSC
   RSM --> RSC
+  LMM --> LRG --> LSC
+  RMM --> RRG --> RSC
   LSC --> LSS --> LMM
   RSC --> RSS --> RMM
   LREL --> LMM
@@ -351,7 +355,9 @@ flowchart TD
   - フォトリフレクタ入力。継続時間でジャム判定（`jam_detect_time_sec`）
 - `hazard_status` (`std_msgs/Bool`, launchで `/system/emergency/hazard_status`)
 - `/test_mode` (`std_msgs/Bool`) : グローバル
-  - 有効時は `shoot motor active` 条件をバイパス
+  - 有効時は `regrip_active` / `shoot motor active` / jam 条件をバイパス
+- `regrip_active` (`std_msgs/Bool`)
+  - `true` の間は発射禁止（`test_mode == true` の間を除く）
 - `shoot_cmd` (`std_msgs/Int32`) from `shooter_cmd_gate`
 - `shoot_motor` (`std_msgs/Float32`)
   - UI入力を閾値で3段速度にマッピングして発射モータへ送信
@@ -383,6 +389,8 @@ flowchart TD
 #### `canShoot()` 条件
 
 - `hazard_status == false`
+- `regrip_active == false`
+  - ただし `test_mode == true` の間はこの条件をバイパス
 - `isValidAngle() == true`
   - `enable_panel_synchronizer=false` の場合は常に true
   - true の場合、`limit_rad` で定義された禁止区間外のみ許可
@@ -419,6 +427,8 @@ flowchart TD
 #### 主な出力
 
 - `remaining_disk` (`std_msgs/Int8`, `transient_local`)
+- `regrip_active` (`std_msgs/Bool`)
+  - `REGRIP_RELEASING` 中に `true`
 - `/can/tx` (`core_msgs/CANArray`)
   - 左右ホールドモータに同値 command を送信
   - 実装では `hold=true -> 0.0`, `hold=false -> 1.0`
@@ -433,9 +443,10 @@ flowchart TD
 #### regrip 動作
 
 - `HOLDING` 中の射撃回数が 10 回以上で `REGRIP_RELEASING` に遷移（`regrip_enabled=true` 時）
+- 遷移と同時に `regrip_active=true` を publish し、`shooter_controller` 側の次弾を抑止
 - release 期間中のみ距離センサ移動平均を更新
 - 窓が揃ったら `remainingDiskEstimator(0)` でセンサ同期（`remaining_disks` を上限に clamp）
-- 時間経過後 `HOLDING` に復帰
+- 時間経過後 `HOLDING` に復帰し `regrip_active=false`
 
 ### 7.4 `aim_bot`
 
@@ -545,6 +556,7 @@ flowchart TD
 | `/system/emergency/hazard_status` | `std_msgs/Bool` | 安全系 | 各 side ノード | 緊急停止 |
 | `/left/jam`, `/right/jam` | `std_msgs/Bool` | センサ | 各 `shooter_controller` | ジャム検出 |
 | `/left/shoot_status`, `/right/shoot_status` | `std_msgs/Bool` | 各 `shooter_controller` | 各 `magazine_manager` | 発射完了通知 |
+| `/left/regrip_active`, `/right/regrip_active` | `std_msgs/Bool` | 各 `magazine_manager` | 各 `shooter_controller` | regrip中の射撃抑止 |
 | `/left/distance`, `/right/distance` | `std_msgs/Int32` | 距離センサ | 各 `magazine_manager` | 残弾推定（regrip中のみ） |
 | `/left/remaining_disk`, `/right/remaining_disk` | `std_msgs/Int8` | 各 `magazine_manager` | UI/監視 | 残弾数 |
 
