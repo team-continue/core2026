@@ -4,56 +4,54 @@
 
 ```mermaid
 graph TB
-    subgraph 入力ソース
-        Unity["Unity Sim<br/>/sim_odom"]
-        FASTLIO["FAST-LIO<br/>/Odometry"]
-        LiDAR["Livox Mid-360<br/>/livox/lidar"]
+    subgraph Inputs
+        Unity["Unity Sim\n/sim_odom"]
+        FASTLIO["FAST-LIO\n/Odometry"]
+        LiDAR["Livox Mid-360\n/livox/lidar"]
         MapPNG["global_map.png"]
     end
 
     subgraph core_launch
-        OdomBridge["odom_bridge_node<br/><i>オドメトリ変換・TFブロードキャスト</i>"]
-        MapServer["map_server_node<br/><i>PNG→OccupancyGrid変換</i>"]
+        OdomBridge["odom_bridge_node"]
+        MapServer["map_server_node"]
     end
 
-    subgraph ナビゲーション
-        PathPlanner["path_planner_node<br/><i>A*グローバル経路計画</i>"]
-        MPPI["core_mppi_node<br/><i>MPPIローカル制御</i>"]
-        CostmapBuilder["costmap_build_node<br/><i>ローカルコストマップ生成</i>"]
+    subgraph Navigation
+        PathPlanner["path_planner_node"]
+        MPPI["core_mppi_node"]
+        CostmapBuilder["costmap_build_node"]
     end
 
-    subgraph 制御・ハードウェア
-        BodyController["body_control_node<br/><i>オムニホイール逆運動学</i>"]
-        Hardware["core_hardware<br/><i>EtherCAT通信</i>"]
+    subgraph Control
+        BodyController["body_control_node"]
+        Hardware["core_hardware"]
     end
 
-    subgraph 可視化
-        RViz["RViz2"]
-    end
+    RViz["RViz2"]
 
-    Unity -->|"/sim_odom"| OdomBridge
-    FASTLIO -->|"/Odometry"| OdomBridge
+    Unity -->|/sim_odom| OdomBridge
+    FASTLIO -->|/Odometry| OdomBridge
     MapPNG --> MapServer
 
-    OdomBridge -->|"/odom"| MPPI
-    OdomBridge -->|"/start_pose"| PathPlanner
-    OdomBridge -->|"TF: odom→base_link"| RViz
+    OdomBridge -->|/odom| MPPI
+    OdomBridge -->|/start_pose| PathPlanner
+    OdomBridge -->|TF| RViz
 
-    MapServer -->|"/map"| PathPlanner
-    MapServer -->|"/costmap/global"| MPPI
+    MapServer -->|/map| PathPlanner
+    MapServer -->|/costmap/global| MPPI
 
-    LiDAR -->|"/livox/lidar"| CostmapBuilder
-    CostmapBuilder -->|"/costmap/local"| MPPI
+    LiDAR -->|/livox/lidar| CostmapBuilder
+    CostmapBuilder -->|/costmap/local| MPPI
 
-    PathPlanner -->|"/planned_path"| MPPI
+    PathPlanner -->|/planned_path| MPPI
 
-    MPPI -->|"/cmd_vel"| BodyController
-    BodyController -->|"CAN (can/tx)"| Hardware
+    MPPI -->|/cmd_vel| BodyController
+    BodyController -->|can/tx| Hardware
 
-    style Unity fill:#e1f5fe
-    style FASTLIO fill:#e1f5fe
-    style LiDAR fill:#e1f5fe
-    style MapPNG fill:#e1f5fe
+    style Unity fill:#e1f5fe,color:#333
+    style FASTLIO fill:#e1f5fe,color:#333
+    style LiDAR fill:#e1f5fe,color:#333
+    style MapPNG fill:#e1f5fe,color:#333
 ```
 
 ## ノード一覧
