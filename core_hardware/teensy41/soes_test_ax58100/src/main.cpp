@@ -2,7 +2,8 @@
 #include <Arduino.h>
 
 void setup (){
-    Serial.begin(9600);
+    pinMode(LED_BUILTIN, OUTPUT);
+    Serial.begin(115200);
     ecatapp_init();
 }
 
