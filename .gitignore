@@ -55,3 +55,6 @@ CATKIN_IGNORE
 .vscode/
 
 vendor
+
+# MkDocs build output
+site/
