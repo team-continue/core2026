@@ -28,6 +28,14 @@ ros2 launch core_launch navigation.launch.py odom_source:=fastlio
 # ナビゲーションFAST-LIOモード + 初期ヨー指定
 ros2 launch core_launch navigation.launch.py odom_source:=fastlio init_yaw:=1.5708
 
+# GUI や自動起動から FAST-LIO モードを起動
+# .bashrc は非対話シェルで早期 return するため、ショートカットや bash -c からは
+# このラッパーを使って ROS / core_ws / Livox_ws を明示的に source する
+ros2 run core_launch start_navigation_fastlio.sh
+
+# ミニPC で GUI 負荷を切り分ける場合
+ros2 run core_launch start_navigation_fastlio.sh use_rviz:=false
+
 # ボディコントローラ
 ros2 launch core_body_controller body_controller.launch.py
 

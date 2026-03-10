@@ -26,8 +26,8 @@ costmap_build_node:
     max_range_m: 6.0
 
     # ----- inflation -----
-    inflation_radius_m: 0.50 # 障害物からの膨張半径（LETHAL ゾーン）[m]
-    decay_margin_m: 0.30     # LETHAL ゾーン外側の線形減衰幅 [m]
+    inflation_radius_m: 0.40 # 障害物からの膨張半径（LETHAL ゾーン）[m]
+    decay_margin_m: 0.20     # LETHAL ゾーン外側の線形減衰幅 [m]
 
     # ----- behavior -----
     points_timeout_sec: 0.2  # 点群止まったら更新停止
