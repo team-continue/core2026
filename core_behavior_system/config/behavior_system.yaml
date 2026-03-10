@@ -1,0 +1,35 @@
+waypoint_selector:
+  ros__parameters:
+    update_rate_hz: 20
+    mode: "navigate"
+    risk_threshold: 0.75
+    w_distance: 1.0
+    w_angle: 3.0
+    w_time: 20.0
+    revisit_cooldown: 15.0
+    use_exponential_decay: true
+    forward_only: false
+    random_jitter: 0.01
+    weights: [1.0, 0.5, 2.0]
+    current_x: 0.0
+    current_y: 0.0
+    current_yaw: 0.0
+    odom_topic: "/odom"
+    goal_pose_topic: "/goal_pose"
+    pause_topic: "/waypoint_selector/pause"
+    arrival_radius: 0.5
+    # Flat list: [x1, y1, x2, y2, ...]
+    waypoints: [
+       3.0,  0.0,
+       3.0, -4.0,
+       8.0, -4.0,
+       9.0,  0.0,
+       7.0,  3.0,
+       4.0,  6.0,
+      -3.0,  0.0,
+      -3.0,  4.0,
+      -8.0,  4.0,
+      -9.0,  0.0,
+      -7.0, -3.0,
+      -4.0, -6.0,
+    ]
