@@ -53,3 +53,8 @@ CATKIN_IGNORE
 *.obj
 
 .vscode/
+
+vendor
+
+# MkDocs build output
+site/

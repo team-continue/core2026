@@ -1,0 +1,501 @@
+{
+  "form": {
+    "VendorName": "Continue",
+    "VendorID": "0x1120",
+    "ProductCode": "0x1120",
+    "ProfileNo": "5001",
+    "RevisionNumber": "0x002",
+    "SerialNumber": "0x001",
+    "HWversion": "0.0.1",
+    "SWversion": "0.0.1",
+    "EEPROMsize": "2048",
+    "RxMailboxOffset": "0x1000",
+    "TxMailboxOffset": "0x1200",
+    "MailboxSize": "512",
+    "SM2Offset": "0x1600",
+    "SM3Offset": "0x1A00",
+    "TextGroupType": "DigIn",
+    "TextGroupName5": "Digital input",
+    "ImageName": "IMGCBY",
+    "TextDeviceType": "DigIn2000",
+    "TextDeviceName": "core2026_upper",
+    "Port0Physical": "Y",
+    "Port1Physical": "Y",
+    "Port2Physical": " ",
+    "Port3Physical": " ",
+    "ESC": "AX58100",
+    "SPImode": "0",
+    "CoeDetailsEnableSDO": false,
+    "CoeDetailsEnableSDOInfo": false,
+    "CoeDetailsEnablePDOAssign": false,
+    "CoeDetailsEnablePDOConfiguration": false,
+    "CoeDetailsEnableUploadAtStartup": false,
+    "CoeDetailsEnableSDOCompleteAccess": false,
+    "DetailsEnableUseFoE": false
+  },
+  "od": {
+    "sdo": {},
+    "txpdo": {
+      "6000": {
+        "otype": "ARRAY",
+        "name": "motor_state_pos",
+        "access": "RO",
+        "dtype": "REAL32",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "m0",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[0]"
+          },
+          {
+            "name": "m1",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[1]"
+          },
+          {
+            "name": "m2",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[2]"
+          },
+          {
+            "name": "m3",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[3]"
+          },
+          {
+            "name": "m4",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[4]"
+          },
+          {
+            "name": "m5",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[5]"
+          },
+          {
+            "name": "m6",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[6]"
+          },
+          {
+            "name": "m7",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[7]"
+          },
+          {
+            "name": "m8",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[8]"
+          },
+          {
+            "name": "m9",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[9]"
+          },
+          {
+            "name": "m10",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[10]"
+          },
+          {
+            "name": "m11",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[11]"
+          },
+          {
+            "name": "m12",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[12]"
+          },
+          {
+            "name": "m13",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[13]"
+          },
+          {
+            "name": "m14",
+            "value": "0",
+            "data": "&Obj.motor_state_pos[14]"
+          }
+        ],
+        "pdo_mappings": [
+          "txpdo"
+        ]
+      },
+      "6001": {
+        "otype": "ARRAY",
+        "name": "motor_state_vel",
+        "access": "RO",
+        "dtype": "INTEGER16",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "m0",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[0]"
+          },
+          {
+            "name": "m1",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[1]"
+          },
+          {
+            "name": "m2",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[2]"
+          },
+          {
+            "name": "m3",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[3]"
+          },
+          {
+            "name": "m4",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[4]"
+          },
+          {
+            "name": "m5",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[5]"
+          },
+          {
+            "name": "m6",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[6]"
+          },
+          {
+            "name": "m7",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[7]"
+          },
+          {
+            "name": "m8",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[8]"
+          },
+          {
+            "name": "m9",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[9]"
+          },
+          {
+            "name": "m10",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[10]"
+          },
+          {
+            "name": "m11",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[11]"
+          },
+          {
+            "name": "m12",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[12]"
+          },
+          {
+            "name": "m13",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[13]"
+          },
+          {
+            "name": "m14",
+            "value": "0",
+            "data": "&Obj.motor_state_vel[14]"
+          }
+        ],
+        "pdo_mappings": [
+          "txpdo"
+        ]
+      },
+      "6002": {
+        "otype": "ARRAY",
+        "name": "motor_state_torque",
+        "access": "RO",
+        "dtype": "INTEGER16",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "m0",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[0]"
+          },
+          {
+            "name": "m1",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[1]"
+          },
+          {
+            "name": "m2",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[2]"
+          },
+          {
+            "name": "m3",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[3]"
+          },
+          {
+            "name": "m4",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[4]"
+          },
+          {
+            "name": "m5",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[5]"
+          },
+          {
+            "name": "m6",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[6]"
+          },
+          {
+            "name": "m7",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[7]"
+          },
+          {
+            "name": "m8",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[8]"
+          },
+          {
+            "name": "m9",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[9]"
+          },
+          {
+            "name": "m10",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[10]"
+          },
+          {
+            "name": "m11",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[11]"
+          },
+          {
+            "name": "m12",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[12]"
+          },
+          {
+            "name": "m13",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[13]"
+          },
+          {
+            "name": "m14",
+            "value": "0",
+            "data": "&Obj.motor_state_torque[14]"
+          }
+        ],
+        "pdo_mappings": [
+          "txpdo"
+        ]
+      },
+      "6003": {
+        "otype": "ARRAY",
+        "name": "system_state",
+        "access": "RO",
+        "dtype": "BOOLEAN",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "upper",
+            "value": "0",
+            "data": "&Obj.system_state[0]"
+          },
+          {
+            "name": "bottom",
+            "value": "0",
+            "data": "&Obj.system_state[1]"
+          }
+        ],
+        "pdo_mappings": [
+          "txpdo"
+        ]
+      },
+      "6004": {
+        "otype": "ARRAY",
+        "name": "core_state",
+        "access": "RO",
+        "dtype": "UNSIGNED8",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "damage",
+            "value": "0",
+            "data": "&Obj.core_state[0]"
+          },
+          {
+            "name": "destory",
+            "value": "0",
+            "data": "&Obj.core_state[1]"
+          }
+        ],
+        "pdo_mappings": [
+          "txpdo"
+        ]
+      }
+    },
+    "rxpdo": {
+      "7000": {
+        "otype": "ARRAY",
+        "name": "motor_ref",
+        "access": "RO",
+        "dtype": "REAL32",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "m0_vel",
+            "value": "0",
+            "data": "&Obj.motor_ref[0]"
+          },
+          {
+            "name": "m1_vel",
+            "value": "0",
+            "data": "&Obj.motor_ref[1]"
+          },
+          {
+            "name": "m2_vel",
+            "value": "0",
+            "data": "&Obj.motor_ref[2]"
+          },
+          {
+            "name": "m3_vel",
+            "value": "0",
+            "data": "&Obj.motor_ref[3]"
+          },
+          {
+            "name": "m4_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[4]"
+          },
+          {
+            "name": "m5_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[5]"
+          },
+          {
+            "name": "m6_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[6]"
+          },
+          {
+            "name": "m7_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[7]"
+          },
+          {
+            "name": "m8_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[8]"
+          },
+          {
+            "name": "m9_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[9]"
+          },
+          {
+            "name": "m10_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[10]"
+          },
+          {
+            "name": "m11_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[11]"
+          },
+          {
+            "name": "m12_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[12]"
+          },
+          {
+            "name": "m13_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[13]"
+          },
+          {
+            "name": "m14_pos",
+            "value": "0",
+            "data": "&Obj.motor_ref[14]"
+          },
+          {
+            "name": "m15_vel",
+            "value": "0",
+            "data": "&Obj.motor_ref[15]"
+          }
+        ],
+        "pdo_mappings": [
+          "rxpdo"
+        ]
+      },
+      "7001": {
+        "otype": "ARRAY",
+        "name": "system_ref",
+        "access": "RO",
+        "dtype": "BOOLEAN",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "bottom",
+            "value": "0",
+            "data": "&Obj.system_ref[0]"
+          }
+        ],
+        "pdo_mappings": [
+          "rxpdo"
+        ]
+      },
+      "7002": {
+        "otype": "ARRAY",
+        "name": "LED_TAPE",
+        "access": "RO",
+        "dtype": "UNSIGNED16",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "led0_upper",
+            "value": "0",
+            "data": "&Obj.LED_TAPE[0]"
+          },
+          {
+            "name": "led1_bottom",
+            "value": "0",
+            "data": "&Obj.LED_TAPE[1]"
+          },
+          {
+            "name": "led2_bottom",
+            "value": "0",
+            "data": "&Obj.LED_TAPE[2]"
+          }
+        ],
+        "pdo_mappings": [
+          "rxpdo"
+        ]
+      }
+    }
+  },
+  "dc": []
+}

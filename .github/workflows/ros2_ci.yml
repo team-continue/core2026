@@ -1,8 +1,12 @@
 name: build and test
 
+permissions:
+  contents: write
+
 on:
   push:
-    branches: [ main ]
+    branches:
+      - '**'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -26,28 +30,33 @@ jobs:
       image: ros:${{ matrix.rosdistro }}-ros-base
 
     steps:
-      - name: Setup directories
-        run: mkdir -p ros2_ws/src
-
       - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          path: ros2_ws/src/${{ github.event.repository.name }}
+
+      - name: Setup ROS2 workspace
+        run: |
+          mkdir -p /ros2_ws/src
+          cp -r $GITHUB_WORKSPACE /ros2_ws/src/core2026
+          find /ros2_ws/src -name '_codeql*' -exec rm -rf {} + 2>/dev/null || true
 
       - name: Install dependencies
         run: |
-          rosdep update &&
           apt-get update &&
-          rosdep install --from-path ros2_ws/src -i -y --rosdistro ${{ matrix.rosdistro }}
+          rosdep update &&
+          rosdep install --from-paths /ros2_ws/src -i -y --rosdistro ${{ matrix.rosdistro }}
 
       - name: Install diagnostic-updater
-        run: apt-get install ros-${{ matrix.rosdistro }}-diagnostic-updater
+        run: apt-get install -y ros-${{ matrix.rosdistro }}-diagnostic-updater
+
+      - name: Install ament-clang-format
+        run: apt-get install -y ros-${{ matrix.rosdistro }}-ament-clang-format clang-format
 
       - name: Build tests
         id: build_test
         run: |
           . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
-          colcon build --base-paths ros2_ws
+          cd /ros2_ws &&
+          colcon build
         continue-on-error: true
 
       - name: build_test command success
@@ -62,7 +71,28 @@ jobs:
         id: run_test
         run: |
           . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
-          colcon test --base-paths ros2_ws &&
+          cd /ros2_ws &&
+          colcon test --packages-select \
+            core_body_controller \
+            core_costmap_builder \
+            core_hardware \
+            core_launch \
+            core_mppi \
+            core_msgs \
+            core_path_follower \
+            core_path_planner \
+            core_test \
+            core_tools \
+            ros_tcp_endpoint &&
+          colcon test-result --verbose
+        continue-on-error: true
+
+      - name: Run core_test package
+        id: run_core_test
+        run: |
+          . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
+          cd /ros2_ws &&
+          colcon test --packages-select core_test &&
           colcon test-result --verbose
         continue-on-error: true
 
@@ -73,3 +103,37 @@ jobs:
       - name: run_test command failure
         if: steps.run_test.outcome == 'failure'
         run: echo "result - failure" && exit 1
+
+      - name: run_core_test command success
+        if: steps.run_core_test.outcome == 'success'
+        run: echo "result - success"
+
+      - name: run_core_test command failure
+        if: steps.run_core_test.outcome == 'failure'
+        run: echo "result - failure" && exit 1
+
+      - name: Format with ament_clang_format
+        if: github.event_name == 'push' && github.ref_name != 'main'
+        run: |
+          . /opt/ros/${{ matrix.rosdistro }}/setup.sh
+          cd /ros2_ws/src/core2026
+          files=$(git ls-files '*.c' '*.cc' '*.cpp' '*.h' '*.hpp' || true)
+          if [ -n "$files" ]; then
+            ament_clang_format --reformat $files || true
+          else
+            echo "No C/C++ files to format."
+          fi
+
+      - name: Commit and push formatting changes
+        if: github.event_name == 'push' && github.ref_name != 'main'
+        run: |
+          cd /ros2_ws/src/core2026
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore: auto-format with ament-clang-format"
+            git push origin HEAD:${{ github.ref_name }}
+          else
+            echo "No formatting changes to commit."
+          fi

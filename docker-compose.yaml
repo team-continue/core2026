@@ -1,0 +1,45 @@
+services:
+  core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: core:latest
+    container_name: core_container
+    tty: true
+    stdin_open: true
+
+    # EtherCAT / SOEM 向け
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
+    # 必要なら残す。cap_addで足りるなら消してよい
+    # privileged: true
+
+    ipc: host
+
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - XDG_RUNTIME_DIR=/tmp/runtime/
+      - ROS_DOMAIN_ID=0
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - .:/ros2_ws/src/
+      - ros2_install_data:/ros2_ws/install
+      - ros2_build_data:/ros2_ws/build
+
+    working_dir: /ros2_ws
+    command: bash -c "sleep infinity"
+
+    # 任意: リアルタイム寄りにするなら
+    ulimits:
+      rtprio: 99
+      memlock: -1
+
+volumes:
+  ros2_install_data:
+  ros2_build_data:
