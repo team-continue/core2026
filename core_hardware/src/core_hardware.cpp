@@ -1,20 +1,19 @@
 #include <core_hardware/core_hardware.hpp>
 
 #include <chrono>
-#include <cstring>
-#include <vector>
+#include <utility>
 
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
 CoreHardware::CoreHardware()
     : rclcpp::Node("core_hardware") {
-  declare_parameter("if_name", "eth0");
-  if_name_ = get_parameter("if_name").as_string();
+  declare_parameter("socket_path", std::string(core_hardware::kDefaultSocketPath));
+  socket_path_ = get_parameter("socket_path").as_string();
 
   can_pub_ = create_publisher<core_msgs::msg::CANArray>("can/rx", 10);
   joint_pub_ = create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
-  str_pub_ = create_publisher<std_msgs::msg::String>("wireless", 10);
+  wireless_pub_ = create_publisher<std_msgs::msg::UInt8MultiArray>("wireless", 10);
   destroy_pub_ = create_publisher<std_msgs::msg::Bool>("destroy", 10);
   hp_pub_ = create_publisher<std_msgs::msg::UInt8>("hp", 10);
   hardware_emergency_pub_ = create_publisher<std_msgs::msg::Bool>("hardware_emergency", 10);
@@ -30,99 +29,109 @@ CoreHardware::CoreHardware()
 }
 
 void CoreHardware::timer_cb() {
-  int rx_len = 0;
-  int offset = 0;
-  core_msgs::msg::CANArray can_array;
-
   try {
-    if (!connected_) {
-      ecat_.connect(if_name_.c_str());
-      connected_ = true;
-      missed_cycles_ = 0;
-      RCLCPP_INFO(get_logger(), "Connected to EtherCAT via %s", if_name_.c_str());
-      return;
+    ensure_connected();
+    const auto payload = core_hardware::encode_snapshot(latest_command_);
+    client_.send(core_hardware::IpcMessageType::kCommandSnapshot, sequence_++, payload);
+    while (client_.poll_once([this](core_hardware::IpcMessageType type, uint32_t seq, const std::vector<uint8_t>& msg_payload) {
+      handle_message(type, seq, msg_payload);
+    })) {
     }
-
-    ecat_.send(tx_data_, static_cast<std::size_t>(tx_len_));
-    tx_len_ = 0;
-    int wkc = 0;
-    if (!ecat_.try_read(rx_data_, kReceiveTimeoutUs, rx_len, wkc)) {
-      ++missed_cycles_;
-      RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 1000,
-          "EtherCAT cycle missed (%d/%d), wkc=%d", missed_cycles_, kMaxMissedCycles, wkc);
-      if (missed_cycles_ >= kMaxMissedCycles) {
-        ecat_.close();
-        connected_ = false;
-        missed_cycles_ = 0;
-        tx_len_ = 0;
-        RCLCPP_WARN(get_logger(), "EtherCAT reconnecting after %d missed cycles", kMaxMissedCycles);
-      }
-      return;
-    }
-    missed_cycles_ = 0;
-
-    while (offset < rx_len) {
-      const uint8_t can_id = rx_data_[offset];
-      const int uint8_len = rx_data_[offset + 1];
-      const uint8_t* uint8_addr = &rx_data_[offset + 2];
-      offset += uint8_len + 2;
-
-      if (uint8_len == 0) {
-        continue;
-      }
-      if (can_id < kJointNum && uint8_len == static_cast<int>(sizeof(float) * 6U)) {
-        std::vector<float> values(6, 0.0f);
-        std::memcpy(values.data(), uint8_addr, static_cast<std::size_t>(uint8_len));
-
-        core_msgs::msg::CAN can;
-        can.id = can_id;
-        can.data = values;
-        can_array.array.push_back(can);
-        joint_states_.effort[can_id] = values[1];
-        joint_states_.velocity[can_id] = values[3];
-        joint_states_.position[can_id] = values[5];
-      } else if (can_id == 100 && uint8_len == 1) {
-        hp_.data = uint8_addr[0];
-        hp_pub_->publish(hp_);
-      } else if (can_id == 101 && uint8_len == 1) {
-        destroy_.data = (uint8_addr[0] == 1U);
-        destroy_pub_->publish(destroy_);
-      } else if (can_id == 102) {
-        wireless_.data.assign(reinterpret_cast<const char*>(uint8_addr), static_cast<std::size_t>(uint8_len));
-        str_pub_->publish(wireless_);
-      } else if (can_id == 104 && uint8_len == 1) {
-        hardware_emergency_.data = (uint8_addr[0] == 1U);
-        hardware_emergency_pub_->publish(hardware_emergency_);
-      }
-    }
-
-    if (!can_array.array.empty()) {
+    if (!pending_can_array_.array.empty()) {
       joint_states_.header.stamp = now();
-      can_pub_->publish(can_array);
+      can_pub_->publish(pending_can_array_);
       joint_pub_->publish(joint_states_);
+      pending_can_array_.array.clear();
     }
   } catch (const std::exception& ex) {
-    ecat_.close();
+    client_.close();
     connected_ = false;
-    missed_cycles_ = 0;
-    tx_len_ = 0;
-    RCLCPP_WARN(get_logger(), "EtherCAT communication error: %s", ex.what());
-    rclcpp::sleep_for(1000ms);
+    pending_can_array_.array.clear();
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "Hardware bridge IPC error: %s", ex.what());
   }
 }
 
 void CoreHardware::can_cb(const core_msgs::msg::CANArray::SharedPtr msg) {
   for (const auto& can : msg->array) {
-    const int uint8_len = static_cast<int>(can.data.size() * sizeof(float));
-    if ((tx_len_ + uint8_len + 2) > static_cast<int>(ECAT_BUFFER_SIZE)) {
-      RCLCPP_WARN(get_logger(), "Dropping TX packet because buffer is full");
-      return;
+    if (can.id < latest_command_.motor_ref.size()) {
+      latest_command_.motor_ref[can.id] = can.data.empty() ? 0.0f : can.data.back();
+      continue;
     }
-    tx_data_[tx_len_] = can.id;
-    tx_data_[tx_len_ + 1] = static_cast<uint8_t>(uint8_len);
-    std::memcpy(tx_data_ + tx_len_ + 2, can.data.data(), static_cast<std::size_t>(uint8_len));
-    tx_len_ += uint8_len + 2;
+    if (can.id == 17U) {
+      latest_command_.system_ref[0] = (can.data.empty() || can.data.back() == 0.0f) ? 0U : 1U;
+    }
+  }
+}
+
+void CoreHardware::ensure_connected() {
+  if (connected_) {
+    return;
+  }
+  client_.connect(socket_path_);
+  connected_ = true;
+  RCLCPP_INFO(get_logger(), "Connected to hardware daemon via %s", socket_path_.c_str());
+}
+
+void CoreHardware::handle_message(core_hardware::IpcMessageType type, uint32_t, const std::vector<uint8_t>& payload) {
+  switch (type) {
+    case core_hardware::IpcMessageType::kStateSnapshot:
+      handle_state_snapshot(core_hardware::decode_snapshot(payload));
+      break;
+    case core_hardware::IpcMessageType::kFloatPacket: {
+      auto packet = core_hardware::decode_packet_message(payload);
+      handle_float_packet(packet.first, packet.second);
+      break;
+    }
+    case core_hardware::IpcMessageType::kUint8Packet: {
+      auto packet = core_hardware::decode_uint8_packet_message(payload);
+      handle_uint8_packet(packet.first, packet.second);
+      break;
+    }
+    case core_hardware::IpcMessageType::kError:
+      RCLCPP_WARN(get_logger(), "Hardware daemon reported an error frame");
+      break;
+    case core_hardware::IpcMessageType::kHeartbeat:
+    case core_hardware::IpcMessageType::kCommandSnapshot:
+      break;
+  }
+}
+
+void CoreHardware::handle_state_snapshot(const core_hardware::HardwareSnapshot& snapshot) {
+  latest_state_ = snapshot;
+}
+
+void CoreHardware::handle_float_packet(uint8_t id, const std::vector<float>& data) {
+  if (id < kJointNum && data.size() == 6U) {
+    core_msgs::msg::CAN can;
+    can.id = id;
+    can.data = data;
+    pending_can_array_.array.push_back(can);
+    joint_states_.effort[id] = data[1];
+    joint_states_.velocity[id] = data[3];
+    joint_states_.position[id] = data[5];
+    return;
+  }
+}
+
+void CoreHardware::handle_uint8_packet(uint8_t id, const std::vector<uint8_t>& data) {
+  if (id == 100U && !data.empty()) {
+    hp_.data = data.front();
+    hp_pub_->publish(hp_);
+    return;
+  }
+  if (id == 101U && !data.empty()) {
+    destroy_.data = (data.front() != 0U);
+    destroy_pub_->publish(destroy_);
+    return;
+  }
+  if (id == 102U) {
+    wireless_.data = data;
+    wireless_pub_->publish(wireless_);
+    return;
+  }
+  if (id == 104U && !data.empty()) {
+    hardware_emergency_.data = (data.front() != 0U);
+    hardware_emergency_pub_->publish(hardware_emergency_);
   }
 }
 

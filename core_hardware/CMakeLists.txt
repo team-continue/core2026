@@ -79,26 +79,38 @@ if(NOT TARGET soem)
   find_package(soem REQUIRED CONFIG)
 endif()
 
-#ノード追加
+ament_auto_add_executable(core_hardware src/core_hardware.cpp)
 ament_auto_add_executable(
-  core_hardware
-  src/core_hardware.cpp
+  core_hardware_daemon
+  src/core_hardware_daemon.cpp
   src/ecat.cpp
   teensy41/upper/soes/soes-esi/objectlist.c
 )
 ament_auto_add_executable(core_hardware_usb src/core_hardware_usb.cpp)
 
+set(CORE_HARDWARE_COMMON_INCLUDE_DIRS
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/teensy41/upper/soes/soes-esi
+  ${CMAKE_CURRENT_SOURCE_DIR}/teensy41/upper/soes/soes
+)
+
 target_include_directories(core_hardware
   PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/teensy41/upper/soes/soes-esi
-    ${CMAKE_CURRENT_SOURCE_DIR}/teensy41/upper/soes/soes
+    ${CORE_HARDWARE_COMMON_INCLUDE_DIRS}
+)
+
+target_include_directories(core_hardware_daemon
+  PRIVATE
+    ${CORE_HARDWARE_COMMON_INCLUDE_DIRS}
     $<TARGET_PROPERTY:soem,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 target_link_libraries(core_hardware
-  soem
   ${core_msgs_LIBRARIES}
+)
+
+target_link_libraries(core_hardware_daemon
+  soem
 )
 
 target_link_libraries(core_hardware_usb
@@ -106,9 +118,17 @@ target_link_libraries(core_hardware_usb
 )
 
 install(
-  DIRECTORY launch
+  DIRECTORY
+    launch
+    systemd
   DESTINATION share/${PROJECT_NAME}/
 )
 
+install(
+  PROGRAMS
+    scripts/install_core_hardware_daemon_service.sh
+    scripts/remove_core_hardware_daemon_service.sh
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR)

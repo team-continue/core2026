@@ -12,6 +12,7 @@
 namespace {
 
 _Objects &obj = Obj;
+constexpr size_t kWirelessBytes = 7;
 
 int clamp_to_int16(const float value) {
   if (value > 32767.0f) {
@@ -41,7 +42,9 @@ bool set_state_frame(const uint8_t id, const float *data, const int flt_len) {
   }
   if (id < 15) {
     obj.motor_state_vel[id] = clamp_to_int16(data[3]);
-    obj.motor_state_torque[id] = clamp_to_int16(data[1]);
+    if (id >= 4) {
+      obj.motor_state_torque[id] = clamp_to_int16(data[1]);
+    }
     return true;
   }
   return false;
@@ -89,6 +92,13 @@ bool ecat_setUint8(const uint8_t id, const uint8_t *data, const int u8_len) {
     case 101:
       obj.core_state[1] = data[0];
       return true;
+    case 102: {
+      uint8_t *torque_bytes = reinterpret_cast<uint8_t *>(obj.motor_state_torque);
+      const size_t copy_len = static_cast<size_t>(u8_len) < kWirelessBytes ? static_cast<size_t>(u8_len) : kWirelessBytes;
+      memset(torque_bytes, 0, kWirelessBytes);
+      memcpy(torque_bytes, data, copy_len);
+      return true;
+    }
     case 104:
       obj.system_state[0] = data[0] != 0;
       return true;
