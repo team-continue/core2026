@@ -12,17 +12,23 @@ extern "C" {
 }
 
 namespace {
-constexpr std::size_t kOutputMotorRefBits = 16U * 32U;
-constexpr std::size_t kOutputSystemRefBit = kOutputMotorRefBits;
-constexpr std::size_t kOutputLedTapeBit = kOutputSystemRefBit + 1U;
-constexpr std::size_t kOutputRequiredBytes = (kOutputLedTapeBit + (3U * 16U) + 7U) / 8U;
+constexpr std::size_t kOutputMotorRefOffset = 0U;
+constexpr std::size_t kOutputMotorRefBytes = 16U * sizeof(float);
+constexpr std::size_t kOutputSystemRefBitOffset = kOutputMotorRefBytes * 8U;
+constexpr std::size_t kOutputLedTape0BitOffset = kOutputSystemRefBitOffset + 1U;
+constexpr std::size_t kOutputLedTape1BitOffset = kOutputLedTape0BitOffset + 16U;
+constexpr std::size_t kOutputLedTape2BitOffset = kOutputLedTape1BitOffset + 16U;
+constexpr std::size_t kOutputRequiredBytes = (kOutputLedTape2BitOffset + 16U + 7U) / 8U;
 
-constexpr std::size_t kInputMotorPosBits = 15U * 32U;
-constexpr std::size_t kInputMotorVelBit = kInputMotorPosBits;
-constexpr std::size_t kInputMotorTorqueBit = kInputMotorVelBit + (15U * 16U);
-constexpr std::size_t kInputSystemStateBit = kInputMotorTorqueBit + (15U * 16U);
-constexpr std::size_t kInputCoreStateBit = kInputSystemStateBit + 2U;
-constexpr std::size_t kInputRequiredBytes = (kInputCoreStateBit + (2U * 8U) + 7U) / 8U;
+constexpr std::size_t kInputMotorPosOffset = 0U;
+constexpr std::size_t kInputMotorPosBytes = 15U * sizeof(float);
+constexpr std::size_t kInputMotorVelOffset = kInputMotorPosOffset + kInputMotorPosBytes;
+constexpr std::size_t kInputMotorVelBytes = 15U * sizeof(int16_t);
+constexpr std::size_t kInputMotorTorqueOffset = kInputMotorVelOffset + kInputMotorVelBytes;
+constexpr std::size_t kInputMotorTorqueBytes = 15U * sizeof(int16_t);
+constexpr std::size_t kInputSystemStateBitOffset = (kInputMotorTorqueOffset + kInputMotorTorqueBytes) * 8U;
+constexpr std::size_t kInputCoreStateBitOffset = kInputSystemStateBitOffset + 2U;
+constexpr std::size_t kInputRequiredBytes = (kInputCoreStateBitOffset + (2U * 8U) + 7U) / 8U;
 
 constexpr std::array<uint8_t, 15> kPacketJointIds = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
 
@@ -38,24 +44,30 @@ void throw_state_error(const char* prefix, const ecx_contextt& ctx) {
   throw std::runtime_error(oss.str());
 }
 
+int16_t read_int16_unaligned(const uint8_t* buffer, std::size_t offset) {
+  int16_t value = 0;
+  std::memcpy(&value, buffer + offset, sizeof(value));
+  return value;
+}
+
 float read_float_unaligned(const uint8_t* buffer, std::size_t offset) {
   float value = 0.0f;
   std::memcpy(&value, buffer + offset, sizeof(value));
   return value;
 }
 
-int16_t read_int16_bits(const uint8_t* buffer, std::size_t bit_offset) {
-  uint16_t raw = 0;
-  for (std::size_t bit = 0; bit < 16U; ++bit) {
-    const std::size_t absolute_bit = bit_offset + bit;
-    const uint8_t bit_value = (buffer[absolute_bit / 8U] >> (absolute_bit % 8U)) & 0x01U;
-    raw |= static_cast<uint16_t>(bit_value) << bit;
-  }
-  return static_cast<int16_t>(raw);
-}
-
 void write_float_unaligned(uint8_t* buffer, std::size_t offset, float value) {
   std::memcpy(buffer + offset, &value, sizeof(value));
+}
+
+void write_uint16_unaligned(uint8_t* buffer, std::size_t offset, uint16_t value) {
+  std::memcpy(buffer + offset, &value, sizeof(value));
+}
+
+std::array<uint8_t, 7> unpack_wireless_from_torque_bytes(const uint8_t* inputs) {
+  std::array<uint8_t, 7> wireless{};
+  std::memcpy(wireless.data(), inputs + kInputMotorTorqueOffset, wireless.size());
+  return wireless;
 }
 }  // namespace
 
@@ -124,52 +136,41 @@ void Ecat::close() {
   std::memset(iomap_, 0, sizeof(iomap_));
 }
 
-void Ecat::send(const uint8_t* buffer, std::size_t size) {
-  ensure_connected();
-  if (buffer == nullptr && size != 0U) {
-    throw std::runtime_error("send buffer is null");
-  }
-
-  std::size_t offset = 0;
-  while (offset < size) {
-    if ((size - offset) < 2U) {
-      throw std::runtime_error("Truncated packet header");
-    }
-    const uint8_t id = buffer[offset];
-    const uint8_t payload_size = buffer[offset + 1U];
-    offset += 2U;
-    if ((size - offset) < payload_size) {
-      throw std::runtime_error("Truncated packet payload");
-    }
-    apply_tx_record(id, buffer + offset, payload_size);
-    offset += payload_size;
-  }
-
-  write_outputs();
-  ecx_send_processdata(&ctx_);
-  tx_in_flight_ = true;
+void Ecat::set_float_packet_callback(FloatPacketCallback callback) {
+  float_packet_callback_ = std::move(callback);
 }
 
-int Ecat::read(uint8_t* decode_buffer) {
-  int rx_len = 0;
-  int wkc = 0;
-  if (try_read(decode_buffer, EC_TIMEOUTRET, rx_len, wkc)) {
-    return rx_len;
-  }
-  if (wkc <= 0) {
-    throw std::runtime_error("Failed to receive process data");
-  }
-  std::ostringstream oss;
-  oss << "Process data WKC mismatch wkc=" << wkc << " expected>=" << expected_wkc_;
-  throw std::runtime_error(oss.str());
+void Ecat::set_uint8_packet_callback(Uint8PacketCallback callback) {
+  uint8_packet_callback_ = std::move(callback);
 }
 
-bool Ecat::try_read(uint8_t* decode_buffer, int timeout_us, int& rx_len, int& wkc) {
-  ensure_connected();
-  if (decode_buffer == nullptr) {
-    throw std::runtime_error("read buffer is null");
-  }
+void Ecat::set_float(uint8_t id, const std::vector<float>& data) {
+  apply_tx_record(id, data);
+}
 
+void Ecat::set_system_ref(bool enabled) {
+  output_cache_.system_ref = enabled;
+  Obj.system_ref[0] = enabled ? 1U : 0U;
+}
+
+void Ecat::set_led_tape(const std::array<uint16_t, 3>& led_tape) {
+  for (std::size_t i = 0; i < led_tape.size(); ++i) {
+    output_cache_.led_tape[i] = led_tape[i];
+    Obj.LED_TAPE[i] = led_tape[i];
+  }
+}
+
+void Ecat::clear_tx_packets() {
+  std::memset(output_cache_.motor_ref, 0, sizeof(output_cache_.motor_ref));
+  output_cache_.system_ref = false;
+  std::memset(output_cache_.led_tape, 0, sizeof(output_cache_.led_tape));
+  std::memset(Obj.motor_ref, 0, sizeof(Obj.motor_ref));
+  std::memset(Obj.system_ref, 0, sizeof(Obj.system_ref));
+  std::memset(Obj.LED_TAPE, 0, sizeof(Obj.LED_TAPE));
+}
+
+bool Ecat::cycle(int timeout_us, int& wkc) {
+  ensure_connected();
   if (!tx_in_flight_) {
     write_outputs();
     ecx_send_processdata(&ctx_);
@@ -179,10 +180,9 @@ bool Ecat::try_read(uint8_t* decode_buffer, int timeout_us, int& rx_len, int& wk
   wkc = ecx_receive_processdata(&ctx_, timeout_us);
   tx_in_flight_ = false;
   if (wkc <= 0 || wkc < expected_wkc_) {
-    rx_len = 0;
     return false;
   }
-  rx_len = decode_rx_records(decode_buffer);
+  emit_rx_packets();
   return true;
 }
 
@@ -228,110 +228,81 @@ void Ecat::write_outputs() {
 
   std::memset(outputs, 0, static_cast<std::size_t>(output_bytes_));
   for (std::size_t index = 0; index < 16U; ++index) {
-    write_float_unaligned(outputs, index * sizeof(float), output_cache_.motor_ref[index]);
+    write_float_unaligned(outputs, kOutputMotorRefOffset + (index * sizeof(float)), output_cache_.motor_ref[index]);
     Obj.motor_ref[index] = output_cache_.motor_ref[index];
   }
-  pack_bits(outputs, kOutputSystemRefBit, 1U, output_cache_.system_ref ? 1U : 0U);
+  pack_bits(outputs, kOutputSystemRefBitOffset, 1U, output_cache_.system_ref ? 1U : 0U);
   Obj.system_ref[0] = output_cache_.system_ref ? 1U : 0U;
+  pack_bits(outputs, kOutputLedTape0BitOffset, 16U, output_cache_.led_tape[0]);
+  pack_bits(outputs, kOutputLedTape1BitOffset, 16U, output_cache_.led_tape[1]);
+  pack_bits(outputs, kOutputLedTape2BitOffset, 16U, output_cache_.led_tape[2]);
   for (std::size_t index = 0; index < 3U; ++index) {
-    pack_bits(outputs, kOutputLedTapeBit + (index * 16U), 16U, output_cache_.led_tape[index]);
     Obj.LED_TAPE[index] = output_cache_.led_tape[index];
   }
 }
 
-void Ecat::apply_tx_record(uint8_t id, const uint8_t* payload, uint8_t payload_size) {
+void Ecat::apply_tx_record(uint8_t id, const std::vector<float>& payload) {
   static_assert(std::numeric_limits<int16_t>::max() >= 512, "int16_t must represent velocity range");
   static_assert(std::numeric_limits<int16_t>::max() >= 100, "int16_t must represent torque range");
-  auto read_last_float = [payload, payload_size]() {
-    float value = 0.0f;
-    if (payload_size >= sizeof(float)) {
-      std::memcpy(&value, payload + (payload_size - sizeof(float)), sizeof(value));
-    }
-    return value;
-  };
+  const float value = payload.empty() ? 0.0f : payload.back();
 
   if (id <= 15U) {
-    output_cache_.motor_ref[id] = (payload_size == 0U) ? 0.0f : read_last_float();
+    output_cache_.motor_ref[id] = value;
+    Obj.motor_ref[id] = value;
     return;
   }
   if (id == 17U) {
-    if (payload_size == 1U) {
-      output_cache_.system_ref = payload[0] != 0U;
-    } else {
-      output_cache_.system_ref = read_last_float() != 0.0f;
-    }
-    return;
+    output_cache_.system_ref = (value != 0.0f);
+    Obj.system_ref[0] = output_cache_.system_ref ? 1U : 0U;
   }
 }
 
-int Ecat::decode_rx_records(uint8_t* decode_buffer) const {
+void Ecat::emit_rx_packets() const {
   const auto* inputs = reinterpret_cast<const uint8_t*>(ctx_.slavelist[kSlaveIndex].inputs);
   if (inputs == nullptr) {
     throw std::runtime_error("EtherCAT inputs PDO is null");
   }
 
-  int offset = 0;
-  auto append_uint8 = [&](uint8_t id, uint8_t value) {
-    if ((offset + 3) > static_cast<int>(ECAT_BUFFER_SIZE)) {
-      throw std::runtime_error("RX packet buffer overflow");
-    }
-    decode_buffer[offset++] = id;
-    decode_buffer[offset++] = 1U;
-    decode_buffer[offset++] = value;
-  };
-  auto append_float_array = [&](uint8_t id, const std::array<float, 6>& values) {
-    const uint8_t payload_size = static_cast<uint8_t>(sizeof(float) * values.size());
-    if ((offset + 2 + payload_size) > static_cast<int>(ECAT_BUFFER_SIZE)) {
-      throw std::runtime_error("RX packet buffer overflow");
-    }
-    decode_buffer[offset++] = id;
-    decode_buffer[offset++] = payload_size;
-    std::memcpy(decode_buffer + offset, values.data(), payload_size);
-    offset += payload_size;
-  };
-
   for (uint8_t id : kPacketJointIds) {
-    const int position_index = position_index_from_packet_id(id);
-    const int16_t velocity = read_int16_bits(inputs, kInputMotorVelBit + (static_cast<std::size_t>(id) * 16U));
-    const int16_t torque = read_int16_bits(inputs, kInputMotorTorqueBit + (static_cast<std::size_t>(id) * 16U));
-
-    float position = 0.0f;
-    if (position_index >= 0) {
-      position = read_float_unaligned(inputs, static_cast<std::size_t>(position_index) * sizeof(float));
-      Obj.motor_state_pos[position_index] = position;
-    }
+    const int16_t velocity = read_int16_unaligned(inputs, kInputMotorVelOffset + (static_cast<std::size_t>(id) * sizeof(int16_t)));
+    const int16_t raw_torque = read_int16_unaligned(inputs, kInputMotorTorqueOffset + (static_cast<std::size_t>(id) * sizeof(int16_t)));
+    const int16_t torque = (id <= 3U) ? 0 : raw_torque;
+    const float position = read_float_unaligned(inputs, kInputMotorPosOffset + (static_cast<std::size_t>(id) * sizeof(float)));
+    Obj.motor_state_pos[id] = position;
     Obj.motor_state_vel[id] = velocity;
     Obj.motor_state_torque[id] = torque;
 
-    std::array<float, 6> frame = {0.0f, static_cast<float>(torque), 0.0f, static_cast<float>(velocity), 0.0f, position};
-    if (id <= 4U) {
-      frame[2] = output_cache_.motor_ref[id];
-    } else {
-      frame[4] = output_cache_.motor_ref[id];
+    if (float_packet_callback_) {
+      std::vector<float> frame = {0.0f, static_cast<float>(torque), 0.0f, static_cast<float>(velocity), 0.0f, position};
+      if (id <= 4U) {
+        frame[2] = output_cache_.motor_ref[id];
+      } else {
+        frame[4] = output_cache_.motor_ref[id];
+      }
+      float_packet_callback_(id, frame);
     }
-    append_float_array(id, frame);
   }
 
-  const uint8_t system_upper = static_cast<uint8_t>(unpack_bits(inputs, kInputSystemStateBit, 1U));
-  const uint8_t system_bottom = static_cast<uint8_t>(unpack_bits(inputs, kInputSystemStateBit + 1U, 1U));
-  const uint8_t core_damage = static_cast<uint8_t>(unpack_bits(inputs, kInputCoreStateBit, 8U));
-  const uint8_t core_destroy = static_cast<uint8_t>(unpack_bits(inputs, kInputCoreStateBit + 8U, 8U));
-
+  const uint8_t system_upper = static_cast<uint8_t>(unpack_bits(inputs, kInputSystemStateBitOffset, 1U));
+  const uint8_t system_bottom = static_cast<uint8_t>(unpack_bits(inputs, kInputSystemStateBitOffset + 1U, 1U));
   Obj.system_state[0] = system_upper;
   Obj.system_state[1] = system_bottom;
-  Obj.core_state[0] = core_damage;
-  Obj.core_state[1] = core_destroy;
 
-  append_uint8(100U, core_damage);
-  append_uint8(101U, core_destroy);
-  append_uint8(104U, system_upper);
-  return offset;
+  for (std::size_t i = 0; i < 2U; ++i) {
+    Obj.core_state[i] = static_cast<uint8_t>(unpack_bits(inputs, kInputCoreStateBitOffset + (i * 8U), 8U));
+  }
+  const auto wireless = unpack_wireless_from_torque_bytes(inputs);
+
+  if (uint8_packet_callback_) {
+    uint8_packet_callback_(100U, {Obj.core_state[0]});
+    uint8_packet_callback_(101U, {Obj.core_state[1]});
+    uint8_packet_callback_(102U, std::vector<uint8_t>(wireless.begin(), wireless.end()));
+    uint8_packet_callback_(104U, {system_upper});
+  }
 }
 
 int Ecat::position_index_from_packet_id(uint8_t id) {
-  if (id <= 14U) {
-    return static_cast<int>(id);
-  }
+  (void)id;
   return -1;
 }
 

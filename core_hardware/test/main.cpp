@@ -1,47 +1,33 @@
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
-#include <cstring>
 #include <vector>
 
 #include "core_hardware/ecat.hpp"
 
 namespace {
 
-void append_float_packet(std::vector<uint8_t>& buffer, uint8_t id, float value) {
-  const auto* raw = reinterpret_cast<const uint8_t*>(&value);
-  buffer.push_back(id);
-  buffer.push_back(static_cast<uint8_t>(sizeof(value)));
-  buffer.insert(buffer.end(), raw, raw + sizeof(value));
-}
+constexpr int kReceiveTimeoutUs = 3000;
+constexpr int kWarmupCycles = 5;
 
-void append_uint8_packet(std::vector<uint8_t>& buffer, uint8_t id, uint8_t value) {
-  buffer.push_back(id);
-  buffer.push_back(1U);
-  buffer.push_back(value);
-}
-
-void print_float_record(uint8_t id, const uint8_t* payload, uint8_t size) {
-  const std::size_t count = static_cast<std::size_t>(size) / sizeof(float);
+void print_float_packet(uint8_t id, const std::vector<float>& data) {
   std::cout << "/can/rx id=" << static_cast<int>(id) << " data=[";
-  for (std::size_t i = 0; i < count; ++i) {
-    float value = 0.0f;
-    std::memcpy(&value, payload + (i * sizeof(float)), sizeof(float));
+  for (std::size_t i = 0; i < data.size(); ++i) {
     if (i != 0U) {
       std::cout << ", ";
     }
-    std::cout << std::fixed << std::setprecision(3) << value;
+    std::cout << std::fixed << std::setprecision(3) << data[i];
   }
   std::cout << "]" << std::endl;
 }
 
-void print_u8_record(uint8_t id, const uint8_t* payload, uint8_t size) {
+void print_uint8_packet(uint8_t id, const std::vector<uint8_t>& data) {
   std::cout << "/can/rx id=" << static_cast<int>(id) << " data=[";
-  for (uint8_t i = 0; i < size; ++i) {
+  for (std::size_t i = 0; i < data.size(); ++i) {
     if (i != 0U) {
       std::cout << ", ";
     }
-    std::cout << static_cast<float>(payload[i]);
+    std::cout << static_cast<unsigned int>(data[i]);
   }
   std::cout << "]" << std::endl;
 }
@@ -56,34 +42,29 @@ int main(int argc, char* argv[]) {
 
   try {
     Ecat ecat;
+    ecat.set_float_packet_callback(print_float_packet);
+    ecat.set_uint8_packet_callback(print_uint8_packet);
     ecat.connect(argv[1]);
 
-    std::vector<uint8_t> tx_buffer;
-    tx_buffer.reserve(18U * 6U);
     for (uint8_t id = 0; id < 16U; ++id) {
-      append_float_packet(tx_buffer, id, 0.0f);
+      ecat.set_float(id, {0.0f});
     }
-    append_uint8_packet(tx_buffer, 17U, 0U);
+    ecat.set_system_ref(false);
+    ecat.set_led_tape({0U, 0U, 0U});
 
-    std::vector<uint8_t> rx_buffer(ECAT_BUFFER_SIZE, 0U);
-    ecat.send(tx_buffer.data(), tx_buffer.size());
-    const int rx_len = ecat.read(rx_buffer.data());
-
-    int offset = 0;
-    while (offset < rx_len) {
-      const uint8_t id = rx_buffer[static_cast<std::size_t>(offset)];
-      const uint8_t size = rx_buffer[static_cast<std::size_t>(offset + 1)];
-      const uint8_t* payload = rx_buffer.data() + offset + 2;
-      if ((offset + 2 + size) > rx_len) {
-        throw std::runtime_error("Received truncated packet");
+    bool received_any_packet = false;
+    for (int cycle_index = 0; cycle_index < kWarmupCycles; ++cycle_index) {
+      int wkc = 0;
+      if (!ecat.cycle(kReceiveTimeoutUs, wkc)) {
+        std::cerr << "Cycle failed, wkc=" << wkc << std::endl;
+        continue;
       }
+      received_any_packet = true;
+      std::cout << "Cycle " << cycle_index << " succeeded, wkc=" << wkc << std::endl;
+    }
 
-      if ((size % sizeof(float)) == 0U && id < 100U) {
-        print_float_record(id, payload, size);
-      } else {
-        print_u8_record(id, payload, size);
-      }
-      offset += 2 + size;
+    if (!received_any_packet) {
+      throw std::runtime_error("No successful EtherCAT cycles");
     }
   } catch (const std::exception& ex) {
     std::cerr << "Test failed: " << ex.what() << std::endl;

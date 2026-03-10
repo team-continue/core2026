@@ -11,20 +11,21 @@
 #include "damiao.h"
 #include "robostride.h"
 #include "pin.h"
+#include "wireless.h"
 
 #define DEFAULT_EMERGENCY_STATE HIGH
 
 STS sts;
 unsigned long prev_connect_ros2_ts_=0;
 bool connect_ros2 = false;
-uint8_t wireless[LEN_WIRELESS] = {0};
+uint8_t wireless_data[LEN_WIRELESS] = {0};
 uint8_t hardware_enable[1] = {0};
 uint8_t destory[1] = {0};
 uint8_t damege[1] = {0};
 unsigned long prev_ts = 0;
 int counter1 = 0, counter2 = 0, led=0;
 int len_wireless = 0;
-uint8_t wirelessbuffer_[MAX_DATA_LENGTH];
+WirelessModule wireless;
 
 // LED timer
 void led_timer_cb();
@@ -75,16 +76,8 @@ void ecat_FrameCallBack(){
   // destory
   ecat_setUint8(101, destory, 1);
   // wireless
-  while(PORT_WIRELESS.available()){
-    wireless[len_wireless] = PORT_WIRELESS.read();
-    if(wireless[len_wireless] == '\n'){
-      ecat_setUint8(102, wireless, len_wireless);
-      len_wireless = 0;
-    }
-    if(len_wireless == LEN_WIRELESS-2){
-      len_wireless = 0;
-    }
-    len_wireless++;
+  if (wireless.update(wireless_data)) {
+    ecat_setUint8(102, wireless_data, LEN_WIRELESS);
   }
   hardware_enable[0] = damiao_motor[0].connect ? 0 : 1;
   ecat_setUint8(104, hardware_enable, 1);
@@ -144,8 +137,7 @@ void setup(void) {
   pinMode(LED_BUILTIN, OUTPUT);
 
   ecat_begin();
-  PORT_WIRELESS.begin(115200);
-  PORT_WIRELESS.addMemoryForRead(&wirelessbuffer_, sizeof(wirelessbuffer_));
+  wireless.init();
   sts.init();
   can3_init();
   can2_init();

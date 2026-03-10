@@ -5,7 +5,7 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/u_int8.hpp"
-#include "std_msgs/msg/string.hpp"
+#include "std_msgs/msg/u_int8_multi_array.hpp"
 
 using std::placeholders::_1;
 using namespace std::chrono_literals;
@@ -15,7 +15,7 @@ using namespace std::chrono_literals;
 class HaruHardware : public rclcpp::Node {
     rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
-    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr str_pub_;
+    rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr wireless_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr destroy_pub_;
     rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr hp_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr hardware_emergency_pub_;
@@ -30,7 +30,7 @@ class HaruHardware : public rclcpp::Node {
     int tx_len_ = 0;
     std::string port_;
     sensor_msgs::msg::JointState joint_states_;
-    std_msgs::msg::String wireless_;
+    std_msgs::msg::UInt8MultiArray wireless_;
     std_msgs::msg::Bool destroy_;
     std_msgs::msg::UInt8 hp_;
     std_msgs::msg::Bool hardware_emergency_;
@@ -42,7 +42,7 @@ class HaruHardware : public rclcpp::Node {
         port_ = this->get_parameter("port").as_string();
         can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/rx", 10);
         joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
-        str_pub_ = this->create_publisher<std_msgs::msg::String>("wireless", 10);
+        wireless_pub_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>("wireless", 10);
         destroy_pub_ = this->create_publisher<std_msgs::msg::Bool>("destroy", 10);
         hp_pub_ = this->create_publisher<std_msgs::msg::UInt8>("hp", 10);
         hardware_emergency_pub_ = this->create_publisher<std_msgs::msg::Bool>("hardware_emergency", 10);
@@ -110,8 +110,8 @@ class HaruHardware : public rclcpp::Node {
                         destroy_pub_->publish(destroy_);
                     } else if (can_id == 102) {
                         // wireless
-                        wireless_.data = std::string((char*)uint8_addr, uint8_len);
-                        str_pub_->publish(wireless_);
+                        wireless_.data.assign(uint8_addr, uint8_addr + uint8_len);
+                        wireless_pub_->publish(wireless_);
                     } else if (can_id == 104 && uint8_len == 1) {
                         hardware_emergency_.data = (uint8_addr[0] == 1);
                         hardware_emergency_pub_->publish(hardware_emergency_);
