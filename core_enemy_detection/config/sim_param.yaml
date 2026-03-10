@@ -19,8 +19,8 @@
     mage:
       mode: unchanged
     panel_kernel_matrix_size:
-    - 7
-    - 7
+    - 9
+    - 9
     panel_lab_range_lower:
     - 0
     - 130
