@@ -21,9 +21,10 @@
 namespace core_mppi
 {
 
-MppiController::MppiController(const MppiParams & params) : params_(params), rng_(0x434F5245) {}
+MppiController::MppiController(const MppiParams & params)
+: params_(params), rng_(0x434F5245) {}
 
-void MppiController::setParams(const MppiParams & params) { params_ = params; }
+void MppiController::setParams(const MppiParams & params) {params_ = params;}
 
 double MppiController::yawFromQuaternion(const geometry_msgs::msg::Quaternion & q)
 {
@@ -37,7 +38,7 @@ double MppiController::clamp(double value, double lo, double hi)
   return std::min(hi, std::max(lo, value));
 }
 
-double MppiController::sqr(double x) { return x * x; }
+double MppiController::sqr(double x) {return x * x;}
 
 MppiController::State MppiController::rolloutStep(
   const State & s, const geometry_msgs::msg::Twist & u) const
@@ -79,7 +80,8 @@ double MppiController::occupancyCost(
 
   if (
     mx < 0 || my < 0 || mx >= static_cast<int>(map->info.width) ||
-    my >= static_cast<int>(map->info.height)) {
+    my >= static_cast<int>(map->info.height))
+  {
     return 1.0;
   }
 
@@ -175,7 +177,7 @@ bool MppiController::compute(
       cost += params_.w_control * (sqr(u.linear.x) + sqr(u.linear.y) + sqr(u.angular.z));
       cost +=
         params_.w_smooth * (sqr(u.linear.x - u_prev.linear.x) + sqr(u.linear.y - u_prev.linear.y) +
-                            sqr(u.angular.z - u_prev.angular.z));
+        sqr(u.angular.z - u_prev.angular.z));
 
       u_prev = u;
     }

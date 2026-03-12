@@ -164,11 +164,11 @@ void MppiNode::onTimer()
   }
 
   const nav_msgs::msg::OccupancyGrid * local_map =
-    (local_costmap_ && local_costmap_->header.frame_id == odom_frame_) ? local_costmap_.get()
-                                                                       : nullptr;
+    (local_costmap_ && local_costmap_->header.frame_id == odom_frame_) ? local_costmap_.get() :
+    nullptr;
   const nav_msgs::msg::OccupancyGrid * global_map =
-    (global_costmap_ && global_costmap_->header.frame_id == odom_frame_) ? global_costmap_.get()
-                                                                         : nullptr;
+    (global_costmap_ && global_costmap_->header.frame_id == odom_frame_) ? global_costmap_.get() :
+    nullptr;
 
   geometry_msgs::msg::Twist cmd;
   if (!controller_.compute(current_pose_, path_, last_cmd_, local_map, global_map, cmd)) {

@@ -14,11 +14,12 @@
 
 #pragma once
 
+#include <random>
+#include <vector>
+
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
-#include <random>
-#include <vector>
 
 namespace core_mppi
 {
