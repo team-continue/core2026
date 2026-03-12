@@ -15,7 +15,8 @@
 | `/costmap/global` | `nav_msgs/OccupancyGrid` | map_server | mppi | transient_local(1) |
 | `/costmap/local` | `nav_msgs/OccupancyGrid` | costmap_builder | mppi | reliable |
 | `/planned_path` | `nav_msgs/Path` | path_planner | mppi, path_follower | reliable |
-| `/cmd_vel` | `geometry_msgs/Twist` | mppi or path_follower | body_controller | reliable(10) |
+| `/cmd_vel_raw` | `geometry_msgs/Twist` | mppi or path_follower | cmd_vel_smoother | reliable(10) |
+| `/cmd_vel` | `geometry_msgs/Twist` | cmd_vel_smoother | body_controller | reliable(10) |
 
 ### センサ
 
