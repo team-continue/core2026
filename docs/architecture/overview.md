@@ -5,55 +5,51 @@
 ```mermaid
 graph TB
     subgraph Inputs
-        direction LR
-        MapPNG["core1_field.png"]
         Unity["Unity Sim\n/sim_odom"]
         FASTLIO["FAST-LIO\n/Odometry"]
+        MapPNG["core1_field.png"]
         LiDAR["Livox Mid-360\n/livox/lidar"]
     end
 
+    BehaviorSystem["Behavior System"]
+
     subgraph Bridge["データ変換"]
-        direction LR
-        MapServer["map_server_node"]
         OdomBridge["odom_bridge_node"]
+        MapServer["map_server_node"]
     end
 
     subgraph Planning["経路計画・コストマップ"]
-        direction LR
         PathPlanner["path_planner_node"]
         CostmapBuilder["costmap_build_node"]
     end
 
-    BehaviorSystem["Behavior System"]
     MPPI["core_mppi_node"]
     Smoother["cmd_vel_smoother_node"]
 
     subgraph Control["車体制御"]
-        direction LR
         BodyController["body_control_node"]
         Hardware["core_hardware"]
     end
 
     RViz["RViz2"]
 
-    MapPNG --> MapServer
     Unity -->|/sim_odom| OdomBridge
     FASTLIO -->|/Odometry| OdomBridge
+    MapPNG --> MapServer
     LiDAR -->|/livox/lidar| CostmapBuilder
 
-    MapServer -->|/map| PathPlanner
-    MapServer -->|/costmap/global| MPPI
+    BehaviorSystem -->|/goal_pose| PathPlanner
+
     OdomBridge -->|/start_pose| PathPlanner
     OdomBridge -->|/odom| MPPI
     OdomBridge -->|TF| RViz
+    MapServer -->|/map| PathPlanner
+    MapServer -->|/costmap/global| MPPI
 
     PathPlanner -->|/planned_path| MPPI
     CostmapBuilder -->|/costmap/local| MPPI
-    BehaviorSystem -->|/goal_pose| PathPlanner
-    BehaviorSystem -->|/goal_pose| MPPI
 
     MPPI -->|/cmd_vel_raw| Smoother
-    MPPI -->|/goal_reached| BehaviorSystem
     Smoother -->|/cmd_vel| BodyController
     BodyController -->|can/tx| Hardware
 
