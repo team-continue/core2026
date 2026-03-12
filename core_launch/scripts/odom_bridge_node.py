@@ -170,7 +170,7 @@ class OdomBridgeNode(Node):
         t.child_frame_id = 'camera_init'
         t.transform.translation.x = self.init_x
         t.transform.translation.y = self.init_y
-        t.transform.translation.z = 0.6  # livox height above base_link
+        t.transform.translation.z = 0.5  # livox height above base_link
         # Rotation: rot_z(init_yaw) * rot_x(pi)
         # = quat(w=0, x=cos(yaw/2), y=sin(yaw/2), z=0)
         half_yaw = self.init_yaw / 2.0

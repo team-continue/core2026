@@ -8,7 +8,7 @@ graph TB
         Unity["Unity Sim\n/sim_odom"]
         FASTLIO["FAST-LIO\n/Odometry"]
         LiDAR["Livox Mid-360\n/livox/lidar"]
-        MapPNG["global_map.png"]
+        MapPNG["core1_field.png"]
     end
 
     subgraph core_launch
@@ -69,6 +69,12 @@ graph TB
 
 ## 起動モード
 
+| モード | コマンド | TCP EP | odom |
+|--------|---------|--------|------|
+| sim（デフォルト） | `navigation.launch.py` | o | sim |
+| sim + FAST-LIO | `navigation.launch.py odom_source:=fastlio` | o | FAST-LIO |
+| 実機 | `navigation.launch.py environment:=real` | x | FAST-LIO |
+
 ### シミュレータモード（デフォルト）
 
 ```bash
@@ -77,13 +83,13 @@ ros2 launch core_launch navigation.launch.py
 
 起動ノード: ros_tcp_endpoint, odom_bridge, map_server, path_planner, mppi, costmap_builder, rviz2
 
-### FAST-LIOモード
+### 実機モード
 
 ```bash
-ros2 launch core_launch navigation.launch.py odom_source:=fastlio
+ros2 launch core_launch navigation.launch.py environment:=real
 ```
 
-シミュレータモードに加えて `fastlio_mapping` ノードが起動し、odom_bridge が `/Odometry` を購読します。
+シミュレータモードとの違い: TCP endpoint非起動、Livox driver起動、body_controller起動、odom_sourceはFAST-LIO固定。
 
 ## 静的TF
 
@@ -92,6 +98,6 @@ ros2 launch core_launch navigation.launch.py odom_source:=fastlio
 | 親フレーム | 子フレーム | 変換 |
 |-----------|-----------|------|
 | `map` | `odom` | 恒等変換（x=0, y=0, yaw=0） |
-| `base_link` | `livox_frame` | z=+0.6m, roll=π（上下反転） |
+| `base_link` | `livox_frame` | z=+0.5m, roll=π（上下反転） |
 
 動的TFは[TFフレームと座標系](tf-tree.md)を参照してください。

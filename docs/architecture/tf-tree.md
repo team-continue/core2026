@@ -12,7 +12,7 @@ graph TD
 
     map -->|"static_transform_publisher<br/>恒等変換"| odom
     odom -->|"odom_bridge_node<br/>動的TF"| base_link
-    base_link -->|"static_transform_publisher<br/>z=+0.6m, roll=π"| livox_frame
+    base_link -->|"static_transform_publisher<br/>z=+0.5m, roll=π"| livox_frame
     odom -.->|"odom_bridge_node<br/>FAST-LIOモードのみ"| camera_init
 
     style camera_init fill:#fff3e0,stroke-dasharray: 5 5
@@ -22,9 +22,9 @@ graph TD
 
 ### map
 
-グローバル固定座標系。`global_map.png` のOccupancyGridはこのフレームで配信されます。
+グローバル固定座標系。`core1_field.png` のOccupancyGridはこのフレームで配信されます。
 
-- **原点**: マップ画像の左下隅（origin_x=-13.675, origin_y=-9.15）
+- **原点**: マップ画像の左下隅（`map_name` プリセットにより異なる。core1_field: origin_x=-13.675, origin_y=-9.15）
 - **向き**: ROS標準（X=前方, Y=左方）
 
 ### odom
@@ -37,11 +37,11 @@ graph TD
 
 ### livox_frame
 
-Livox Mid-360 LiDARの座標系。`base_link` から z=+0.6m の高さに設置され、roll=π（X軸周りに180度回転）されています。
+Livox Mid-360 LiDARの座標系。`base_link` から z=+0.5m の高さに設置され、roll=π（X軸周りに180度回転）されています。
 
 ### camera_init（FAST-LIOモードのみ）
 
-FAST-LIOの基準フレーム。FAST-LIOモードでのみ `odom_bridge_node` が静的TFをブロードキャストします。
+FAST-LIOの基準フレーム。FAST-LIOモードでのみ `odom_bridge_node` が初回メッセージ受信時にTFをブロードキャストします（`StaticTransformBroadcaster` で一度だけ配信）。変換は `rot_z(init_yaw) * rot_x(π)` で、camera_init座標系（X=前方, Y=右方, Z=下方）をodom座標系に合わせます。
 
 ## 座標変換
 

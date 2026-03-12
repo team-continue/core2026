@@ -1,39 +1,51 @@
 # core2026
-CoRE2026用のメインレポジトリです．
 
-## To contributers
-開発はブランチを切ってPull requestsしてmainにマージする形にしてください．
-Pull requests以外でのmainコミットは禁止です．
-### ブランチ名
-仕様追加は`feature/hogehoge`
-バグ修正は`fix/hogehoge`
-で行きましょう．
+CoRE2026用のメインレポジトリです。
 
-### パッケージ名
-パッケージ名は`core_hoge`
-にしましょう，タブ補完で一覧で出たら何も考えなくて良いので．
+詳細なドキュメントは `mkdocs serve` でローカルサイトを参照してください。
+
+## 開発ルール
+
+- 開発はブランチを切って Pull Request で main にマージしてください。main への直接コミットは禁止です。
+- ブランチ名: 機能追加は `feature/hogehoge`、バグ修正は `fix/hogehoge`
+- パッケージ名: `core_hoge`（タブ補完で一覧表示できるように）
 
 ## Formatting (CI)
-Push時にCIが`ament_clang_format`を実行し、必要ならブランチへ自動コミットします。
-mainブランチには自動pushしません。
 
-## 使い方 (ロボットの起動)
+Push 時に CI が `ament_clang_format` を実行し、必要ならブランチへ自動コミットします。
+main ブランチには自動 push しません。
+
+## ビルド
+
 ```bash
-# ナビゲーションシミュレータモード（デフォルト: /sim_odom使用）
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+rosdep install --from-paths src -i -y
+colcon build --symlink-install
+source install/setup.bash
+```
+
+## 起動方法
+
+```bash
+# シミュレータモード（デフォルト: /sim_odom使用）
 ros2 launch core_launch navigation.launch.py
 
-# ナビゲーションFAST-LIOモード（実機LiDAR: /Odometry使用）
+# シミュレータ + FAST-LIOオドメトリ
 ros2 launch core_launch navigation.launch.py odom_source:=fastlio
 
-# ナビゲーションFAST-LIOモード + 初期ヨー指定
-ros2 launch core_launch navigation.launch.py odom_source:=fastlio init_yaw:=1.5708
+# 実機モード（FAST-LIO + body_controller、TCP endpoint無し）
+ros2 launch core_launch navigation.launch.py environment:=real
 
-# ボディコントローラ
+# 実機モード（GUI・ショートカットから）
+# .bashrc が非対話シェルで早期 return するため、このラッパーを使用
+ros2 run core_launch navigation.sh
+
+# ボディコントローラ単体
 ros2 launch core_body_controller body_controller.launch.py
 
 # 実機ハードウェア
 ros2 launch core_hardware core_hardware.launch.py
-
-# ROS-TCP-Endpointの起動
-ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=0.0.0.0
 ```
+
+Launch 引数の詳細はドキュメントサイトの「クイックスタート」を参照してください。

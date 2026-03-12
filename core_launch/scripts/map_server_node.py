@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish global_map.png as OccupancyGrid on /map and /costmap/global."""
+"""Publish a map PNG as OccupancyGrid on /map and /costmap/global."""
 
 import numpy as np
 import rclpy
@@ -13,7 +13,7 @@ class MapServerNode(Node):
     def __init__(self):
         super().__init__('map_server_node')
 
-        self.declare_parameter('image_path', 'global_map.png')
+        self.declare_parameter('image_path', 'core1_field.png')
         self.declare_parameter('resolution', 0.05)  # 5cm/px
         self.declare_parameter('origin_x', 0.0)
         self.declare_parameter('origin_y', 0.0)
