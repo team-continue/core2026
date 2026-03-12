@@ -14,17 +14,16 @@
 
 #pragma once
 
-#include <mutex>
-#include <string>
-#include <vector>
-
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <mutex>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <string>
+#include <vector>
 
 #include "core_mppi/mppi_controller.hpp"
 

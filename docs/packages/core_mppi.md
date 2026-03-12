@@ -80,7 +80,9 @@ graph LR
 | `mppi.w_obstacle` | `18.0` | 障害物回避コスト重み |
 | `mppi.w_control` | `0.3` | 制御入力コスト重み |
 | `mppi.w_smooth` | `0.8` | 平滑化コスト重み |
+| `mppi.w_heading` | `1.5` | ヘディング整合コスト重み（進行方向を向くよう誘導） |
 | `mppi.unknown_cost` | `0.5` | 未知セルのコスト |
+| `mppi.heading_lookahead` | `3` | ヘディング目標に使うパス先読みステップ数 |
 
 ## 起動
 
