@@ -33,6 +33,7 @@ ros2 launch core_launch navigation.launch.py
 | `map_server_node` | core_launch | マップ配信 | 常時 |
 | `path_planner_node` | core_path_planner | A*経路計画 | 常時 |
 | `core_mppi_node` | core_mppi | MPPI制御 | 常時 |
+| `cmd_vel_smoother_node` | core_cmd_vel_smoother | cmd_vel平滑化 | use_smoother時 |
 | `costmap_build_node` | core_costmap_builder | ローカルコストマップ | 常時 |
 | `body_control_node` | core_body_controller | cmd_vel→CAN変換 | canarray時 |
 | `target_angle_node` | core_body_controller | 車体角度計算 | canarray時 |
@@ -115,6 +116,12 @@ ros2 launch core_launch navigation.launch.py map_name:=curious_house
 - `/goal_pose` がパブリッシュされているか確認: `ros2 topic echo /goal_pose`
 - `/map` が配信されているか確認: `ros2 topic echo /map --once`
 - ゴールが障害物上にないか確認
+
+### ロボットの動きがガタガタ
+
+- スムーザーが有効か確認: `ros2 node list | grep smoother`
+- `alpha` を下げて平滑化を強化: launch引数でオーバーライドは不可のため、`navigation.launch.py` 内のパラメータを変更
+- スムーザーを無効化してMPPI出力を直接確認: `use_smoother:=false`
 
 ### ロボットが動かない
 

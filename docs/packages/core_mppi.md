@@ -12,7 +12,7 @@ graph LR
     Odom["/odom"] --> MPPI
     Local["/costmap/local"] --> MPPI
     Global["/costmap/global"] --> MPPI
-    MPPI --> CmdVel["/cmd_vel"]
+    MPPI --> CmdVel["/cmd_vel_raw"]
 ```
 
 ## 入力
@@ -28,7 +28,7 @@ graph LR
 
 | トピック | 型 | 説明 |
 |---------|------|------|
-| `/cmd_vel` | `geometry_msgs/Twist` | 速度指令（linear.x, linear.y, angular.z） |
+| `/cmd_vel_raw` | `geometry_msgs/Twist` | 速度指令（linear.x, linear.y, angular.z）。smoother有効時は `/cmd_vel_raw`、無効時は `/cmd_vel` |
 
 ## パラメータ
 

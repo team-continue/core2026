@@ -5,53 +5,58 @@
 ```mermaid
 graph TB
     subgraph Inputs
+        direction LR
+        MapPNG["core1_field.png"]
         Unity["Unity Sim\n/sim_odom"]
         FASTLIO["FAST-LIO\n/Odometry"]
         LiDAR["Livox Mid-360\n/livox/lidar"]
-        MapPNG["core1_field.png"]
     end
 
-    subgraph core_launch
-        OdomBridge["odom_bridge_node"]
+    subgraph Bridge["データ変換"]
+        direction LR
         MapServer["map_server_node"]
+        OdomBridge["odom_bridge_node"]
     end
 
-    subgraph Navigation
+    subgraph Planning["経路計画・コストマップ"]
+        direction LR
         PathPlanner["path_planner_node"]
-        MPPI["core_mppi_node"]
         CostmapBuilder["costmap_build_node"]
     end
 
-    subgraph Control
+    MPPI["core_mppi_node"]
+    Smoother["cmd_vel_smoother_node"]
+
+    subgraph Control["車体制御"]
+        direction LR
         BodyController["body_control_node"]
         Hardware["core_hardware"]
     end
 
     RViz["RViz2"]
 
+    MapPNG --> MapServer
     Unity -->|/sim_odom| OdomBridge
     FASTLIO -->|/Odometry| OdomBridge
-    MapPNG --> MapServer
-
-    OdomBridge -->|/odom| MPPI
-    OdomBridge -->|/start_pose| PathPlanner
-    OdomBridge -->|TF| RViz
+    LiDAR -->|/livox/lidar| CostmapBuilder
 
     MapServer -->|/map| PathPlanner
     MapServer -->|/costmap/global| MPPI
-
-    LiDAR -->|/livox/lidar| CostmapBuilder
-    CostmapBuilder -->|/costmap/local| MPPI
+    OdomBridge -->|/start_pose| PathPlanner
+    OdomBridge -->|/odom| MPPI
+    OdomBridge -->|TF| RViz
 
     PathPlanner -->|/planned_path| MPPI
+    CostmapBuilder -->|/costmap/local| MPPI
 
-    MPPI -->|/cmd_vel| BodyController
+    MPPI -->|/cmd_vel_raw| Smoother
+    Smoother -->|/cmd_vel| BodyController
     BodyController -->|can/tx| Hardware
 
+    style MapPNG fill:#e1f5fe,color:#333
     style Unity fill:#e1f5fe,color:#333
     style FASTLIO fill:#e1f5fe,color:#333
     style LiDAR fill:#e1f5fe,color:#333
-    style MapPNG fill:#e1f5fe,color:#333
 ```
 
 ## ノード一覧
@@ -62,6 +67,7 @@ graph TB
 | `map_server_node` | core_launch | Python | PNG画像をOccupancyGridに変換してパブリッシュ |
 | `path_planner_node` | core_path_planner | C++ | A*アルゴリズムによるグローバル経路計画 |
 | `core_mppi_node` | core_mppi | C++ | MPPI（Model Predictive Path Integral）ローカル制御 |
+| `cmd_vel_smoother_node` | core_cmd_vel_smoother | C++ | cmd_vel EMA平滑化フィルタ |
 | `costmap_build_node` | core_costmap_builder | C++ | LiDAR点群からローリングウィンドウ式ローカルコストマップ生成 |
 | `body_control_node` | core_body_controller | C++ | cmd_vel→オムニホイールCAN指令変換、レートリミッタ |
 | `core_hardware` | core_hardware | C++ | EtherCAT（SOEM）によるTeensy41スレーブ通信 |
@@ -81,7 +87,7 @@ graph TB
 ros2 launch core_launch navigation.launch.py
 ```
 
-起動ノード: ros_tcp_endpoint, odom_bridge, map_server, path_planner, mppi, costmap_builder, rviz2
+起動ノード: ros_tcp_endpoint, odom_bridge, map_server, path_planner, mppi, cmd_vel_smoother, costmap_builder, rviz2
 
 ### 実機モード
 

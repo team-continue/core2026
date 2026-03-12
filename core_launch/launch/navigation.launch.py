@@ -196,15 +196,33 @@ def _launch_nodes(context):
     ))
 
     # ── 8. MPPI controller ──────────────────────────────────────────
+    use_smoother = context.launch_configurations.get('use_smoother', 'true')
+    mppi_cmd_vel_topic = '/cmd_vel_raw' if use_smoother.lower() == 'true' else '/cmd_vel'
+
     actions.append(Node(
         package='core_mppi',
         executable='core_mppi_node',
         name='core_mppi_node',
         output='screen',
-        parameters=[mppi_params],
+        parameters=[mppi_params, {'cmd_vel_topic': mppi_cmd_vel_topic}],
     ))
 
-    # ── 9. Costmap builder ──────────────────────────────────────────
+    # ── 9. cmd_vel smoother ──────────────────────────────────────────
+    if use_smoother.lower() == 'true':
+        actions.append(Node(
+            package='core_cmd_vel_smoother',
+            executable='cmd_vel_smoother_node',
+            name='cmd_vel_smoother_node',
+            output='screen',
+            parameters=[{
+                'alpha': 0.3,
+                'input_topic': '/cmd_vel_raw',
+                'output_topic': '/cmd_vel',
+                'timeout_sec': 0.2,
+            }],
+        ))
+
+    # ── 10. Costmap builder ─────────────────────────────────────────
     actions.append(Node(
         package='core_costmap_builder',
         executable='costmap_build_node',
@@ -213,14 +231,14 @@ def _launch_nodes(context):
         parameters=[costmap_params],
     ))
 
-    # ── 10. Body controller ─────────────────────────────────────────
+    # ── 11. Body controller ─────────────────────────────────────────
     actions.append(IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(body_ctrl_share, 'launch', 'body_controller.launch.py'),
         ),
     ))
 
-    # ── 11. RViz ────────────────────────────────────────────────────
+    # ── 12. RViz ────────────────────────────────────────────────────
     if use_rviz.lower() == 'true':
         actions.append(Node(
             package='rviz2',
@@ -254,6 +272,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_rviz', default_value='true',
             description='Launch RViz2',
+        ),
+        DeclareLaunchArgument(
+            'use_smoother', default_value='true',
+            description='Enable cmd_vel EMA smoother between MPPI and body_controller',
         ),
         OpaqueFunction(function=_launch_nodes),
     ])
