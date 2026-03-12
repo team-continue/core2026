@@ -30,4 +30,4 @@ set -u
 
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
 
-exec ros2 launch core_launch navigation.launch.py odom_source:=fastlio "$@"
+exec ros2 launch core_launch navigation.launch.py environment:=real "$@"

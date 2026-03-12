@@ -17,7 +17,7 @@ costmap_build_node:
 
     # ----- point filtering (PCLなし) -----
     crop_xy_m: 6.0           # ロボ周り±6mだけ使う
-    min_z_m: 0.25
+    min_z_m: 0.15
     max_z_m: 1.60
     voxel_leaf_m: 0.05       # Mid-360なら 5cm 推奨
 
