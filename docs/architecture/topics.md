@@ -10,7 +10,7 @@
 | `/Odometry` | `nav_msgs/Odometry` | FAST-LIO | odom_bridge | reliable(10) |
 | `/odom` | `nav_msgs/Odometry` | odom_bridge | mppi, path_follower | reliable(10) |
 | `/start_pose` | `geometry_msgs/PoseStamped` | odom_bridge | path_planner | reliable(10) |
-| `/goal_pose` | `geometry_msgs/PoseStamped` | RViz2 | path_planner | reliable(10) |
+| `/goal_pose` | `geometry_msgs/PoseStamped` | RViz2 / behavior system | path_planner, mppi | reliable(10) |
 | `/map` | `nav_msgs/OccupancyGrid` | map_server | path_planner | transient_local(1) |
 | `/costmap/global` | `nav_msgs/OccupancyGrid` | map_server | mppi | transient_local(1) |
 | `/costmap/local` | `nav_msgs/OccupancyGrid` | costmap_builder | mppi | reliable |
@@ -35,7 +35,7 @@
 | `/body_target_angle` | `std_msgs/Float64` | (外部) | body_controller |
 | `/body_omega` | `std_msgs/Float64` | body_controller | (外部) |
 | `/joint_states` | `sensor_msgs/JointState` | core_hardware | body_controller |
-| `/goal_reached` | `std_msgs/Bool` | path_follower | (外部) |
+| `/goal_reached` | `std_msgs/Bool` | mppi, path_follower | (外部) |
 
 ## カスタムメッセージ（core_msgs）
 

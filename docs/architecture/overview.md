@@ -24,6 +24,7 @@ graph TB
         CostmapBuilder["costmap_build_node"]
     end
 
+    BehaviorSystem["Behavior System"]
     MPPI["core_mppi_node"]
     Smoother["cmd_vel_smoother_node"]
 
@@ -48,8 +49,11 @@ graph TB
 
     PathPlanner -->|/planned_path| MPPI
     CostmapBuilder -->|/costmap/local| MPPI
+    BehaviorSystem -->|/goal_pose| PathPlanner
+    BehaviorSystem -->|/goal_pose| MPPI
 
     MPPI -->|/cmd_vel_raw| Smoother
+    MPPI -->|/goal_reached| BehaviorSystem
     Smoother -->|/cmd_vel| BodyController
     BodyController -->|can/tx| Hardware
 
@@ -57,6 +61,7 @@ graph TB
     style Unity fill:#e1f5fe,color:#333
     style FASTLIO fill:#e1f5fe,color:#333
     style LiDAR fill:#e1f5fe,color:#333
+    style BehaviorSystem fill:#fff3e0,color:#333
 ```
 
 ## ノード一覧
@@ -66,7 +71,7 @@ graph TB
 | `odom_bridge_node` | core_launch | Python | オドメトリソース切替、座標変換、TFブロードキャスト |
 | `map_server_node` | core_launch | Python | PNG画像をOccupancyGridに変換してパブリッシュ |
 | `path_planner_node` | core_path_planner | C++ | A*アルゴリズムによるグローバル経路計画 |
-| `core_mppi_node` | core_mppi | C++ | MPPI（Model Predictive Path Integral）ローカル制御 |
+| `core_mppi_node` | core_mppi | C++ | MPPI（Model Predictive Path Integral）ローカル制御、ゴール到達判定 |
 | `cmd_vel_smoother_node` | core_cmd_vel_smoother | C++ | cmd_vel EMA平滑化フィルタ |
 | `costmap_build_node` | core_costmap_builder | C++ | LiDAR点群からローリングウィンドウ式ローカルコストマップ生成 |
 | `body_control_node` | core_body_controller | C++ | cmd_vel→オムニホイールCAN指令変換、レートリミッタ |
