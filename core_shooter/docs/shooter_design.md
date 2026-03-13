@@ -10,6 +10,8 @@
   - `core_shooter/src/magazine_manager.cpp`
   - `core_shooter/src/aim_bot.cpp`
   - `core_shooter/scripts/shooter_debug_topic_gui.py`（デバッグ用GUI）
+- 関連資料:
+  - [core_shooter 単体テスト仕様書](./shooter_unit_test_spec.md)
 
 ## 1. 概要
 
