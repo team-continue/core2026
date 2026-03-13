@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <functional>
 
 namespace core_mppi
@@ -26,12 +27,12 @@ MppiNode::MppiNode(const rclcpp::NodeOptions & options)
 {
   path_topic_ = declare_parameter<std::string>("path_topic", "/planned_path");
   odom_topic_ = declare_parameter<std::string>("odom_topic", "/odom");
-  local_costmap_topic_ = declare_parameter<std::string>(
-    "local_costmap_topic", "/costmap/local");
-  global_costmap_topic_ = declare_parameter<std::string>(
-    "global_costmap_topic", "/costmap/global");
+  local_costmap_topic_ = declare_parameter<std::string>("local_costmap_topic", "/costmap/local");
+  global_costmap_topic_ = declare_parameter<std::string>("global_costmap_topic", "/costmap/global");
   cmd_vel_topic_ = declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel");
+  goal_topic_ = declare_parameter<std::string>("goal_topic", "/goal_pose");
   control_rate_ = declare_parameter<double>("control_rate", 20.0);
+  goal_tolerance_ = declare_parameter<double>("goal_tolerance", 0.15);
 
   MppiParams params;
   params.samples = declare_parameter<int>("mppi.samples", params.samples);
@@ -49,19 +50,25 @@ MppiNode::MppiNode(const rclcpp::NodeOptions & options)
   params.w_obstacle = declare_parameter<double>("mppi.w_obstacle", params.w_obstacle);
   params.w_control = declare_parameter<double>("mppi.w_control", params.w_control);
   params.w_smooth = declare_parameter<double>("mppi.w_smooth", params.w_smooth);
+  params.w_heading = declare_parameter<double>("mppi.w_heading", params.w_heading);
   params.unknown_cost = declare_parameter<double>("mppi.unknown_cost", params.unknown_cost);
+  params.heading_lookahead =
+    declare_parameter<int>("mppi.heading_lookahead", params.heading_lookahead);
   controller_.setParams(params);
 
   path_sub_ = create_subscription<nav_msgs::msg::Path>(
     path_topic_, 10, std::bind(&MppiNode::onPath, this, std::placeholders::_1));
   odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
     odom_topic_, 50, std::bind(&MppiNode::onOdom, this, std::placeholders::_1));
+  goal_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+    goal_topic_, 10, std::bind(&MppiNode::onGoalPose, this, std::placeholders::_1));
   local_costmap_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
     local_costmap_topic_, 10, std::bind(&MppiNode::onLocalCostmap, this, std::placeholders::_1));
   global_costmap_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
     global_costmap_topic_, 10, std::bind(&MppiNode::onGlobalCostmap, this, std::placeholders::_1));
 
   cmd_pub_ = create_publisher<geometry_msgs::msg::Twist>(cmd_vel_topic_, 10);
+  goal_reached_pub_ = create_publisher<std_msgs::msg::Bool>("/goal_reached", 10);
 
   const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, control_rate_));
   timer_ = create_wall_timer(
@@ -69,9 +76,8 @@ MppiNode::MppiNode(const rclcpp::NodeOptions & options)
     std::bind(&MppiNode::onTimer, this));
 
   RCLCPP_INFO(
-    get_logger(), "core_mppi_node started: path=%s local=%s global=%s cmd=%s",
-    path_topic_.c_str(), local_costmap_topic_.c_str(),
-    global_costmap_topic_.c_str(), cmd_vel_topic_.c_str());
+    get_logger(), "core_mppi_node started: path=%s local=%s global=%s cmd=%s", path_topic_.c_str(),
+    local_costmap_topic_.c_str(), global_costmap_topic_.c_str(), cmd_vel_topic_.c_str());
 }
 
 void MppiNode::onPath(const nav_msgs::msg::Path::SharedPtr msg)
@@ -91,6 +97,16 @@ void MppiNode::onOdom(const nav_msgs::msg::Odometry::SharedPtr msg)
   current_pose_ = msg->pose.pose;
   odom_frame_ = msg->header.frame_id;
   have_odom_ = true;
+}
+
+void MppiNode::onGoalPose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  goal_pose_ = msg->pose;
+  have_goal_ = true;
+  goal_reached_ = false;
+  RCLCPP_INFO(
+    get_logger(), "New goal received: (%.2f, %.2f)", goal_pose_.position.x, goal_pose_.position.y);
 }
 
 void MppiNode::onLocalCostmap(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
@@ -113,6 +129,27 @@ void MppiNode::onTimer()
     return;
   }
 
+  // Goal reached — stay stopped
+  if (goal_reached_) {
+    publishStop();
+    publishGoalReached();
+    return;
+  }
+
+  // Check goal proximity
+  if (have_goal_) {
+    const double dx = goal_pose_.position.x - current_pose_.position.x;
+    const double dy = goal_pose_.position.y - current_pose_.position.y;
+    if (std::hypot(dx, dy) < goal_tolerance_) {
+      goal_reached_ = true;
+      publishStop();
+      publishGoalReached();
+      RCLCPP_INFO(
+        get_logger(), "Goal reached (%.2f, %.2f)", goal_pose_.position.x, goal_pose_.position.y);
+      return;
+    }
+  }
+
   if (local_costmap_ && !odom_frame_.empty() && local_costmap_->header.frame_id != odom_frame_) {
     RCLCPP_WARN_THROTTLE(
       get_logger(), *get_clock(), 2000,
@@ -127,11 +164,11 @@ void MppiNode::onTimer()
   }
 
   const nav_msgs::msg::OccupancyGrid * local_map =
-    (local_costmap_ &&
-    local_costmap_->header.frame_id == odom_frame_) ? local_costmap_.get() : nullptr;
+    (local_costmap_ && local_costmap_->header.frame_id == odom_frame_) ? local_costmap_.get() :
+    nullptr;
   const nav_msgs::msg::OccupancyGrid * global_map =
-    (global_costmap_ &&
-    global_costmap_->header.frame_id == odom_frame_) ? global_costmap_.get() : nullptr;
+    (global_costmap_ && global_costmap_->header.frame_id == odom_frame_) ? global_costmap_.get() :
+    nullptr;
 
   geometry_msgs::msg::Twist cmd;
   if (!controller_.compute(current_pose_, path_, last_cmd_, local_map, global_map, cmd)) {
@@ -148,6 +185,13 @@ void MppiNode::publishStop()
   geometry_msgs::msg::Twist stop;
   last_cmd_ = stop;
   cmd_pub_->publish(stop);
+}
+
+void MppiNode::publishGoalReached()
+{
+  std_msgs::msg::Bool msg;
+  msg.data = true;
+  goal_reached_pub_->publish(msg);
 }
 
 }  // namespace core_mppi

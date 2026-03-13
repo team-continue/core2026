@@ -1,25 +1,33 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <vector>
 
 extern "C" {
 #include <soem/soem.h>
 }
 
-constexpr std::size_t ECAT_BUFFER_SIZE = 32768;
-
 class Ecat {
  public:
+  using FloatPacketCallback = std::function<void(uint8_t, const std::vector<float>&)>;
+  using Uint8PacketCallback = std::function<void(uint8_t, const std::vector<uint8_t>&)>;
+
   Ecat();
   ~Ecat();
 
   void connect(const char* ifname);
   void close();
-  void send(const uint8_t* buffer, std::size_t size);
-  int read(uint8_t* decode_buffer);
-  bool try_read(uint8_t* decode_buffer, int timeout_us, int& rx_len, int& wkc);
+  void set_float_packet_callback(FloatPacketCallback callback);
+  void set_uint8_packet_callback(Uint8PacketCallback callback);
+  void set_float(uint8_t id, const std::vector<float>& data);
+  void set_system_ref(bool enabled);
+  void set_led_tape(const std::array<uint16_t, 3>& led_tape);
+  void clear_tx_packets();
+  bool cycle(int timeout_us, int& wkc);
 
  private:
   static constexpr int kSlaveIndex = 1;
@@ -41,12 +49,15 @@ class Ecat {
     uint16_t led_tape[3]{};
   } output_cache_;
 
+  FloatPacketCallback float_packet_callback_;
+  Uint8PacketCallback uint8_packet_callback_;
+
   void ensure_connected() const;
   void wait_for_safe_op();
   void request_operational();
   void write_outputs();
-  void apply_tx_record(uint8_t id, const uint8_t* payload, uint8_t payload_size);
-  int decode_rx_records(uint8_t* decode_buffer) const;
+  void apply_tx_record(uint8_t id, const std::vector<float>& payload);
+  void emit_rx_packets() const;
 
   static int position_index_from_packet_id(uint8_t id);
   static uint32_t unpack_bits(const uint8_t* buffer, std::size_t bit_offset, std::size_t bit_length);

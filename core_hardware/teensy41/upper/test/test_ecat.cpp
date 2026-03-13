@@ -5,15 +5,19 @@
 namespace {
 
 constexpr uint8_t kJointIds[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
+constexpr uint8_t kWirelessBytes[] = {10, 11, 12, 13, 14, 15, 16};
 
 float g_targets[16] = {0.0f};
 bool g_emergency = false;
 uint32_t g_rx_count = 0;
 
 void build_feedback_frame(const uint8_t id, float *frame) {
-  for (int i = 0; i < 6; ++i) {
-    frame[i] = 0.0f;
-  }
+  frame[0] = static_cast<float>(id * 10 + 0);
+  frame[1] = 0.0f;
+  frame[2] = static_cast<float>(id * 10 + 2);
+  frame[3] = 1.0f;
+  frame[4] = static_cast<float>(id * 10 + 4);
+  frame[5] = 2.0f;
 
   const float target = g_targets[id];
   if (id <= 4) {
@@ -21,7 +25,6 @@ void build_feedback_frame(const uint8_t id, float *frame) {
   } else if (id <= 14) {
     frame[4] = target;
   }
-  frame[5] = target;
 }
 
 }  // namespace
@@ -33,11 +36,18 @@ void ecat_FrameCallBack() {
     ecat_setFloat(id, frame, 6);
   }
 
-  const uint8_t zero = 0;
-  const uint8_t emergency = g_emergency ? 1U : 0U;
+  uint8_t zero = 1;
+  uint8_t wireless[sizeof(kWirelessBytes)];
+  for (size_t i = 0; i < sizeof(kWirelessBytes); ++i) {
+    wireless[i] = kWirelessBytes[i];
+  }
+  
   ecat_setUint8(100, &zero, 1);
+  zero = 1;
   ecat_setUint8(101, &zero, 1);
-  ecat_setUint8(104, &emergency, 1);
+  ecat_setUint8(102, wireless, static_cast<int>(sizeof(wireless)));
+  zero = 1;
+  ecat_setUint8(104, &zero, 1);
   ecat_send();
 }
 

@@ -17,47 +17,54 @@ source install/setup.bash
 
 ## 起動方法
 
-### シミュレータモード（デフォルト）
+すべての起動は `navigation.launch.py` に集約されています。`environment` と `odom_source` の組み合わせで動作モードが決まります。
 
-Unity シミュレータの `/sim_odom` を使用します。
+### モード一覧
+
+| environment | odom_source | 用途 | コマンド |
+|:-----------:|:-----------:|------|---------|
+| `sim` | `sim` | **シミュレータ標準**（デフォルト） | `ros2 launch core_launch navigation.launch.py` |
+| `sim` | `fastlio` | シミュレータ + FAST-LIO オドメトリ | `... odom_source:=fastlio` |
+| `real` | (強制 `fastlio`) | **実機** — Livox + FAST-LIO | `... environment:=real` |
+
+> `...` は `ros2 launch core_launch navigation.launch.py` の省略です。
+
+- `real` モードでは `odom_source` は自動的に `fastlio` に強制されます。
+- FAST-LIO 使用時は `init_yaw` で初期ヨー角 [rad] を指定できます（例: `init_yaw:=1.5708`）。
+
+### 地図の切替
+
+`map_name` 引数で地図を切り替えられます。地図ごとにマップ原点とロボット初期位置が自動設定されます。
 
 ```bash
+# CoRE-1 フィールド（デフォルト）
 ros2 launch core_launch navigation.launch.py
+
+# curious_house
+ros2 launch core_launch navigation.launch.py map_name:=curious_house
 ```
 
-### FAST-LIO モード（実機LiDAR）
+### 実機モード（GUI・ショートカットから）
 
-Livox Mid-360 LiDAR の `/Odometry` を使用します。
+`.bashrc` は非対話シェルで早期 return するため、デスクトップショートカットや `bash -c` からは `navigation.sh` を使います。ROS / core_ws / Livox_ws を明示的に source してから `navigation.launch.py environment:=real` を実行するラッパーです。
 
 ```bash
-ros2 launch core_launch navigation.launch.py odom_source:=fastlio
+ros2 run core_launch navigation.sh
 ```
 
-初期ヨー角を指定する場合:
+ミニ PC で GUI 負荷を切り分ける場合:
 
 ```bash
-ros2 launch core_launch navigation.launch.py odom_source:=fastlio init_yaw:=1.5708
+ros2 run core_launch navigation.sh use_rviz:=false
 ```
 
-### ボディコントローラ単体
+### 個別ノードの起動
 
-```bash
-ros2 launch core_body_controller body_controller.launch.py
-```
-
-### ハードウェアインターフェース単体
-
-```bash
-ros2 launch core_hardware core_hardware.launch.py
-```
-
-### ROS-TCP-Endpoint（Unity接続）
-
-`navigation.launch.py` に含まれていますが、単体起動する場合:
-
-```bash
-ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=0.0.0.0
-```
+| コンポーネント | コマンド |
+|---------------|---------|
+| ボディコントローラ単体 | `ros2 launch core_body_controller body_controller.launch.py` |
+| ハードウェアインターフェース単体 | `ros2 launch core_hardware core_hardware.launch.py` |
+| ROS-TCP-Endpoint（Unity 接続、sim モードで自動起動） | `ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=0.0.0.0` |
 
 ## ゴール設定
 
@@ -67,6 +74,15 @@ RViz2 の **2D Goal Pose** ボタンでゴールを設定すると、`/goal_pose
 
 | 引数 | デフォルト | 説明 |
 |------|-----------|------|
-| `map_image` | `global_map.png` | マップ画像のパス |
-| `odom_source` | `sim` | オドメトリソース: `sim` or `fastlio` |
+| `environment` | `sim` | `sim` or `real` |
+| `odom_source` | `sim` | `sim` or `fastlio`（real時は強制FAST-LIO） |
+| `map_name` | `core1_field` | マッププリセット名（`core1_field`, `curious_house`） |
 | `init_yaw` | `0.0` | 初期ヨー角 [rad]（FAST-LIOモードで使用） |
+| `use_rviz` | `true` | RViz2を起動するか |
+
+### マッププリセット
+
+| プリセット | origin | ロボット初期位置 |
+|-----------|--------|----------------|
+| `core1_field` | (-13.675, -9.15) | (-10.7, 5.9) |
+| `curious_house` | (-4.5, -7.5) | (0.0, 0.0) |

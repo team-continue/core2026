@@ -48,7 +48,9 @@ markdown_extensions:
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 plugins:
-  - search
+  - search:
+      lang: ja
+      separator: '[\s\-、。，！？\(\)\[\]「」『』【】]'
   - mermaid2
 
 nav:
@@ -68,6 +70,7 @@ nav:
     - core_mppi: packages/core_mppi.md
     - core_path_follower: packages/core_path_follower.md
     - core_costmap_builder: packages/core_costmap_builder.md
+    - core_cmd_vel_smoother: packages/core_cmd_vel_smoother.md
     - core_body_controller: packages/core_body_controller.md
     - core_hardware: packages/core_hardware.md
     - core_tools: packages/core_tools.md
