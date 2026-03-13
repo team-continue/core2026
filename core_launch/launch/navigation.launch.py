@@ -48,6 +48,9 @@ def _launch_nodes(context):
     map_name = context.launch_configurations['map_name']
     init_yaw = context.launch_configurations['init_yaw']
     use_rviz = context.launch_configurations['use_rviz']
+    use_localization = context.launch_configurations.get(
+        'use_localization', 'false').lower() == 'true'
+    pcd_map_path = context.launch_configurations.get('pcd_map_path', '')
 
     is_real = (env == 'real')
     use_fastlio = is_real or (odom_src == 'fastlio')
@@ -129,18 +132,39 @@ def _launch_nodes(context):
             ],
         ))
 
-    # ── 4. Static TF ────────────────────────────────────────────────
-    actions.append(Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_map_odom',
-        output='screen',
-        arguments=[
-            '--x', '0', '--y', '0', '--z', '0',
-            '--roll', '0', '--pitch', '0', '--yaw', '0',
-            '--frame-id', 'map', '--child-frame-id', 'odom',
-        ],
-    ))
+    # ── 4. Static TF / Localization ──────────────────────────────────
+    if use_localization:
+        # Dynamic map→odom from NDT/ICP localization node
+        localization_share = get_package_share_directory('core_localization')
+        localization_config = os.path.join(
+            localization_share, 'config', 'localization_params.yaml')
+        actions.append(Node(
+            package='core_localization',
+            executable='localization_node',
+            name='localization_node',
+            output='screen',
+            parameters=[
+                localization_config,
+                {
+                    'global_map_path': pcd_map_path,
+                    'initial_pose_x': preset['init_x'],
+                    'initial_pose_y': preset['init_y'],
+                },
+            ],
+        ))
+    else:
+        # Static identity map→odom (no global localization)
+        actions.append(Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='static_tf_map_odom',
+            output='screen',
+            arguments=[
+                '--x', '0', '--y', '0', '--z', '0',
+                '--roll', '0', '--pitch', '0', '--yaw', '0',
+                '--frame-id', 'map', '--child-frame-id', 'odom',
+            ],
+        ))
 
     actions.append(Node(
         package='tf2_ros',
@@ -279,6 +303,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_smoother', default_value='true',
             description='Enable cmd_vel EMA smoother between MPPI and body_controller',
+        ),
+        DeclareLaunchArgument(
+            'use_localization', default_value='false',
+            description='Enable NDT/ICP localization (dynamic map→odom TF)',
+        ),
+        DeclareLaunchArgument(
+            'pcd_map_path', default_value='',
+            description='Path to pre-built PCD map (required when use_localization:=true)',
         ),
         OpaqueFunction(function=_launch_nodes),
     ])
