@@ -183,6 +183,7 @@ def generate_launch_description():
         ],
         remappings=[
             hazard_remaps,
+            # ("manual_pitch_angle", "test_pitch_angle"),
         ]
     )
 

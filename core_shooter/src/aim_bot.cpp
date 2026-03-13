@@ -115,6 +115,27 @@ public:
     this->get_parameter("zone.pitch_zone1_upper", zone_pitch_zone1_upper_);
     this->get_parameter("control.hysteresis_rad", control_hysteresis_rad_);
     this->get_parameter("control.pitch_correct_tolerance", control_pitch_correct_tolerance_);
+    const auto & parameter_overrides =
+      this->get_node_parameters_interface()->get_parameter_overrides();
+    zone_pitch_zone1_upper_overridden_ =
+      parameter_overrides.find("zone.pitch_zone1_upper") != parameter_overrides.end();
+    zone_pitch_zone2_upper_overridden_ =
+      parameter_overrides.find("zone.pitch_zone2_upper") != parameter_overrides.end();
+    zone_pitch_zoneab_upper_ = zone_pitch_zone1_upper_overridden_ ?
+      zone_pitch_zone1_upper_ :
+      zone_pitch_zone2_upper_;
+    if (zone_pitch_zone1_upper_overridden_ && zone_pitch_zone2_upper_overridden_ &&
+      std::fabs(zone_pitch_zone1_upper_ - zone_pitch_zone2_upper_) > 1e-9)
+    {
+      RCLCPP_WARN(
+        get_logger(),
+        "Both zone.pitch_zone1_upper=%f and zone.pitch_zone2_upper=%f are set. Using zone.pitch_zone1_upper as the ZoneAB upper limit.",
+        zone_pitch_zone1_upper_, zone_pitch_zone2_upper_);
+    } else if (!zone_pitch_zone1_upper_overridden_ && zone_pitch_zone2_upper_overridden_) {
+      RCLCPP_WARN(
+        get_logger(),
+        "zone.pitch_zone2_upper is treated as the ZoneAB upper limit for compatibility. Prefer zone.pitch_zone1_upper.");
+    }
 
     if (rate_ <= 0.0) {
       RCLCPP_FATAL(get_logger(), "Invalid rate=%f (must be > 0)", rate_);
@@ -162,9 +183,9 @@ public:
       std::string zone_config_error;
       if (!validateZoneConfig(
           zone_yaw_zone1_start_, zone_yaw_boundary_, zone_yaw_zone2_end_, zone_yaw_zone3_end_,
-          zone_pitch_lower_limit_, zone_pitch_zone2_upper_, zone_pitch_zone2_lower_,
+          zone_pitch_lower_limit_, zone_pitch_zoneab_upper_, zone_pitch_zone2_lower_,
           zone_pitch_zone2_upper_limit_, zone_pitch_zone3_lower_, zone_pitch_zone3_upper_,
-          zone_pitch_zone1_upper_, control_hysteresis_rad_, zone_config_error))
+          control_hysteresis_rad_, zone_config_error))
       {
         RCLCPP_FATAL(
           get_logger(),
@@ -215,8 +236,10 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
-      image_width_, image_height_, use_fov_image_tracking_ ? "fov" : "gain",
+      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
+      image_width_, image_height_, image_center_x_, image_center_y_,
+      getImageTargetCenterX(), getImageTargetCenterY(),
+      use_fov_image_tracking_ ? "fov" : "gain",
       horizontal_fov_deg_, image_tolerance_x_, image_tolerance_y_,
       enable_test_mode_ ? "true" : "false",
       startup_release_yaw_angle_, startup_release_pitch_angle_);
@@ -254,6 +277,7 @@ private:
         // ノード再起動後、最初の緊急停止解除時のみ設定済みの原点へ初期化する。
         setCommandTarget(startup_release_yaw_angle_, startup_release_pitch_angle_);
         startup_release_init_pending_ = false;
+        startup_release_hold_active_ = true;
         RCLCPP_INFO(
           this->get_logger(),
           "First emergency release after restart: initialize command target to yaw=%f, pitch=%f",
@@ -296,6 +320,7 @@ private:
     // PointStamped semantics:
     //   detected     -> point = <x, y, 0> (x/y are centered image coordinates)
     //   not detected -> point = <0, 0, 1>
+    // image_center_x/y specify the desired image center in normalized coordinates.
     const bool detected = (msg->point.z < 0.5);
     if (!detected) {
       has_target_ = false;
@@ -364,18 +389,20 @@ private:
 
     if (mode != ControlMode::AutoTrack) {
       auto_track_timeout_active_ = false;
+      startup_release_hold_active_ = false;
     }
 
     const bool entering_mode = setActiveControlMode(mode);
 
     switch (mode) {
-      case ControlMode::Emergency:
-        if (entering_mode && has_joint_state_) {
-          // Latch actual angle once when entering emergency, then keep holding that command.
-          setCommandTargetRaw(yaw_angle_, pitch_angle_);
+      case ControlMode::Emergency: {
+          if (entering_mode && has_joint_state_) {
+            // Latch actual angle once when entering emergency, then keep holding that command.
+            setCommandTargetRaw(yaw_angle_, pitch_angle_);
+          }
+          publishCommandHold("emergency hold skipped: command target not initialized");
+          return;
         }
-        publishCommandHold("emergency hold skipped: command target not initialized");
-        return;
 
       case ControlMode::Manual: {
           if (test_mode_enabled) {
@@ -387,7 +414,8 @@ private:
             if (manual_mode_init_pending_) {
               // Initialize manual yaw/pitch only when /manual_mode is explicitly turned ON.
               has_manual_pitch_target_ = false;
-              setCommandTarget(manual_mode_yaw_fixed_angle_, manual_mode_pitch_initial_angle_);
+              setManualModeCommandTarget(
+                manual_mode_yaw_fixed_angle_, manual_mode_pitch_initial_angle_);
               manual_mode_init_pending_ = false;
               RCLCPP_INFO(
                 this->get_logger(),
@@ -418,7 +446,7 @@ private:
           } else if (manual_input_timed_out && has_joint_state_) {
             manual_pitch = pitch_angle_;
           }
-          setCommandTarget(manual_mode_yaw_fixed_angle_, manual_pitch);
+          setManualModeCommandTarget(manual_mode_yaw_fixed_angle_, manual_pitch);
           publishCommandTarget();
           return;
         }
@@ -429,19 +457,24 @@ private:
           has_test_yaw_target_ = false;
           has_test_pitch_target_ = false;
         }
-        if ((has_test_yaw_target_ && isTimedOut(last_test_yaw_time_)) ||
-          (has_test_pitch_target_ && isTimedOut(last_test_pitch_time_)))
-        {
+        if (has_test_yaw_target_ && isTimedOut(last_test_yaw_time_)) {
           has_test_yaw_target_ = false;
-          has_test_pitch_target_ = false;
-          holdCurrentAngle(
-            "test input timed out and joint_states not received yet: cannot hold current angle");
-          return;
+          RCLCPP_WARN_THROTTLE(
+            this->get_logger(),
+            *this->get_clock(), 2000,
+            "test yaw input timed out: hold current yaw command");
         }
-        if (!has_test_yaw_target_ || !has_test_pitch_target_) {
+        if (has_test_pitch_target_ && isTimedOut(last_test_pitch_time_)) {
+          has_test_pitch_target_ = false;
+          RCLCPP_WARN_THROTTLE(
+            this->get_logger(),
+            *this->get_clock(), 2000,
+            "test pitch input timed out: hold current pitch command");
+        }
+        if (!has_test_yaw_target_ && !has_test_pitch_target_) {
           RCLCPP_WARN_THROTTLE(
             this->get_logger(), *this->get_clock(), 2000,
-            "test mode enabled but test yaw/pitch target not received yet");
+            "test mode enabled but no fresh test yaw/pitch target received yet");
           publishCommandHold("test mode hold skipped: command target not initialized");
           return;
         }
@@ -451,10 +484,12 @@ private:
 
         // test input is normalized delta command [-1, 1] integrated on the internal command target.
         {
-          const double yaw_delta = std::clamp(test_yaw_target_, -1.0, 1.0);
+          const double yaw_delta =
+            has_test_yaw_target_ ? std::clamp(test_yaw_target_, -1.0, 1.0) : 0.0;
           const double next_yaw = command_yaw_angle_ + yaw_direction_ * test_yaw_gain_ * yaw_delta;
 
-          const double pitch_delta = std::clamp(test_pitch_target_, -1.0, 1.0);
+          const double pitch_delta =
+            has_test_pitch_target_ ? std::clamp(test_pitch_target_, -1.0, 1.0) : 0.0;
           const double next_pitch =
             command_pitch_angle_ + pitch_direction_ * test_pitch_gain_ * pitch_delta;
 
@@ -464,6 +499,14 @@ private:
         }
 
       case ControlMode::AutoTrack:
+        if (startup_release_hold_active_ &&
+          (!has_target_ || (this->now() - last_target_time_).seconds() > target_timeout_sec_))
+        {
+          publishCommandHold("startup release hold skipped: command target not initialized");
+          return;
+        }
+        startup_release_hold_active_ = false;
+
         if (!has_target_ || (this->now() - last_target_time_).seconds() > target_timeout_sec_) {
           if (!auto_track_timeout_active_) {
             auto_track_timeout_active_ = true;
@@ -493,10 +536,11 @@ private:
           return;
         }
 
-        // 入力は中心原点のピクセル座標。追尾方式はパラメータで切替。
+        // 入力は中心原点のピクセル座標。image_center_x/y で狙う画像中心をずらし、
+        // その中心からの誤差で追尾する。
         {
-          const double x_error = target_image_x_;
-          const double y_error = target_image_y_;
+          const double x_error = target_image_x_ - getImageTargetCenterX();
+          const double y_error = target_image_y_ - getImageTargetCenterY();
           const double yaw_base = has_joint_state_ ? yaw_angle_ : command_yaw_angle_;
           const double pitch_base = has_joint_state_ ?
             (pitch_angle_ + pitch_offset_) :
@@ -571,12 +615,11 @@ private:
 
   bool validateZoneConfig(
     double yaw_zone1_start, double yaw_boundary, double yaw_zone2_end, double yaw_zone3_end,
-    double pitch_lower_limit, double pitch_zone2_upper,
-    double pitch_zone2_lower, double pitch_zone2_upper_limit,
-    double pitch_zone3_lower, double pitch_zone3_upper,
-    double pitch_zone1_upper, double hysteresis_rad, std::string & reason) const
+    double pitch_lower_limit, double pitch_zoneab_upper, double pitch_zonebc_lower,
+    double pitch_zonebc_upper,
+    double pitch_zonecd_lower, double pitch_zonecd_upper,
+    double hysteresis_rad, std::string & reason) const
   {
-    (void)pitch_zone1_upper;
     if (!(yaw_zone1_start < yaw_boundary &&
       yaw_boundary < yaw_zone2_end &&
       yaw_zone2_end < yaw_zone3_end))
@@ -585,9 +628,9 @@ private:
         "zone.yaw_zone1_start < zone.yaw_boundary < zone.yaw_zone2_end < zone.yaw_zone3_end is required";
       return false;
     }
-    const bool pitch_ab_valid = pitch_lower_limit != pitch_zone2_upper;
-    const bool pitch_zone2_pair_valid = pitch_zone2_lower != pitch_zone2_upper_limit;
-    const bool pitch_zone3_pair_valid = pitch_zone3_lower != pitch_zone3_upper;
+    const bool pitch_ab_valid = pitch_lower_limit != pitch_zoneab_upper;
+    const bool pitch_zone2_pair_valid = pitch_zonebc_lower != pitch_zonebc_upper;
+    const bool pitch_zone3_pair_valid = pitch_zonecd_lower != pitch_zonecd_upper;
     if (!pitch_ab_valid || !pitch_zone2_pair_valid || !pitch_zone3_pair_valid) {
       reason = "zone pitch ranges are invalid";
       return false;
@@ -617,9 +660,9 @@ private:
         const double effective_max = std::min(pitch_max_angle_, interval_max);
         return effective_min <= effective_max;
       };
-    if (!has_pitch_overlap(pitch_lower_limit, pitch_zone2_upper) ||
-      !has_pitch_overlap(pitch_zone2_lower, pitch_zone2_upper_limit) ||
-      !has_pitch_overlap(pitch_zone3_lower, pitch_zone3_upper))
+    if (!has_pitch_overlap(pitch_lower_limit, pitch_zoneab_upper) ||
+      !has_pitch_overlap(pitch_zonebc_lower, pitch_zonebc_upper) ||
+      !has_pitch_overlap(pitch_zonecd_lower, pitch_zonecd_upper))
     {
       reason = "zone pitch limits conflict with pitch_min_angle/pitch_max_angle";
       return false;
@@ -657,7 +700,7 @@ private:
   std::pair<double, double> getZonePitchLimits(YawZone zone) const
   {
     if (zone == YawZone::ZoneAB) {
-      return {zone_pitch_lower_limit_, zone_pitch_zone2_upper_};
+      return {zone_pitch_lower_limit_, zone_pitch_zoneab_upper_};
     }
     if (zone == YawZone::ZoneCD) {
       return {zone_pitch_zone3_lower_, zone_pitch_zone3_upper_};
@@ -767,6 +810,15 @@ private:
     has_command_target_ = true;
   }
 
+  void setManualModeCommandTarget(double yaw, double pitch)
+  {
+    command_yaw_angle_ = enable_zone_angle_limit_ ? clampZoneYaw(yaw) : clampYaw(yaw);
+    command_pitch_angle_ = clampPitch(pitch);
+    has_command_target_ = true;
+    pitch_correction_mode_ = PitchCorrectionMode::None;
+    correction_target_zone_ = YawZone::OutOfRange;
+  }
+
   void setCommandTargetRaw(double yaw, double pitch)
   {
     command_yaw_angle_ = yaw;
@@ -834,6 +886,16 @@ private:
     return has_test_mode_topic_value_ ? test_mode_topic_value_ : enable_test_mode_;
   }
 
+  double getImageTargetCenterX() const
+  {
+    return (image_center_x_ - 0.5) * image_width_;
+  }
+
+  double getImageTargetCenterY() const
+  {
+    return (image_center_y_ - 0.5) * image_height_;
+  }
+
   void publishCommandTarget()
   {
     if (!has_command_target_) {
@@ -882,6 +944,7 @@ private:
   double command_pitch_angle_ = 0.0;
   bool auto_track_timeout_active_ = false;
   bool startup_release_init_pending_ = true;
+  bool startup_release_hold_active_ = false;
   bool has_active_control_mode_ = false;
   ControlMode active_control_mode_ = ControlMode::AutoTrack;
 
@@ -926,8 +989,11 @@ private:
   double zone_pitch_zone3_lower_ = -0.52359877559;
   double zone_pitch_zone3_upper_ = 3.14159265359;
   double zone_pitch_zone1_upper_ = 3.14159265359;
+  double zone_pitch_zoneab_upper_ = 0.52359877559;
   double control_hysteresis_rad_ = 0.017453292519943295;
   double control_pitch_correct_tolerance_ = 0.01;
+  bool zone_pitch_zone1_upper_overridden_ = false;
+  bool zone_pitch_zone2_upper_overridden_ = false;
   bool has_last_yaw_zone_ = false;
   YawZone last_yaw_zone_ = YawZone::ZoneAB;
   PitchCorrectionMode pitch_correction_mode_ = PitchCorrectionMode::None;

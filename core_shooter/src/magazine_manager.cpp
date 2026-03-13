@@ -24,22 +24,22 @@ public:
     //========================================
     // parameters
     //========================================
-    this->declare_parameter<int>("remaining_disks", 27);
+    this->declare_parameter<int>("max_disks", 27);
     this->declare_parameter<double>("disk_thickness", 1.0);
     this->declare_parameter<double>("sensor_height", 100.0);
     this->declare_parameter<int>("window_size", 3);
 
-    this->get_parameter("remaining_disks", remaining_disks_);
+    this->get_parameter("max_disks", max_disks_);
     this->get_parameter("disk_thickness", disk_thickness_);
     this->get_parameter("sensor_height", sensor_height_);
     this->get_parameter("window_size", window_size_);
 
-    if (remaining_disks_ < 0 || remaining_disks_ > 127) {
+    if (max_disks_ < 0 || max_disks_ > 127) {
       RCLCPP_FATAL(
         this->get_logger(),
-        "Invalid remaining_disks=%d (must be in [0, 127])",
-        remaining_disks_);
-      throw std::runtime_error("invalid remaining_disks");
+        "Invalid max_disks=%d (must be in [0, 127])",
+        max_disks_);
+      throw std::runtime_error("invalid max_disks");
     }
     if (window_size_ <= 0) {
       RCLCPP_FATAL(
@@ -52,12 +52,12 @@ public:
       throw std::runtime_error("invalid disk_thickness");
     }
 
-    remaining_disks_ = remaining_disks_;
+    remaining_disks_ = max_disks_;
 
     RCLCPP_INFO(
       this->get_logger(),
-      "remaining_disks: %d, disk_thickness: %f, sensor_height: %f",
-      remaining_disks_, disk_thickness_, sensor_height_);
+      "max_disks: %d, disk_thickness: %f, sensor_height: %f",
+      max_disks_, disk_thickness_, sensor_height_);
 
     //========================================
     // disk hold motor parameters
@@ -191,7 +191,7 @@ private:
   void reloadingCallback(std_msgs::msg::Bool::SharedPtr msg)
   {
     if (msg->data) {
-      remaining_disks_ = remaining_disks_;
+      remaining_disks_ = max_disks_;
       remainingDisksPublish(remaining_disks_);
     }
   }
@@ -285,12 +285,12 @@ private:
       return 0;
     }
 
-    if (value > remaining_disks_) {
+    if (value > max_disks_) {
       RCLCPP_WARN(
         this->get_logger(),
-        "%s produced %d remaining disks. Clamp to remaining_disks=%d.",
-        source, value, remaining_disks_);
-      return remaining_disks_;
+        "%s produced %d remaining disks. Clamp to max_disks=%d.",
+        source, value, max_disks_);
+      return max_disks_;
     }
 
     return value;
@@ -525,6 +525,7 @@ private:
   // parameter valids
   //========================================
   // magazine
+  int max_disks_ = 27;
   int remaining_disks_ = 27;
   double disk_thickness_ = 1.0;
   double sensor_height_ = 100.0;

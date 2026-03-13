@@ -415,9 +415,9 @@ flowchart TD
 - `shoot_status` (`std_msgs/Bool`)
   - 立上りで「1発消費」とみなして減算
 - `reloading` (`std_msgs/Bool`)
-  - `true` を受信したら残弾数を `remaining_disks` パラメータ値まで回復
+  - `true` を受信したら残弾数を `max_disks` パラメータ値まで回復
 - `reloading_increment` (`std_msgs/Int8`)
-  - 手動/外部から補給数を加算（`remaining_disks` を上限に clamp）
+  - 手動/外部から補給数を加算（`max_disks` を上限に clamp）
 - `disk_distance_sensor` (`std_msgs/Int32`, launchで `distance`)
   - `REGRIP_RELEASING` 中のみ移動平均に取り込み
 - `disk_hold_state` (`std_msgs/Bool`)
@@ -445,7 +445,7 @@ flowchart TD
 - `HOLDING` 中の射撃回数が 10 回以上で `REGRIP_RELEASING` に遷移（`regrip_enabled=true` 時）
 - 遷移と同時に `regrip_active=true` を publish し、`shooter_controller` 側の次弾を抑止
 - release 期間中のみ距離センサ移動平均を更新
-- 窓が揃ったら `remainingDiskEstimator(0)` でセンサ同期（`remaining_disks` を上限に clamp）
+- 窓が揃ったら `remainingDiskEstimator(0)` でセンサ同期（`max_disks` を上限に clamp）
 - 時間経過後 `HOLDING` に復帰し `regrip_active=false`
 
 ### 7.4 `aim_bot`
@@ -467,10 +467,12 @@ flowchart TD
 - `/joint_states` (`sensor_msgs/JointState`) : 現在 yaw/pitch 角
 - `hazard_status` (`std_msgs/Bool`)
 - `manual_mode` (`std_msgs/Bool`) : `shooter_cmd_gate` から片側のみ有効化
+- `manual_pitch_angle` (`std_msgs/Float32`) : `manual_mode=true` 中の pitch 差分入力
 - `/test_mode` (`std_msgs/Bool`) : グローバル
 - `test_yaw_angle` / `test_pitch_angle` (`std_msgs/Float32`)
 - `target_image_position` (`geometry_msgs/PointStamped`)
   - 実装想定: `z < 0.5` で検出あり、`x/y` は画像中心原点座標
+  - `image_center_x`, `image_center_y` により狙う画像中心を正規化座標でずらせる（`0.5, 0.5` が幾何学中心）
 
 #### 主な出力
 
@@ -481,11 +483,15 @@ flowchart TD
 
 - `Emergency`
   - モード遷移時に現在角をコマンド目標としてラッチし、その後保持
+  - ノード再起動後の最初の非常停止解除時のみ `startup_release_yaw_angle` / `startup_release_pitch_angle` へ初期化可能
+  - 追尾目標が未到着の間は、その初期角度を保持する
 - `Manual`
   - ONエッジで `manual_mode_yaw_fixed_angle` と `manual_mode_pitch_initial_angle` を初期値に設定
   - 以後 yaw は固定、pitch は手動入力で相対更新
+  - pitch 制限は zone 制限ではなく `pitch_min_angle` / `pitch_max_angle` を使用
 - `Test`
   - テスト入力を `[-1,1]` の正規化差分として積分
+  - yaw / pitch は独立入力で、片軸のみの入力でもその軸だけ更新
   - モード再突入時は古い入力を無効化して新規入力待ち
 - `AutoTrack`
   - 目標画像が timeout 内にある時のみ追尾
@@ -513,7 +519,7 @@ flowchart TD
 
 ### 8.2 弾倉系
 
-- `remaining_disks`
+- `max_disks`
 - `disk_thickness`
 - `sensor_height`
 - `window_size`
@@ -527,6 +533,8 @@ flowchart TD
 - `enable_test_mode`
 - `test_yaw_gain`, `test_pitch_gain`
 - `manual_mode_yaw_fixed_angle`, `manual_mode_pitch_initial_angle`
+- `image_center_x`, `image_center_y`
+- `startup_release_yaw_angle`, `startup_release_pitch_angle`
 - `image_width`, `image_height`
 - `use_fov_image_tracking`
 - `horizontal_fov_deg`
@@ -544,8 +552,10 @@ flowchart TD
 |---|---|---|---|---|
 | `/left_shoot_once` ほか左右射撃UI | `std_msgs/Bool` | UI/GUI | `shooter_cmd_gate` | 単発/バースト/フルオート入力 |
 | `/manual_mode` | `std_msgs/Bool` | UI/GUI | `shooter_cmd_gate` | manual有効化要求 |
+| `/manual_pitch` | `std_msgs/Float32` | UI/GUI | `shooter_cmd_gate` | manual pitch 差分入力 |
 | `/left/shoot_cmd`, `/right/shoot_cmd` | `std_msgs/Int32` | `shooter_cmd_gate` | 各 `shooter_controller` | 射撃回数/フルオート指令 |
 | `/left/manual_mode`, `/right/manual_mode` | `std_msgs/Bool` | `shooter_cmd_gate` | 各 `aim_bot` | 片側 manual モード制御 |
+| `/left/manual_pitch_angle`, `/right/manual_pitch_angle` | `std_msgs/Float32` | `shooter_cmd_gate` | 各 `aim_bot` | 片側 manual pitch 差分入力 |
 | `/left/shoot_motor`, `/right/shoot_motor` | `std_msgs/Float32` | UI/GUI | 各 `shooter_controller` | 発射モータ速度段指令 |
 
 ### 9.2 センサ・状態
@@ -645,8 +655,6 @@ flowchart LR
 
 現行コードを読む限り、以下は「設計仕様として固定」ではなく、今後見直し候補となる実装上の特徴。
 
-- `aim_bot` の manual pitch 入力はコメント上は `manual_pitch_angle` 想定だが、実装は `test_pitch_angle` を購読している
-- `aim_bot` の `image_center_x`, `image_center_y` は宣言/取得されるが、追尾計算では未使用
 - `shooter_controller` の `loading_motor_error_state`, `shoot_motor_error_state` publisher は生成されるが publish されていない
 - `magazine_manager` の `hold_disable_height_margin_mm` は取得されるがロジックで未使用
 - `shooter_controller` では `hazard_state_` 初期値が `true` のため、安全解除が来るまで実質 `EMERGENCY` 相当の挙動になる（安全側デフォルト）

@@ -84,13 +84,10 @@ public:
       "left_manual_mode", 10);
     right_manual_mode_pub_ = this->create_publisher<std_msgs::msg::Bool>(
       "right_manual_mode", 10);
-    if (manual_mode_target_side_ == "right") {
-      right_manual_pitch_pub_ = this->create_publisher<std_msgs::msg::Float32>(
-        "/right/test_pitch_angle", 10);
-    } else {
-      left_manual_pitch_pub_ = this->create_publisher<std_msgs::msg::Float32>(
-        "/left/test_pitch_angle", 10);
-    }
+    left_manual_pitch_pub_ = this->create_publisher<std_msgs::msg::Float32>(
+      "left_manual_pitch_angle", 10);
+    right_manual_pitch_pub_ = this->create_publisher<std_msgs::msg::Float32>(
+      "right_manual_pitch_angle", 10);
     left_shoot_motor_pub_ = this->create_publisher<std_msgs::msg::Float32>(
       "/left/shoot_motor", 10);
     right_shoot_motor_pub_ = this->create_publisher<std_msgs::msg::Float32>(
@@ -98,7 +95,7 @@ public:
 
     RCLCPP_INFO(
       this->get_logger(),
-      "ShooterCmdGate manual route: /manual_mode -> /%s/manual_mode, /manual_pitch -> /%s/test_pitch_angle",
+      "ShooterCmdGate manual route: /manual_mode -> /%s/manual_mode, /manual_pitch -> /%s/manual_pitch_angle",
       manual_mode_target_side_.c_str(), manual_mode_target_side_.c_str());
 
   }

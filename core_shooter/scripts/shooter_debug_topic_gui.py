@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import re
+import subprocess
 import tkinter as tk
 from tkinter import ttk
 
@@ -29,9 +31,12 @@ class DebugTopicPublisher(Node):
         self.bool_publishers = {
             "/test_mode": self.create_publisher(Bool, "/test_mode", 10),
             "/manual_mode": self.create_publisher(Bool, "/manual_mode", 10),
+            "/shoot_motor_state": self.create_publisher(Bool, "/shoot_motor_state", 10),
             "/system/emergency/hazard_status": self.create_publisher(
                 Bool, "/system/emergency/hazard_status", self.hazard_qos
             ),
+            "/left/reloading": self.create_publisher(Bool, "/left/reloading", 10),
+            "/right/reloading": self.create_publisher(Bool, "/right/reloading", 10),
             "/left_shoot_once": self.create_publisher(Bool, "/left_shoot_once", 10),
             "/left_shoot_burst": self.create_publisher(Bool, "/left_shoot_burst", 10),
             "/left_shoot_fullauto": self.create_publisher(Bool, "/left_shoot_fullauto", 10),
@@ -48,8 +53,17 @@ class DebugTopicPublisher(Node):
             "/right/test_pitch_angle": self.create_publisher(
                 Float32, "/right/test_pitch_angle", 10
             ),
+            "/manual_pitch": self.create_publisher(Float32, "/manual_pitch", 10),
             "/left/shoot_motor": self.create_publisher(Float32, "/left/shoot_motor", 10),
             "/right/shoot_motor": self.create_publisher(Float32, "/right/shoot_motor", 10),
+        }
+        self.int8_publishers = {
+            "/left/reloading_increment": self.create_publisher(
+                Int8, "/left/reloading_increment", 10
+            ),
+            "/right/reloading_increment": self.create_publisher(
+                Int8, "/right/reloading_increment", 10
+            ),
         }
         self.point_publishers = {
             "/left/target_image_position": self.create_publisher(
@@ -86,6 +100,12 @@ class DebugTopicPublisher(Node):
         msg.data = float(value)
         self.float_publishers[topic].publish(msg)
         self.get_logger().info(f"publish {topic}={msg.data:.4f}")
+
+    def publish_int8(self, topic: str, value: int) -> None:
+        msg = Int8()
+        msg.data = int(value)
+        self.int8_publishers[topic].publish(msg)
+        self.get_logger().info(f"publish {topic}={msg.data}")
 
     def publish_can_single(self, can_id: int, data: float) -> None:
         can_array = CANArray()
@@ -205,12 +225,14 @@ class DebugGui:
         self.can_tx_frames_var = tk.StringVar(value="frames=0")
         self.can_tx_extra_var = tk.StringVar(value="")
         self.can_tx_id_vars = {i: tk.StringVar(value="--") for i in range(17)}
+        self.manual_pitch_var = tk.DoubleVar(value=0.0)
         self.left_yaw_var = tk.DoubleVar(value=0.0)
         self.left_pitch_var = tk.DoubleVar(value=0.0)
         self.right_yaw_var = tk.DoubleVar(value=0.0)
         self.right_pitch_var = tk.DoubleVar(value=0.0)
         self.left_shoot_motor_var = tk.DoubleVar(value=0.0)
         self.right_shoot_motor_var = tk.DoubleVar(value=0.0)
+        self.manual_pitch_entry_var = tk.StringVar(value="0.0")
         self.left_yaw_entry_var = tk.StringVar(value="0.0")
         self.left_pitch_entry_var = tk.StringVar(value="0.0")
         self.right_yaw_entry_var = tk.StringVar(value="0.0")
@@ -234,6 +256,7 @@ class DebugGui:
 
         self.test_mode_var = tk.BooleanVar(value=False)
         self.manual_mode_var = tk.BooleanVar(value=False)
+        self.shoot_motor_state_var = tk.BooleanVar(value=False)
         self.left_disk_hold_state_var = tk.BooleanVar(value=False)
         self.right_disk_hold_state_var = tk.BooleanVar(value=False)
         self.hazard_status_var = tk.BooleanVar(value=False)
@@ -274,12 +297,30 @@ class DebugGui:
         self.root.bind_all("<Button-5>", self._on_mousewheel)
 
         notes = (
-            "Bool/Shooter topics are published to actual runtime topic names (absolute).\n"
-            "Monitor shows left/right runtime values plus /joint_states and /can/tx grid."
+            "Debug UI is restored as the main tab, and production controls are in Operate.\n"
+            "Monitor stays in the Debug tab with /joint_states and /can/tx."
         )
         ttk.Label(container, text=notes, justify=tk.LEFT).pack(anchor=tk.W, pady=(0, 10))
 
-        content_area = ttk.Frame(container)
+        notebook = ttk.Notebook(container)
+        notebook.pack(fill=tk.BOTH, expand=True)
+
+        debug_tab = ttk.Frame(notebook, padding=6)
+        operate_tab = ttk.Frame(notebook, padding=6)
+
+        notebook.add(debug_tab, text="Debug")
+        notebook.add(operate_tab, text="Operate")
+
+        self._build_debug_tab(debug_tab)
+        self._build_operation_frame(operate_tab)
+
+        self.status_separator = ttk.Separator(self.root, orient=tk.HORIZONTAL)
+        self.status_separator.pack(fill=tk.X, padx=12, pady=(0, 6))
+        self.status_label = ttk.Label(self.root, textvariable=self.status_var)
+        self.status_label.pack(anchor=tk.W, padx=12, pady=(0, 8))
+
+    def _build_debug_tab(self, parent: ttk.Frame) -> None:
+        content_area = ttk.Frame(parent)
         content_area.pack(fill=tk.BOTH, expand=True)
 
         left_column = ttk.Frame(content_area)
@@ -295,13 +336,110 @@ class DebugGui:
         self._build_state_frame(left_column)
         self._build_shoot_frame(left_column)
         self._build_monitor_frame(right_column)
-        self._build_target_image_pad_frame(container)
-        self._build_angle_frame(container)
+        self._build_target_image_pad_frame(parent)
+        self._build_angle_frame(parent)
 
-        self.status_separator = ttk.Separator(self.root, orient=tk.HORIZONTAL)
-        self.status_separator.pack(fill=tk.X, padx=12, pady=(0, 6))
-        self.status_label = ttk.Label(self.root, textvariable=self.status_var)
-        self.status_label.pack(anchor=tk.W, padx=12, pady=(0, 8))
+    def _build_operation_frame(self, parent: ttk.Frame) -> None:
+        frame = ttk.Frame(parent)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        content_area = ttk.Frame(frame)
+        content_area.pack(fill=tk.BOTH, expand=True)
+
+        left_column = ttk.Frame(content_area)
+        right_column = ttk.Frame(content_area)
+        left_column.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 8))
+        right_column.grid(row=0, column=1, sticky=tk.NSEW)
+
+        content_area.columnconfigure(0, weight=1, uniform="operate_columns")
+        content_area.columnconfigure(1, weight=1, uniform="operate_columns")
+        content_area.rowconfigure(0, weight=1)
+
+        mode_frame = ttk.LabelFrame(left_column, text="Production Controls", padding=10)
+        mode_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(
+            mode_frame,
+            text=(
+                "Runtime topics: hazard_status, manual_mode, test_mode, "
+                "shoot_motor_state, shoot_once, reloading, manual_pitch"
+            ),
+            justify=tk.LEFT,
+            wraplength=420,
+        ).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 6))
+
+        toggle_rows = [
+            ("/system/emergency/hazard_status", self.hazard_status_var),
+            ("/test_mode", self.test_mode_var),
+            ("/manual_mode", self.manual_mode_var),
+            ("/shoot_motor_state", self.shoot_motor_state_var),
+        ]
+        for row, (topic, var) in enumerate(toggle_rows, start=1):
+            ttk.Label(mode_frame, text=topic).grid(
+                row=row, column=0, sticky=tk.W, padx=(0, 8), pady=4
+            )
+            ttk.Checkbutton(
+                mode_frame,
+                text="True / False",
+                variable=var,
+                command=lambda t=topic, v=var: self._publish_bool(t, v.get()),
+            ).grid(row=row, column=1, sticky=tk.W, padx=(0, 8), pady=4)
+            ttk.Button(
+                mode_frame,
+                text="Publish",
+                command=lambda t=topic, v=var: self._publish_bool(t, v.get()),
+            ).grid(row=row, column=2, sticky=tk.EW, pady=4)
+
+        command_frame = ttk.LabelFrame(left_column, text="Production Commands", padding=10)
+        command_frame.pack(fill=tk.X, pady=(0, 10))
+
+        left_frame = ttk.LabelFrame(command_frame, text="Left", padding=10)
+        left_frame.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 8))
+        right_frame = ttk.LabelFrame(command_frame, text="Right", padding=10)
+        right_frame.grid(row=0, column=1, sticky=tk.NSEW)
+
+        ttk.Button(
+            left_frame,
+            text="Shoot Once",
+            command=lambda: self._pulse_bool("/left_shoot_once"),
+        ).pack(fill=tk.X, pady=(0, 8))
+        ttk.Button(
+            left_frame,
+            text="Reload",
+            command=lambda: self._pulse_bool("/left/reloading"),
+        ).pack(fill=tk.X)
+
+        ttk.Button(
+            right_frame,
+            text="Shoot Once",
+            command=lambda: self._pulse_bool("/right_shoot_once"),
+        ).pack(fill=tk.X, pady=(0, 8))
+        ttk.Button(
+            right_frame,
+            text="Reload",
+            command=lambda: self._pulse_bool("/right/reloading"),
+        ).pack(fill=tk.X)
+
+        manual_frame = ttk.LabelFrame(left_column, text="Manual Pitch", padding=10)
+        manual_frame.pack(fill=tk.X)
+        self._build_angle_row(
+            manual_frame,
+            row=0,
+            topic="/manual_pitch",
+            label="manual_pitch",
+            slider_var=self.manual_pitch_var,
+            entry_var=self.manual_pitch_entry_var,
+            slider_min=-1.0,
+            slider_max=1.0,
+            spring_return=False,
+            live_publish=True,
+        )
+
+        self._build_monitor_frame(right_column)
+
+        mode_frame.columnconfigure(1, weight=1)
+        mode_frame.columnconfigure(2, weight=0)
+        command_frame.columnconfigure(0, weight=1)
+        command_frame.columnconfigure(1, weight=1)
 
     def _build_monitor_frame(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Monitor", padding=10)
@@ -789,8 +927,8 @@ class DebugGui:
         )
 
         int8_rows = [
-            ("/left/reloading", self.left_reloading_entry_var),
-            ("/right/reloading", self.right_reloading_entry_var),
+            ("/left/reloading_increment", self.left_reloading_entry_var),
+            ("/right/reloading_increment", self.right_reloading_entry_var),
         ]
         for idx, (topic, entry_var) in enumerate(int8_rows, start=1):
             row = reloading_row_base + idx
@@ -919,6 +1057,7 @@ class DebugGui:
             self._set_status(f"Invalid float for {topic}: {entry_var.get()!r}")
             return
         if topic in (
+            "/manual_pitch",
             "/left/test_yaw_angle",
             "/left/test_pitch_angle",
             "/right/test_yaw_angle",
@@ -976,6 +1115,9 @@ class DebugGui:
         except ValueError:
             self._set_status(f"Invalid float for {topic}: {entry_var.get()!r}")
             return
+        if topic in ("/manual_pitch",):
+            value = max(-1.0, min(1.0, value))
+            entry_var.set(f"{value:.4f}")
         if topic in ("/left/shoot_motor", "/right/shoot_motor"):
             value = max(0.0, min(1.0, value))
             entry_var.set(f"{value:.4f}")
@@ -1006,8 +1148,12 @@ class DebugGui:
         self.node.publish_bool("/left/disk_hold_state", self.left_disk_hold_state_var.get())
         self.node.publish_bool("/right/disk_hold_state", self.right_disk_hold_state_var.get())
         self._publish_bool("/system/emergency/hazard_status", self.hazard_status_var.get())
-        self._publish_int8_from_entry("/left/reloading", self.left_reloading_entry_var)
-        self._publish_int8_from_entry("/right/reloading", self.right_reloading_entry_var)
+        self._publish_int8_from_entry(
+            "/left/reloading_increment", self.left_reloading_entry_var
+        )
+        self._publish_int8_from_entry(
+            "/right/reloading_increment", self.right_reloading_entry_var
+        )
 
     def _pulse_bool(self, topic: str) -> None:
         self.node.publish_bool(topic, True)
@@ -1047,14 +1193,17 @@ class DebugGui:
     def _fit_window_to_content(self) -> None:
         self.root.update_idletasks()
 
-        desired_w = 1920
-        desired_h = 1080
+        desired_w = 1280
+        desired_h = 720
 
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
         max_w, max_h = self.root.maxsize()
-        avail_w = max_w if max_w > 1 else screen_w
-        avail_h = max_h if max_h > 1 else screen_h
+        monitor_x, monitor_y, monitor_w, monitor_h = self._get_preferred_monitor_geometry(
+            screen_w, screen_h
+        )
+        avail_w = min(max_w if max_w > 1 else monitor_w, monitor_w)
+        avail_h = min(max_h if max_h > 1 else monitor_h, monitor_h)
 
         target_w = min(desired_w, avail_w)
         target_h = min(desired_h, avail_h)
@@ -1063,10 +1212,46 @@ class DebugGui:
         min_h = min(520, target_h)
         self.root.minsize(min_w, min_h)
 
-        pos_x = max((screen_w - target_w) // 2, 0)
-        pos_y = max((screen_h - target_h) // 2, 0)
+        pos_x = monitor_x + max((monitor_w - target_w) // 2, 0)
+        pos_y = monitor_y + max((monitor_h - target_h) // 2, 0)
         self.root.geometry(f"{target_w}x{target_h}+{pos_x}+{pos_y}")
         self.root.update_idletasks()
+
+    def _get_preferred_monitor_geometry(
+        self,
+        fallback_w: int,
+        fallback_h: int,
+    ) -> tuple[int, int, int, int]:
+        monitors = self._query_xrandr_monitors()
+        if len(monitors) >= 2:
+            return monitors[1]
+        return (0, 0, fallback_w, fallback_h)
+
+    def _query_xrandr_monitors(self) -> list[tuple[int, int, int, int]]:
+        try:
+            result = subprocess.run(
+                ["xrandr", "--listmonitors"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+
+        monitors = []
+        for raw_line in result.stdout.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("Monitors:"):
+                continue
+
+            match = re.search(r"(\d+)/\d+x(\d+)/\d+\+(-?\d+)\+(-?\d+)", line)
+            if match is None:
+                continue
+
+            width, height, origin_x, origin_y = (int(group) for group in match.groups())
+            monitors.append((origin_x, origin_y, width, height))
+
+        return monitors
 
     def _on_scroll_frame_configure(self, _event) -> None:
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
