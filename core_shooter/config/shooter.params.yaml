@@ -1,0 +1,130 @@
+/**:
+        ros__parameters:
+                # ========================================
+                # ShooterController
+                # motor ids are overridden in launch
+                # shoot_motor_id: -> launch
+                # loading_motor_id: -> launch
+
+                # shoot parameters
+                burst_count: 3 # バースト発射数
+                manual_mode_target_side: "right" # /manual_mode を転送する先（"left" or "right"）
+                shoot_interval_ms: 500 # 単発の発射間隔[ms]
+                burst_interval_ms: 500 # バースト時の発射間隔[ms]
+                fullauto_interval_ms: 500 # フルオート時の発射間隔[ms]
+                shoot_motor_rotation_cmd_activation_delay_sec: 2.0 # 非ゼロ速度指令開始から発射許可までの遅延[s]
+
+                # panel limit parameters (enable_panel_synchronizer=true のとき使用)
+                limit_rad: [0.349, 2.443, 3.490, 5.585]
+                # limit_rad_[1]
+                #   ＼     limit_rad_[0]
+                #    ＼  ／
+                # true ◯ true ---- 0 [rad]
+                #    ／  ＼
+                #   ／     limit_rad_[3]
+                # limit_rad_[2]
+                enable_panel_synchronizer: false
+
+                # loading motor parameters
+                loading_motor_speed: 6.5
+
+                # shoot motor parameters
+                target_speed: [2000.0, 1750.0, 1500.0]
+
+                # jam parameters
+                enable_jam_detection: false
+                jam_detect_time_sec: 0.1
+
+                # debug parameters
+                set_initial_rad: 0.0
+
+                # ========================================
+                # MagazineManager
+                # motor ids are overridden in launch
+                # disk_hold_left_motor_id: -> launch
+                # disk_hold_right_motor_id: -> launch
+                max_disks: 30 # 満タン時の弾数
+                disk_thickness: 20.0 # [mm]
+                sensor_height: 500.0 # [mm]
+                window_size: 3 # 移動平均の窓サイズ
+                regrip_enabled: true
+                regrip_release_ms: 1000
+                hold_disable_height_margin_mm: 0.5
+                # disk_hold_motor_left_angle:  -> launch [0.0, -0.2] # [close, open]
+                # disk_hold_motor_right_angle: -> launch [0.0, 0.2] # [close, open]
+
+                # ========================================
+                # AimBot
+                # motor ids are overridden in launch
+                # pitch_motor_id: -> launch
+                # yaw_motor_id: -> launch
+
+                # periodic rate
+                rate: 30.0
+
+                # test/manual mode
+                enable_test_mode: false # test_mode topic未受信時のデフォルト値（aim_bot / shooter_controller ともに test_mode: std_msgs/Bool を優先）
+                # test_mode: std_msgs/Bool (relative topic)
+                test_yaw_gain: 0.01 # test_mode時のyaw加算係数（manual_modeのyawは固定なので未使用）
+                test_pitch_gain: 0.01 # test/manual mode時のpitch加算係数（-1..1入力に適用）
+                # 初期値のジンバルの向き
+                manual_mode_yaw_fixed_angle: 0.0 # manual_mode遷移時に設定し、その後も固定する yaw 角度[rad]
+                manual_mode_pitch_initial_angle: 0.0 # manual_mode遷移時に設定する初期 pitch 角度[rad]
+                startup_release_yaw_angle: 0.0 # ノード再起動後、最初の非常停止解除時に設定する yaw 角度[rad]（正面を向かせたい角度）
+                startup_release_pitch_angle: 0.0 # ノード再起動後、最初の非常停止解除時に設定する pitch 角度[rad]（正面を向かせたい角度）
+                # manual_mode=true 時の pitch は std_msgs/Float32 の manual_pitch_angle topic で加算入力（-1..1, 0で保持）
+                # 遷移直後の pitch は manual_mode_pitch_initial_angle
+
+                # image target settings
+                # target_image_position: geometry_msgs/PointStamped
+                #   detected     -> point=(x_px, y_px, 0)  [center-origin pixel coords]
+                #   not detected -> point=(0, 0, 1)
+                image_width: 1280.0
+                image_height: 720.0
+                use_fov_image_tracking: false # true: 画角+画像比率ベース, false: yaw/pitch_image_gain による加算制御
+                horizontal_fov_deg: 100.0 # 横画角[deg]。縦画角は image_height / image_width 比から導出
+                # image_tolerance_x/y はピクセル誤差ベースで効く（両方式共通）
+                # image_center_x/y は狙う画像中心の正規化座標。0.5,0.5 が幾何学中心
+                # 例: image_center_x=0.55 -> 画像中央より右へ 5% ずらした位置を目標中心にする
+                image_center_x: 0.5
+                image_center_y: 0.5
+                image_tolerance_x: 0.02
+                image_tolerance_y: 0.02
+                target_timeout_sec: 0.2
+                max_yaw_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
+                max_pitch_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
+
+                # image error -> angle command gain（use_fov_image_tracking=false の時に使用）
+                yaw_image_gain: 0.0005
+                pitch_image_gain: 0.0005
+                yaw_direction: 1.0
+                pitch_direction: 1.0
+
+                # motor angle caps [rad] -> launch
+                # yaw_min_angle: -3.14159265359
+                # yaw_max_angle: 3.14159265359
+                # pitch_min_angle: -3.14159265359
+                # pitch_max_angle: 3.14159265359
+
+                # zone-based angle limiter（現在のモータ出力指令に対して適用）
+                enable_zone_angle_limit: true # trueで zone.* 制限を有効化
+                # →launch
+                # zone:
+                #         yaw_reversed: false # true のとき zone 判定用 yaw を符号反転
+                #         yaw_zone1_start: -0.573 # a [rad]
+                #         yaw_boundary: -0.3 # b [rad]
+                #         yaw_zone2_end: 0.3 # c [rad]
+                #         yaw_zone3_end: 2.5 # d [rad]
+                #         pitch_lower_limit: 0.0 # Zone1 lower [rad]
+                #         pitch_zone2_upper: 3.14159265359 # ZoneAB upper [rad]（互換エイリアス。新規設定では pitch_zone1_upper を推奨）
+                #         pitch_zone2_lower: -3.14159265359 # Zone2 lower [rad]
+                #         pitch_zone2_upper_limit: 3.14159265359 # Zone2 upper [rad]
+                #         pitch_zone3_lower: -3.14159265359 # Zone3 lower [rad]
+                #         pitch_zone3_upper: 0.0 # Zone3 upper [rad]
+                #         pitch_zone1_upper: 3.14159265359 # ZoneAB upper [rad]（優先して使用）
+                # control:
+                #         hysteresis_rad: 0.017453292519943295 # ゾーン切替ヒステリシス [rad]
+                #         pitch_correct_tolerance: 0.01 # 補正完了判定 [rad]
+
+                # fixed angle offset [rad]
+                pitch_offset: 0.0
