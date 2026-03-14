@@ -57,6 +57,27 @@ graph TB
     style Unity fill:#e1f5fe,color:#333
     style FASTLIO fill:#e1f5fe,color:#333
     style LiDAR fill:#e1f5fe,color:#333
+    subgraph Shooter["射撃系"]
+        Camera["カメラ"] -->|画像| TargetDetector["target_detector"]
+        TargetDetector --> TargetSelector["target_selector"]
+        TargetSelector -->|target_pose| AimBot["aim_bot"]
+        ShooterGate["shooter_cmd_gate"] --> ShooterCtrl["shooter_controller"]
+        MagazineMgr["magazine_manager"]
+    end
+
+    subgraph SystemMode["システム管理"]
+        WirelessParser["wireless_parser_node"]
+        EmergencyHandler["emergency_handler_node"]
+        Diagnostic["diagnostic_node"]
+        Diagnostic --> EmergencyHandler
+    end
+
+    WirelessParser -->|/cmd_vel| BodyController
+    EmergencyHandler -->|/hazard_status| BodyController
+
+    AimBot -->|can/tx| Hardware
+    ShooterCtrl -->|can/tx| Hardware
+
     style BehaviorSystem fill:#fff3e0,color:#333
 ```
 
@@ -73,6 +94,15 @@ graph TB
 | `body_control_node` | core_body_controller | C++ | cmd_vel→オムニホイールCAN指令変換、レートリミッタ |
 | `core_hardware` | core_hardware | C++ | EtherCAT（SOEM）によるTeensy41スレーブ通信 |
 | `ros_tcp_endpoint` | ROS-TCP-Endpoint | Python | Unity-ROS2 TCPブリッジ |
+| `target_detector` | core_enemy_detection | C++ | カメラ画像からダメージパネル検出 |
+| `target_selector` | core_enemy_detection | C++ | 最大面積パネルのターゲット選択 |
+| `emergency_handler_node` | core_mode | C++ | 緊急信号集約・ハザード状態管理 |
+| `diagnostic` | core_mode | C++ | マイコン/受信機ハートビート監視 |
+| `wireless_parser_node` | core_ros_player_controller | C++ | ワイヤレスコントローラ入力パーサー |
+| `shooter_cmd_gate` | core_shooter | C++ | 射撃コマンドゲート（左右振り分け） |
+| `shooter_controller` | core_shooter | C++ | 射撃モーター・ローディング制御（左右各1） |
+| `magazine_manager` | core_shooter | C++ | ディスクマガジン管理（左右各1） |
+| `aim_bot` | core_shooter | C++ | ビジョンベースターゲット追尾（左右各1） |
 
 ## 起動モード
 
