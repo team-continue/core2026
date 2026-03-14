@@ -37,6 +37,42 @@
 | `/joint_states` | `sensor_msgs/JointState` | core_hardware | body_controller |
 | `/goal_reached` | `std_msgs/Bool` | mppi, path_follower | (外部) |
 
+### 敵検出
+
+| トピック | 型 | Publisher | Subscriber |
+|---------|------|-----------|------------|
+| `raw_image/compressed` | `sensor_msgs/Image` | カメラ | target_detector |
+| `damage_panels_infomation` | `core_msgs/DamagePanelInfoArray` | target_detector | target_selector |
+| `damage_panel_pose` | `geometry_msgs/PointStamped` | target_selector | aim_bot |
+
+### シューター
+
+| トピック | 型 | Publisher | Subscriber |
+|---------|------|-----------|------------|
+| `/left/shoot_once` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
+| `/shoot_motor` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
+| `/manual_mode` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
+| `/manual_pitch` | `std_msgs/Float32` | wireless_parser | shooter_cmd_gate |
+| `/reloading` | `std_msgs/Bool` | wireless_parser | magazine_manager |
+| `shoot_cmd` | `std_msgs/Int32` | shooter_controller | (CAN) |
+| `shoot_motor` | `std_msgs/Float32` | shooter_cmd_gate | shooter_controller |
+
+### コントローラ入力
+
+| トピック | 型 | Publisher | Subscriber |
+|---------|------|-----------|------------|
+| `/wireless` | `std_msgs/UInt8MultiArray` | 受信機 | wireless_parser, diagnostic |
+| `/rotation_flag` | `std_msgs/Bool` | wireless_parser | body_controller |
+
+### システム管理
+
+| トピック | 型 | Publisher | Subscriber |
+|---------|------|-----------|------------|
+| `/system/emergency/hazard_status` | `std_msgs/Bool` | emergency_handler | body_controller, aim_bot |
+| `/system/emergency/hazard_states` | `std_msgs/Int8MultiArray` | emergency_handler | (外部) |
+| `/system/emergency/hazard_label` | `std_msgs/String` | emergency_handler | (外部) |
+| `/emergency` | `std_msgs/Bool` | ハードウェアスイッチ | emergency_handler |
+
 ## カスタムメッセージ（core_msgs）
 
 ### CAN.msg

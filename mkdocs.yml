@@ -72,6 +72,10 @@ nav:
     - core_costmap_builder: packages/core_costmap_builder.md
     - core_cmd_vel_smoother: packages/core_cmd_vel_smoother.md
     - core_body_controller: packages/core_body_controller.md
+    - core_enemy_detection: packages/core_enemy_detection.md
+    - core_mode: packages/core_mode.md
+    - core_ros_player_controller: packages/core_ros_player_controller.md
+    - core_shooter: packages/core_shooter.md
     - core_hardware: packages/core_hardware.md
     - core_tools: packages/core_tools.md
     - core_test: packages/core_test.md
