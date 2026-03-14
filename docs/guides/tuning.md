@@ -82,7 +82,28 @@ MPPIの挙動を最も大きく左右するパラメータです。
     2. スムーザー有効にして `alpha=0.3` から開始
     3. ガタつきが残るなら `alpha` を下げる、応答が鈍いなら上げる
 
-## コストマップ
+## グローバルマップ膨張（map_server_node）
+
+`navigation.launch.py` のmap_server_nodeパラメータで設定。
+
+| パラメータ | デフォルト | 効果 |
+|-----------|-----------|------|
+| `inflation_radius_m` | `0.40` | 障害物周囲のLETHAL膨張半径。A*はこの範囲内を通れない |
+| `decay_margin_m` | `0.20` | LETHAL外側の減衰幅。cost_weightと組み合わせて障害物から離れたパスを誘導 |
+
+!!! warning "スタート/ゴールがLETHAL領域内に入る場合"
+    膨張が大きすぎると壁近くのスタート/ゴールが占有扱いになりプラン失敗します。
+    その場合は `inflation_radius_m` を縮小（例: `0.30`）してください。
+
+## A* コスト重み（path_planner_node）
+
+`navigation.launch.py` のpath_planner_nodeパラメータで設定。
+
+| パラメータ | デフォルト | 効果 |
+|-----------|-----------|------|
+| `cost_weight` | `2.0` | decay zoneのペナルティ倍率。大きいほど障害物から離れる。`0.0`で従来動作 |
+
+## ローカルコストマップ
 
 設定ファイル: `core_costmap_builder/config/costmap_build_node.yaml`
 

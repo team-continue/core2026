@@ -54,11 +54,23 @@ A*アルゴリズムによるグローバル経路計画パッケージです。
 | `occupied_threshold` | int | `50` | セル占有判定しきい値（0-100） |
 | `allow_unknown` | bool | `false` | 未知セルの通過を許可 |
 | `use_diagonal` | bool | `true` | 斜め移動を許可 |
+| `cost_weight` | double | `0.0` | コスト考慮の重み（0.0で従来動作、2.0推奨） |
 | `publish_in_global_frame` | bool | `false` | odomフレームで経路を出力 |
 | `global_frame_id` | string | `odom` | グローバルフレーム名 |
 
 !!! note "navigation.launch.pyでの設定"
-    `local_costmap_topic=/costmap/local`, `publish_in_global_frame=true`, `global_frame_id=odom`
+    `local_costmap_topic=/costmap/local`, `publish_in_global_frame=true`, `global_frame_id=odom`, `cost_weight=2.0`
+
+## コスト考慮型A*
+
+`cost_weight > 0` の場合、各ステップのコストにセルの占有値に比例したペナルティが加算されます。
+これにより、decay zone（コスト1-49）のセルを通るパスはペナルティを受け、通路の中央寄りの安全なパスが生成されます。
+
+```
+step_cost = base_cost + cost_weight × (cell_value / 100)
+```
+
+`cost_weight=0.0` では従来の等コストA*と同一動作です。
 
 ## 起動
 
