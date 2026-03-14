@@ -64,6 +64,16 @@
 | `/wireless` | `std_msgs/UInt8MultiArray` | 受信機 | wireless_parser, diagnostic |
 | `/rotation_flag` | `std_msgs/Bool` | wireless_parser | body_controller |
 
+### 局在化（Localization）
+
+| トピック | 型 | Publisher | Subscriber |
+|---------|------|-----------|------------|
+| `/cloud_registered` | `sensor_msgs/PointCloud2` | FAST-LIO | localization_node |
+| `/localization/pose` | `geometry_msgs/PoseStamped` | localization_node | (外部) |
+| `/localization/aligned_cloud` | `sensor_msgs/PointCloud2` | localization_node | (デバッグ) |
+| `/localization/global_map` | `sensor_msgs/PointCloud2` | localization_node | (デバッグ) |
+| `/initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | RViz2 | localization_node |
+
 ### システム管理
 
 | トピック | 型 | Publisher | Subscriber |

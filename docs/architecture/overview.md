@@ -78,6 +78,14 @@ graph TB
     AimBot -->|can/tx| Hardware
     ShooterCtrl -->|can/tx| Hardware
 
+    subgraph Localization["局在化（実機オプション）"]
+        PCDMap["PCD地図"] -->|点群| LocalizationNode["localization_node"]
+    end
+
+    FASTLIO -->|/cloud_registered| LocalizationNode
+    LocalizationNode -->|"map→odom TF"| RViz
+
+    style Localization fill:#e8f5e9,color:#333
     style BehaviorSystem fill:#fff3e0,color:#333
 ```
 

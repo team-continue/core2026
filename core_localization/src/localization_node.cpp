@@ -1,5 +1,6 @@
 #include "core_localization/localization_node.hpp"
 
+#include <pcl/common/transforms.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl_conversions/pcl_conversions.h>
 
@@ -18,9 +19,14 @@ LocalizationNode::LocalizationNode(const rclcpp::NodeOptions & options)
   T_map_odom_ = Eigen::Matrix4f::Identity();
 
   // Set initial guess from parameters
+  // T_map_ci maps from camera_init (Z-down) to map (Z-up).
+  // Rotation = rot_z(yaw) * rot_x(pi)  to flip Z-down → Z-up.
   {
     Eigen::AngleAxisf yaw_rot(static_cast<float>(initial_pose_yaw_), Eigen::Vector3f::UnitZ());
-    T_map_ci_.block<3, 3>(0, 0) = yaw_rot.toRotationMatrix();
+    Eigen::Matrix3f R_x_pi = Eigen::Matrix3f::Identity();
+    R_x_pi(1, 1) = -1.0f;
+    R_x_pi(2, 2) = -1.0f;
+    T_map_ci_.block<3, 3>(0, 0) = yaw_rot.toRotationMatrix() * R_x_pi;
     T_map_ci_(0, 3) = static_cast<float>(initial_pose_x_);
     T_map_ci_(1, 3) = static_cast<float>(initial_pose_y_);
     T_map_ci_(2, 3) = static_cast<float>(initial_pose_z_);
@@ -152,6 +158,15 @@ bool LocalizationNode::load_global_map()
   RCLCPP_INFO(
     get_logger(), "Downsampled global map: %zu -> %zu points (voxel=%.2fm)", raw_map->size(),
     global_map_->size(), map_voxel_size_);
+
+  // PCD was saved in FAST-LIO's camera_init frame (Z-down).
+  // Transform to map frame (Z-up) so NDT produces a proper T_map_ci.
+  // rot_x(pi): x'=x, y'=-y, z'=-z
+  Eigen::Matrix4f T_ci_to_map = Eigen::Matrix4f::Identity();
+  T_ci_to_map(1, 1) = -1.0f;
+  T_ci_to_map(2, 2) = -1.0f;
+  pcl::transformPointCloud(*global_map_, *global_map_, T_ci_to_map);
+  RCLCPP_INFO(get_logger(), "Transformed PCD from camera_init frame (Z-down) to map frame (Z-up)");
 
   map_loaded_ = true;
   return true;
