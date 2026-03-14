@@ -46,6 +46,7 @@ public:
     this->declare_parameter<double>("yaw_direction", 1.0);
     this->declare_parameter<double>("pitch_direction", 1.0);
     this->declare_parameter<double>("target_timeout_sec", 0.2);
+    this->declare_parameter<double>("target_lost_return_to_startup_delay_sec", 2.0);
     this->declare_parameter<bool>("enable_test_mode", false);
     this->declare_parameter<double>("test_yaw_gain", 0.05);
     this->declare_parameter<double>("test_pitch_gain", 0.05);
@@ -91,6 +92,8 @@ public:
     this->get_parameter("yaw_direction", yaw_direction_);
     this->get_parameter("pitch_direction", pitch_direction_);
     this->get_parameter("target_timeout_sec", target_timeout_sec_);
+    this->get_parameter(
+      "target_lost_return_to_startup_delay_sec", target_lost_return_to_startup_delay_sec_);
     this->get_parameter("enable_test_mode", enable_test_mode_);
     this->get_parameter("test_yaw_gain", test_yaw_gain_);
     this->get_parameter("test_pitch_gain", test_pitch_gain_);
@@ -161,13 +164,15 @@ public:
     }
     if (image_width_ <= 0.0 || image_height_ <= 0.0 ||
       test_yaw_gain_ < 0.0 || test_pitch_gain_ < 0.0 ||
-      image_tolerance_x_ < 0.0 || image_tolerance_y_ < 0.0 || target_timeout_sec_ < 0.0)
+      image_tolerance_x_ < 0.0 || image_tolerance_y_ < 0.0 || target_timeout_sec_ < 0.0 ||
+      target_lost_return_to_startup_delay_sec_ < 0.0)
     {
       RCLCPP_FATAL(
         get_logger(),
-        "Invalid image params: image_width=%f, image_height=%f, horizontal_fov_deg=%f, test_yaw_gain=%f, test_pitch_gain=%f, image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f",
+        "Invalid image params: image_width=%f, image_height=%f, horizontal_fov_deg=%f, test_yaw_gain=%f, test_pitch_gain=%f, image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f, target_lost_return_to_startup_delay_sec=%f",
         image_width_, image_height_, horizontal_fov_deg_, test_yaw_gain_, test_pitch_gain_,
-        image_tolerance_x_, image_tolerance_y_, target_timeout_sec_);
+        image_tolerance_x_, image_tolerance_y_, target_timeout_sec_,
+        target_lost_return_to_startup_delay_sec_);
       throw std::runtime_error("invalid aimbot image parameters");
     }
     if (use_fov_image_tracking_ &&
@@ -236,11 +241,12 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
+      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), target_lost_return_delay=%.2fs, test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
       image_width_, image_height_, image_center_x_, image_center_y_,
       getImageTargetCenterX(), getImageTargetCenterY(),
       use_fov_image_tracking_ ? "fov" : "gain",
       horizontal_fov_deg_, image_tolerance_x_, image_tolerance_y_,
+      target_lost_return_to_startup_delay_sec_,
       enable_test_mode_ ? "true" : "false",
       startup_release_yaw_angle_, startup_release_pitch_angle_);
   }
@@ -389,6 +395,7 @@ private:
 
     if (mode != ControlMode::AutoTrack) {
       auto_track_timeout_active_ = false;
+      auto_track_timeout_returned_to_startup_ = false;
       startup_release_hold_active_ = false;
     }
 
@@ -510,12 +517,28 @@ private:
         if (!has_target_ || (this->now() - last_target_time_).seconds() > target_timeout_sec_) {
           if (!auto_track_timeout_active_) {
             auto_track_timeout_active_ = true;
+            auto_track_timeout_start_ = this->now();
+            auto_track_timeout_returned_to_startup_ = false;
             if (has_joint_state_) {
               // 目標喪失時は最初の1回だけ現在角をラッチし、その後はその目標を保持する。
               setCommandTargetRaw(yaw_angle_, pitch_angle_);
               publishCommandTarget();
               return;
             }
+          }
+          const double timeout_elapsed_sec =
+            (this->now() - auto_track_timeout_start_).seconds();
+          if (!auto_track_timeout_returned_to_startup_ &&
+            timeout_elapsed_sec >= target_lost_return_to_startup_delay_sec_)
+          {
+            setCommandTarget(startup_release_yaw_angle_, startup_release_pitch_angle_);
+            auto_track_timeout_returned_to_startup_ = true;
+            RCLCPP_INFO(
+              this->get_logger(),
+              "target_image_position timeout continued for %.2fs: return to startup_release target yaw=%f, pitch=%f",
+              timeout_elapsed_sec, command_yaw_angle_, command_pitch_angle_);
+            publishCommandTarget();
+            return;
           }
           RCLCPP_WARN_THROTTLE(
             this->get_logger(), *this->get_clock(), 2000,
@@ -526,6 +549,7 @@ private:
         }
 
         auto_track_timeout_active_ = false;
+        auto_track_timeout_returned_to_startup_ = false;
 
         if (entering_mode && has_joint_state_) {
           // Auto mode baseline is actual joint angle; pitch_offset is applied once at auto entry.
@@ -943,6 +967,8 @@ private:
   double command_yaw_angle_ = 0.0;
   double command_pitch_angle_ = 0.0;
   bool auto_track_timeout_active_ = false;
+  bool auto_track_timeout_returned_to_startup_ = false;
+  rclcpp::Time auto_track_timeout_start_{0, 0, RCL_ROS_TIME};
   bool startup_release_init_pending_ = true;
   bool startup_release_hold_active_ = false;
   bool has_active_control_mode_ = false;
@@ -967,6 +993,7 @@ private:
   double yaw_direction_;
   double pitch_direction_;
   double target_timeout_sec_;
+  double target_lost_return_to_startup_delay_sec_;
   bool enable_test_mode_ = false;
   double test_yaw_gain_ = 0.05;
   double test_pitch_gain_ = 0.05;

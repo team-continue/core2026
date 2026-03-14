@@ -497,6 +497,7 @@ flowchart TD
   - モード再突入時は古い入力を無効化して新規入力待ち
 - `AutoTrack`
   - 目標画像が timeout 内にある時のみ追尾
+  - 目標喪失直後は現在角を保持し、`target_lost_return_to_startup_delay_sec` 経過後は `startup_release_yaw_angle` / `startup_release_pitch_angle` へ戻る
   - 追尾方式は2種類
     - `use_fov_image_tracking=true`: 画角ベース（atan変換）
     - `false`: gain による角度加算
@@ -542,6 +543,7 @@ flowchart TD
 - `horizontal_fov_deg`
 - `image_tolerance_x`, `image_tolerance_y`
 - `target_timeout_sec`
+- `target_lost_return_to_startup_delay_sec`
 - `yaw_image_gain`, `pitch_image_gain`
 - `yaw_direction`, `pitch_direction`
 - `pitch_offset`

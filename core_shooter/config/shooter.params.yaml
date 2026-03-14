@@ -91,12 +91,13 @@
                 image_tolerance_x: 0.02
                 image_tolerance_y: 0.02
                 target_timeout_sec: 0.2
+                target_lost_return_to_startup_delay_sec: 2.0 # target喪失後、この秒数だけ現在角を保持したら startup_release_* へ戻す
                 max_yaw_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
                 max_pitch_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
 
                 # image error -> angle command gain（use_fov_image_tracking=false の時に使用）
-                yaw_image_gain: 0.0005
-                pitch_image_gain: 0.0005
+                yaw_image_gain: 0.001
+                pitch_image_gain: 0.01
                 yaw_direction: 1.0
                 pitch_direction: 1.0
 

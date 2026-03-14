@@ -147,7 +147,8 @@ def generate_launch_description():
             }
         ],
         remappings=[
-            hazard_remaps
+            hazard_remaps,
+            ("target_image_position", "/left/target_pose"),
         ]
     )
 
@@ -183,6 +184,7 @@ def generate_launch_description():
         ],
         remappings=[
             hazard_remaps,
+            ("target_image_position", "/right/target_pose"),
             # ("manual_pitch_angle", "test_pitch_angle"),
         ]
     )

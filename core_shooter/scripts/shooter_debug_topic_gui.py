@@ -66,11 +66,11 @@ class DebugTopicPublisher(Node):
             ),
         }
         self.point_publishers = {
-            "/left/target_image_position": self.create_publisher(
-                PointStamped, "/left/target_image_position", 10
+            "/left/target_pose": self.create_publisher(
+                PointStamped, "/left/target_pose", 10
             ),
-            "/right/target_image_position": self.create_publisher(
-                PointStamped, "/right/target_image_position", 10
+            "/right/target_pose": self.create_publisher(
+                PointStamped, "/right/target_pose", 10
             ),
         }
         self.can_tx_pub = self.create_publisher(CANArray, "/can/tx", 10)
@@ -245,7 +245,7 @@ class DebugGui:
         self.target_pad_coord_var = tk.StringVar(
             value="x=0.0, y=0.0 (center origin, +x right, +y up)"
         )
-        self.target_pad_topic_var = tk.StringVar(value="/left/target_image_position")
+        self.target_pad_topic_var = tk.StringVar(value="/left/target_pose")
         self.target_pad_display_w = 640
         self.target_pad_display_h = 360
         self.target_pad_canvas = None
@@ -554,7 +554,7 @@ class DebugGui:
         ttk.Label(
             frame,
             text=(
-                "Click pad to publish target_image_position as geometry_msgs/PointStamped "
+                "Click pad to publish target_pose as geometry_msgs/PointStamped "
                 "(logical area 1280x720, origin at center)"
             ),
             justify=tk.LEFT,
@@ -563,14 +563,14 @@ class DebugGui:
         ttk.Label(frame, text="Target").grid(row=1, column=0, sticky=tk.W, padx=(0, 8))
         ttk.Radiobutton(
             frame,
-            text="Left (/left/target_image_position)",
+            text="Left (/left/target_pose)",
             value="left",
             variable=self.target_pad_side_var,
             command=self._update_target_pad_topic_label,
         ).grid(row=1, column=1, sticky=tk.W, padx=(0, 8))
         ttk.Radiobutton(
             frame,
-            text="Right (/right/target_image_position)",
+            text="Right (/right/target_pose)",
             value="right",
             variable=self.target_pad_side_var,
             command=self._update_target_pad_topic_label,
@@ -614,9 +614,9 @@ class DebugGui:
     def _update_target_pad_topic_label(self) -> None:
         side = self.target_pad_side_var.get()
         if side == "right":
-            self.target_pad_topic_var.set("/right/target_image_position")
+            self.target_pad_topic_var.set("/right/target_pose")
             return
-        self.target_pad_topic_var.set("/left/target_image_position")
+        self.target_pad_topic_var.set("/left/target_pose")
 
     def _on_target_pad_press_or_drag(self, event) -> None:
         if self.target_pad_canvas is None:
@@ -648,9 +648,9 @@ class DebugGui:
         self._draw_target_pad_marker(x_canvas, y_canvas)
 
         topic = (
-            "/right/target_image_position"
+            "/right/target_pose"
             if self.target_pad_side_var.get() == "right"
-            else "/left/target_image_position"
+            else "/left/target_pose"
         )
         self.target_pad_coord_var.set(
             f"x={logical_x:.1f}, y={logical_y:.1f} (center origin, +x right, +y up)"
