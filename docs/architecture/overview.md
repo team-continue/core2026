@@ -78,6 +78,14 @@ graph TB
     AimBot -->|can/tx| Hardware
     ShooterCtrl -->|can/tx| Hardware
 
+    subgraph Localization["局在化（実機オプション）"]
+        PCDMap["PCD地図"] -->|点群| LocalizationNode["localization_node"]
+    end
+
+    FASTLIO -->|/cloud_registered| LocalizationNode
+    LocalizationNode -->|"map→odom TF"| RViz
+
+    style Localization fill:#e8f5e9,color:#333
     style BehaviorSystem fill:#fff3e0,color:#333
 ```
 
@@ -94,6 +102,7 @@ graph TB
 | `body_control_node` | core_body_controller | C++ | cmd_vel→オムニホイールCAN指令変換、レートリミッタ |
 | `core_hardware` | core_hardware | C++ | EtherCAT（SOEM）によるTeensy41スレーブ通信 |
 | `ros_tcp_endpoint` | ROS-TCP-Endpoint | Python | Unity-ROS2 TCPブリッジ |
+| `localization_node` | core_localization | C++ | NDT/ICPによるPCDマップベースのグローバル局在化（`map→odom` 動的TF） |
 | `target_detector` | core_enemy_detection | C++ | カメラ画像からダメージパネル検出 |
 | `target_selector` | core_enemy_detection | C++ | 最大面積パネルのターゲット選択 |
 | `emergency_handler_node` | core_mode | C++ | 緊急信号集約・ハザード状態管理 |
@@ -106,11 +115,12 @@ graph TB
 
 ## 起動モード
 
-| モード | コマンド | TCP EP | odom |
-|--------|---------|--------|------|
-| sim（デフォルト） | `navigation.launch.py` | o | sim |
-| sim + FAST-LIO | `navigation.launch.py odom_source:=fastlio` | o | FAST-LIO |
-| 実機 | `navigation.launch.py environment:=real` | x | FAST-LIO |
+| モード | コマンド | TCP EP | odom | localization |
+|--------|---------|--------|------|-------------|
+| sim（デフォルト） | `navigation.launch.py` | o | sim | x |
+| sim + FAST-LIO | `navigation.launch.py odom_source:=fastlio` | o | FAST-LIO | x |
+| 実機 | `navigation.launch.py environment:=real` | x | FAST-LIO | x |
+| 実機 + localization | `navigation.launch.py environment:=real use_localization:=true pcd_map_path:=...` | x | FAST-LIO | o |
 
 ### シミュレータモード（デフォルト）
 
@@ -134,7 +144,7 @@ ros2 launch core_launch navigation.launch.py environment:=real
 
 | 親フレーム | 子フレーム | 変換 |
 |-----------|-----------|------|
-| `map` | `odom` | 恒等変換（x=0, y=0, yaw=0） |
+| `map` | `odom` | 恒等変換（デフォルト）。`use_localization:=true` 時は `localization_node` が動的に更新 |
 | `base_link` | `livox_frame` | z=+0.5m, roll=π（上下反転） |
 
 動的TFは[TFフレームと座標系](tf-tree.md)を参照してください。

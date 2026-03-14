@@ -7,6 +7,7 @@
 | sim（デフォルト） | `navigation.launch.py` | o | sim | 開発テスト |
 | sim + FAST-LIO | `navigation.launch.py odom_source:=fastlio` | o | FAST-LIO | LiDARテスト |
 | 実機 | `navigation.launch.py environment:=real` | x | FAST-LIO | 実機走行 |
+| 実機 + localization | `navigation.launch.py environment:=real use_localization:=true pcd_map_path:=...` | x | FAST-LIO | グローバル局在化付き実機走行 |
 
 ## シミュレータモード
 
@@ -38,7 +39,8 @@ ros2 launch core_launch navigation.launch.py
 | `body_control_node` | core_body_controller | cmd_vel→CAN変換 | canarray時 |
 | `target_angle_node` | core_body_controller | 車体角度計算 | canarray時 |
 | `rviz2` | rviz2 | 可視化 | use_rviz時 |
-| `static_tf_map_odom` | tf2_ros | map→odom TF | 常時 |
+| `localization_node` | core_localization | NDT/ICPグローバル局在化 | use_localization時 |
+| `static_tf_map_odom` | tf2_ros | map→odom TF（静的） | use_localization無効時 |
 | `static_tf_base_livox` | tf2_ros | base_link→livox_frame TF | 常時 |
 
 ## 実機モード
