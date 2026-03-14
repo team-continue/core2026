@@ -54,6 +54,7 @@ private:
   int occupied_threshold_;
   bool allow_unknown_;
   bool use_diagonal_;
+  double cost_weight_;
 
   // Subscribers
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr global_map_sub_;

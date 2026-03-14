@@ -165,6 +165,8 @@ def _launch_nodes(context):
             'resolution': preset['resolution'],
             'origin_x': preset['origin_x'],
             'origin_y': preset['origin_y'],
+            'inflation_radius_m': 0.40,
+            'decay_margin_m': 0.20,
         }],
     ))
 
@@ -192,6 +194,7 @@ def _launch_nodes(context):
             'local_costmap_topic': '/costmap/local',
             'publish_in_global_frame': True,
             'global_frame_id': 'odom',
+            'cost_weight': 2.0,
         }],
     ))
 
