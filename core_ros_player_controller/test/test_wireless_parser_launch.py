@@ -21,17 +21,20 @@ from std_msgs.msg import UInt8MultiArray
 def generate_test_description():
     executable_override = os.environ.get("WIRELESS_PARSER_NODE_EXECUTABLE")
     local_build_executable = Path.cwd() / "wireless_parser_node"
+    param_file = Path(__file__).resolve().parents[1] / "config" / "wireless_parser_params.yaml"
     if executable_override:
         wireless_parser_node = launch_ros.actions.Node(
             executable=executable_override,
             name="wireless_parser_node",
             output="screen",
+            parameters=[str(param_file)],
         )
     elif local_build_executable.exists():
         wireless_parser_node = launch_ros.actions.Node(
             executable=str(local_build_executable),
             name="wireless_parser_node",
             output="screen",
+            parameters=[str(param_file)],
         )
     else:
         wireless_parser_node = launch_ros.actions.Node(
@@ -39,6 +42,7 @@ def generate_test_description():
             executable="wireless_parser_node",
             name="wireless_parser_node",
             output="screen",
+            parameters=[str(param_file)],
         )
 
     return (
@@ -192,8 +196,8 @@ class TestWirelessParserNode(unittest.TestCase):
         self.assertTrue(self.rotation_flag_event.wait(timeout=2.0), "Did not receive /rotation_flag")
 
         self.assertIsNotNone(self.cmd_vel_msg)
-        self.assertEqual(self.cmd_vel_msg.linear.x, 1.0)
-        self.assertEqual(self.cmd_vel_msg.linear.y, 1.0)
+        self.assertEqual(self.cmd_vel_msg.linear.x, 0.5)
+        self.assertEqual(self.cmd_vel_msg.linear.y, 0.5)
         self.assertAlmostEqual(self.cmd_vel_msg.angular.z, 1.0, places=4)
 
         self.assertIsNotNone(self.manual_mode_msg)

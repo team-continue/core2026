@@ -1,3 +1,6 @@
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -5,6 +8,12 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    default_param_file = os.path.join(
+        get_package_share_directory("core_ros_player_controller"),
+        "config",
+        "wireless_parser_params.yaml",
+    )
+
     wireless_arg = DeclareLaunchArgument(
         "wireless",
         default_value="/wireless",
@@ -55,12 +64,18 @@ def generate_launch_description():
         default_value="/test_mode",
         description="Output topic to remap /test_mode",
     )
+    params_file_arg = DeclareLaunchArgument(
+        "params_file",
+        default_value=default_param_file,
+        description="Path to the parameter file",
+    )
 
     node = Node(
         package="core_ros_player_controller",
         executable="wireless_parser_node",
         name="wireless_parser_node",
         output="screen",
+        parameters=[LaunchConfiguration("params_file")],
         remappings=[
             ("/wireless", LaunchConfiguration("wireless")),
             ("/rotation_flag", LaunchConfiguration("rotation_flag")),
@@ -86,5 +101,6 @@ def generate_launch_description():
         reloading_arg,
         hazard_status_arg,
         test_mode_arg,
+        params_file_arg,
         node,
     ])

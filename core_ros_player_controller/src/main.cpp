@@ -41,6 +41,9 @@ public:
     //=================================
     mouse_x_sensitivity_ = declare_parameter<double>("mouse_x_sensitivity", 1.0);
     mouse_y_sensitivity_ = declare_parameter<double>("mouse_y_sensitivity", 1.0);
+    mouse_x_inverse_ = declare_parameter<bool>("mouse_x_inverse", false);
+    mouse_y_inverse_ = declare_parameter<bool>("mouse_y_inverse", false);
+    cmd_vel_xy_scale_ = declare_parameter<double>("cmd_vel_xy_scale", 1.0);
     
     
     
@@ -115,18 +118,18 @@ private:
 
     // マウス入力の正規化、感度適用
     const float mouse_x = (static_cast<float>(static_cast<int8_t>(raw_mouse_x)) / 127.0f) *
-      static_cast<float>(mouse_x_sensitivity_);
+      static_cast<float>(mouse_x_sensitivity_) * (mouse_x_inverse_ ? -1.0f : 1.0f);
     const float mouse_y = (static_cast<float>(static_cast<int8_t>(raw_mouse_y)) / 127.0f) *
-      static_cast<float>(mouse_y_sensitivity_);
+      static_cast<float>(mouse_y_sensitivity_) * (mouse_y_inverse_ ? -1.0f : 1.0f);
 
     // キー入力とマウス入力からcmd_vel生成
     const double linear_x_from_wa = static_cast<double>(key_w) - static_cast<double>(key_s);
     const double linear_y_from_ad = static_cast<double>(key_a) - static_cast<double>(key_d);
     const double angular_from_mouse = static_cast<double>(mouse_x);
 
-    cmd_vel_msg.linear.x = linear_x_from_wa;
-    cmd_vel_msg.linear.y = linear_y_from_ad;
-    cmd_vel_msg.angular.z = std::clamp(angular_from_mouse, -1.0, 1.0);
+    cmd_vel_msg.linear.x = linear_x_from_wa * cmd_vel_xy_scale_;
+    cmd_vel_msg.linear.y = linear_y_from_ad * cmd_vel_xy_scale_;
+    cmd_vel_msg.angular.z = angular_from_mouse;
     
     // body_controllerの回転フラグを設定、UIの自動フラグがOFFのとき胴体に追従させる
     rotation_flag_msg.data = ui_auto_flag == 0;
@@ -183,6 +186,9 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr test_mode_publisher_;
   double mouse_x_sensitivity_;
   double mouse_y_sensitivity_;
+  bool mouse_x_inverse_{false};
+  bool mouse_y_inverse_{false};
+  double cmd_vel_xy_scale_{1.0};
   bool prev_key_reload_{false};
   bool prev_ui_auto_flag_{false};
   bool ui_auto_flag_initialized_{false};
