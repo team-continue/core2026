@@ -1,3 +1,4 @@
+#include <cmath>
 #include <core_msgs/msg/can_array.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -64,8 +65,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rotation_pub_;
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pad_ps_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pad_triangle_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pad_square_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr rotation_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr body_target_angle_pub_;
@@ -77,8 +77,9 @@ private:
 
   constexpr static double MAX_ROTATION = M_PI * 10;
   constexpr static std::chrono::milliseconds TIMER_PERIOD = std::chrono::milliseconds(100);
+  constexpr static double TIMER_DT = std::chrono::duration<double>(TIMER_PERIOD).count();
 
-  PID pid_ = PID(2.595048087059986, 0.0, std::chrono::duration<double>(TIMER_PERIOD).count());
+  PID pid_ = PID(2.595048087059986, 0.0, TIMER_DT);
   double gimbalControl();
 
   constexpr static double INITIAL_TARGET_ANGLE = 0.0;
@@ -88,11 +89,16 @@ private:
   double world_target_angle_ = 0;
   double body_target_angle_ = INITIAL_TARGET_ANGLE;
   bool rotation_flag_ = false;
-  double latest_imu_yaw_ = 0;
+  double latest_imu_omega_ = 0;
+  double latest_imu_yaw_estimate_ = 0;
   double latest_body_omega_ = 0;
   double latest_body_angle_ = 0;
   bool emergency_stop_flag_ = true;
   geometry_msgs::msg::Twist latest_twist_;
+
+  static double normalizeAngle(double angle) {
+    return std::atan2(std::sin(angle), std::cos(angle));
+  }
 
   double calc_nearlest_target_angle(double current_angle) {
     double remainder = fmod(current_angle - INITIAL_TARGET_ANGLE, 2 * M_PI);
@@ -109,36 +115,16 @@ private:
 TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
   // target_angle_pub_ =
   //     this->create_publisher<std_msgs::msg::Float64>("target_angle", 10);
-  pad_ps_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "pad/ps", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
-        if (msg->data) {
-          if (rotation_flag_) {
-            world_target_angle_ += M_PI / 2;
-          } else {
-            body_target_angle_ += M_PI / 2;
-          }
-        } else {
-          // Do nothing
-        }
-      });
-  pad_triangle_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "pad/triangle", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
+  rotation_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+      "/rotation", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
         if (msg->data) {
           rotation_flag_ = true;
-          world_target_angle_ = latest_imu_yaw_;
+          world_target_angle_ = latest_imu_yaw_estimate_;
           pid_.reset();
         } else {
-          // Do nothing
-        }
-      });
-  pad_square_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "pad/square", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
-        if (msg->data) {
           rotation_flag_ = false;
           body_target_angle_ = calc_nearlest_target_angle(latest_body_angle_);
           pid_.reset();
-        } else {
-          // Do nothing
         }
       });
   twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
@@ -149,13 +135,8 @@ TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
   can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx", 10);
   imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
       "imu", 10, [this](const sensor_msgs::msg::Imu::SharedPtr msg) {
-        // calc quaternion to euler angle
-        double x = msg->orientation.x;
-        double y = msg->orientation.y;
-        double z = msg->orientation.z;
-        double w = msg->orientation.w;
-        latest_imu_yaw_ = atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
-        // RCLCPP_INFO(this->get_logger(), "yaw: %f", latest_imu_yaw_);
+        // New IMU publishes angular velocity, so estimate yaw by integration in timer callback.
+        latest_imu_omega_ = msg->angular_velocity.z;
       });
   body_target_angle_pub_ = this->create_publisher<std_msgs::msg::Float64>("body_target_angle", 10);
   body_omega_sub_ = this->create_subscription<std_msgs::msg::Float64>(
@@ -176,13 +157,12 @@ TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
 
 double TargetAngleNode::gimbalControl() {
   if (rotation_flag_) {
-    world_target_angle_ +=
-        latest_twist_.angular.z *
-        std::chrono::duration_cast<std::chrono::duration<double>>(TIMER_PERIOD).count();
-    world_target_angle_ = fmod(world_target_angle_, 2 * M_PI);
+    world_target_angle_ += latest_twist_.angular.z * TIMER_DT;
+    world_target_angle_ = normalizeAngle(world_target_angle_);
     RCLCPP_INFO(this->get_logger(), "world_target_angle_: %f", world_target_angle_);
-    RCLCPP_INFO(this->get_logger(), "latest_imu_yaw_: %f", latest_imu_yaw_);
-    return pid_.update(world_target_angle_ - latest_imu_yaw_, MAX_ROTATION) - latest_body_omega_;
+    RCLCPP_INFO(this->get_logger(), "latest_imu_yaw_estimate_: %f", latest_imu_yaw_estimate_);
+    return pid_.update(world_target_angle_ - latest_imu_yaw_estimate_, MAX_ROTATION) -
+           latest_body_omega_;
   } else {
     RCLCPP_INFO(this->get_logger(), "body_target_angle_: %f", body_target_angle_);
     return pid_.update(body_target_angle_ - latest_body_angle_, MAX_ROTATION);
@@ -190,6 +170,9 @@ double TargetAngleNode::gimbalControl() {
 }
 
 void TargetAngleNode::timer_callback() {
+  latest_imu_yaw_estimate_ =
+      normalizeAngle(latest_imu_yaw_estimate_ + latest_imu_omega_ * TIMER_DT);
+
   core_msgs::msg::CANArray can_msg;
   can_msg.array.resize(1);
   can_msg.array[0].id = 4;
