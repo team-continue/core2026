@@ -7,6 +7,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from nav_msgs.msg import OccupancyGrid
 from PIL import Image
+from scipy.ndimage import distance_transform_edt
 
 
 class MapServerNode(Node):
@@ -21,6 +22,8 @@ class MapServerNode(Node):
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('occupied_thresh', 0.65)
         self.declare_parameter('free_thresh', 0.25)
+        self.declare_parameter('inflation_radius_m', 0.0)
+        self.declare_parameter('decay_margin_m', 0.0)
 
         image_path = self.get_parameter('image_path').value
         resolution = self.get_parameter('resolution').value
@@ -30,6 +33,8 @@ class MapServerNode(Node):
         odom_frame = self.get_parameter('odom_frame').value
         occupied_thresh = self.get_parameter('occupied_thresh').value
         free_thresh = self.get_parameter('free_thresh').value
+        inflation_radius_m = self.get_parameter('inflation_radius_m').value
+        decay_margin_m = self.get_parameter('decay_margin_m').value
 
         # Load image
         self.get_logger().info(f'Loading map from: {image_path}')
@@ -54,6 +59,40 @@ class MapServerNode(Node):
         num_unk = int(np.sum(occupancy == -1))
         self.get_logger().info(
             f'Occupancy: free={num_free}, occupied={num_occ}, unknown={num_unk}')
+
+        # Apply inflation around obstacles
+        if inflation_radius_m > 0.0:
+            not_occupied = (occupancy != 100)
+            dist_cells = distance_transform_edt(not_occupied)
+            dist_m = dist_cells * resolution
+
+            free_mask = (occupancy == 0)
+            total_radius = inflation_radius_m + decay_margin_m
+
+            # LETHAL zone: free cells within inflation_radius_m of obstacle
+            lethal_zone = free_mask & (dist_m <= inflation_radius_m)
+            occupancy[lethal_zone] = 100
+
+            # Decay zone: linear cost decay from 99 to 1
+            num_decay = 0
+            if decay_margin_m > 0.0:
+                decay_zone = free_mask & (dist_m > inflation_radius_m) & (
+                    dist_m <= total_radius)
+                decay_cost = np.clip(
+                    np.round(
+                        (total_radius - dist_m[decay_zone])
+                        / decay_margin_m * 99
+                    ),
+                    1, 99,
+                ).astype(np.int8)
+                occupancy[decay_zone] = decay_cost
+                num_decay = int(np.sum(decay_zone))
+
+            self.get_logger().info(
+                f'Inflation applied: lethal_radius={inflation_radius_m}m, '
+                f'decay_margin={decay_margin_m}m, '
+                f'lethal_cells={int(np.sum(lethal_zone))}, '
+                f'decay_cells={num_decay}')
 
         height, width = occupancy.shape
 

@@ -23,6 +23,7 @@ PathPlannerNode::PathPlannerNode(const rclcpp::NodeOptions & options)
   occupied_threshold_ = declare_parameter<int>("occupied_threshold", 50);
   allow_unknown_ = declare_parameter<bool>("allow_unknown", true);
   use_diagonal_ = declare_parameter<bool>("use_diagonal", true);
+  cost_weight_ = declare_parameter<double>("cost_weight", 0.0);
 
   global_map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
     global_map_topic_, rclcpp::QoS(1).transient_local().reliable(),
@@ -53,7 +54,7 @@ PathPlannerNode::PathPlannerNode(const rclcpp::NodeOptions & options)
 
   planner_.setSettings(
     PathPlanner::Settings{occupied_threshold_,
-      allow_unknown_, use_diagonal_});
+      allow_unknown_, use_diagonal_, cost_weight_});
 
   RCLCPP_INFO(get_logger(), "Path Planner Node initialized");
 }
