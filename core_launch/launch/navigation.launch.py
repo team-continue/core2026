@@ -101,7 +101,7 @@ def _launch_nodes(context):
             name='livox_lidar_publisher',
             output='screen',
             parameters=[{
-                'xfer_format': 1,
+                'xfer_format': 0,
                 'multi_topic': 0,
                 'data_src': 0,
                 'publish_freq': 10.0,
@@ -242,7 +242,7 @@ def _launch_nodes(context):
             name='cmd_vel_smoother_node',
             output='screen',
             parameters=[{
-                'alpha': 0.3,
+                'alpha': 1.0,
                 'input_topic': '/cmd_vel_raw',
                 'output_topic': '/cmd_vel',
                 'timeout_sec': 0.2,

@@ -65,8 +65,8 @@
                 # test/manual mode
                 enable_test_mode: false # test_mode topic未受信時のデフォルト値（aim_bot / shooter_controller ともに test_mode: std_msgs/Bool を優先）
                 # test_mode: std_msgs/Bool (relative topic)
-                test_yaw_gain: 0.01 # test_mode時のyaw加算係数（manual_modeのyawは固定なので未使用）
-                test_pitch_gain: 0.01 # test/manual mode時のpitch加算係数（-1..1入力に適用）
+                test_yaw_gain: 0.05 # test_mode時のyaw加算係数（manual_modeのyawは固定なので未使用）
+                test_pitch_gain: 0.1 # test/manual mode時のpitch加算係数（-1..1入力に適用）
                 # 初期値のジンバルの向き
                 manual_mode_yaw_fixed_angle: 0.0 # manual_mode遷移時に設定し、その後も固定する yaw 角度[rad]
                 manual_mode_pitch_initial_angle: 0.0 # manual_mode遷移時に設定する初期 pitch 角度[rad]
@@ -128,3 +128,5 @@
 
                 # fixed angle offset [rad]
                 pitch_offset: 0.0
+
+                shoot_motor_on_command: 1500.0
