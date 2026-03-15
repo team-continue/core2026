@@ -100,7 +100,7 @@ def _launch_nodes(context):
             name='livox_lidar_publisher',
             output='screen',
             parameters=[{
-                'xfer_format': 1,
+                'xfer_format': 0,  # PointCloud2 (MID-360)
                 'multi_topic': 0,
                 'data_src': 0,
                 'publish_freq': 10.0,
