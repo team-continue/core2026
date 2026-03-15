@@ -10,6 +10,7 @@
 #include "esc.h"
 #include "damiao.h"
 #include "robostride.h"
+#include "led.h"
 #include "pin.h"
 #include "wireless.h"
 
@@ -26,6 +27,7 @@ unsigned long prev_ts = 0;
 int counter1 = 0, counter2 = 0, led=0;
 int len_wireless = 0;
 WirelessModule wireless;
+Led upper_led(LED_UPPER_SERIAL_PIN, 1, 20);
 
 // LED timer
 void led_timer_cb();
@@ -71,6 +73,8 @@ void ecat_FrameCallBack(){
     ecat_setFloat(i+CAN3_NUM_MOTOR+CAN2_NUM_MOTOR, f, 6);
   }
 
+  destory[0] = bottom_can3.destroy() ? 1 : 0;
+  damege[0] = bottom_can3.hp();
   // damege
   ecat_setUint8(100, damege, 1); 
   // destory
@@ -106,7 +110,7 @@ void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
     case 13:
     case 14:
       if(len>=1){
-        sts.servos[id - 7].ref_pos = data[len - 1];
+        sts.setRefPos(id - 7, data[len - 1]);
       }
       break;
     case 15:
@@ -129,12 +133,22 @@ void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
   }
 }
 
+void ecat_PacketCallBack(const uint8_t id, const uint8_t *data, const uint8_t len) {
+  if (id != 100 || data == nullptr || len < 3) {
+    return;
+  }
+
+  upper_led.write(data[0]);
+  bottom_can3.setLedBytes(data[1], data[2]);
+}
+
 void setup(void) {
   // 非常停止
   pinMode(PIN_EMERGENCY, OUTPUT);
   digitalWrite(PIN_EMERGENCY, DEFAULT_EMERGENCY_STATE);
   // LED
   pinMode(LED_BUILTIN, OUTPUT);
+  upper_led.init();
 
   ecat_begin();
   wireless.init();
@@ -160,6 +174,7 @@ void led_timer_cb(){
 }
 
 void loop() {
+  upper_led.update();
   ecat_update();
   sts.loop();
   can3_loop();

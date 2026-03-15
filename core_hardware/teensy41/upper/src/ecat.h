@@ -13,3 +13,4 @@ void ecat_send();
 
 void ecat_FrameCallBack();
 void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len);
+void ecat_PacketCallBack(const uint8_t id, const uint8_t *data, const uint8_t len);
