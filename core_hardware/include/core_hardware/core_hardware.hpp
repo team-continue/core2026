@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <string>
 
 #include "core_hardware/hardware_snapshot.hpp"
@@ -36,7 +37,9 @@ class CoreHardware : public rclcpp::Node {
   core_msgs::msg::CANArray pending_can_array_;
   std::string socket_path_;
   bool connected_ = false;
+  bool ethercat_connected_ = false;
   uint32_t sequence_ = 0;
+  std::chrono::system_clock::time_point last_no_connect_log_tp_{};
   sensor_msgs::msg::JointState joint_states_;
   std_msgs::msg::UInt8MultiArray wireless_;
   std_msgs::msg::Bool destroy_;
@@ -46,6 +49,7 @@ class CoreHardware : public rclcpp::Node {
   void timer_cb();
   void can_cb(const core_msgs::msg::CANArray::SharedPtr msg);
   void ensure_connected();
+  void update_ethercat_connection_log();
   void handle_message(core_hardware::IpcMessageType type, uint32_t sequence, const std::vector<uint8_t>& payload);
   void handle_state_snapshot(const core_hardware::HardwareSnapshot& snapshot);
   void handle_float_packet(uint8_t id, const std::vector<float>& data);

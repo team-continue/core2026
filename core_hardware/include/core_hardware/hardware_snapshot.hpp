@@ -22,6 +22,8 @@ enum class SnapshotFieldId : uint16_t {
   kMotorRef = 7,
   kSystemRef = 8,
   kLedTape = 9,
+  kEthercatConnected = 10,
+  kLastEthercatRxMs = 11,
 };
 
 struct HardwareSnapshot {
@@ -34,6 +36,8 @@ struct HardwareSnapshot {
   std::array<float, 16> motor_ref{};
   std::array<uint8_t, 1> system_ref{};
   std::array<uint16_t, 3> led_tape{};
+  std::array<uint8_t, 1> ethercat_connected{};
+  std::array<uint64_t, 1> last_ethercat_rx_ms{};
 };
 
 inline HardwareSnapshot snapshot_from_objects(const _Objects& objects) {
@@ -107,6 +111,8 @@ inline std::vector<uint8_t> encode_snapshot(const HardwareSnapshot& snapshot) {
   detail::append_field(buffer, SnapshotFieldId::kMotorRef, snapshot.motor_ref.data(), snapshot.motor_ref.size());
   detail::append_field(buffer, SnapshotFieldId::kSystemRef, snapshot.system_ref.data(), snapshot.system_ref.size());
   detail::append_field(buffer, SnapshotFieldId::kLedTape, snapshot.led_tape.data(), snapshot.led_tape.size());
+  detail::append_field(buffer, SnapshotFieldId::kEthercatConnected, snapshot.ethercat_connected.data(), snapshot.ethercat_connected.size());
+  detail::append_field(buffer, SnapshotFieldId::kLastEthercatRxMs, snapshot.last_ethercat_rx_ms.data(), snapshot.last_ethercat_rx_ms.size());
   return buffer;
 }
 
@@ -149,6 +155,12 @@ inline HardwareSnapshot decode_snapshot(const std::vector<uint8_t>& payload) {
         break;
       case SnapshotFieldId::kLedTape:
         detail::read_field(field_payload, field_bytes, snapshot.led_tape);
+        break;
+      case SnapshotFieldId::kEthercatConnected:
+        detail::read_field(field_payload, field_bytes, snapshot.ethercat_connected);
+        break;
+      case SnapshotFieldId::kLastEthercatRxMs:
+        detail::read_field(field_payload, field_bytes, snapshot.last_ethercat_rx_ms);
         break;
       default:
         break;

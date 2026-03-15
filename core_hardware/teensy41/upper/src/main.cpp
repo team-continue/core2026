@@ -116,11 +116,7 @@ void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
     case 15:
     // case 16:
       if(len >= 1){
-        if(data[0] < 0){
-          // esc.init();
-        }else{
-          esc.write(data[len - 1]);
-        }
+        esc.write(data[len - 1]);
       }
       break;
     // case 17:

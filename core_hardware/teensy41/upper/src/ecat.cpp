@@ -72,9 +72,13 @@ void app_hook() {
   if ((CC_ATOMIC_GET(ESCvar.App.state) & APPSTATE_INPUT) == 0) {
     return;
   }
+  if (!ecat_rxpdo_pending) {
+    return;
+  }
 
   dispatch_received_outputs();
   ecat_FrameCallBack();
+  ecat_rxpdo_pending = false;
 }
 
 void safe_output_hook() {
@@ -86,6 +90,8 @@ void safe_output_hook() {
 }  // namespace
 
 _Objects Obj = {};
+volatile uint32_t ecat_prev_connect_ts = 0;
+volatile bool ecat_rxpdo_pending = false;
 
 bool ecat_setUint8(const uint8_t id, const uint8_t *data, const int u8_len) {
   if (data == nullptr || u8_len <= 0) {
@@ -157,6 +163,8 @@ void ecat_begin() {
   };
 
   memset(&obj, 0, sizeof(obj));
+  ecat_prev_connect_ts = millis();
+  ecat_rxpdo_pending = false;
   obj.serial = 1;
   ecat_slv_init(&config);
 }

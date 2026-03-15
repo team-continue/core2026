@@ -49,9 +49,11 @@ void CoreHardware::timer_cb() {
       joint_pub_->publish(joint_states_);
       pending_can_array_.array.clear();
     }
+    update_ethercat_connection_log();
   } catch (const std::exception& ex) {
     client_.close();
     connected_ = false;
+    ethercat_connected_ = false;
     pending_can_array_.array.clear();
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "Hardware bridge IPC error: %s", ex.what());
   }
@@ -76,6 +78,35 @@ void CoreHardware::ensure_connected() {
   client_.connect(socket_path_);
   connected_ = true;
   RCLCPP_INFO(get_logger(), "Connected to hardware daemon via %s", socket_path_.c_str());
+}
+
+void CoreHardware::update_ethercat_connection_log() {
+  const auto now_tp = std::chrono::system_clock::now();
+  const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          now_tp.time_since_epoch())
+                          .count();
+  const bool daemon_connected = latest_state_.ethercat_connected[0] != 0U;
+  const uint64_t last_rx_ms = latest_state_.last_ethercat_rx_ms[0];
+  const bool ethercat_connected =
+      daemon_connected &&
+      last_rx_ms != 0U &&
+      now_ms >= static_cast<int64_t>(last_rx_ms) &&
+      (now_ms - static_cast<int64_t>(last_rx_ms)) <= 1000;
+
+  if (ethercat_connected) {
+    if (!ethercat_connected_) {
+      RCLCPP_INFO(get_logger(), "EtherCAT connected");
+      ethercat_connected_ = true;
+    }
+    return;
+  }
+
+  ethercat_connected_ = false;
+  if (last_no_connect_log_tp_.time_since_epoch().count() == 0 ||
+      (now_tp - last_no_connect_log_tp_) >= std::chrono::seconds(1)) {
+    RCLCPP_WARN(get_logger(), "EtherCAT no connect");
+    last_no_connect_log_tp_ = now_tp;
+  }
 }
 
 void CoreHardware::handle_message(core_hardware::IpcMessageType type, uint32_t, const std::vector<uint8_t>& payload) {
