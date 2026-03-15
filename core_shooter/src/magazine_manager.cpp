@@ -180,7 +180,7 @@ private:
       remainingDiskEstimator(-1);
 
       // hold=true中の射撃回数を数え、10回でregripする
-      if (state_ == State::HOLDING && hold_on_ && !hazard_active_ && remaining_disks_ > 10) {
+      if (state_ == State::HOLDING && hold_on_ && !hazard_active_ && remaining_disks_ > 6) {
         ++hold_shots_since_grip_;
         RCLCPP_INFO(this->get_logger(), "hold_shots_since_grip: %d", hold_shots_since_grip_);
         maybeStartRegrip();
