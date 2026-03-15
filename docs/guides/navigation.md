@@ -183,7 +183,7 @@ ros2 launch core_launch navigation.launch.py map_name:=curious_house
 SSH経由やデスクトップショートカットからの起動で発生しやすい問題です。
 
 - **原因**: non-interactive シェルでは `.bashrc` が読み込まれず、ROS 2の環境変数が未設定
-- **対処**: `navigation.sh` を使って起動する（→ [navigation.sh を使う場合](#起動navigation.sh-を使う場合)）
+- **対処**: `navigation.sh` を使って起動する（→ [navigation.sh を使う場合](#起動navigationsh-を使う場合)）
 
 ### 経路が計画されない
 
