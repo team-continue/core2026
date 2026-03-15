@@ -46,7 +46,7 @@ def generate_launch_description():
             GroupAction([
                 PushRosNamespace("emergency"),
                 emergency_handler_node,
-                # diagnostic_node,
+                diagnostic_node,
             ]),
         ]),
     ])

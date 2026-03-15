@@ -1,0 +1,56 @@
+/**:
+  ros__parameters:
+    blue_range_lower:
+    - 105
+    - 64
+    - 125
+    blue_range_upper:
+    - 135
+    - 255
+    - 255
+    enemy:
+    - 0
+    image_size:
+    - 1280
+    - 720
+    led_kernel_matrix_size:
+    - 5
+    - 5
+    mage:
+      mode: unchanged
+    panel_kernel_matrix_size:
+    - 9
+    - 9
+    panel_lab_range_lower:
+    - 0
+    - 130
+    - 95
+    panel_lab_range_upper:
+    - 100
+    - 175
+    - 150
+    qos_overrides:
+      /parameter_events:
+        publisher:
+          depth: 1000
+          durability: volatile
+          history: keep_last
+          reliability: reliable
+    red_range_lower1:
+    - 0
+    - 100
+    - 125
+    red_range_lower2:
+    - 175
+    - 125
+    - 125
+    red_range_upper1:
+    - 10
+    - 255
+    - 255
+    red_range_upper2:
+    - 180
+    - 255
+    - 255
+    use_sim_time: false
+

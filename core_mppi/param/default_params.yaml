@@ -16,8 +16,8 @@ core_mppi_node:
     mppi.noise_vy: 0.25
     mppi.noise_wz: 0.8
 
-    mppi.max_vx: 1.0
-    mppi.max_vy: 1.0
+    mppi.max_vx: 0.5
+    mppi.max_vy: 0.5
     mppi.max_wz: 3.14
 
     mppi.w_path: 3.0
@@ -25,4 +25,6 @@ core_mppi_node:
     mppi.w_obstacle: 18.0
     mppi.w_control: 0.3
     mppi.w_smooth: 0.8
+    mppi.w_heading: 0.1
     mppi.unknown_cost: 0.5
+    mppi.heading_lookahead: 3

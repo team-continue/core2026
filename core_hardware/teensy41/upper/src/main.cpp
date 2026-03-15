@@ -3,35 +3,38 @@
 #include <FlexCAN_T4.h>
 
 #include "pi.h"
-#include "packet.h"
+#include "ecat.h"
 #include "feetech.h"
 #include "can3.h"
 #include "can2.h"
 #include "esc.h"
 #include "damiao.h"
 #include "robostride.h"
+#include "led.h"
 #include "pin.h"
+#include "wireless.h"
 
 #define DEFAULT_EMERGENCY_STATE HIGH
 
 STS sts;
 unsigned long prev_connect_ros2_ts_=0;
 bool connect_ros2 = false;
-uint8_t wireless[LEN_WIRELESS] = {0};
+uint8_t wireless_data[LEN_WIRELESS] = {0};
 uint8_t hardware_enable[1] = {0};
 uint8_t destory[1] = {0};
 uint8_t damege[1] = {0};
 unsigned long prev_ts = 0;
 int counter1 = 0, counter2 = 0, led=0;
 int len_wireless = 0;
-uint8_t wirelessbuffer_[MAX_DATA_LENGTH];
+WirelessModule wireless;
+Led upper_led(LED_UPPER_SERIAL_PIN, 1, 20);
 
 // LED timer
 void led_timer_cb();
 IntervalTimer led_timer;
 
 // PCから受信時に一度呼ばれるやつ
-void packet_FrameCallBack(){
+void ecat_FrameCallBack(){
   // rosと接続中
   prev_connect_ros2_ts_ = millis();
   // PCに送信するデータを登録
@@ -44,7 +47,7 @@ void packet_FrameCallBack(){
       can3_motor[i]->motor_ref.position_rad,
       can3_motor[i]->motor_state.position_rad
     };
-    packet_setFloat(i, f, 6);
+    ecat_setFloat(i, f, 6);
   }
   for(int i =0;i<CAN2_NUM_MOTOR;++i){
     float f[6] = {
@@ -55,7 +58,7 @@ void packet_FrameCallBack(){
       can2_motor[i].ref.position_rad,
       can2_motor[i].feedback.position_rad
     };
-    packet_setFloat(i + CAN3_NUM_MOTOR, f, 6);
+    ecat_setFloat(i + CAN3_NUM_MOTOR, f, 6);
   }
 
   for(int i =0;i<LEN_SERVO;++i){
@@ -67,32 +70,25 @@ void packet_FrameCallBack(){
       sts.servos[i].ref_pos,
       sts.servos[i].pos
     };
-    packet_setFloat(i+CAN3_NUM_MOTOR+CAN2_NUM_MOTOR, f, 6);
+    ecat_setFloat(i+CAN3_NUM_MOTOR+CAN2_NUM_MOTOR, f, 6);
   }
 
+  destory[0] = bottom_can3.destroy() ? 1 : 0;
+  damege[0] = bottom_can3.hp();
   // damege
-  packet_setUint8(100, damege, 1); 
+  ecat_setUint8(100, damege, 1); 
   // destory
-  packet_setUint8(101, destory, 1);
+  ecat_setUint8(101, destory, 1);
   // wireless
-  while(PORT_WIRELESS.available()){
-    wireless[len_wireless] = PORT_WIRELESS.read();
-    if(wireless[len_wireless] == '\n'){
-      packet_setUint8(102, wireless, len_wireless);
-      len_wireless = 0;
-    }
-    if(len_wireless == LEN_WIRELESS-2){
-      len_wireless = 0;
-    }
-    len_wireless++;
+  if (wireless.update(wireless_data)) {
+    ecat_setUint8(102, wireless_data, LEN_WIRELESS);
   }
   hardware_enable[0] = damiao_motor[0].connect ? 0 : 1;
-  packet_setUint8(104, hardware_enable, 1);
-  packet_send();
+  ecat_setUint8(104, hardware_enable, 1);
 }
 
 // // PCから受信時にパケットごとに呼ばれるやつ
-void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len){
+void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
   switch(id){
     case 0:
     case 1:
@@ -114,7 +110,7 @@ void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len
     case 13:
     case 14:
       if(len>=1){
-        sts.servos[id - 7].ref_pos = data[len - 1];
+        sts.setRefPos(id - 7, data[len - 1]);
       }
       break;
     case 15:
@@ -127,14 +123,23 @@ void packet_PacketCallBack(const uint8_t id, const float *data, const size_t len
         }
       }
       break;
-    case 17:
-      if(len>=1){
-        digitalWrite(PIN_EMERGENCY, data[len-1] != 0.f);
-      }
+    // case 17:
+    //   if(len>=1){
+    //     digitalWrite(PIN_EMERGENCY, data[len-1] != 0.f);
+    //   }
       break;
     default:
       break;
   }
+}
+
+void ecat_PacketCallBack(const uint8_t id, const uint8_t *data, const uint8_t len) {
+  if (id != 100 || data == nullptr || len < 3) {
+    return;
+  }
+
+  upper_led.write(data[0]);
+  bottom_can3.setLedBytes(data[1], data[2]);
 }
 
 void setup(void) {
@@ -143,10 +148,10 @@ void setup(void) {
   digitalWrite(PIN_EMERGENCY, DEFAULT_EMERGENCY_STATE);
   // LED
   pinMode(LED_BUILTIN, OUTPUT);
+  upper_led.init();
 
-  packet_begin();
-  PORT_WIRELESS.begin(115200);
-  PORT_WIRELESS.addMemoryForRead(&wirelessbuffer_, sizeof(wirelessbuffer_));
+  ecat_begin();
+  wireless.init();
   sts.init();
   can3_init();
   can2_init();
@@ -161,7 +166,6 @@ void led_timer_cb(){
   if(!connect_ros2){
     digitalWrite(LED_BUILTIN, HIGH);
     sts.disable = true;
-    packet_send();
   }else{
     led = !led;
     digitalWrite(LED_BUILTIN, led);
@@ -170,7 +174,8 @@ void led_timer_cb(){
 }
 
 void loop() {
-  packet_update();
+  upper_led.update();
+  ecat_update();
   sts.loop();
   can3_loop();
   can2_loop();

@@ -29,7 +29,7 @@
                 loading_motor_speed: 6.5
 
                 # shoot motor parameters
-                target_speed: [2000.0, 1750.0, 1500.0]
+                target_speed: [1400.0, 1300.0, 1200.0]
 
                 # jam parameters
                 enable_jam_detection: false
@@ -43,7 +43,7 @@
                 # motor ids are overridden in launch
                 # disk_hold_left_motor_id: -> launch
                 # disk_hold_right_motor_id: -> launch
-                remaining_disks: 30 # 初期弾数（例: 27 - loading_disk）
+                max_disks: 24 # 満タン時の弾数
                 disk_thickness: 20.0 # [mm]
                 sensor_height: 500.0 # [mm]
                 window_size: 3 # 移動平均の窓サイズ
@@ -63,14 +63,15 @@
                 rate: 30.0
 
                 # test/manual mode
-                enable_test_mode: false # test_mode topic未受信時のデフォルト値（test_mode: std_msgs/Bool が来たらtopic値を優先）
+                enable_test_mode: false # test_mode topic未受信時のデフォルト値（aim_bot / shooter_controller ともに test_mode: std_msgs/Bool を優先）
                 # test_mode: std_msgs/Bool (relative topic)
-                test_yaw_gain: 0.01 # test_mode時のyaw加算係数（manual_modeのyawは固定なので未使用）
-                test_pitch_gain: 0.005 # test/manual mode時のpitch加算係数（-1..1入力に適用）
+                test_yaw_gain: 0.05 # test_mode時のyaw加算係数（manual_modeのyawは固定なので未使用）
+                test_pitch_gain: 0.2 # test/manual mode時のpitch加算係数（-1..1入力に適用）
+                # 初期値のジンバルの向き
                 manual_mode_yaw_fixed_angle: 0.0 # manual_mode遷移時に設定し、その後も固定する yaw 角度[rad]
                 manual_mode_pitch_initial_angle: 0.0 # manual_mode遷移時に設定する初期 pitch 角度[rad]
-                startup_release_yaw_angle: 0.0 # ノード再起動後、最初の非常停止解除時に設定する yaw 角度[rad]
-                startup_release_pitch_angle: 0.0 # ノード再起動後、最初の非常停止解除時に設定する pitch 角度[rad]
+                startup_release_yaw_angle: 0.0 # ノード再起動後、最初の非常停止解除時に設定する yaw 角度[rad]（正面を向かせたい角度）
+                startup_release_pitch_angle: 0.0 # ノード再起動後、最初の非常停止解除時に設定する pitch 角度[rad]（正面を向かせたい角度）
                 # manual_mode=true 時の pitch は std_msgs/Float32 の manual_pitch_angle topic で加算入力（-1..1, 0で保持）
                 # 遷移直後の pitch は manual_mode_pitch_initial_angle
 
@@ -83,18 +84,23 @@
                 use_fov_image_tracking: false # true: 画角+画像比率ベース, false: yaw/pitch_image_gain による加算制御
                 horizontal_fov_deg: 100.0 # 横画角[deg]。縦画角は image_height / image_width 比から導出
                 # image_tolerance_x/y はピクセル誤差ベースで効く（両方式共通）
-                # legacy params (center-origin inputでは未使用、互換のため残置)
+                # image_center_x/y は狙う画像中心の正規化座標。0.5,0.5 が幾何学中心
+                # 例: image_center_x=0.55 -> 画像中央より右へ 5% ずらした位置を目標中心にする
                 image_center_x: 0.5
                 image_center_y: 0.5
                 image_tolerance_x: 0.02
                 image_tolerance_y: 0.02
+                target_lead_time_sec: 0.0 # [s] 連続する target_image_position から画像平面速度を推定し、この秒数先の予測座標を狙う。0で無効
                 target_timeout_sec: 0.2
-                max_yaw_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
-                max_pitch_rate: 0.0 # [rad/s] 0以下で無効（目標ジャンプ防止用の速度制限）
+                target_lost_return_to_startup_delay_sec: 2.0 # target喪失後、この秒数だけ現在角を保持したら startup_release_* へ戻す
+
+                # 原点復帰などの動きの速さ
+                max_yaw_rate: 1.0 # [rad/s] startup_release_* や manual_mode 初期角への段階移動で使う最大 yaw 変化速度。0以下で即到達
+                max_pitch_rate: 1.0 # [rad/s] startup_release_* や manual_mode 初期角への段階移動で使う最大 pitch 変化速度。0以下で即到達
 
                 # image error -> angle command gain（use_fov_image_tracking=false の時に使用）
-                yaw_image_gain: 0.00001
-                pitch_image_gain: 0.00001
+                yaw_image_gain: 0.001
+                pitch_image_gain: 0.01
                 yaw_direction: 1.0
                 pitch_direction: 1.0
 
@@ -105,16 +111,26 @@
                 # pitch_max_angle: 3.14159265359
 
                 # zone-based angle limiter（現在のモータ出力指令に対して適用）
-                enable_zone_angle_limit: false # trueで zone.* 制限を有効化
-                zone:
-                        yaw_zone1_start: -3.14159265359 # a [rad]
-                        yaw_boundary: 0.0 # b [rad]
-                        yaw_zone2_end: 3.14159265359 # c [rad]
-                        pitch_lower_limit: -3.14159265359 # x [rad]
-                        pitch_zone2_upper: 0.52359877559 # y [rad]
-                        pitch_zone1_upper: 3.14159265359 # z [rad]
-                control:
-                        hysteresis_rad: 0.017453292519943295 # ゾーン切替ヒステリシス [rad]
+                enable_zone_angle_limit: true # trueで zone.* 制限を有効化
+                # →launch
+                # zone:
+                #         yaw_reversed: false # true のとき zone 判定用 yaw を符号反転
+                #         yaw_zone1_start: -0.573 # a [rad]
+                #         yaw_boundary: -0.3 # b [rad]
+                #         yaw_zone2_end: 0.3 # c [rad]
+                #         yaw_zone3_end: 2.5 # d [rad]
+                #         pitch_lower_limit: 0.0 # Zone1 lower [rad]
+                #         pitch_zone2_upper: 3.14159265359 # ZoneAB upper [rad]（互換エイリアス。新規設定では pitch_zone1_upper を推奨）
+                #         pitch_zone2_lower: -3.14159265359 # Zone2 lower [rad]
+                #         pitch_zone2_upper_limit: 3.14159265359 # Zone2 upper [rad]
+                #         pitch_zone3_lower: -3.14159265359 # Zone3 lower [rad]
+                #         pitch_zone3_upper: 0.0 # Zone3 upper [rad]
+                #         pitch_zone1_upper: 3.14159265359 # ZoneAB upper [rad]（優先して使用）
+                # control:
+                #         hysteresis_rad: 0.017453292519943295 # ゾーン切替ヒステリシス [rad]
+                #         pitch_correct_tolerance: 0.01 # 補正完了判定 [rad]
 
                 # fixed angle offset [rad]
                 pitch_offset: 0.0
+
+                shoot_motor_on_command: 1.0

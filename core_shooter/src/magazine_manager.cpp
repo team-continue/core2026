@@ -24,16 +24,23 @@ public:
     //========================================
     // parameters
     //========================================
-    this->declare_parameter<int>("remaining_disks", 27);
+    this->declare_parameter<int>("max_disks", 27);
     this->declare_parameter<double>("disk_thickness", 1.0);
     this->declare_parameter<double>("sensor_height", 100.0);
     this->declare_parameter<int>("window_size", 3);
 
-    this->get_parameter("remaining_disks", remaining_disks_);
+    this->get_parameter("max_disks", max_disks_);
     this->get_parameter("disk_thickness", disk_thickness_);
     this->get_parameter("sensor_height", sensor_height_);
     this->get_parameter("window_size", window_size_);
 
+    if (max_disks_ < 0 || max_disks_ > 127) {
+      RCLCPP_FATAL(
+        this->get_logger(),
+        "Invalid max_disks=%d (must be in [0, 127])",
+        max_disks_);
+      throw std::runtime_error("invalid max_disks");
+    }
     if (window_size_ <= 0) {
       RCLCPP_FATAL(
         this->get_logger(), "Invalid window_size=%d (must be > 0)", window_size_);
@@ -45,10 +52,12 @@ public:
       throw std::runtime_error("invalid disk_thickness");
     }
 
+    remaining_disks_ = max_disks_;
+
     RCLCPP_INFO(
       this->get_logger(),
-      "remaining_disks: %d, disk_thickness: %f, sensor_height: %f",
-      remaining_disks_, disk_thickness_, sensor_height_);
+      "max_disks: %d, disk_thickness: %f, sensor_height: %f",
+      max_disks_, disk_thickness_, sensor_height_);
 
     //========================================
     // disk hold motor parameters
@@ -99,9 +108,13 @@ public:
       "shoot_status", 10,
       std::bind(&MagazineManager::shootStatusCallback, this, std::placeholders::_1));
 
-    reloading_sub_ = this->create_subscription<std_msgs::msg::Int8>(
+    reloading_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "reloading", 10,
       std::bind(&MagazineManager::reloadingCallback, this, std::placeholders::_1));
+
+    reloading_increment_sub_ = this->create_subscription<std_msgs::msg::Int8>(
+      "reloading_increment", 10,
+      std::bind(&MagazineManager::reloadingIncrementCallback, this, std::placeholders::_1));
 
     disk_distance_sensor_sub_ = this->create_subscription<std_msgs::msg::Int32>(
       "disk_distance_sensor", 10,
@@ -120,12 +133,15 @@ public:
     //========================================
     remaining_disk_pub_ = this->create_publisher<std_msgs::msg::Int8>(
       "remaining_disk", rclcpp::QoS(10).transient_local());
+    regrip_active_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+      "regrip_active", 10);
     can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("/can/tx", 10);
 
     //========================================
     // initialize (publish remaining disks first)
     //========================================
     remainingDisksPublish(remaining_disks_);
+    publishRegripActive(false);
 
     //========================================
     // timer callback
@@ -164,18 +180,28 @@ private:
       remainingDiskEstimator(-1);
 
       // hold=true中の射撃回数を数え、10回でregripする
-      if (state_ == State::HOLDING && hold_on_ && !hazard_active_ && remaining_disks_ > 10) {
+      if (state_ == State::HOLDING && hold_on_ && !hazard_active_ && remaining_disks_ > 6) {
         ++hold_shots_since_grip_;
         RCLCPP_INFO(this->get_logger(), "hold_shots_since_grip: %d", hold_shots_since_grip_);
+        maybeStartRegrip();
       }
     }
   }
 
-  void reloadingCallback(std_msgs::msg::Int8::SharedPtr msg)
+  void reloadingCallback(std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if (msg->data) {
+      remaining_disks_ = max_disks_;
+      remainingDisksPublish(remaining_disks_);
+    }
+  }
+
+  void reloadingIncrementCallback(std_msgs::msg::Int8::SharedPtr msg)
   {
     if (msg->data > 0) {
       // 押さえの影響でセンサは信用できない想定 → ここでは同期しない
-      remaining_disks_ += msg->data;
+      remaining_disks_ = clampRemainingDisks(
+        remaining_disks_ + msg->data, "reloading_increment");
       remainingDisksPublish(remaining_disks_);
     }
   }
@@ -238,25 +264,36 @@ private:
       }
 
       int estimated = std::round(estimated_stack_height_mm_ / disk_thickness_);
-      if (estimated < 0) {
-        estimated = 0;
-      }
-      if (estimated > 127) {
-        RCLCPP_WARN_THROTTLE(
-          this->get_logger(), *this->get_clock(), 2000,
-          "disk estimate overflow (%d) -> clamp to 127", estimated);
-        estimated = 127;
-      }
-
-      remaining_disks_ = estimated;
+      remaining_disks_ = clampRemainingDisks(estimated, "sensor estimate");
 
       // 冗長チェック用に保持（最後に「見えた」値）
-      last_sensor_estimated_disks_ = estimated;
+      last_sensor_estimated_disks_ = remaining_disks_;
       last_sensor_height_mm_ = estimated_stack_height_mm_;
 
       remainingDisksPublish(remaining_disks_);
       return;
     }
+  }
+
+  int clampRemainingDisks(int value, const char * source)
+  {
+    if (value < 0) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "%s produced %d remaining disks. Clamp to 0.",
+        source, value);
+      return 0;
+    }
+
+    if (value > max_disks_) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "%s produced %d remaining disks. Clamp to max_disks=%d.",
+        source, value, max_disks_);
+      return max_disks_;
+    }
+
+    return value;
   }
 
   void remainingDisksPublish(int data)
@@ -270,6 +307,13 @@ private:
       message.data = (int8_t)data;
     }
     remaining_disk_pub_->publish(message);
+  }
+
+  void publishRegripActive(bool active)
+  {
+    std_msgs::msg::Bool message;
+    message.data = active;
+    regrip_active_pub_->publish(message);
   }
 
   //========================================
@@ -318,6 +362,30 @@ private:
   //========================================
   // disk hold loop
   //========================================
+  void maybeStartRegrip()
+  {
+    if (!regrip_enabled_ || state_ != State::HOLDING || hold_shots_since_grip_ < 10) {
+      return;
+    }
+
+    state_ = State::REGRIP_RELEASING;
+    hold_shots_since_grip_ = 0;
+
+    // 押さえ中の値を捨てて、release後の距離センサだけで同期する。
+    buffer_.clear();
+
+    regrip_release_until_ =
+      this->now() + rclcpp::Duration(0, static_cast<int64_t>(regrip_release_ms_) * 1000 * 1000);
+
+    publish_hold_command(false);
+    publishRegripActive(true);
+
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Regrip triggered after 10 shots: total=%d -> release %d ms",
+      remaining_disks_, regrip_release_ms_);
+  }
+
   void on_timer()
   {
     // ============================================================
@@ -328,6 +396,7 @@ private:
       state_ = State::IDLE_RELEASED;
       hold_shots_since_grip_ = 0;
       publish_hold_command(false);
+      publishRegripActive(false);
       return;
     }
 
@@ -339,6 +408,7 @@ private:
       state_ = State::IDLE_RELEASED;
       hold_shots_since_grip_ = 0;
       publish_hold_command(false);
+      publishRegripActive(false);
       return;
     }
 
@@ -350,6 +420,7 @@ private:
       state_ = State::IDLE_RELEASED;
       hold_shots_since_grip_ = 0;
       publish_hold_command(false);
+      publishRegripActive(false);
       return;
     }
 
@@ -359,23 +430,6 @@ private:
     if (state_ == State::IDLE_RELEASED) {
       state_ = State::HOLDING;
       hold_shots_since_grip_ = 0;
-    }
-
-    // hold=trueになってから10回撃ったら false->true (regrip)
-    if (regrip_enabled_ && state_ == State::HOLDING && hold_shots_since_grip_ >= 10) {
-      state_ = State::REGRIP_RELEASING;
-      hold_shots_since_grip_ = 0;
-
-      // ★移動平均バッファをクリア（押さえ中の値を捨てる）
-      buffer_.clear();
-
-      regrip_release_until_ =
-        this->now() + rclcpp::Duration(0, static_cast<int64_t>(regrip_release_ms_) * 1000 * 1000);
-
-      RCLCPP_WARN(
-        this->get_logger(),
-        "Regrip triggered after 10 shots: total=%d -> release %d ms",
-        remaining_disks_, regrip_release_ms_);
     }
 
     // (D) 状態に応じて0/1指令（0: release, 1: grip）
@@ -409,6 +463,8 @@ private:
         }
         break;
     }
+
+    publishRegripActive(state_ == State::REGRIP_RELEASING);
   }
 
   //========================================
@@ -441,7 +497,8 @@ private:
   // Subscription valids
   //========================================
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_status_sub_;
-  rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr reloading_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reloading_sub_;
+  rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr reloading_increment_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr disk_distance_sensor_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hold_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_status_sub_;
@@ -450,6 +507,7 @@ private:
   // publisher valids
   //========================================
   rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr remaining_disk_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr regrip_active_pub_;
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
 
   //========================================
@@ -467,6 +525,7 @@ private:
   // parameter valids
   //========================================
   // magazine
+  int max_disks_ = 27;
   int remaining_disks_ = 27;
   double disk_thickness_ = 1.0;
   double sensor_height_ = 100.0;

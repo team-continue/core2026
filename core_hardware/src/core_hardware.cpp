@@ -1,269 +1,161 @@
 #include <core_hardware/core_hardware.hpp>
-#include <chrono>
 
+#include <chrono>
+#include <utility>
+
+using std::placeholders::_1;
 using namespace std::chrono_literals;
 
 CoreHardware::CoreHardware()
-    : rclcpp::Node("core_hardware"){
-    // パラメータの宣言と取得
-    this->declare_parameter("if_name", "eth0");
-    this->declare_parameter("cycle_time_us", 1000); // デフォルト1000us = 1ms
+    : rclcpp::Node("core_hardware") {
+  declare_parameter("socket_path", std::string(core_hardware::kDefaultSocketPath));
+  socket_path_ = get_parameter("socket_path").as_string();
 
-    this->get_parameter("if_name", if_name_);
-    int cycle_time_us;
-    this->get_parameter("cycle_time_us", cycle_time_us);
-    cycle_time_ns_ = (int64_t)cycle_time_us * 1000;
+  can_pub_ = create_publisher<core_msgs::msg::CANArray>("can/rx", 10);
+  joint_pub_ = create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
+  wireless_pub_ = create_publisher<std_msgs::msg::UInt8MultiArray>("wireless", 10);
+  destroy_pub_ = create_publisher<std_msgs::msg::Bool>("destroy", 10);
+  hp_pub_ = create_publisher<std_msgs::msg::UInt8>("hp", 10);
+  hardware_emergency_pub_ = create_publisher<std_msgs::msg::Bool>("hardware_emergency", 10);
 
-    // -----------------------------------------------------
-    // 1. EtherCATネットワークの起動 (ecatbringup相当)
-    if (!ecat_bringup()) {
-        RCLCPP_FATAL(this->get_logger(), "EtherCAT network failed to start.");
-        // ノードをシャットダウンするか、リカバリを試みる
-        return; 
-    }
-    
-    // -----------------------------------------------------
-    // 2. 周期実行タイマーの設定 (ecatthread相当)
-    // リアルタイム性が要求される場合は、このタイマーをRT Executorで実行する必要がある
-    RCLCPP_INFO(this->get_logger(), "Starting cyclic task with %d us period.", cycle_time_us);
-    
-    // タイマー周期は設定サイクルタイムに合わせる
-    auto period = std::chrono::nanoseconds(cycle_time_ns_);
-    timer_ = this->create_wall_timer(
-        period, 
-        std::bind(&CoreHardware::cyclic_task, this)
-    );
-    
-    // -----------------------------------------------------
-    // 3. エラーチェックのスレッド起動（元のecatcheck相当）
-    // ROS 2の仕組みで別ノードやサービスとして実行する方がROS的だが、ここでは簡単に別スレッドとして起動する
-    // Note: ROS 2ノード内でのスレッド管理は注意が必要
-    std::thread check_thread(&CoreHardware::ecat_check_state, this);
-    check_thread.detach(); // デタッチしてノードの実行とは別に動かす
+  can_sub_ = create_subscription<core_msgs::msg::CANArray>(
+      "can/tx", 10, std::bind(&CoreHardware::can_cb, this, _1));
+  led_upper_sub_ = create_subscription<std_msgs::msg::UInt8>(
+      "led/upper", 10, std::bind(&CoreHardware::led_upper_cb, this, _1));
+  led_bottom_sub_ = create_subscription<std_msgs::msg::UInt8>(
+      "led/bottom", 10, std::bind(&CoreHardware::led_bottom_cb, this, _1));
+  led_bottom2_sub_ = create_subscription<std_msgs::msg::UInt8>(
+      "led/bottom2", 10, std::bind(&CoreHardware::led_bottom2_cb, this, _1));
+  timer_ = create_wall_timer(10ms, std::bind(&CoreHardware::timer_cb, this));
+
+  joint_states_.name = std::vector<std::string>{};
+  joint_states_.effort.resize(kJointNum, 0.0);
+  joint_states_.velocity.resize(kJointNum, 0.0);
+  joint_states_.position.resize(kJointNum, 0.0);
 }
 
-CoreHardware::~CoreHardware(){
-    RCLCPP_INFO(this->get_logger(), "Shutting down EtherCAT master...");
-    ecx_close(&ctx_);
+void CoreHardware::timer_cb() {
+  try {
+    ensure_connected();
+    const auto payload = core_hardware::encode_snapshot(latest_command_);
+    client_.send(core_hardware::IpcMessageType::kCommandSnapshot, sequence_++, payload);
+    while (client_.poll_once([this](core_hardware::IpcMessageType type, uint32_t seq, const std::vector<uint8_t>& msg_payload) {
+      handle_message(type, seq, msg_payload);
+    })) {
+    }
+    if (!pending_can_array_.array.empty()) {
+      joint_states_.header.stamp = now();
+      can_pub_->publish(pending_can_array_);
+      joint_pub_->publish(joint_states_);
+      pending_can_array_.array.clear();
+    }
+  } catch (const std::exception& ex) {
+    client_.close();
+    connected_ = false;
+    pending_can_array_.array.clear();
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "Hardware bridge IPC error: %s", ex.what());
+  }
 }
 
-// --- 周期制御タスク (ecatthread相当) ---
-void CoreHardware::cyclic_task(){
-    static int64_t toff = 0; // DC同期オフセット
-    
-    if (!mapping_done_) {
-        // マッピング完了を待つか、エラーをログに出す
-        return; 
+void CoreHardware::can_cb(const core_msgs::msg::CANArray::SharedPtr msg) {
+  for (const auto& can : msg->array) {
+    if (can.id < latest_command_.motor_ref.size()) {
+      latest_command_.motor_ref[can.id] = can.data.empty() ? 0.0f : can.data.back();
+      continue;
     }
-    
-    counter_++;
-    RCLCPP_INFO(this->get_logger(), "Position Commanded: %u", counter_);
-
-    if (dorun_) 
-    {
-        cycle_++;
-        // データの受信
-        wkc_ = ecx_receive_processdata(&ctx_, EC_TIMEOUTRET);
-
-        if (wkc_ != expectedWKC_) {
-             dowkccheck_++;
-        } else {
-             dowkccheck_ = 0;
-        }
-
-        if (ctx_.slavelist[0].hasdc && (wkc_ > 0))
-        {
-            // DC同期のためのtoff計算
-            ec_sync(ctx_.DCtime, cycle_time_ns_, &toff);
-            // タイマーを使っているため、オフセット(toff)を直接タイマーに適用するのは難しい
-            // ROS 2ではハードウェアタイマーやRTOSを使うことが多い
-        }
-
-        // メッセージング処理
-        ecx_mbxhandler(&ctx_, 0, 4);
-
-        uint8_t *output_ptr = ctx_.slavelist[1].outputs;
-        memcpy(output_ptr, &counter_, sizeof(counter_));
-
-        // データの送信 (次のサイクルの出力)
-        ecx_send_processdata(&ctx_);
-
-        // 
-        uint8_t *input_ptr = ctx_.slavelist[1].inputs;
-        uint32_t actual_pos = *(uint32_t*)input_ptr;
-
-        RCLCPP_INFO(this->get_logger(), "Position Actual: %u", actual_pos);
+    if (can.id == 17U) {
+      latest_command_.system_ref[0] = (can.data.empty() || can.data.back() == 0.0f) ? 0U : 1U;
     }
+  }
 }
 
-// --- PI制御によるDC同期 (ec_sync相当) ---
-void CoreHardware::ec_sync(int64_t reftime, int64_t cycletime, int64_t *offsettime){
-    static int64_t integral = 0;
-    int64_t delta;
-    
-    delta = (reftime - sync_offset_ns_) % cycletime;
-    if (delta > (cycletime / 2)) {
-        delta = delta - cycletime;
-    }
-    
-    // timeerrorはグローバル変数ではなくメンバー変数として扱う
-    // timeerror_ = -delta; 
-    
-    integral += (-delta); // timeerrorの代わり
-    *offsettime = (int64_t)(((-delta) * p_gain_) + (integral * i_gain_));
+void CoreHardware::ensure_connected() {
+  if (connected_) {
+    return;
+  }
+  client_.connect(socket_path_);
+  connected_ = true;
+  RCLCPP_INFO(get_logger(), "Connected to hardware daemon via %s", socket_path_.c_str());
 }
 
-bool CoreHardware::ecat_bringup(){
-    RCLCPP_INFO(this->get_logger(), "EtherCAT Startup on interface: %s", if_name_.c_str());
-
-    // ecx_initの成功を確認
-    if (!ecx_init(&ctx_, const_cast<char *>(if_name_.c_str())))
-    {
-        RCLCPP_FATAL(this->get_logger(), "ecx_init failed. Check interface name and permissions.");
-        return false;
+void CoreHardware::handle_message(core_hardware::IpcMessageType type, uint32_t, const std::vector<uint8_t>& payload) {
+  switch (type) {
+    case core_hardware::IpcMessageType::kStateSnapshot:
+      handle_state_snapshot(core_hardware::decode_snapshot(payload));
+      break;
+    case core_hardware::IpcMessageType::kFloatPacket: {
+      auto packet = core_hardware::decode_packet_message(payload);
+      handle_float_packet(packet.first, packet.second);
+      break;
     }
-
-    if (ecx_config_init(&ctx_) == 0){
-        RCLCPP_FATAL(this->get_logger(), "No slaves found.");
-        return false;
+    case core_hardware::IpcMessageType::kUint8Packet: {
+      auto packet = core_hardware::decode_uint8_packet_message(payload);
+      handle_uint8_packet(packet.first, packet.second);
+      break;
     }
-    // ネットワーク構成の初期化とI/Oマッピング
-    ec_groupt *group = &ctx_.grouplist[0];
-    ecx_config_map_group(&ctx_, IOmap_, 0);
-
-    ecx_configdc(&ctx_);
-    while (ctx_.ecaterror)
-        RCLCPP_INFO(this->get_logger(), "%s", ecx_elist2string(&ctx_));
-    RCLCPP_INFO(this->get_logger(), "%d slaves found and configured.", ctx_.slavecount);
-    expectedWKC_ = (group->outputsWKC * 2) + group->inputsWKC;
-    RCLCPP_INFO(this->get_logger(), "Calculated workcounter %d", expectedWKC_);
-    /* wait for all slaves to reach SAFE_OP state */
-    ecx_statecheck(&ctx_, 0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 3);
-
-    mapping_done_ = true;
-
-    // CoEスレーブをサイクリックMBXハンドラに追加
-    for (int si = 1; si <= ctx_.slavecount; si++){
-        ec_slavet *slave = &ctx_.slavelist[si];
-        if (slave->CoEdetails > 0)
-        {
-            ecx_slavembxcyclic(&ctx_, si);
-            RCLCPP_INFO(this->get_logger(), " Slave %d added to cyclic mailbox handler", si);
-        }
-    }
-
-    // ネットワークがクロックに同期するのを待つ (サンプルでは1秒)
-    dorun_ = true;
-    osal_usleep(1000000); 
-
-    // 状態をOPに設定
-    ctx_.slavelist[0].state = EC_STATE_OPERATIONAL;
-    ecx_writestate(&ctx_, 0);
-    ecx_statecheck(&ctx_, 0, EC_STATE_OPERATIONAL, EC_TIMEOUTSTATE);
-
-    // check
-    in_op_ = true;
-    for (int si = 0; si < ctx_.slavecount; si++){
-        ec_slavet *slave = &ctx_.slavelist[si];
-        if (slave->state != EC_STATE_OPERATIONAL){
-            RCLCPP_ERROR(this->get_logger(), "Slave %d State=0x%2.2x StatusCode=0x%4.4x : %s",
-                            si+1, slave->state, slave->ALstatuscode, ec_ALstatuscode2string(slave->ALstatuscode));
-            in_op_ = false;
-        }
-    }
-    if(!in_op_){
-        RCLCPP_FATAL(this->get_logger(), "Not all slaves reached OP state.");
-        dorun_ = false;
-        return false;
-    }
-
-    RCLCPP_INFO(this->get_logger(), "EtherCAT OP state reached.");
-    in_op_ = true;
-    return true;
+    case core_hardware::IpcMessageType::kError:
+      RCLCPP_WARN(get_logger(), "Hardware daemon reported an error frame");
+      break;
+    case core_hardware::IpcMessageType::kHeartbeat:
+    case core_hardware::IpcMessageType::kCommandSnapshot:
+      break;
+  }
 }
 
-void CoreHardware::ecat_check_state(){
-    // このスレッドはノードが実行されている間ずっとループする
-    while (rclcpp::ok()) 
-    {
-        // OP状態で、WKCエラーが連続した場合、またはスレーブの状態チェックが必要な場合
-        if (in_op_ && ((dowkccheck_ > 2) || ctx_.grouplist[current_group_].docheckstate))
-        {
-            ctx_.grouplist[current_group_].docheckstate = FALSE;
-            ecx_readstate(&ctx_);
-
-            for (int slaveix = 1; slaveix <= ctx_.slavecount; slaveix++)
-            {
-                ec_slavet *slave = &ctx_.slavelist[slaveix];
-
-                if ((slave->group == current_group_) && (slave->state != EC_STATE_OPERATIONAL))
-                {
-                    ctx_.grouplist[current_group_].docheckstate = TRUE;
-                    // ... (元のサンプルコードにあったエラー処理/状態遷移ロジック) ...
-                    
-                    if (slave->state == (EC_STATE_SAFE_OP + EC_STATE_ERROR))
-                    {
-                        RCLCPP_WARN(this->get_logger(), "Slave %d in SAFE_OP + ERROR, attempting ack.", slaveix);
-                        slave->state = (EC_STATE_SAFE_OP + EC_STATE_ACK);
-                        ecx_writestate(&ctx_, slaveix);
-                    }
-                    else if (slave->state == EC_STATE_SAFE_OP)
-                    {
-                        RCLCPP_WARN(this->get_logger(), "Slave %d in SAFE_OP, changing to OPERATIONAL.", slaveix);
-                        slave->state = EC_STATE_OPERATIONAL;
-                        if (slave->mbxhandlerstate == ECT_MBXH_LOST) slave->mbxhandlerstate = ECT_MBXH_CYCLIC;
-                        ecx_writestate(&ctx_, slaveix);
-                    }
-                    else if (slave->state > EC_STATE_NONE)
-                    {
-                        // 再構成のロジックなど...
-                    }
-                    else if (!slave->islost)
-                    {
-                        // slave lost のロジック...
-                    }
-                }
-                
-                // slave lostからの復帰ロジック
-                if (slave->islost)
-                {
-                    // ... (元のサンプルコードにあったリカバリロジック) ...
-                    if (slave->state <= EC_STATE_INIT)
-                    {
-                        if (ecx_recover_slave(&ctx_, slaveix, EC_TIMEOUTMON))
-                        {
-                            slave->islost = FALSE;
-                            RCLCPP_INFO(this->get_logger(), "Slave %d recovered.", slaveix);
-                        }
-                    }
-                    else
-                    {
-                        slave->islost = FALSE;
-                        RCLCPP_INFO(this->get_logger(), "Slave %d found.", slaveix);
-                    }
-                }
-            }
-
-            if (!ctx_.grouplist[current_group_].docheckstate)
-                RCLCPP_INFO(this->get_logger(), "OK : all slaves resumed OPERATIONAL.");
-            
-            dowkccheck_ = 0;
-        }
-        
-        // 10ms待機
-        osal_usleep(10000); 
-    }
+void CoreHardware::handle_state_snapshot(const core_hardware::HardwareSnapshot& snapshot) {
+  latest_state_ = snapshot;
 }
 
-// --- メイン関数 ---
-int main(int argc, char *argv[]){
-    // ROS 2初期化
-    rclcpp::init(argc, argv);
-    
-    // シングルスレッドExecutorでノードを実行 (RT対応の場合は設定変更が必要)
-    rclcpp::spin(std::make_shared<CoreHardware>());
-    
-    // ROS 2終了処理
-    rclcpp::shutdown();
-    return 0;
+void CoreHardware::handle_float_packet(uint8_t id, const std::vector<float>& data) {
+  if (id < kJointNum && data.size() == 6U) {
+    core_msgs::msg::CAN can;
+    can.id = id;
+    can.data = data;
+    pending_can_array_.array.push_back(can);
+    joint_states_.effort[id] = data[1];
+    joint_states_.velocity[id] = data[3];
+    joint_states_.position[id] = data[5];
+    return;
+  }
+}
+
+void CoreHardware::handle_uint8_packet(uint8_t id, const std::vector<uint8_t>& data) {
+  if (id == 100U && !data.empty()) {
+    hp_.data = data.front();
+    hp_pub_->publish(hp_);
+    return;
+  }
+  if (id == 101U && !data.empty()) {
+    destroy_.data = (data.front() != 0U);
+    destroy_pub_->publish(destroy_);
+    return;
+  }
+  if (id == 102U) {
+    wireless_.data = data;
+    wireless_pub_->publish(wireless_);
+    return;
+  }
+  if (id == 104U && !data.empty()) {
+    hardware_emergency_.data = (data.front() != 0U);
+    hardware_emergency_pub_->publish(hardware_emergency_);
+  }
+}
+
+void CoreHardware::led_upper_cb(const std_msgs::msg::UInt8::SharedPtr msg) {
+  latest_command_.led_tape[0] = msg->data;
+}
+
+void CoreHardware::led_bottom_cb(const std_msgs::msg::UInt8::SharedPtr msg) {
+  latest_command_.led_tape[1] = msg->data;
+}
+
+void CoreHardware::led_bottom2_cb(const std_msgs::msg::UInt8::SharedPtr msg) {
+  latest_command_.led_tape[2] = msg->data;
+}
+
+int main(int argc, char* argv[]) {
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<CoreHardware>());
+  rclcpp::shutdown();
+  return 0;
 }

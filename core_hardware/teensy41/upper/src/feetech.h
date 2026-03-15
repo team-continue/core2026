@@ -8,7 +8,7 @@
 #define STS_CONTROL_DT 0.02f
 #define STS_LIMIT_VEL_STS3215 ((67.0f / 60.0f) * 2.0f * M_PI)
 #define STS_LIMIT_VEL_STS3020 ((100.0f / 60.0f) * 2.0f * M_PI)
-#define STS_PID_P 5
+#define STS_PID_P 2.0
 
 #define STS_CONTROL_INTERVAL_US 10000UL
 #define STS_CONNECT_TIMEOUT_MS 1000UL
@@ -31,6 +31,7 @@ struct STS_SERVO {
   uint8_t torque = 0;
   PID pos_pid{STS_PID_P, 0.0f, STS_CONTROL_DT};
   bool vel_cmd = false;
+  bool reverse = false;
   uint8_t id = 0;
 
   uint16_t prev_pos = UINT16_MAX;
@@ -59,6 +60,8 @@ class STS {
       servos[i].id = i + 1;
       servos[i].origin = default_origin[i];
     }
+    // servos[0].reverse = true;
+    servos[4].reverse = true;
     servos[1].vel_cmd = true;
     servos[5].vel_cmd = true;
   }
@@ -87,6 +90,20 @@ class STS {
     sts_syncWrite(ids, len_id, 8, 1, status_level);
     sts_syncWrite(ids, len_id, 40, 1, torque_data);
     sts_syncWrite(ids, len_id, 55, 1, lock);
+  }
+
+  void setRefPos(const int index, const float ref_pos) {
+    if (index < 0 || index >= LEN_SERVO) {
+      return;
+    }
+    servos[index].ref_pos = ref_pos;
+  }
+
+  void setRefVel(const int index, const float ref_vel) {
+    if (index < 0 || index >= LEN_SERVO) {
+      return;
+    }
+    servos[index].ref_vel = ref_vel;
   }
 
   void loop() {
@@ -137,6 +154,14 @@ class STS {
   }
 
  private:
+  float externalToInternal(const STS_SERVO &servo, const float value) const {
+    return servo.reverse ? -value : value;
+  }
+
+  float internalToExternal(const STS_SERVO &servo, const float value) const {
+    return servo.reverse ? -value : value;
+  }
+
   void syncReadData() {
     if (!SERVO_SERIAL.available()) {
       return;
@@ -279,10 +304,10 @@ class STS {
           servos[i].ref_vel = servos[i].pos_pid.update(pos_error, servos[i].limit_vel);
         }
         vel_ids[vel_len] = servos[i].id;
-        vel_data[vel_len++] = servos[i].ref_vel;
+        vel_data[vel_len++] = externalToInternal(servos[i], servos[i].ref_vel);
       } else {
         pos_ids[pos_len] = servos[i].id;
-        pos_data[pos_len++] = servos[i].ref_pos + servos[i].origin;
+        pos_data[pos_len++] = externalToInternal(servos[i], servos[i].ref_pos) + servos[i].origin;
       }
     }
 
@@ -438,10 +463,15 @@ class STS {
         }
       }
 
-      servos[i].pos = ((float)pos / 4096.0f + servos[i].rotate) * M_PI * 2.0f - servos[i].origin;
+      const float internal_pos =
+        ((float)pos / 4096.0f + servos[i].rotate) * M_PI * 2.0f - servos[i].origin;
       servos[i].prev_pos = pos;
-      servos[i].vel = (float)vel_i / 4096.0f * M_PI * 2.0f;
-      servos[i].current = (float)curr_i * 0.0065f;
+      const float internal_vel = (float)vel_i / 4096.0f * M_PI * 2.0f;
+      const float internal_current = (float)curr_i * 0.0065f;
+
+      servos[i].pos = internalToExternal(servos[i], internal_pos);
+      servos[i].vel = internalToExternal(servos[i], internal_vel);
+      servos[i].current = internalToExternal(servos[i], internal_current);
     } else if (len > 5) {
       servos[i].torque = data[5];
     }
