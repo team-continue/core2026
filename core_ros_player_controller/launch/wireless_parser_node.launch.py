@@ -19,10 +19,15 @@ def generate_launch_description():
         default_value="/wireless",
         description="Input topic to remap node subscription target /wireless",
     )
-    rotation_flag_arg = DeclareLaunchArgument(
-        "rotation_flag",
-        default_value="/rotation_flag",
-        description="Output topic to remap /rotation_flag",
+    rotation_arg = DeclareLaunchArgument(
+        "rotation",
+        default_value="/rotation",
+        description="Output topic to remap /rotation",
+    )
+    ads_arg = DeclareLaunchArgument(
+        "ads",
+        default_value="/ads",
+        description="Output topic to remap /ads",
     )
     cmd_vel_arg = DeclareLaunchArgument(
         "cmd_vel",
@@ -78,7 +83,8 @@ def generate_launch_description():
         parameters=[LaunchConfiguration("params_file")],
         remappings=[
             ("/wireless", LaunchConfiguration("wireless")),
-            ("/rotation_flag", LaunchConfiguration("rotation_flag")),
+            ("/rotation", LaunchConfiguration("rotation")),
+            ("/ads", LaunchConfiguration("ads")),
             ("/cmd_vel", LaunchConfiguration("cmd_vel")),
             ("/manual_mode", LaunchConfiguration("manual_mode")),
             ("/manual_pitch", LaunchConfiguration("manual_pitch")),
@@ -92,7 +98,8 @@ def generate_launch_description():
 
     return LaunchDescription([
         wireless_arg,
-        rotation_flag_arg,
+        rotation_arg,
+        ads_arg,
         cmd_vel_arg,
         manual_mode_arg,
         manual_pitch_arg,
