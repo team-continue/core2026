@@ -50,7 +50,6 @@ def _launch_nodes(context):
     use_rviz = context.launch_configurations['use_rviz']
     use_localization = context.launch_configurations.get(
         'use_localization', 'false').lower() == 'true'
-    pcd_map_path = context.launch_configurations.get('pcd_map_path', '')
 
     is_real = (env == 'real')
     use_fastlio = is_real or (odom_src == 'fastlio')
@@ -73,7 +72,7 @@ def _launch_nodes(context):
     costmap_share = get_package_share_directory('core_costmap_builder')
     body_ctrl_share = get_package_share_directory('core_body_controller')
 
-    rviz_config = os.path.join(core_launch_share, 'config', 'integration_test.rviz')
+    rviz_config = os.path.join(core_launch_share, 'config', 'navigation.rviz')
     mppi_params = os.path.join(mppi_share, 'param', 'default_params.yaml')
     costmap_params = os.path.join(costmap_share, 'config', 'costmap_build_node.yaml')
 
@@ -138,6 +137,17 @@ def _launch_nodes(context):
         localization_share = get_package_share_directory('core_localization')
         localization_config = os.path.join(
             localization_share, 'config', 'localization_params.yaml')
+
+        # Resolve PCD map path from map_name → pcd_maps/<map_name>.pcd
+        resolved_pcd_path = os.path.join(
+            localization_share, 'pcd_maps', f'{map_name}.pcd')
+
+        if not os.path.isfile(resolved_pcd_path):
+            raise RuntimeError(
+                f"PCD map not found: '{resolved_pcd_path}'. "
+                f"Place the PCD file at core_localization/pcd_maps/{map_name}.pcd "
+                f"and rebuild.")
+
         actions.append(Node(
             package='core_localization',
             executable='localization_node',
@@ -146,7 +156,7 @@ def _launch_nodes(context):
             parameters=[
                 localization_config,
                 {
-                    'global_map_path': pcd_map_path,
+                    'global_map_path': resolved_pcd_path,
                     'initial_pose_x': preset['init_x'],
                     'initial_pose_y': preset['init_y'],
                 },
@@ -307,10 +317,6 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_localization', default_value='false',
             description='Enable NDT/ICP localization (dynamic map→odom TF)',
-        ),
-        DeclareLaunchArgument(
-            'pcd_map_path', default_value='',
-            description='Path to pre-built PCD map (required when use_localization:=true)',
         ),
         OpaqueFunction(function=_launch_nodes),
     ])

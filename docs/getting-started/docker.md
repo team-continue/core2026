@@ -5,7 +5,7 @@ Docker Compose を使用した開発環境です。
 ## 起動
 
 ```bash
-cd ~/ros2_ws/src/core2026
+cd ~/core_ws/src/core2026
 docker compose up -d
 docker exec -it core_container bash
 ```
