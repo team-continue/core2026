@@ -94,7 +94,7 @@ void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
     case 1:
     case 2:
     case 3:
-    // case 4:
+    case 4:
       can3_motor[id]->setPacketFrame(data, len);
       break;
     case 5:

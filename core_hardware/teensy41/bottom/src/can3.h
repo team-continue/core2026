@@ -9,6 +9,7 @@
 FlexCAN_T4<CAN3, RX_SIZE_256, TX_SIZE_16> can3;//teensyのcan3を登録　RX_SIZE_256→受信buffer データをためとく　TX_SIZE_16→送信buffer
 Led led1(LED1_SERIAL_PIN, 1, 20);
 Led led2(LED2_SERIAL_PIN, 1, 20);
+Client client(false);
 
 unsigned long can3_receive_ts = 0;
 CAN_message_t can3_msg;
