@@ -25,6 +25,9 @@ class CoreHardware : public rclcpp::Node {
   rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr hp_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr hardware_emergency_pub_;
   rclcpp::Subscription<core_msgs::msg::CANArray>::SharedPtr can_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr led_upper_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr led_bottom_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr led_bottom2_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   core_hardware::IpcClient client_;
@@ -47,4 +50,7 @@ class CoreHardware : public rclcpp::Node {
   void handle_state_snapshot(const core_hardware::HardwareSnapshot& snapshot);
   void handle_float_packet(uint8_t id, const std::vector<float>& data);
   void handle_uint8_packet(uint8_t id, const std::vector<uint8_t>& data);
+  void led_upper_cb(const std_msgs::msg::UInt8::SharedPtr msg);
+  void led_bottom_cb(const std_msgs::msg::UInt8::SharedPtr msg);
+  void led_bottom2_cb(const std_msgs::msg::UInt8::SharedPtr msg);
 };
