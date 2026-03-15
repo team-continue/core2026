@@ -1,0 +1,2587 @@
+
+<!doctype html>
+<html lang="ja" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="CoRE2026 ロボット ROS2 プロジェクトドキュメント">
+      
+      
+      
+      
+        <link rel="prev" href="../../packages/ros_tcp_endpoint/">
+      
+      
+        <link rel="next" href="../tuning/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/continue_logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.5">
+    
+    
+      
+        <title>ナビゲーション起動・実機テスト - core2026 ドキュメント</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#_1" class="md-skip">
+          コンテンツにスキップ
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="ヘッダー">
+    <a href="../.." title="core2026 ドキュメント" class="md-header__button md-logo" aria-label="core2026 ドキュメント" data-md-component="logo">
+      
+  <img src="../../assets/continue_logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            core2026 ドキュメント
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ナビゲーション起動・実機テスト
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="ダークモードに切替"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="ダークモードに切替" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="ライトモードに切替"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="ライトモードに切替" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="検索" placeholder="検索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="検索">
+        
+        <button type="reset" class="md-search__icon md-icon" title="クリア" aria-label="クリア" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            検索を初期化
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/team-continue/core2026" title="リポジトリへ" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    core2026
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="タブ" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  ホーム
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/quick-start/" class="md-tabs__link">
+          
+  
+  
+  はじめに
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  アーキテクチャ
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../packages/core_launch/" class="md-tabs__link">
+          
+  
+  
+  パッケージ
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  ガイド
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/workflow/" class="md-tabs__link">
+          
+  
+  
+  開発
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="ナビゲーション" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="core2026 ドキュメント" class="md-nav__button md-logo" aria-label="core2026 ドキュメント" data-md-component="logo">
+      
+  <img src="../../assets/continue_logo.png" alt="logo">
+
+    </a>
+    core2026 ドキュメント
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/team-continue/core2026" title="リポジトリへ" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    core2026
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ホーム
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    はじめに
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    はじめに
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    クイックスタート
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker環境
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/unity-sim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Unityシミュレータ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    アーキテクチャ
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    アーキテクチャ
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    システム概要
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/tf-tree/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TFフレームと座標系
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/topics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    トピック・メッセージ一覧
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    パッケージ
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    パッケージ
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_launch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_launch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_msgs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_msgs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_path_planner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_path_planner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_mppi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_mppi
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_path_follower/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_path_follower
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_costmap_builder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_costmap_builder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_cmd_vel_smoother/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_cmd_vel_smoother
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_body_controller/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_body_controller
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_enemy_detection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_enemy_detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_ros_player_controller/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_ros_player_controller
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_shooter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_shooter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_hardware/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_hardware
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_localization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_localization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/core_test/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    core_test
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/ros_tcp_endpoint/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ROS-TCP-Endpoint
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ガイド
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    ガイド
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ナビゲーション起動・実機テスト
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ナビゲーション起動・実機テスト
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目次">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目次
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        起動モード一覧
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        シミュレータモード
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="シミュレータモード">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        前提条件
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        起動
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        実機モード
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="実機モード">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        前提条件
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        起動（通常）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#navigationsh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        起動（navigation.sh を使う場合）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        実機モードの動作
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        実機テストの手順
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="実機テストの手順">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-pc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. ミニPCでナビゲーションを起動
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-pc-rviz2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. リモートPCで RViz2 を起動
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. ゴール設定
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        起動されるノード
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launch引数一覧
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        マップ切替
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        トラブルシューティング
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="トラブルシューティング">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ros2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ros2 コマンドが見つからない / パッケージが見つからない
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        経路が計画されない
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ロボットが動かない
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ロボットの動きがガタガタ
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TFエラー
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        リモートPCからトピックが見えない
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    パラメータチューニング
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pcd-mapping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PCD地図構築
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hardware-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ハードウェアセットアップ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    開発
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    開発
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    開発ワークフロー
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/code-style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    コードスタイル
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目次">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目次
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        起動モード一覧
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        シミュレータモード
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="シミュレータモード">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        前提条件
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        起動
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        実機モード
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="実機モード">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        前提条件
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        起動（通常）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#navigationsh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        起動（navigation.sh を使う場合）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        実機モードの動作
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        実機テストの手順
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="実機テストの手順">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-pc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. ミニPCでナビゲーションを起動
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-pc-rviz2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. リモートPCで RViz2 を起動
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. ゴール設定
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        起動されるノード
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launch引数一覧
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        マップ切替
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        トラブルシューティング
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="トラブルシューティング">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ros2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ros2 コマンドが見つからない / パッケージが見つからない
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        経路が計画されない
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ロボットが動かない
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ロボットの動きがガタガタ
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TFエラー
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        リモートPCからトピックが見えない
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="_1">ナビゲーション起動ガイド<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h1>
+<h2 id="_2">起動モード一覧<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>モード</th>
+<th>コマンド</th>
+<th>TCP EP</th>
+<th>odom</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>sim（デフォルト）</td>
+<td><code>navigation.launch.py</code></td>
+<td>o</td>
+<td>sim</td>
+<td>開発テスト</td>
+</tr>
+<tr>
+<td>sim + FAST-LIO</td>
+<td><code>navigation.launch.py odom_source:=fastlio</code></td>
+<td>o</td>
+<td>FAST-LIO</td>
+<td>LiDARテスト</td>
+</tr>
+<tr>
+<td>実機</td>
+<td><code>navigation.launch.py environment:=real</code></td>
+<td>x</td>
+<td>FAST-LIO</td>
+<td>実機走行</td>
+</tr>
+<tr>
+<td>実機 + localization</td>
+<td><code>navigation.launch.py environment:=real use_localization:=true</code></td>
+<td>x</td>
+<td>FAST-LIO</td>
+<td>グローバル局在化付き実機走行</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_3">シミュレータモード<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
+<h3 id="_4">前提条件<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Unity シミュレータが起動済み</li>
+<li>TCP接続先: <code>127.0.0.1:10000</code></li>
+</ul>
+<h3 id="_5">起動<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nb">source</span><span class="w"> </span>~/core_ws/install/setup.bash
+ros2<span class="w"> </span>launch<span class="w"> </span>core_launch<span class="w"> </span>navigation.launch.py
+</code></pre></div>
+<h2 id="_6">実機モード<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
+<h3 id="_7">前提条件<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Livox Mid-360 LiDARが接続済み</li>
+<li><code>fast_lio</code> パッケージがインストール済み</li>
+<li><code>core_hardware</code> デーモンが起動済み</li>
+</ul>
+<h3 id="_8">起動（通常）<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h3>
+<p>ターミナルで直接起動する場合:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">source</span><span class="w"> </span>/opt/ros/humble/setup.bash
+<span class="nb">source</span><span class="w"> </span>~/core_ws/install/setup.bash
+ros2<span class="w"> </span>launch<span class="w"> </span>core_launch<span class="w"> </span>navigation.launch.py<span class="w"> </span>environment:<span class="o">=</span>real
+</code></pre></div>
+<p>初期ヨー角（ロボットの向き）を指定する場合:</p>
+<div class="highlight"><pre><span></span><code>ros2<span class="w"> </span>launch<span class="w"> </span>core_launch<span class="w"> </span>navigation.launch.py<span class="w"> </span>environment:<span class="o">=</span>real<span class="w"> </span>init_yaw:<span class="o">=</span><span class="m">1</span>.5708
+</code></pre></div>
+<h3 id="navigationsh">起動（navigation.sh を使う場合）<a class="headerlink" href="#navigationsh" title="Permanent link">&para;</a></h3>
+<p>SSH やデスクトップショートカットなど、<strong><code>.bashrc</code> が読み込まれない環境</strong>では <code>ros2 launch</code> が直接動きません。
+<code>navigation.sh</code> は ROS 2 / core_ws / Livox_ws のセットアップを自動で行ってから launch を実行するラッパースクリプトです。</p>
+<div class="highlight"><pre><span></span><code>ros2<span class="w"> </span>run<span class="w"> </span>core_launch<span class="w"> </span>navigation.sh
+</code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">実機で launch しても起動しないとき</p>
+<p>SSH 経由でミニPCにアクセスして <code>ros2 launch</code> を実行したときに「コマンドが見つからない」「パッケージが見つからない」等のエラーが出る場合は、<code>navigation.sh</code> を使ってください。
+SSH のデフォルトシェルは non-interactive のため <code>.bashrc</code> の <code>source setup.bash</code> が実行されず、ROS 2 の環境変数が未設定になることが原因です。</p>
+</div>
+<p>ミニPCでGUI負荷を避けたい場合:</p>
+<div class="highlight"><pre><span></span><code>ros2<span class="w"> </span>run<span class="w"> </span>core_launch<span class="w"> </span>navigation.sh<span class="w"> </span>use_rviz:<span class="o">=</span><span class="nb">false</span>
+</code></pre></div>
+<h3 id="_9">実機モードの動作<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h3>
+<ul>
+<li>TCP endpoint は起動しない</li>
+<li>Livox driver が起動し <code>/livox/lidar</code> を出力</li>
+<li>FAST-LIO が起動し <code>/Odometry</code> を出力（IMUトピック: <code>/livox/imu</code>）</li>
+<li>body_controller が起動し <code>/cmd_vel</code> → <code>/can/tx</code> に変換</li>
+<li>odom_source は自動的に <code>fastlio</code> に設定</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">sim + FAST-LIO モードとの違い</p>
+<p>sim + FAST-LIO（<code>odom_source:=fastlio</code>）ではシミュレータが <code>/livox/lidar</code> と <code>/imu</code> を直接出力するため Livox driver は起動しません。
+実機モードでは Livox driver が起動し、IMUトピック名が <code>/livox/imu</code> になります。</p>
+</div>
+<h2 id="_10">実機テストの手順<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h2>
+<p>ミニPCに直接モニタ・キーボードを接続して操作することもできますが、SSH経由で起動してリモートPCの RViz2 で可視化・操作することもできます。</p>
+<h3 id="1-pc">1. ミニPCでナビゲーションを起動<a class="headerlink" href="#1-pc" title="Permanent link">&para;</a></h3>
+<p>SSHでミニPCにログインし、RViz なしで起動します:</p>
+<div class="highlight"><pre><span></span><code>ssh<span class="w"> </span>&lt;user&gt;@&lt;mini-pc-ip&gt;
+ros2<span class="w"> </span>run<span class="w"> </span>core_launch<span class="w"> </span>navigation.sh<span class="w"> </span>use_rviz:<span class="o">=</span><span class="nb">false</span>
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">ROS_DOMAIN_ID を揃える</p>
+<p>ミニPCとリモートPCで <code>ROS_DOMAIN_ID</code> が異なるとトピックが見えません。両方で同じ値を設定してください。</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">ROS_DOMAIN_ID</span><span class="o">=</span><span class="m">0</span><span class="w">  </span><span class="c1"># デフォルトは0</span>
+</code></pre></div>
+</div>
+<h3 id="2-pc-rviz2">2. リモートPCで RViz2 を起動<a class="headerlink" href="#2-pc-rviz2" title="Permanent link">&para;</a></h3>
+<p>手元のPCで、プロジェクト付属の RViz 設定ファイルを指定して起動します:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">source</span><span class="w"> </span>/opt/ros/humble/setup.bash
+rviz2<span class="w"> </span>-d<span class="w"> </span>~/core_ws/src/core2026/core_launch/config/navigation.rviz
+</code></pre></div>
+<p>この設定ファイルには以下の表示が含まれています:</p>
+<ul>
+<li>マップ（OccupancyGrid）</li>
+<li>ロボット位置（TF）</li>
+<li>計画経路（Path）</li>
+<li>ローカルコストマップ</li>
+<li>LiDAR点群</li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">RViz2 で何も表示されない場合</p>
+<ul>
+<li><code>ROS_DOMAIN_ID</code> がミニPCと一致しているか確認</li>
+<li>リモートPCで <code>ros2 topic list</code> を実行してトピックが見えるか確認</li>
+<li>ファイアウォールが DDS のマルチキャスト通信をブロックしていないか確認</li>
+</ul>
+</div>
+<h3 id="3">3. ゴール設定<a class="headerlink" href="#3" title="Permanent link">&para;</a></h3>
+<p>RViz2 の <strong>2D Goal Pose</strong> ボタン（上部ツールバー）をクリックし、マップ上でクリック＆ドラッグしてゴール位置と向きを指定します。
+<code>/goal_pose</code> にパブリッシュされ、自動的に経路計画→追従が開始されます。</p>
+<h2 id="_11">起動されるノード<a class="headerlink" href="#_11" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>ノード</th>
+<th>パッケージ</th>
+<th>役割</th>
+<th>条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ros_tcp_endpoint</code></td>
+<td>ROS-TCP-Endpoint</td>
+<td>Unity接続</td>
+<td>sim時のみ</td>
+</tr>
+<tr>
+<td><code>livox_lidar_publisher</code></td>
+<td>livox_ros_driver2</td>
+<td>LiDARドライバ</td>
+<td>real時のみ</td>
+</tr>
+<tr>
+<td><code>fastlio_mapping</code></td>
+<td>fast_lio</td>
+<td>FAST-LIOオドメトリ</td>
+<td>FAST-LIO時</td>
+</tr>
+<tr>
+<td><code>odom_bridge_node</code></td>
+<td>core_launch</td>
+<td>odom変換</td>
+<td>常時</td>
+</tr>
+<tr>
+<td><code>map_server_node</code></td>
+<td>core_launch</td>
+<td>マップ配信</td>
+<td>常時</td>
+</tr>
+<tr>
+<td><code>path_planner_node</code></td>
+<td>core_path_planner</td>
+<td>A*経路計画</td>
+<td>常時</td>
+</tr>
+<tr>
+<td><code>core_mppi_node</code></td>
+<td>core_mppi</td>
+<td>MPPI制御</td>
+<td>常時</td>
+</tr>
+<tr>
+<td><code>cmd_vel_smoother_node</code></td>
+<td>core_cmd_vel_smoother</td>
+<td>cmd_vel平滑化</td>
+<td>use_smoother時</td>
+</tr>
+<tr>
+<td><code>costmap_build_node</code></td>
+<td>core_costmap_builder</td>
+<td>ローカルコストマップ</td>
+<td>常時</td>
+</tr>
+<tr>
+<td><code>body_control_node</code></td>
+<td>core_body_controller</td>
+<td>cmd_vel→CAN変換</td>
+<td>canarray時</td>
+</tr>
+<tr>
+<td><code>target_angle_node</code></td>
+<td>core_body_controller</td>
+<td>車体角度計算</td>
+<td>canarray時</td>
+</tr>
+<tr>
+<td><code>rviz2</code></td>
+<td>rviz2</td>
+<td>可視化</td>
+<td>use_rviz時</td>
+</tr>
+<tr>
+<td><code>localization_node</code></td>
+<td>core_localization</td>
+<td>NDT/ICPグローバル局在化</td>
+<td>use_localization時</td>
+</tr>
+<tr>
+<td><code>static_tf_map_odom</code></td>
+<td>tf2_ros</td>
+<td>map→odom TF（静的）</td>
+<td>use_localization無効時</td>
+</tr>
+<tr>
+<td><code>static_tf_base_livox</code></td>
+<td>tf2_ros</td>
+<td>base_link→livox_frame TF</td>
+<td>常時</td>
+</tr>
+</tbody>
+</table>
+<h2 id="launch">Launch引数一覧<a class="headerlink" href="#launch" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>引数</th>
+<th>デフォルト</th>
+<th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>environment</code></td>
+<td><code>sim</code></td>
+<td><code>sim</code> or <code>real</code></td>
+</tr>
+<tr>
+<td><code>odom_source</code></td>
+<td><code>sim</code></td>
+<td><code>sim</code> or <code>fastlio</code>（real時は強制FAST-LIO）</td>
+</tr>
+<tr>
+<td><code>map_name</code></td>
+<td><code>core1_field</code></td>
+<td>マッププリセット名。2Dマップ・初期位置・PCD地図を一括選択</td>
+</tr>
+<tr>
+<td><code>init_yaw</code></td>
+<td><code>0.0</code></td>
+<td>初期ヨー角 [rad]（FAST-LIOモードで使用）</td>
+</tr>
+<tr>
+<td><code>use_rviz</code></td>
+<td><code>true</code></td>
+<td>RViz2を起動するか</td>
+</tr>
+<tr>
+<td><code>use_smoother</code></td>
+<td><code>true</code></td>
+<td>cmd_vel平滑化を有効にするか</td>
+</tr>
+<tr>
+<td><code>use_localization</code></td>
+<td><code>false</code></td>
+<td>グローバル局在化を有効にするか。PCD地図は <code>map_name</code> に対応する <code>pcd_maps/&lt;map_name&gt;.pcd</code> が自動で使用される</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_12">マップ切替<a class="headerlink" href="#_12" title="Permanent link">&para;</a></h2>
+<p><code>map_name</code> 引数でマッププリセットを切り替えます。プリセットにはマップ画像、原点、ロボット初期位置が含まれます。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># CoRE-1フィールド（デフォルト）</span>
+ros2<span class="w"> </span>launch<span class="w"> </span>core_launch<span class="w"> </span>navigation.launch.py
+
+<span class="c1"># curious_house</span>
+ros2<span class="w"> </span>launch<span class="w"> </span>core_launch<span class="w"> </span>navigation.launch.py<span class="w"> </span>map_name:<span class="o">=</span>curious_house
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>プリセット</th>
+<th>origin</th>
+<th>ロボット初期位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>core1_field</code></td>
+<td>(-13.675, -9.15)</td>
+<td>(-10.7, 5.9)</td>
+</tr>
+<tr>
+<td><code>curious_house</code></td>
+<td>(-4.5, -7.5)</td>
+<td>(0.0, 0.0)</td>
+</tr>
+</tbody>
+</table>
+<p>プリセット定義は <code>navigation.launch.py</code> の <code>MAP_PRESETS</code> 辞書を参照してください。</p>
+<h2 id="_13">トラブルシューティング<a class="headerlink" href="#_13" title="Permanent link">&para;</a></h2>
+<h3 id="ros2">ros2 コマンドが見つからない / パッケージが見つからない<a class="headerlink" href="#ros2" title="Permanent link">&para;</a></h3>
+<p>SSH経由やデスクトップショートカットからの起動で発生しやすい問題です。</p>
+<ul>
+<li><strong>原因</strong>: non-interactive シェルでは <code>.bashrc</code> が読み込まれず、ROS 2の環境変数が未設定</li>
+<li><strong>対処</strong>: <code>navigation.sh</code> を使って起動する（→ <a href="#起動navigationsh-を使う場合">navigation.sh を使う場合</a>）</li>
+</ul>
+<h3 id="_14">経路が計画されない<a class="headerlink" href="#_14" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>/goal_pose</code> がパブリッシュされているか確認: <code>ros2 topic echo /goal_pose</code></li>
+<li><code>/map</code> が配信されているか確認: <code>ros2 topic echo /map --once</code></li>
+<li>ゴールが障害物上にないか確認</li>
+</ul>
+<h3 id="_15">ロボットが動かない<a class="headerlink" href="#_15" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>/cmd_vel</code> が出力されているか確認: <code>ros2 topic echo /cmd_vel</code></li>
+<li><code>/odom</code> が更新されているか確認: <code>ros2 topic hz /odom</code></li>
+<li>body_controllerが起動しているか確認: <code>ros2 node list | grep body_control</code></li>
+</ul>
+<h3 id="_16">ロボットの動きがガタガタ<a class="headerlink" href="#_16" title="Permanent link">&para;</a></h3>
+<ul>
+<li>スムーザーが有効か確認: <code>ros2 node list | grep smoother</code></li>
+<li><code>alpha</code> を下げて平滑化を強化: launch引数でオーバーライドは不可のため、<code>navigation.launch.py</code> 内のパラメータを変更</li>
+<li>スムーザーを無効化してMPPI出力を直接確認: <code>use_smoother:=false</code></li>
+</ul>
+<h3 id="tf">TFエラー<a class="headerlink" href="#tf" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ros2 run tf2_tools view_frames</code> でTFツリーを確認</li>
+<li><code>odom → base_link</code> が存在するか確認</li>
+</ul>
+<h3 id="pc">リモートPCからトピックが見えない<a class="headerlink" href="#pc" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ROS_DOMAIN_ID</code> が一致しているか確認</li>
+<li>同一ネットワーク上にいるか確認</li>
+<li>ファイアウォールの設定を確認（DDS はマルチキャスト UDP を使用）</li>
+<li><code>ros2 topic list</code> で確認</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  ページトップへ戻る
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u30b3\u30d4\u30fc\u3057\u307e\u3057\u305f", "clipboard.copy": "\u30af\u30ea\u30c3\u30d7\u30dc\u30fc\u30c9\u3078\u30b3\u30d4\u30fc", "search.result.more.one": "\u3053\u306e\u30da\u30fc\u30b8\u5185\u306b\u3082\u30461\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.more.other": "\u3053\u306e\u30da\u30fc\u30b8\u5185\u306b\u3042\u3068#\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.none": "\u4f55\u3082\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3067\u3057\u305f", "search.result.one": "1\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.other": "#\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.placeholder": "\u691c\u7d22\u30ad\u30fc\u30ef\u30fc\u30c9\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044", "search.result.term.missing": "\u691c\u7d22\u306b\u542b\u307e\u308c\u306a\u3044", "select.version": "\u30d0\u30fc\u30b8\u30e7\u30f3\u5207\u308a\u66ff\u3048"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
