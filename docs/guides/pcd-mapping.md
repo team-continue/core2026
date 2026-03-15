@@ -58,7 +58,7 @@ FAST-LIOを有効にしてナビゲーションスタックを起動し、ロボ
 ros2 service call /map_save std_srvs/srv/Trigger
 ```
 
-PCD ファイルは FAST-LIO の実行ディレクトリ（通常は `~/.ros/`）に `scans.pcd` として保存されます。
+PCD ファイルはワークスペースのルート（`~/core_ws/`）に `scans.pcd` として保存されます。
 
 !!! note "保存先の確認"
     FAST-LIOのログ出力でPCDファイルの保存先パスを確認してください。
