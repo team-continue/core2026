@@ -488,7 +488,7 @@ flowchart TD
   - ノード再起動後の最初の非常停止解除時のみ `startup_release_yaw_angle` / `startup_release_pitch_angle` へ初期化可能
   - 追尾目標が未到着の間は、その初期角度を保持する
 - `Manual`
-  - ONエッジで `manual_mode_yaw_fixed_angle` と `manual_mode_pitch_initial_angle` を初期値に設定
+  - ONエッジで `manual_mode_yaw_fixed_angle` と `manual_mode_pitch_initial_angle` へ中間目標を刻みながら移動
   - 以後 yaw は固定、pitch は手動入力で相対更新
   - pitch 制限は zone 制限ではなく `pitch_min_angle` / `pitch_max_angle` を使用
 - `Test`
@@ -497,7 +497,8 @@ flowchart TD
   - モード再突入時は古い入力を無効化して新規入力待ち
 - `AutoTrack`
   - 目標画像が timeout 内にある時のみ追尾
-  - 目標喪失直後は現在角を保持し、`target_lost_return_to_startup_delay_sec` 経過後は `startup_release_yaw_angle` / `startup_release_pitch_angle` へ戻る
+  - 目標喪失直後は現在角を保持し、`target_lost_return_to_startup_delay_sec` 経過後は `startup_release_yaw_angle` / `startup_release_pitch_angle` へ中間目標を刻みながら戻る
+  - 戻り時の 1 秒あたり最大変化量は `max_yaw_rate` / `max_pitch_rate`
   - 追尾方式は2種類
     - `use_fov_image_tracking=true`: 画角ベース（atan変換）
     - `false`: gain による角度加算
@@ -544,6 +545,8 @@ flowchart TD
 - `image_tolerance_x`, `image_tolerance_y`
 - `target_timeout_sec`
 - `target_lost_return_to_startup_delay_sec`
+- `max_yaw_rate`, `max_pitch_rate`
+  - `startup_release_*` への復帰と `manual_mode_*` 初期角への移動で共用
 - `yaw_image_gain`, `pitch_image_gain`
 - `yaw_direction`, `pitch_direction`
 - `pitch_offset`
