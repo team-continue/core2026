@@ -90,6 +90,7 @@
                 image_center_y: 0.5
                 image_tolerance_x: 0.02
                 image_tolerance_y: 0.02
+                target_lead_time_sec: 0.0 # [s] 連続する target_image_position から画像平面速度を推定し、この秒数先の予測座標を狙う。0で無効
                 target_timeout_sec: 0.2
                 target_lost_return_to_startup_delay_sec: 2.0 # target喪失後、この秒数だけ現在角を保持したら startup_release_* へ戻す
 

@@ -497,6 +497,7 @@ flowchart TD
   - モード再突入時は古い入力を無効化して新規入力待ち
 - `AutoTrack`
   - 目標画像が timeout 内にある時のみ追尾
+  - 連続する `target_image_position` から画像平面上の速度を推定し、`target_lead_time_sec` 秒先の予測座標を狙える
   - 目標喪失直後は現在角を保持し、`target_lost_return_to_startup_delay_sec` 経過後は `startup_release_yaw_angle` / `startup_release_pitch_angle` へ中間目標を刻みながら戻る
   - 戻り時の 1 秒あたり最大変化量は `max_yaw_rate` / `max_pitch_rate`
   - 追尾方式は2種類
@@ -543,6 +544,7 @@ flowchart TD
 - `use_fov_image_tracking`
 - `horizontal_fov_deg`
 - `image_tolerance_x`, `image_tolerance_y`
+- `target_lead_time_sec`
 - `target_timeout_sec`
 - `target_lost_return_to_startup_delay_sec`
 - `max_yaw_rate`, `max_pitch_rate`

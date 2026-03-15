@@ -41,6 +41,7 @@ public:
     this->declare_parameter<bool>("use_fov_image_tracking", true);
     this->declare_parameter<double>("image_tolerance_x", 0.02);
     this->declare_parameter<double>("image_tolerance_y", 0.02);
+    this->declare_parameter<double>("target_lead_time_sec", 0.0);
     this->declare_parameter<double>("max_yaw_rate", 0.5);
     this->declare_parameter<double>("max_pitch_rate", 0.5);
     this->declare_parameter<double>("yaw_image_gain", 0.5);
@@ -89,6 +90,7 @@ public:
     this->get_parameter("use_fov_image_tracking", use_fov_image_tracking_);
     this->get_parameter("image_tolerance_x", image_tolerance_x_);
     this->get_parameter("image_tolerance_y", image_tolerance_y_);
+    this->get_parameter("target_lead_time_sec", target_lead_time_sec_);
     this->get_parameter("max_yaw_rate", max_yaw_rate_);
     this->get_parameter("max_pitch_rate", max_pitch_rate_);
     this->get_parameter("yaw_image_gain", yaw_image_gain_);
@@ -169,15 +171,16 @@ public:
     if (image_width_ <= 0.0 || image_height_ <= 0.0 ||
       test_yaw_gain_ < 0.0 || test_pitch_gain_ < 0.0 ||
       image_tolerance_x_ < 0.0 || image_tolerance_y_ < 0.0 || target_timeout_sec_ < 0.0 ||
-      target_lost_return_to_startup_delay_sec_ < 0.0 ||
+      target_lost_return_to_startup_delay_sec_ < 0.0 || target_lead_time_sec_ < 0.0 ||
       max_yaw_rate_ < 0.0 || max_pitch_rate_ < 0.0)
     {
       RCLCPP_FATAL(
         get_logger(),
-        "Invalid image params: image_width=%f, image_height=%f, horizontal_fov_deg=%f, test_yaw_gain=%f, test_pitch_gain=%f, image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f, target_lost_return_to_startup_delay_sec=%f, max_yaw_rate=%f, max_pitch_rate=%f",
+        "Invalid image params: image_width=%f, image_height=%f, horizontal_fov_deg=%f, test_yaw_gain=%f, test_pitch_gain=%f, image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f, target_lost_return_to_startup_delay_sec=%f, target_lead_time_sec=%f, max_yaw_rate=%f, max_pitch_rate=%f",
         image_width_, image_height_, horizontal_fov_deg_, test_yaw_gain_, test_pitch_gain_,
         image_tolerance_x_, image_tolerance_y_, target_timeout_sec_,
-        target_lost_return_to_startup_delay_sec_, max_yaw_rate_, max_pitch_rate_);
+        target_lost_return_to_startup_delay_sec_, target_lead_time_sec_,
+        max_yaw_rate_, max_pitch_rate_);
       throw std::runtime_error("invalid aimbot image parameters");
     }
     if (use_fov_image_tracking_ &&
@@ -246,11 +249,11 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), return_rate=(yaw=%.3f,pitch=%.3f)rad/s, target_lost_return_delay=%.2fs, test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
+      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), target_lead_time=%.3fs, return_rate=(yaw=%.3f,pitch=%.3f)rad/s, target_lost_return_delay=%.2fs, test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
       image_width_, image_height_, image_center_x_, image_center_y_,
       getImageTargetCenterX(), getImageTargetCenterY(),
       use_fov_image_tracking_ ? "fov" : "gain",
-      horizontal_fov_deg_, image_tolerance_x_, image_tolerance_y_,
+      horizontal_fov_deg_, image_tolerance_x_, image_tolerance_y_, target_lead_time_sec_,
       max_yaw_rate_, max_pitch_rate_,
       target_lost_return_to_startup_delay_sec_,
       enable_test_mode_ ? "true" : "false",
@@ -340,12 +343,31 @@ private:
       has_target_ = false;
       target_image_x_ = 0.0;
       target_image_y_ = 0.0;
+      resetTargetMotionPrediction();
       return;
+    }
+
+    const rclcpp::Time sample_time = getTargetSampleTime(*msg);
+    if (has_previous_target_sample_) {
+      const double dt = (sample_time - previous_target_sample_time_).seconds();
+      if (dt > 1e-6) {
+        target_image_velocity_x_ = (msg->point.x - previous_target_image_x_) / dt;
+        target_image_velocity_y_ = (msg->point.y - previous_target_image_y_) / dt;
+        has_target_velocity_ = true;
+      } else {
+        has_target_velocity_ = false;
+        target_image_velocity_x_ = 0.0;
+        target_image_velocity_y_ = 0.0;
+      }
     }
 
     target_image_x_ = msg->point.x;
     target_image_y_ = msg->point.y;
     has_target_ = true;
+    previous_target_image_x_ = msg->point.x;
+    previous_target_image_y_ = msg->point.y;
+    previous_target_sample_time_ = sample_time;
+    has_previous_target_sample_ = true;
     last_target_time_ = this->now();
   }
 
@@ -538,6 +560,7 @@ private:
             auto_track_timeout_active_ = true;
             auto_track_timeout_start_ = this->now();
             auto_track_timeout_returned_to_startup_ = false;
+            resetTargetMotionPrediction();
             if (has_joint_state_) {
               // 目標喪失時は最初の1回だけ現在角をラッチし、その後はその目標を保持する。
               setCommandTargetRaw(yaw_angle_, pitch_angle_);
@@ -586,8 +609,9 @@ private:
         // 入力は中心原点のピクセル座標。image_center_x/y で狙う画像中心をずらし、
         // その中心からの誤差で追尾する。
         {
-          const double x_error = target_image_x_ - getImageTargetCenterX();
-          const double y_error = target_image_y_ - getImageTargetCenterY();
+          const auto [predicted_target_x, predicted_target_y] = getPredictedTargetImagePosition();
+          const double x_error = predicted_target_x - getImageTargetCenterX();
+          const double y_error = predicted_target_y - getImageTargetCenterY();
           const double yaw_base = has_joint_state_ ? yaw_angle_ : command_yaw_angle_;
           const double pitch_base = has_joint_state_ ?
             (pitch_angle_ + pitch_offset_) :
@@ -1029,6 +1053,37 @@ private:
     return (image_center_y_ - 0.5) * image_height_;
   }
 
+  rclcpp::Time getTargetSampleTime(const geometry_msgs::msg::PointStamped & msg) const
+  {
+    if (msg.header.stamp.sec == 0 && msg.header.stamp.nanosec == 0) {
+      return this->now();
+    }
+    return rclcpp::Time(msg.header.stamp, this->get_clock()->get_clock_type());
+  }
+
+  void resetTargetMotionPrediction()
+  {
+    has_target_velocity_ = false;
+    target_image_velocity_x_ = 0.0;
+    target_image_velocity_y_ = 0.0;
+    has_previous_target_sample_ = false;
+  }
+
+  std::pair<double, double> getPredictedTargetImagePosition() const
+  {
+    double predicted_x = target_image_x_;
+    double predicted_y = target_image_y_;
+    if (has_target_velocity_ && target_lead_time_sec_ > 0.0) {
+      predicted_x += target_image_velocity_x_ * target_lead_time_sec_;
+      predicted_y += target_image_velocity_y_ * target_lead_time_sec_;
+    }
+    const double half_width = 0.5 * image_width_;
+    const double half_height = 0.5 * image_height_;
+    predicted_x = std::clamp(predicted_x, -half_width, half_width);
+    predicted_y = std::clamp(predicted_y, -half_height, half_height);
+    return {predicted_x, predicted_y};
+  }
+
   void publishCommandTarget()
   {
     if (!has_command_target_) {
@@ -1059,8 +1114,15 @@ private:
   double pitch_angle_ = 0.0;
   double target_image_x_ = 0.0;
   double target_image_y_ = 0.0;
+  double previous_target_image_x_ = 0.0;
+  double previous_target_image_y_ = 0.0;
+  double target_image_velocity_x_ = 0.0;
+  double target_image_velocity_y_ = 0.0;
   bool has_target_ = false;
+  bool has_previous_target_sample_ = false;
+  bool has_target_velocity_ = false;
   rclcpp::Time last_target_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time previous_target_sample_time_{0, 0, RCL_ROS_TIME};
   double test_yaw_target_ = 0.0;
   double test_pitch_target_ = 0.0;
   bool has_test_yaw_target_ = false;
@@ -1098,6 +1160,7 @@ private:
   bool use_fov_image_tracking_ = true;
   double image_tolerance_x_;
   double image_tolerance_y_;
+  double target_lead_time_sec_;
   double max_yaw_rate_;
   double max_pitch_rate_;
   double yaw_image_gain_;
