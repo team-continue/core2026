@@ -63,7 +63,8 @@ def generate_launch_description():
         ),
         launch_arguments={
             "wireless": "/my_robot/wireless",
-            "rotation_flag": "/my_robot/rotation_flag",
+            "rotation": "/my_robot/rotation",
+            "ads": "/my_robot/ads",
             "cmd_vel": "/my_robot/cmd_vel",
             "manual_mode": "/my_robot/manual_mode",
             "manual_pitch": "/my_robot/manual_pitch",
