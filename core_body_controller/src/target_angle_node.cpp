@@ -150,7 +150,6 @@ TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
       "joint_states", 10, [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
         latest_body_angle_ = msg->position[4];
       });
-  rotation_flag_pub_ = this->create_publisher<std_msgs::msg::Bool>("rotation_flag", 10);
   emergency_stop_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "/system/emergency/hazard_status", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
         emergency_stop_flag_ = msg->data;
@@ -194,10 +193,6 @@ void TargetAngleNode::timer_callback() {
     auto omega_msg = std_msgs::msg::Float64();
     omega_msg.data = omega;
     target_omega_pub_->publish(omega_msg);
-
-    std_msgs::msg::Bool msg;
-    msg.data = rotation_flag_;
-    rotation_flag_pub_->publish(msg);
   }
   can_pub_->publish(can_msg);
   RCLCPP_INFO(this->get_logger(), "omega: %f", can_msg.array[0].data[1]);

@@ -36,7 +36,7 @@ BodyControlNode::BodyControlNode() : Node("body_control_node") {
       });
   body_omega_ = this->create_publisher<std_msgs::msg::Float64>("body_omega", 10);
   rotation_flag_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "rotation_flag", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
+      "/rotation", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
         rotation_flag_ = msg->data;
       });
   sub_shooter_angle_ = this->create_subscription<sensor_msgs::msg::JointState>(
