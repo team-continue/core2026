@@ -166,7 +166,7 @@ def generate_launch_description():
                 "pitch_min_angle": -1.45,
                 "pitch_max_angle": 3.14,
                 "zone.yaw_reversed": False,
-                "zone.yaw_zone1_start": -0.45,
+                "zone.yaw_zone1_start": -0.3,
                 "zone.yaw_boundary": -0.2,
                 "zone.yaw_zone2_end": 0.2,
                 "zone.yaw_zone3_end": 2.2,
