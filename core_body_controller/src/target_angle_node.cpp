@@ -68,7 +68,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr rotation_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_sub_;
-  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr body_target_angle_pub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr body_target_angle_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr body_omega_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rotation_flag_pub_;
@@ -138,7 +138,10 @@ TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
         // New IMU publishes angular velocity, so estimate yaw by integration in timer callback.
         latest_imu_omega_ = msg->angular_velocity.z;
       });
-  body_target_angle_pub_ = this->create_publisher<std_msgs::msg::Float64>("body_target_angle", 10);
+  body_target_angle_sub_ = this->create_subscription<std_msgs::msg::Float64>(
+      "yaw_target_angle", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) {
+        body_target_angle_ = msg->data + INITIAL_TARGET_ANGLE;
+      });
   body_omega_sub_ = this->create_subscription<std_msgs::msg::Float64>(
       "body_omega", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) {
         latest_body_omega_ = msg->data;
@@ -198,12 +201,6 @@ void TargetAngleNode::timer_callback() {
   }
   can_pub_->publish(can_msg);
   RCLCPP_INFO(this->get_logger(), "omega: %f", can_msg.array[0].data[1]);
-
-  if (!rotation_flag_) {
-    std_msgs::msg::Float64 body_target_angle_msg;
-    body_target_angle_msg.data = body_target_angle_ - INITIAL_TARGET_ANGLE;
-    body_target_angle_pub_->publish(body_target_angle_msg);
-  }
 }
 
 int main(int argc, char* argv[]) {
