@@ -5,7 +5,7 @@
 class WirelessModule {
 public:
     static constexpr uint32_t BAUD_RATE = 115200;
-    static constexpr size_t DATA_LENGTH = 8;     // ':' の後ろに来る 8 byte
+    static constexpr size_t DATA_LENGTH = 7;     // ':' の次を無視し、その後ろの 7 byte を使う
 
     explicit WirelessModule()
         : linePos_(0) {
@@ -19,7 +19,7 @@ public:
     }
 
     // 1行ぶん受信して正しくパースできたら true
-    // data[0..7] に格納する
+    // data[0..6] に格納する
     bool update(uint8_t* data) {
         while (PORT_WIRELESS.available() > 0) {
             char c = static_cast<char>(PORT_WIRELESS.read());
@@ -80,7 +80,7 @@ private:
 
     // 例:
     // 00,0401,D0:01,91,83,91,89,00,00,00
-    //            ^ ここ以降の8byteを data に入れる
+    //            ^ この 01 は無視し、その後ろの 7 byte を data に入れる
     static bool parseLine(char* line, uint8_t* data) {
         if (line == nullptr || data == nullptr) {
             return false;
@@ -93,9 +93,15 @@ private:
 
         // ':' の後ろを読む
         char* payload = colon + 1;
-        size_t index = 0;
-
         char* token = strtok(payload, ",");
+        if (token == nullptr) {
+            return false;
+        }
+
+        // ':' の次にある先頭 1 要素は使わない
+        token = strtok(nullptr, ",");
+
+        size_t index = 0;
         while (token != nullptr && index < DATA_LENGTH) {
             if (!parseHexByte(token, data[index])) {
                 return false;
@@ -105,7 +111,7 @@ private:
             token = strtok(nullptr, ",");
         }
 
-        // 8 byte ちょうど取れたか確認
+        // 7 byte ちょうど取れたか確認
         if (index != DATA_LENGTH) {
             return false;
         }
