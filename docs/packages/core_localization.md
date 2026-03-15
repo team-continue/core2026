@@ -54,7 +54,7 @@ FAST-LIOが提供するローカルオドメトリ（`odom→base_link`）に対
 
 | パラメータ | デフォルト | 説明 |
 |-----------|----------|------|
-| `global_map_path` | `""` | PCD地図ファイルパス（必須） |
+| `global_map_path` | `""` | PCD地図ファイルパス（必須）。`navigation.launch.py` では `map_name` から `pcd_maps/<map_name>.pcd` に自動解決 |
 | `map_voxel_size` | `0.4` | 地図ダウンサンプリング [m] |
 | `scan_voxel_size` | `0.3` | 入力スキャンダウンサンプリング [m] |
 
@@ -84,15 +84,16 @@ FAST-LIOが提供するローカルオドメトリ（`odom→base_link`）に対
 ```bash
 ros2 launch core_launch navigation.launch.py \
   environment:=real \
-  use_localization:=true \
-  pcd_map_path:=/path/to/field.pcd
+  use_localization:=true
 ```
+
+PCD地図の構築・配置方法やフィールドごとの地図選択については[PCD地図構築ガイド](../guides/pcd-mapping.md)を参照してください。
 
 ### 単体起動（テスト・開発用）
 
 ```bash
 ros2 launch core_localization localization.launch.py \
-  pcd_map_path:=/path/to/field.pcd
+  global_map_path:=/path/to/field.pcd
 ```
 
 ## TFツリー変更
