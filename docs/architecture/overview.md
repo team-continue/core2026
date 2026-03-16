@@ -100,6 +100,7 @@ graph TB
 | `cmd_vel_smoother_node` | core_cmd_vel_smoother | C++ | cmd_vel EMA平滑化フィルタ |
 | `costmap_build_node` | core_costmap_builder | C++ | LiDAR点群からローリングウィンドウ式ローカルコストマップ生成 |
 | `body_control_node` | core_body_controller | C++ | cmd_vel→オムニホイールCAN指令変換、レートリミッタ |
+| `target_angle_node` | core_body_controller | C++ | 車体回転角度PID制御（IMU+エンコーダ） |
 | `core_hardware` | core_hardware | C++ | EtherCAT（SOEM）によるTeensy41スレーブ通信 |
 | `ros_tcp_endpoint` | ROS-TCP-Endpoint | Python | Unity-ROS2 TCPブリッジ |
 | `localization_node` | core_localization | C++ | NDT/ICPによるPCDマップベースのグローバル局在化（`map→odom` 動的TF） |
@@ -115,28 +116,14 @@ graph TB
 
 ## 起動モード
 
-| モード | コマンド | TCP EP | odom | localization |
-|--------|---------|--------|------|-------------|
-| sim（デフォルト） | `navigation.launch.py` | o | sim | x |
-| sim + FAST-LIO | `navigation.launch.py odom_source:=fastlio` | o | FAST-LIO | x |
-| 実機 | `navigation.launch.py environment:=real` | x | FAST-LIO | x |
-| 実機 + localization | `navigation.launch.py environment:=real use_localization:=true pcd_map_path:=...` | x | FAST-LIO | o |
+起動モードの詳細（コマンド、引数、実機テスト手順など）は[ナビゲーション起動ガイド](../guides/navigation.md)を参照してください。
 
-### シミュレータモード（デフォルト）
-
-```bash
-ros2 launch core_launch navigation.launch.py
-```
-
-起動ノード: ros_tcp_endpoint, odom_bridge, map_server, path_planner, mppi, cmd_vel_smoother, costmap_builder, rviz2
-
-### 実機モード
-
-```bash
-ros2 launch core_launch navigation.launch.py environment:=real
-```
-
-シミュレータモードとの違い: TCP endpoint非起動、Livox driver起動、body_controller起動、odom_sourceはFAST-LIO固定。
+| モード | TCP EP | odom | localization |
+|--------|--------|------|-------------|
+| sim（デフォルト） | o | sim | x |
+| sim + FAST-LIO | o | FAST-LIO | x |
+| 実機 | x | FAST-LIO | x |
+| 実機 + localization | x | FAST-LIO | o |
 
 ## 静的TF
 

@@ -125,3 +125,42 @@ ros2 launch core_shooter shooter.launch.py
 
 !!! note "タレット構成"
     左右タレットはそれぞれ `left/`、`right/` 名前空間で起動されます。モーターIDはランチファイルで左右別に設定されます。
+
+## デバッグツール
+
+### shooter_debug_topic_gui
+
+Tkinterベースのデバッグ用GUIツールです。実機やハードウェアがなくても、シューターシステムの各トピックを手動でパブリッシュ・モニタリングできます。
+
+```bash
+ros2 run core_shooter shooter_debug_topic_gui
+```
+
+#### 主な機能
+
+**トピックパブリッシュ:**
+
+- テストモード・手動モードの切替（`/test_mode`, `/manual_mode`）
+- 射撃コマンド送信（単発・バースト・フルオート、左右独立）
+- ヨー・ピッチ角の手動入力（`/left/test_yaw_angle` 等）
+- シューターモーター速度の制御
+- リロード・ディスクホールド操作
+- 緊急停止の発行
+- CAN フレームの直接送信（`/can/tx`）
+
+**モニタリング:**
+
+- 残弾数（`/left/remaining_disk`, `/right/remaining_disk`）
+- 射撃ステータス・コマンド値
+- 距離センサ値
+- 全17モーターの関節角度・速度（`/joint_states`）
+- CAN送信フレームのリアルタイム表示
+
+**ターゲット指定:**
+
+- 640x360 のキャンバス上でクリックしてターゲット画像位置を設定（`/left/target_image_position`, `/right/target_image_position`）
+- 自動追尾のテストに使用
+
+#### テストモード
+
+`/test_mode` トピックを `true` にすると、shooter_controller と aim_bot がテストモードに切り替わります。テストモードではジャム検出やシューターモーター回転コマンドの遅延チェックなど一部の安全チェックがバイパスされます。

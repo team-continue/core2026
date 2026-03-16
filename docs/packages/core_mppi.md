@@ -84,6 +84,8 @@ graph LR
 | `mppi.unknown_cost` | `0.5` | 未知セルのコスト |
 | `mppi.heading_lookahead` | `3` | ヘディング目標に使うパス先読みステップ数 |
 
+コスト重みのチューニング手順は[パラメータチューニングガイド](../guides/tuning.md#mppi-コントローラ)を参照してください。
+
 ## 起動
 
 ```bash

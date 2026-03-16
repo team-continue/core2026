@@ -54,7 +54,7 @@ install(TARGETS localization_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY config launch
+install(DIRECTORY config launch pcd_maps
   DESTINATION share/${PROJECT_NAME}
 )
 

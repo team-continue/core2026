@@ -117,7 +117,7 @@ jobs:
         if: github.event_name == 'push' && github.ref_name != 'main'
         run: |
           . /opt/ros/${{ matrix.rosdistro }}/setup.sh
-          cd /ros2_ws/src/core2026
+          cd $GITHUB_WORKSPACE
           files=$(git ls-files '*.c' '*.cc' '*.cpp' '*.h' '*.hpp' || true)
           if [ -n "$files" ]; then
             ament_clang_format --reformat $files || true
@@ -128,7 +128,7 @@ jobs:
       - name: Commit and push formatting changes
         if: github.event_name == 'push' && github.ref_name != 'main'
         run: |
-          cd /ros2_ws/src/core2026
+          cd $GITHUB_WORKSPACE
           if [[ -n "$(git status --porcelain)" ]]; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
