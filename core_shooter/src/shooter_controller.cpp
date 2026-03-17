@@ -174,7 +174,7 @@ public:
       "/test_mode", 10,
       std::bind(&ShooterController::testModeCallback, this, std::placeholders::_1));
     regrip_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "regrip_active", 10,
+      "regrip_active", rclcpp::QoS(1).transient_local(),
       std::bind(&ShooterController::regripActiveCallback, this, std::placeholders::_1));
 
     //========================================

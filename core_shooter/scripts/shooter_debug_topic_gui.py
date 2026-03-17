@@ -37,12 +37,12 @@ class DebugTopicPublisher(Node):
             ),
             "/left/reloading": self.create_publisher(Bool, "/left/reloading", 10),
             "/right/reloading": self.create_publisher(Bool, "/right/reloading", 10),
-            "/left_shoot_once": self.create_publisher(Bool, "/left_shoot_once", 10),
-            "/left_shoot_burst": self.create_publisher(Bool, "/left_shoot_burst", 10),
-            "/left_shoot_fullauto": self.create_publisher(Bool, "/left_shoot_fullauto", 10),
-            "/right_shoot_once": self.create_publisher(Bool, "/right_shoot_once", 10),
-            "/right_shoot_burst": self.create_publisher(Bool, "/right_shoot_burst", 10),
-            "/right_shoot_fullauto": self.create_publisher(Bool, "/right_shoot_fullauto", 10),
+            "/left/shoot_once": self.create_publisher(Bool, "/left/shoot_once", 10),
+            "/left/shoot_burst": self.create_publisher(Bool, "/left/shoot_burst", 10),
+            "/left/shoot_fullauto": self.create_publisher(Bool, "/left/shoot_fullauto", 10),
+            "/right/shoot_once": self.create_publisher(Bool, "/right/shoot_once", 10),
+            "/right/shoot_burst": self.create_publisher(Bool, "/right/shoot_burst", 10),
+            "/right/shoot_fullauto": self.create_publisher(Bool, "/right/shoot_fullauto", 10),
             "/left/disk_hold_state": self.create_publisher(Bool, "/left/disk_hold_state", 10),
             "/right/disk_hold_state": self.create_publisher(Bool, "/right/disk_hold_state", 10),
         }
@@ -361,7 +361,7 @@ class DebugGui:
             mode_frame,
             text=(
                 "Runtime topics: hazard_status, manual_mode, test_mode, "
-                "shoot_motor_state, shoot_once, reloading, manual_pitch"
+                "shoot_motor, shoot_once, reloading, manual_pitch"
             ),
             justify=tk.LEFT,
             wraplength=420,
@@ -400,7 +400,7 @@ class DebugGui:
         ttk.Button(
             left_frame,
             text="Shoot Once",
-            command=lambda: self._pulse_bool("/left_shoot_once"),
+            command=lambda: self._pulse_bool("/left/shoot_once"),
         ).pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
             left_frame,
@@ -411,7 +411,7 @@ class DebugGui:
         ttk.Button(
             right_frame,
             text="Shoot Once",
-            command=lambda: self._pulse_bool("/right_shoot_once"),
+            command=lambda: self._pulse_bool("/right/shoot_once"),
         ).pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
             right_frame,
@@ -964,9 +964,9 @@ class DebugGui:
 
         self._build_shooter_side(
             left_frame,
-            once_topic="/left_shoot_once",
-            burst_topic="/left_shoot_burst",
-            fullauto_topic="/left_shoot_fullauto",
+            once_topic="/left/shoot_once",
+            burst_topic="/left/shoot_burst",
+            fullauto_topic="/left/shoot_fullauto",
             shoot_motor_topic="/left/shoot_motor",
             shoot_motor_slider_var=self.left_shoot_motor_var,
             shoot_motor_entry_var=self.left_shoot_motor_entry_var,
@@ -974,9 +974,9 @@ class DebugGui:
         )
         self._build_shooter_side(
             right_frame,
-            once_topic="/right_shoot_once",
-            burst_topic="/right_shoot_burst",
-            fullauto_topic="/right_shoot_fullauto",
+            once_topic="/right/shoot_once",
+            burst_topic="/right/shoot_burst",
+            fullauto_topic="/right/shoot_fullauto",
             shoot_motor_topic="/right/shoot_motor",
             shoot_motor_slider_var=self.right_shoot_motor_var,
             shoot_motor_entry_var=self.right_shoot_motor_entry_var,
@@ -1282,9 +1282,9 @@ def main() -> None:
     def on_close() -> None:
         try:
             if gui.left_fullauto_var.get():
-                node.publish_bool("/left_shoot_fullauto", False)
+                node.publish_bool("/left/shoot_fullauto", False)
             if gui.right_fullauto_var.get():
-                node.publish_bool("/right_shoot_fullauto", False)
+                node.publish_bool("/right/shoot_fullauto", False)
         except Exception:
             pass
         root.destroy()

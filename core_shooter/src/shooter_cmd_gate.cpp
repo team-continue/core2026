@@ -45,23 +45,23 @@ public:
     // subscribers ui
     //========================================
     left_once_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "left_shoot_once", 1,
+      "left/shoot_once", 1,
       std::bind(&ShooterCmdGate::leftOnceCallback, this, std::placeholders::_1));
     left_burst_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "left_shoot_burst", 1,
+      "left/shoot_burst", 1,
       std::bind(&ShooterCmdGate::leftBurstCallback, this, std::placeholders::_1));
     left_fullauto_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "left_shoot_fullauto", 1,
+      "left/shoot_fullauto", 1,
       std::bind(&ShooterCmdGate::leftFullautoCallback, this, std::placeholders::_1));
 
     right_once_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "right_shoot_once", 1,
+      "right/shoot_once", 1,
       std::bind(&ShooterCmdGate::rightOnceCallback, this, std::placeholders::_1));
     right_burst_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "right_shoot_burst", 1,
+      "right/shoot_burst", 1,
       std::bind(&ShooterCmdGate::rightBurstCallback, this, std::placeholders::_1));
     right_fullauto_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "right_shoot_fullauto", 1,
+      "right/shoot_fullauto", 1,
       std::bind(&ShooterCmdGate::rightFullautoCallback, this, std::placeholders::_1));
     manual_mode_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "manual_mode", 1,
@@ -70,7 +70,7 @@ public:
       "manual_pitch", 1,
       std::bind(&ShooterCmdGate::manualPitchCallback, this, std::placeholders::_1));
     shoot_motor_state_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "/shoot_motor_state", 1,
+      "shoot_motor_state", 1,
       std::bind(&ShooterCmdGate::shootMotorStateCallback, this, std::placeholders::_1));
 
     //========================================

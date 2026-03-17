@@ -57,12 +57,12 @@ graph TB
 
 | トピック | 型 | 説明 |
 |---------|------|------|
-| `shoot_once` | `std_msgs/Bool` | 単発射撃コマンド |
-| `shoot_burst` | `std_msgs/Bool` | バースト射撃コマンド |
-| `shoot_fullauto` | `std_msgs/Bool` | フルオート射撃コマンド |
+| `/left/shoot_once`, `/right/shoot_once` | `std_msgs/Bool` | 単発射撃コマンド |
+| `/left/shoot_burst`, `/right/shoot_burst` | `std_msgs/Bool` | バースト射撃コマンド |
+| `/left/shoot_fullauto`, `/right/shoot_fullauto` | `std_msgs/Bool` | フルオート射撃コマンド |
 | `manual_mode` | `std_msgs/Bool` | 手動照準モード切替 |
 | `manual_pitch` | `std_msgs/Float32` | 手動ピッチ入力 [-1.0〜1.0] |
-| `shoot_motor_state` | `std_msgs/Bool` | シューターモーター状態 |
+| `/shoot_motor` | `std_msgs/Bool` | シューターモーター状態 |
 | `joint_state` | `sensor_msgs/JointState` | モーター関節状態フィードバック |
 | `damage_panel_pose` | `geometry_msgs/PointStamped` | ビジョンからのターゲット検出 |
 | `/system/emergency/hazard_status` | `std_msgs/Bool` | 緊急停止信号 |

@@ -39,9 +39,12 @@ public:
     this->declare_parameter<double>("image_height", 720.0);
     this->declare_parameter<double>("horizontal_fov_deg", 100.0);
     this->declare_parameter<bool>("use_fov_image_tracking", true);
-    this->declare_parameter<double>("image_tolerance_x", 0.02);
-    this->declare_parameter<double>("image_tolerance_y", 0.02);
+    this->declare_parameter<double>("image_tolerance_x", 8.0);
+    this->declare_parameter<double>("image_tolerance_y", 8.0);
     this->declare_parameter<double>("target_lead_time_sec", 0.0);
+    this->declare_parameter<double>("target_velocity_min_dt_sec", 0.01);
+    this->declare_parameter<double>("target_velocity_max_px_per_sec", 1500.0);
+    this->declare_parameter<double>("target_velocity_ema_alpha", 0.25);
     this->declare_parameter<double>("max_yaw_rate", 0.5);
     this->declare_parameter<double>("max_pitch_rate", 0.5);
     this->declare_parameter<double>("yaw_image_gain", 0.5);
@@ -91,6 +94,9 @@ public:
     this->get_parameter("image_tolerance_x", image_tolerance_x_);
     this->get_parameter("image_tolerance_y", image_tolerance_y_);
     this->get_parameter("target_lead_time_sec", target_lead_time_sec_);
+    this->get_parameter("target_velocity_min_dt_sec", target_velocity_min_dt_sec_);
+    this->get_parameter("target_velocity_max_px_per_sec", target_velocity_max_px_per_sec_);
+    this->get_parameter("target_velocity_ema_alpha", target_velocity_ema_alpha_);
     this->get_parameter("max_yaw_rate", max_yaw_rate_);
     this->get_parameter("max_pitch_rate", max_pitch_rate_);
     this->get_parameter("yaw_image_gain", yaw_image_gain_);
@@ -172,16 +178,25 @@ public:
       test_yaw_gain_ < 0.0 || test_pitch_gain_ < 0.0 ||
       image_tolerance_x_ < 0.0 || image_tolerance_y_ < 0.0 || target_timeout_sec_ < 0.0 ||
       target_lost_return_to_startup_delay_sec_ < 0.0 || target_lead_time_sec_ < 0.0 ||
+      target_velocity_min_dt_sec_ < 0.0 || target_velocity_max_px_per_sec_ < 0.0 ||
       max_yaw_rate_ < 0.0 || max_pitch_rate_ < 0.0)
     {
       RCLCPP_FATAL(
         get_logger(),
-        "Invalid image params: image_width=%f, image_height=%f, horizontal_fov_deg=%f, test_yaw_gain=%f, test_pitch_gain=%f, image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f, target_lost_return_to_startup_delay_sec=%f, target_lead_time_sec=%f, max_yaw_rate=%f, max_pitch_rate=%f",
+        "Invalid image params: image_width=%f, image_height=%f, horizontal_fov_deg=%f, test_yaw_gain=%f, test_pitch_gain=%f, image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f, target_lost_return_to_startup_delay_sec=%f, target_lead_time_sec=%f, target_velocity_min_dt_sec=%f, target_velocity_max_px_per_sec=%f, max_yaw_rate=%f, max_pitch_rate=%f",
         image_width_, image_height_, horizontal_fov_deg_, test_yaw_gain_, test_pitch_gain_,
         image_tolerance_x_, image_tolerance_y_, target_timeout_sec_,
         target_lost_return_to_startup_delay_sec_, target_lead_time_sec_,
+        target_velocity_min_dt_sec_, target_velocity_max_px_per_sec_,
         max_yaw_rate_, max_pitch_rate_);
       throw std::runtime_error("invalid aimbot image parameters");
+    }
+    if (target_velocity_ema_alpha_ < 0.0 || target_velocity_ema_alpha_ > 1.0) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid target_velocity_ema_alpha=%f (must satisfy 0 <= alpha <= 1)",
+        target_velocity_ema_alpha_);
+      throw std::runtime_error("invalid aimbot target velocity ema alpha");
     }
     if (use_fov_image_tracking_ &&
       (horizontal_fov_deg_ <= 0.0 || horizontal_fov_deg_ >= 180.0))
@@ -249,11 +264,12 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), target_lead_time=%.3fs, return_rate=(yaw=%.3f,pitch=%.3f)rad/s, target_lost_return_delay=%.2fs, test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
+      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), target_lead_time=%.3fs, target_velocity_filter=(min_dt=%.3fs,max=%.1fpx/s,alpha=%.2f), return_rate=(yaw=%.3f,pitch=%.3f)rad/s, target_lost_return_delay=%.2fs, test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
       image_width_, image_height_, image_center_x_, image_center_y_,
       getImageTargetCenterX(), getImageTargetCenterY(),
       use_fov_image_tracking_ ? "fov" : "gain",
       horizontal_fov_deg_, image_tolerance_x_, image_tolerance_y_, target_lead_time_sec_,
+      target_velocity_min_dt_sec_, target_velocity_max_px_per_sec_, target_velocity_ema_alpha_,
       max_yaw_rate_, max_pitch_rate_,
       target_lost_return_to_startup_delay_sec_,
       enable_test_mode_ ? "true" : "false",
@@ -348,26 +364,10 @@ private:
     }
 
     const rclcpp::Time sample_time = getTargetSampleTime(*msg);
-    if (has_previous_target_sample_) {
-      const double dt = (sample_time - previous_target_sample_time_).seconds();
-      if (dt > 1e-6) {
-        target_image_velocity_x_ = (msg->point.x - previous_target_image_x_) / dt;
-        target_image_velocity_y_ = (msg->point.y - previous_target_image_y_) / dt;
-        has_target_velocity_ = true;
-      } else {
-        has_target_velocity_ = false;
-        target_image_velocity_x_ = 0.0;
-        target_image_velocity_y_ = 0.0;
-      }
-    }
-
     target_image_x_ = msg->point.x;
     target_image_y_ = msg->point.y;
     has_target_ = true;
-    previous_target_image_x_ = msg->point.x;
-    previous_target_image_y_ = msg->point.y;
-    previous_target_sample_time_ = sample_time;
-    has_previous_target_sample_ = true;
+    updateTargetMotionPrediction(msg->point.x, msg->point.y, sample_time);
     last_target_time_ = this->now();
   }
 
@@ -1069,6 +1069,57 @@ private:
     has_previous_target_sample_ = false;
   }
 
+  void storeTargetSample(double x, double y, const rclcpp::Time & sample_time)
+  {
+    previous_target_image_x_ = x;
+    previous_target_image_y_ = y;
+    previous_target_sample_time_ = sample_time;
+    has_previous_target_sample_ = true;
+  }
+
+  void updateTargetMotionPrediction(double x, double y, const rclcpp::Time & sample_time)
+  {
+    if (!has_previous_target_sample_) {
+      storeTargetSample(x, y, sample_time);
+      return;
+    }
+
+    const double dt = (sample_time - previous_target_sample_time_).seconds();
+    if (dt <= 0.0) {
+      resetTargetMotionPrediction();
+      storeTargetSample(x, y, sample_time);
+      return;
+    }
+    if (dt < target_velocity_min_dt_sec_) {
+      return;
+    }
+
+    const double instant_velocity_x = std::clamp(
+      (x - previous_target_image_x_) / dt,
+      -target_velocity_max_px_per_sec_,
+      target_velocity_max_px_per_sec_);
+    const double instant_velocity_y = std::clamp(
+      (y - previous_target_image_y_) / dt,
+      -target_velocity_max_px_per_sec_,
+      target_velocity_max_px_per_sec_);
+
+    if (!has_target_velocity_ || target_velocity_ema_alpha_ >= 1.0) {
+      target_image_velocity_x_ = instant_velocity_x;
+      target_image_velocity_y_ = instant_velocity_y;
+    } else if (target_velocity_ema_alpha_ <= 0.0) {
+      target_image_velocity_x_ = 0.0;
+      target_image_velocity_y_ = 0.0;
+    } else {
+      const double keep = 1.0 - target_velocity_ema_alpha_;
+      target_image_velocity_x_ =
+        keep * target_image_velocity_x_ + target_velocity_ema_alpha_ * instant_velocity_x;
+      target_image_velocity_y_ =
+        keep * target_image_velocity_y_ + target_velocity_ema_alpha_ * instant_velocity_y;
+    }
+    has_target_velocity_ = true;
+    storeTargetSample(x, y, sample_time);
+  }
+
   std::pair<double, double> getPredictedTargetImagePosition() const
   {
     double predicted_x = target_image_x_;
@@ -1161,6 +1212,9 @@ private:
   double image_tolerance_x_;
   double image_tolerance_y_;
   double target_lead_time_sec_;
+  double target_velocity_min_dt_sec_;
+  double target_velocity_max_px_per_sec_;
+  double target_velocity_ema_alpha_;
   double max_yaw_rate_;
   double max_pitch_rate_;
   double yaw_image_gain_;

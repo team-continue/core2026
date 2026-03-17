@@ -88,7 +88,7 @@
 - 左右射撃指令の振り分け
 - フルオート入力のエッジ検出
 - `manual_mode` / `manual_pitch` の片側転送
-- `shoot_motor_state` の左右同時出力
+- `shoot_motor` の左右同時出力
 
 #### 5.1.2 テストケース一覧
 
@@ -97,13 +97,13 @@
 | `SCG-001` | P1 | `burst_count` 妥当性 | `burst_count=0` または負数で生成 | `std::runtime_error` を送出する |
 | `SCG-002` | P1 | `shoot_motor_on_command` 妥当性 | `shoot_motor_on_command<0` で生成 | `std::runtime_error` を送出する |
 | `SCG-003` | P1 | `manual_mode_target_side` 妥当性 | `left/right` 以外を設定して生成 | `std::runtime_error` を送出する |
-| `SCG-004` | P1 | 単発指令 | `left_shoot_once=true` を publish | `left_shoot_cmd=1` を1回 publish し、`false` 入力では publish しない |
-| `SCG-005` | P1 | バースト指令 | `right_shoot_burst=true`、`burst_count=3` | `right_shoot_cmd=3` を1回 publish する |
-| `SCG-006` | P1 | フルオート立上り | `left_shoot_fullauto: false -> true -> true` | 最初の `true` でのみ `left_shoot_cmd=-1` を publish し、維持中は再 publish しない |
-| `SCG-007` | P1 | フルオート立下り | `right_shoot_fullauto: false -> true -> false` | 立上りで `-1`、立下りで `0` を publish する |
+| `SCG-004` | P1 | 単発指令 | `/left/shoot_once=true` を publish | `left_shoot_cmd=1` を1回 publish し、`false` 入力では publish しない |
+| `SCG-005` | P1 | バースト指令 | `/right/shoot_burst=true`、`burst_count=3` | `right_shoot_cmd=3` を1回 publish する |
+| `SCG-006` | P1 | フルオート立上り | `/left/shoot_fullauto: false -> true -> true` | 最初の `true` でのみ `left_shoot_cmd=-1` を publish し、維持中は再 publish しない |
+| `SCG-007` | P1 | フルオート立下り | `/right/shoot_fullauto: false -> true -> false` | 立上りで `-1`、立下りで `0` を publish する |
 | `SCG-008` | P1 | `manual_mode` 左右転送 | `manual_mode_target_side=right` で `manual_mode=true/false` | `/right/manual_mode` のみ入力値を反映し、`/left/manual_mode` は常に `false` を publish する。`left` 設定時は左右が反転する |
 | `SCG-009` | P2 | `manual_pitch` 転送 | `manual_mode_target_side=left` で `manual_pitch=0.25` | `/left/manual_pitch_angle=0.25` のみ publish する |
-| `SCG-010` | P1 | 発射モータ一括 ON/OFF | `shoot_motor_state=true/false`、`shoot_motor_on_command=2000.0` | `true` で左右とも `2000.0`、`false` で左右とも `0.0` を publish する |
+| `SCG-010` | P1 | 発射モータ一括 ON/OFF | `shoot_motor=true/false`、`shoot_motor_on_command=2000.0` | `true` で左右とも `2000.0`、`false` で左右とも `0.0` を publish する |
 
 ### 5.2 `shooter_controller`
 
@@ -165,7 +165,7 @@
 
 | ID | 優先度 | 観点 | 入力・事前条件 | 期待結果 |
 |---|---|---|---|---|
-| `MGM-001` | P1 | パラメータ妥当性 | `max_disks<0` または `>127`、`window_size<=0`、`disk_thickness<=0`、`disk_hold_motor_*_angle.size()!=2`、`regrip_release_ms<0` | 各条件で `std::runtime_error` を送出する |
+| `MGM-001` | P1 | パラメータ妥当性 | `max_disks<0` または `>127`、`window_size<=0`、`disk_thickness<=0`、`sensor_height<=0`、`disk_hold_motor_*_angle.size()!=2`、`regrip_release_ms<0`、`regrip_trigger_shots<=0`、`hold_disable_height_margin_mm<0` | 各条件で `std::runtime_error` を送出する |
 | `MGM-002` | P2 | 初期 publish | ノード生成直後 | `remaining_disk=max_disks` と `regrip_active=false` を publish する |
 
 #### 5.3.3 残弾推定
@@ -181,20 +181,21 @@
 | `MGM-009` | P1 | センサ移動平均 | `state=REGRIP_RELEASING` で `window_size` 件以上の入力 | `buffer_` を窓長で保ち、平均値を `distance_` に反映する |
 | `MGM-010` | P1 | センサ同期計算 | `remainingDiskEstimator(0)`、`sensor_height-distance > 0` | `round((sensor_height-distance)/disk_thickness)` で残弾を更新し clamp、`last_sensor_*` も更新する |
 | `MGM-011` | P2 | センサ同期の異常値 | `sensor_height-distance <= 0` | 残弾を更新しない |
+| `MGM-012` | P1 | センサ値レンジチェック | `distance < 0` または `distance > sensor_height + disk_thickness` | `buffer_` / `distance_` / `last_sensor_*` を更新しない |
 
 #### 5.3.4 hold / regrip 状態機械
 
 | ID | 優先度 | 観点 | 入力・事前条件 | 期待結果 |
 |---|---|---|---|---|
-| `MGM-012` | P1 | hold 要求入力 | `disk_hold_state=true` | `hold_request_on_=true`、`hold_on_=false`、`state=IDLE_RELEASED` に寄せる |
-| `MGM-013` | P1 | hazard 強制 release | `hazard_status: false -> true` | 即時に `hold_on_=false`、`state=IDLE_RELEASED`、`hold_shots_since_grip_=0`、release 指令 publish |
-| `MGM-014` | P1 | hazard 解除 | `hazard_status: true -> false` | `on_timer()` を即時反映し、通常ロジックへ復帰する |
-| `MGM-015` | P1 | `on_timer()` 優先順位 | `hazard_active_`, `remaining<=10`, `hold_request_on_`, 正常時を個別に設定 | 優先順位が `hazard > remaining<=10 > hold_request > normal` になる |
-| `MGM-016` | P1 | 通常 hold 開始 | `hazard=false`, `remaining>10`, `hold_request=false`, `state=IDLE_RELEASED` | `state=HOLDING` へ遷移し、close 角度を publish する |
-| `MGM-017` | P1 | regrip 開始条件 | `state=HOLDING`, `hold_on_=true`, `remaining>10`, `hazard=false`, 立上り射撃10回 | `state=REGRIP_RELEASING`、`hold_shots_since_grip_=0`、`buffer_.clear()`、release 指令、`regrip_active=true` を publish する |
-| `MGM-018` | P1 | regrip 期間中の同期 | `state=REGRIP_RELEASING`、`buffer_.size()>=window_size_` | `remainingDiskEstimator(0)` を実行する |
-| `MGM-019` | P1 | regrip 完了 | `state=REGRIP_RELEASING`、現在時刻が `regrip_release_until_` 以上 | `state=HOLDING` に戻り、以後 close 指令へ復帰する |
-| `MGM-020` | P2 | hold 指令角 | `publish_hold_command(true/false)` | `true` で index 0 の角度、`false` で index 1 の角度を左右モータへ publish する |
+| `MGM-013` | P1 | hold 要求入力 | `disk_hold_state=true` | `hold_request_on_=true`、`hold_on_=false`、`state=IDLE_RELEASED` に寄せる |
+| `MGM-014` | P1 | hazard 強制 release | `hazard_status: false -> true` | 即時に `hold_on_=false`、`state=IDLE_RELEASED`、`hold_shots_since_grip_=0`、release 指令 publish |
+| `MGM-015` | P1 | hazard 解除 | `hazard_status: true -> false` | `on_timer()` を即時反映し、通常ロジックへ復帰する |
+| `MGM-016` | P1 | `on_timer()` 優先順位 | `hazard_active_`, `remaining<=10`, `hold_request_on_`, 正常時を個別に設定 | 優先順位が `hazard > remaining<=10(or last valid sensor says <=10) > hold_request > normal` になる |
+| `MGM-017` | P1 | 通常 hold 開始 | `hazard=false`, `remaining>10`, `hold_request=false`, `state=IDLE_RELEASED` | `state=HOLDING` へ遷移し、close 角度を publish する |
+| `MGM-018` | P1 | regrip 開始条件 | `state=HOLDING`, `hold_on_=true`, `remaining>10`, `hazard=false`, 立上り射撃 `regrip_trigger_shots` 回 | `state=REGRIP_RELEASING`、`hold_shots_since_grip_=0`、`buffer_.clear()`、release 指令、`regrip_active=true` を publish する |
+| `MGM-019` | P1 | regrip 期間中の同期 | `state=REGRIP_RELEASING`、`buffer_.size()>=window_size_` | `remainingDiskEstimator(0)` を実行する |
+| `MGM-020` | P1 | regrip 完了 | `state=REGRIP_RELEASING`、現在時刻が `regrip_release_until_` 以上 | センサ同期成功時は同期値を使い、未成功時は shot count のまま `state=HOLDING` に戻る |
+| `MGM-021` | P2 | hold 指令角 | `publish_hold_command(true/false)` | `true` で index 0 の角度、`false` で index 1 の角度を左右モータへ publish する |
 
 ### 5.4 `aim_bot`
 
@@ -272,4 +273,4 @@
 
 - `core_shooter/config/shooter.params.yaml` にある `max_yaw_rate` / `max_pitch_rate` は、現行 `aim_bot.cpp` では宣言・使用されていないため本仕様の対象外とする。
 - `shooter_controller` の `loading_motor_error_state` / `shoot_motor_error_state` publisher は現行コードで publish されていないため、本仕様ではテスト対象外とする。
-- `magazine_manager` の `hold_disable_height_margin_mm` は現行コードでロジック未使用のため、本仕様ではテスト対象外とする。
+- `magazine_manager` の距離センサ系は topic 未受信でも継続動作するが、冗長判定と同期精度は手動試験で補完確認する。
