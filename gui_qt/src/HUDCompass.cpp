@@ -20,6 +20,11 @@ HUDCompass::HUDCompass(QWidget *parent)
     value_label_->setPalette(palette);
     value_label_->setAlignment(Qt::AlignCenter);
     value_label_->setFont(QFont(USE_FONT, 6));
+    setStyleSheet(
+        "\
+        background-color: rgba(0,0,0,0);\
+        "
+    );
     setValue(0);
 }
 
@@ -42,6 +47,25 @@ void HUDCompass::paintEvent(QPaintEvent *event) {
     
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
+
+    // Background that fades to transparent (gradient).
+    const QRect base_rect(0, 30, width(), height() - 30);
+    const QPointF center(base_rect.center().x(), base_rect.bottom());
+    const qreal radius = base_rect.width() * 0.55;
+    QRadialGradient bg_grad(center, radius);
+    bg_grad.setColorAt(0.0, QColor(0, 0, 0, 90));
+    bg_grad.setColorAt(0.7, QColor(0, 0, 0, 0));
+    bg_grad.setColorAt(1.0, QColor(0, 0, 0, 0));
+    // Elliptical fade: scale the gradient in Y.
+    QTransform grad_xform;
+    grad_xform.translate(center.x(), center.y());
+    grad_xform.scale(1.0, 0.2);
+    grad_xform.translate(-center.x(), -center.y());
+    QBrush bg_brush(bg_grad);
+    bg_brush.setTransform(grad_xform);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(bg_brush);
+    painter.drawRect(base_rect);
     
     painter.setPen(solid);
     

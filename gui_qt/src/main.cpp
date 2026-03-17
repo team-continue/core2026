@@ -15,10 +15,17 @@
 #include "HUDNode.hpp"
 #include <QApplication>
 #include <memory>
+#include <rclcpp/rclcpp.hpp>
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
     QApplication app(argc, argv);
+
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, []() {
+        if (rclcpp::ok()) {
+            rclcpp::shutdown();
+        }
+    });
     
     std::vector<std::string> args(argv, argv + argc);
     // 文字列の末尾が global_battle.param.yaml を検索する

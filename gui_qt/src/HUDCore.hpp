@@ -12,6 +12,7 @@
 #include "HUDReticle.hpp"
 #include "HUDLargeMsg.hpp"
 #include "HUDHazard.hpp"
+#include "gui_qt/HUDDebugOverlay.hpp"
 #include "SettingMenu.hpp"
 #include <sensor_msgs/msg/compressed_image.hpp>
 #include <string>
@@ -32,6 +33,7 @@ class HUDCore {
     HUDReticle *reticle_;
     HUDLargeMsg *large_msg_;
     HUDHazard *hazard_;
+    HUDDebugOverlay *debug_overlay_;
     SettingMenu *setting_menu_;
 
 
@@ -53,6 +55,7 @@ public:
         reticle_ = new HUDReticle(main_window_);
         large_msg_ = new HUDLargeMsg(main_window_);
         hazard_ = new HUDHazard(main_window_);
+        debug_overlay_ = new HUDDebugOverlay(main_window_);
         setting_menu_ = new SettingMenu(manager_, main_window_);
 
         manager_->addComponent(camera1_);
@@ -85,6 +88,7 @@ public:
         //main_window_->showFullScreen();
         main_window_->setWindowFlags(main_window_->windowFlags() | Qt::WindowStaysOnTopHint);
         main_window_->show();
+        debug_overlay_->raise();
         setting_menu_->hide();
 
         camera_select = 1;

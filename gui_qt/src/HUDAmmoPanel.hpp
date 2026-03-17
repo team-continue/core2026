@@ -27,6 +27,7 @@ class HUDAmmoPanel : public QWidget, public IWidgetComponet {
     const QColor solid_ = solid;
     const QColor solid_red_ = solid_red;
 
+    void paintEvent(QPaintEvent*);
     void setReload();
 public:
     HUDAmmoPanel(QWidget *parent);

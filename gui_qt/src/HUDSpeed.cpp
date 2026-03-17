@@ -5,7 +5,6 @@ HUDSpeed::HUDSpeed(QWidget *parent)
     label_(std::make_shared<QLabel>("", this)),
     normalized_speed(0)
 {
-    
     label_->setFixedSize(80, 300);
     label_->move(-40, 0);
     label_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -20,7 +19,7 @@ HUDSpeed::HUDSpeed(QWidget *parent)
     );
     
     setFixedSize(80,300);
-    move(0, this->parentWidget()->height() / 2 - size().height()/2);
+    move(0, this->parentWidget()->height() / 2 - size().height()/2 + 80);
     setStyleSheet(
         "\
         background-color: rgba(0,0,0,0);\
@@ -38,6 +37,11 @@ void HUDSpeed::paintEvent(QPaintEvent *event) {
     
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
+
+    // Background first so all HUD drawings stay on top.
+    painter.setPen(QPen(QColor(0, 0, 0, 0)));
+    painter.setBrush(QColor(0, 0, 0, 80));
+    painter.drawRect(QRect(0, -40, width(), height() + 80));
 
     auto solid_color = solid;
     solid_color.setAlpha(100);

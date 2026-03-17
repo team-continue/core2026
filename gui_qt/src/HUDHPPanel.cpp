@@ -16,8 +16,12 @@ HUDHPPanel::HUDHPPanel(QWidget *parent)
     sub_bar_layout_ = new QVBoxLayout();
 
     setFixedSize(280, 150);
-    move(70, 550);
-    
+    move(90, 520);
+    setStyleSheet(
+        "\
+        background-color: rgba(0,0,0,0);\
+        "
+    );
     layout_->setAlignment(Qt::AlignCenter);
     layout_->addWidget(hp_diff_label_);
     layout_->addSpacing(-10);
@@ -105,6 +109,11 @@ void HUDHPPanel::paintEvent(QPaintEvent* event) {
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
+
+    // Background first so all HUD drawings stay on top.
+    painter.setPen(QPen(QColor(0, 0, 0, 0)));
+    painter.setBrush(QColor(0, 0, 0, 80));
+    painter.drawRect(QRect(0, 10, width(), height() - 70));
 
     constexpr static int margin_x = 5;
     constexpr static int margin_y = 1;

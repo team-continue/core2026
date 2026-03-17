@@ -13,8 +13,8 @@
         <remap from="~/input/speed" to="/ui/speed_mps"/>
         <remap from="~/input/qe" to="/ui/qe_degree"/>
 
-        <remap from="~/input/camera" to="/camera1/image_raw/compressed"/>
-        <remap from="~/input/camera_sub" to="/camera2/image_raw/compressed"/>
+        <remap from="~/input/camera" to="/camera/color/image/compressed"/>
+        <remap from="~/input/camera_sub" to="/turret_camera_left/color/image/compressed"/>
 
         
         <remap from="~/input/enemy_poses" to="/enemy_poses"/>

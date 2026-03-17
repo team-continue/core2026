@@ -1,4 +1,6 @@
 #include "HUDAmmoPanel.hpp"
+#include <QPainter>
+#include <QPen>
 
 
 HUDAmmoPanel::HUDAmmoPanel(QWidget *parent) 
@@ -30,6 +32,17 @@ HUDAmmoPanel::HUDAmmoPanel(QWidget *parent)
     layout_->addWidget(value_label_);
 
     setLayout(layout_);
+    adjustSize();
+}
+
+void HUDAmmoPanel::paintEvent(QPaintEvent *event) {
+    Q_UNUSED(event);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(QColor(0, 0, 0, 0)));
+    painter.setBrush(QColor(0, 0, 0, 80));
+    painter.drawRect(QRect(0, 0, width(), height()));
 }
 
 void HUDAmmoPanel::setValue(int v) {
