@@ -59,6 +59,13 @@ void dispatch_received_outputs() {
 
   data[0] = obj.system_ref[0] ? 1.0f : 0.0f;
   ecat_PacketCallBack(17, data, 1);
+
+  uint8_t led_data[3] = {
+      static_cast<uint8_t>(obj.LED_TAPE[0] & 0xFF),
+      static_cast<uint8_t>(obj.LED_TAPE[1] & 0xFF),
+      static_cast<uint8_t>(obj.LED_TAPE[2] & 0xFF),
+  };
+  ecat_PacketCallBack(100, led_data, 3);
 }
 
 void app_hook() {

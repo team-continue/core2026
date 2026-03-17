@@ -113,7 +113,7 @@ void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
     case 13:
     case 14:
       if(len>=1){
-        sts.servos[id - 7].ref_pos = data[len - 1];
+        sts.setRefPos(id - 7, data[len - 1]);
       }
       break;
     case 15:

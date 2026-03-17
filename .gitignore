@@ -58,3 +58,13 @@ vendor
 
 # MkDocs build output
 site/
+
+
+<<<<<<< HEAD
+install/
+build/
+log/
+.gitignore
+=======
+vendor
+>>>>>>> origin/feature/hardware

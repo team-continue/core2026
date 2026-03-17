@@ -1,0 +1,32 @@
+localization_node:
+  ros__parameters:
+    # ── PCD Map ──────────────────────────────────────────
+    global_map_path: ""            # Path to pre-built PCD file (required)
+    map_voxel_size: 0.4            # Downsample voxel size for global map [m]
+    scan_voxel_size: 0.3           # Downsample voxel size for incoming scans [m]
+
+    # ── Registration ─────────────────────────────────────
+    registration_method: "ndt"     # "ndt" or "icp"
+    ndt_resolution: 1.0            # NDT grid cell size [m]
+    ndt_step_size: 0.1             # NDT Newton step size
+    max_iterations: 30             # Maximum registration iterations
+    transformation_epsilon: 0.01   # Convergence threshold
+    fitness_score_threshold: 1.0   # Reject match if fitness score exceeds this
+
+    # ── Timing ───────────────────────────────────────────
+    relocalize_rate: 1.0           # Relocalization frequency [Hz]
+    min_scan_points: 100           # Minimum points to attempt matching
+
+    # ── Smoothing ────────────────────────────────────────
+    smooth_alpha: 0.3              # Exponential smoothing factor (0=no update, 1=no smooth)
+
+    # ── Frames ───────────────────────────────────────────
+    map_frame: "map"
+    odom_frame: "odom"
+
+    # ── Initial Pose ─────────────────────────────────────
+    # Initial guess for the first NDT match (in map frame)
+    initial_pose_x: 0.0
+    initial_pose_y: 0.0
+    initial_pose_z: 0.0
+    initial_pose_yaw: 0.0

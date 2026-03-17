@@ -12,8 +12,14 @@ CoRE2026用のメインROS2リポジトリです。ナビゲーション、経�
 | [core_mppi](packages/core_mppi.md) | MPPIローカルコントローラ |
 | [core_path_follower](packages/core_path_follower.md) | 経路追従コントローラ（PID/Pure Pursuit） |
 | [core_costmap_builder](packages/core_costmap_builder.md) | LiDAR点群からローカルコストマップ生成 |
+| [core_cmd_vel_smoother](packages/core_cmd_vel_smoother.md) | cmd_vel EMA平滑化フィルタ |
 | [core_body_controller](packages/core_body_controller.md) | 車体モータ制御（オムニホイール逆運動学） |
+| [core_enemy_detection](packages/core_enemy_detection.md) | カメラ画像からの敵ダメージパネル検出・ターゲット選択 |
+| [core_mode](packages/core_mode.md) | 緊急停止・システムモード管理 |
+| [core_ros_player_controller](packages/core_ros_player_controller.md) | ワイヤレスコントローラ入力パーサー |
+| [core_shooter](packages/core_shooter.md) | デュアルタレット射撃・照準・マガジン管理 |
 | [core_hardware](packages/core_hardware.md) | EtherCATハードウェアインターフェース |
+| [core_localization](packages/core_localization.md) | NDT/ICPによるPCDマップベースのグローバル局在化 |
 | [core_tools](packages/core_tools.md) | デバッグ・診断ツール（motor_tool GUI） |
 | [core_test](packages/core_test.md) | 共有GTestインフラ |
 | [ROS-TCP-Endpoint](packages/ros_tcp_endpoint.md) | Unity-ROS2ブリッジ |
@@ -22,7 +28,7 @@ CoRE2026用のメインROS2リポジトリです。ナビゲーション、経�
 
 ```bash
 # ビルド
-cd ~/ros2_ws
+cd ~/core_ws
 colcon build --symlink-install
 
 # ナビゲーション起動（シミュレータモード）
@@ -37,12 +43,20 @@ ros2 launch core_launch navigation.launch.py
 
 ```mermaid
 graph LR
-    Unity[Unity Sim] --> OdomBridge[odom_bridge]
-    OdomBridge --> PathPlanner[path_planner]
+    subgraph Sensing[" "]
+        direction TB
+        Unity[Unity Sim]
+        MapServer[map_server]
+        CostmapBuilder[costmap_builder]
+    end
+
+    OdomBridge[odom_bridge] --> PathPlanner[path_planner]
+    Unity --> OdomBridge
+    MapServer --> PathPlanner
     OdomBridge --> MPPI
-    MapServer[map_server] --> PathPlanner
     PathPlanner --> MPPI
-    CostmapBuilder[costmap_builder] --> MPPI
-    MPPI --> BodyController[body_controller]
+    CostmapBuilder --> MPPI
+    MPPI --> Smoother[cmd_vel_smoother]
+    Smoother --> BodyController[body_controller]
     BodyController --> Hardware[core_hardware]
 ```

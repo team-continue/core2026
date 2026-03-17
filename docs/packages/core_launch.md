@@ -21,7 +21,7 @@
 | トピック | 型 | 条件 |
 |---------|------|------|
 | `/sim_odom` | `nav_msgs/Odometry` | simモード |
-| `/Odometry` | `nav_msgs/Odometry` | fastlioモード |
+| `/Odometry` | `nav_msgs/Odometry` | FAST-LIOモード |
 
 **出力:**
 
@@ -33,7 +33,7 @@
 **TFブロードキャスト:**
 
 - `odom → base_link`（動的）
-- `odom → camera_init`（静的、FAST-LIOモードのみ）
+- `odom → camera_init`（FAST-LIOモードのみ、初回メッセージ受信時に一度だけ配信）
 
 **パラメータ:**
 
@@ -61,12 +61,17 @@ PNG画像をOccupancyGridに変換し、`/map` と `/costmap/global` にパブ�
 
 | パラメータ | 型 | デフォルト | 説明 |
 |-----------|------|-----------|------|
-| `image_path` | string | `global_map.png` | マップ画像パス |
+| `image_path` | string | `core1_field.png` | マップ画像の絶対パス（navigation.launch.pyではプリセットから自動設定） |
 | `resolution` | double | `0.05` | 解像度 [m/px] |
 | `origin_x` | double | `0.0` | マップ原点X [m] |
 | `origin_y` | double | `0.0` | マップ原点Y [m] |
 | `occupied_thresh` | double | `0.65` | 占有判定しきい値 |
 | `free_thresh` | double | `0.25` | 自由判定しきい値 |
+| `inflation_radius_m` | double | `0.0` | 障害物膨張半径（LETHAL zone）[m]。navigation.launch.pyでは`0.40` |
+| `decay_margin_m` | double | `0.0` | LETHAL zone外の線形減衰幅 [m]。navigation.launch.pyでは`0.20` |
 
 !!! info "navigation.launch.pyでの設定値"
-    `resolution=0.025`, `origin_x=-13.675`, `origin_y=-9.15`
+    `map_name` プリセットにより自動設定されます。
+
+    - `core1_field`: `resolution=0.025`, `origin_x=-13.675`, `origin_y=-9.15`
+    - `curious_house`: `resolution=0.025`, `origin_x=-4.5`, `origin_y=-7.5`

@@ -44,7 +44,9 @@ struct MppiParams
   double w_obstacle{18.0};
   double w_control{0.3};
   double w_smooth{0.8};
+  double w_heading{1.5};
   double unknown_cost{0.5};
+  int heading_lookahead{3};
 };
 
 class MppiController
@@ -56,11 +58,9 @@ public:
 
   bool compute(
     const geometry_msgs::msg::Pose & current_pose,
-    const std::vector<geometry_msgs::msg::Pose> & path,
-    const geometry_msgs::msg::Twist & prev_cmd,
+    const std::vector<geometry_msgs::msg::Pose> & path, const geometry_msgs::msg::Twist & prev_cmd,
     const nav_msgs::msg::OccupancyGrid * local_costmap,
-    const nav_msgs::msg::OccupancyGrid * global_costmap,
-    geometry_msgs::msg::Twist & out_cmd);
+    const nav_msgs::msg::OccupancyGrid * global_costmap, geometry_msgs::msg::Twist & out_cmd);
 
 private:
   struct State
@@ -77,8 +77,9 @@ private:
   State rolloutStep(const State & s, const geometry_msgs::msg::Twist & u) const;
   double nearestPathDistance(
     const std::vector<geometry_msgs::msg::Pose> & path, double x, double y) const;
-  double occupancyCost(
-    const nav_msgs::msg::OccupancyGrid * map, double x, double y) const;
+  double occupancyCost(const nav_msgs::msg::OccupancyGrid * map, double x, double y) const;
+  double headingCost(
+    const std::vector<geometry_msgs::msg::Pose> & path, double x, double y, double yaw) const;
 
   MppiParams params_;
   std::mt19937 rng_;

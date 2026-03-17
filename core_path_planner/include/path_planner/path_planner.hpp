@@ -22,6 +22,7 @@ public:
     int occupied_threshold{50};
     bool allow_unknown{false};
     bool use_diagonal{true};
+    double cost_weight{0.0};
   };
 
   enum class Status

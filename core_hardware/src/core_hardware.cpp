@@ -20,6 +20,12 @@ CoreHardware::CoreHardware()
 
   can_sub_ = create_subscription<core_msgs::msg::CANArray>(
       "can/tx", 10, std::bind(&CoreHardware::can_cb, this, _1));
+  led_upper_sub_ = create_subscription<std_msgs::msg::UInt8>(
+      "led/upper", 10, std::bind(&CoreHardware::led_upper_cb, this, _1));
+  led_bottom_sub_ = create_subscription<std_msgs::msg::UInt8>(
+      "led/bottom", 10, std::bind(&CoreHardware::led_bottom_cb, this, _1));
+  led_bottom2_sub_ = create_subscription<std_msgs::msg::UInt8>(
+      "led/bottom2", 10, std::bind(&CoreHardware::led_bottom2_cb, this, _1));
   timer_ = create_wall_timer(10ms, std::bind(&CoreHardware::timer_cb, this));
 
   joint_states_.name = std::vector<std::string>{};
@@ -133,6 +139,18 @@ void CoreHardware::handle_uint8_packet(uint8_t id, const std::vector<uint8_t>& d
     hardware_emergency_.data = (data.front() != 0U);
     hardware_emergency_pub_->publish(hardware_emergency_);
   }
+}
+
+void CoreHardware::led_upper_cb(const std_msgs::msg::UInt8::SharedPtr msg) {
+  latest_command_.led_tape[0] = msg->data;
+}
+
+void CoreHardware::led_bottom_cb(const std_msgs::msg::UInt8::SharedPtr msg) {
+  latest_command_.led_tape[1] = msg->data;
+}
+
+void CoreHardware::led_bottom2_cb(const std_msgs::msg::UInt8::SharedPtr msg) {
+  latest_command_.led_tape[2] = msg->data;
 }
 
 int main(int argc, char* argv[]) {

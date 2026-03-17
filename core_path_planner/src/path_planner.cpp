@@ -107,8 +107,26 @@ bool PathPlanner::computePath(
       if (closed[next_index]) {
         continue;
       }
-      const double step_cost =
-        (offset.x != 0 && offset.y != 0) ? kDiagonalCost : 1.0;
+      const double base_cost = (offset.x != 0 && offset.y != 0) ? kDiagonalCost : 1.0;
+      double step_cost = base_cost;
+      if (settings_.cost_weight > 0.0) {
+        int8_t cell_value = map.data[next.y * width + next.x];
+        if (local_costmap_.has_value()) {
+          const auto & lm = local_costmap_.value();
+          double wx = 0.0, wy = 0.0;
+          gridToWorld(map, next, wx, wy);
+          GridIndex local_cell;
+          if (worldToGrid(lm, wx, wy, local_cell)) {
+            const int li = local_cell.y * static_cast<int>(lm.info.width) + local_cell.x;
+            if (li >= 0 && li < static_cast<int>(lm.data.size())) {
+              cell_value = std::max(cell_value, lm.data[li]);
+            }
+          }
+        }
+        if (cell_value > 0) {
+          step_cost += settings_.cost_weight * (static_cast<double>(cell_value) / 100.0);
+        }
+      }
       const double tentative_g = g_score[current.index] + step_cost;
       if (tentative_g < g_score[next_index]) {
         came_from[next_index] = current.index;

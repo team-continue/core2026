@@ -1,0 +1,7 @@
+/**:
+  ros__parameters:
+    mouse_x_sensitivity: 1.0
+    mouse_y_sensitivity: 1.0
+    mouse_x_inverse: false
+    mouse_y_inverse: false
+    cmd_vel_xy_scale: 0.5

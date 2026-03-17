@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>core_ros_player_controller</name>
+  <version>0.0.0</version>
+  <description>Wireless string parser node.</description>
+  <maintainer email="ubuntu@todo.todo">ubuntu</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
+  <test_depend>rclpy</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

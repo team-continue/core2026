@@ -10,9 +10,11 @@ MPPI（Model Predictive Path Integral）ローカルコントローラパッケ�
 graph LR
     Path["/planned_path"] --> MPPI["core_mppi_node"]
     Odom["/odom"] --> MPPI
+    Goal["/goal_pose"] --> MPPI
     Local["/costmap/local"] --> MPPI
     Global["/costmap/global"] --> MPPI
-    MPPI --> CmdVel["/cmd_vel"]
+    MPPI --> CmdVel["/cmd_vel_raw"]
+    MPPI --> GoalReached["/goal_reached"]
 ```
 
 ## 入力
@@ -21,6 +23,7 @@ graph LR
 |---------|------|------|
 | `/planned_path` | `nav_msgs/Path` | path_plannerからの経路 |
 | `/odom` | `nav_msgs/Odometry` | 現在のロボット姿勢 |
+| `/goal_pose` | `geometry_msgs/PoseStamped` | ゴール位置（behavior systemから） |
 | `/costmap/local` | `nav_msgs/OccupancyGrid` | ローカルコストマップ |
 | `/costmap/global` | `nav_msgs/OccupancyGrid` | グローバルコストマップ |
 
@@ -28,7 +31,8 @@ graph LR
 
 | トピック | 型 | 説明 |
 |---------|------|------|
-| `/cmd_vel` | `geometry_msgs/Twist` | 速度指令（linear.x, linear.y, angular.z） |
+| `/cmd_vel_raw` | `geometry_msgs/Twist` | 速度指令（linear.x, linear.y, angular.z）。smoother有効時は `/cmd_vel_raw`、無効時は `/cmd_vel` |
+| `/goal_reached` | `std_msgs/Bool` | ゴール到達時に `true` を発行 |
 
 ## パラメータ
 
@@ -39,6 +43,8 @@ graph LR
 | パラメータ | デフォルト | 説明 |
 |-----------|-----------|------|
 | `control_rate` | `20.0` | 制御ループ周波数 [Hz] |
+| `goal_tolerance` | `0.15` | ゴール到達判定距離 [m] |
+| `goal_topic` | `/goal_pose` | ゴールポーズトピック名 |
 
 ### MPPI設定
 
@@ -74,7 +80,11 @@ graph LR
 | `mppi.w_obstacle` | `18.0` | 障害物回避コスト重み |
 | `mppi.w_control` | `0.3` | 制御入力コスト重み |
 | `mppi.w_smooth` | `0.8` | 平滑化コスト重み |
+| `mppi.w_heading` | `1.5` | ヘディング整合コスト重み（進行方向を向くよう誘導） |
 | `mppi.unknown_cost` | `0.5` | 未知セルのコスト |
+| `mppi.heading_lookahead` | `3` | ヘディング目標に使うパス先読みステップ数 |
+
+コスト重みのチューニング手順は[パラメータチューニングガイド](../guides/tuning.md#mppi-コントローラ)を参照してください。
 
 ## 起動
 
