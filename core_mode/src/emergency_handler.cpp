@@ -39,12 +39,13 @@ public:
     //========================================
     // publishers
     //========================================
+    auto hazard_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
     hazard_status_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-      "hazard_status", 10);
+      "hazard_status", hazard_qos);
     hazard_states_pub_ = this->create_publisher<std_msgs::msg::Int8MultiArray>(
-      "hazard_states", 10);
+      "hazard_states", hazard_qos);
     hazard_label_pub_ = this->create_publisher<std_msgs::msg::String>(
-      "hazard_label", 10);
+      "hazard_label", hazard_qos);
 
     //========================================
     // Initialization
