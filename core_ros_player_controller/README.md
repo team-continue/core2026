@@ -11,9 +11,15 @@ CORE 2026 スタック向けのワイヤレスコントローラ解析ノード�
 - `values[1]`（X）と `values[2]`（Y）からマウス入力を取り出し、`[-1.0, 1.0]` に正規化して感度と反転を適用します。
 - W/A/S/D とマウス X から `cmd_vel` を生成します。
 - UI の自動フラグが OFF のとき、マウス Y からシューターのピッチ入力を生成します。
-- UI の自動フラグが ON のときは、`manual_mode` / `test_mode` / `hazard_status` のみ publish します。
+- UI の自動フラグが ON のときは、`manual_mode` / `test_mode` / `hazard_status` / `auto_point_select` / `selected_pose` を publish します。
 - UI の自動フラグが OFF のときは、ボディ・シューター系のトピックを publish します。
 - `reloading` は立ち上がりエッジのみ publish します（手動モード時のみ）。
+
+AutoMode 時の座標送信:
+- `values[1..2]` を X、`values[5..6]` を Y として座標を取り出します（little endian）。
+- 値は mm→m に変換して `/selected_pose`（`geometry_msgs/msg/PoseStamped`）へ送信します。
+- 座標に変化があったときのみ publish します。
+- `values[3]` の bit2 を `/auto_point_select`（`std_msgs/msg/Bool`）へ送信します（AutoMode 時のみ）。
 
 ### rotation の詳細
 
@@ -80,6 +86,8 @@ def generate_launch_description():
             "shoot_motor": "/my_robot/shoot_motor",
             "left_shoot_once": "/my_robot/left/shoot_once",
             "reloading": "/my_robot/reloading",
+            "auto_point_select": "/my_robot/auto_point_select",
+            "selected_pose": "/my_robot/selected_pose",
             "hazard_status": "/my_robot/system/emergency/hazard_status",
             "test_mode": "/my_robot/test_mode",
             "params_file": "/path/to/params.yaml",
