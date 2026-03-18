@@ -59,6 +59,16 @@ def generate_launch_description():
         default_value="/reloading",
         description="Output topic to remap /reloading",
     )
+    auto_point_select_arg = DeclareLaunchArgument(
+        "auto_point_select",
+        default_value="/auto_point_select",
+        description="Output topic to remap /auto_point_select",
+    )
+    selected_pose_arg = DeclareLaunchArgument(
+        "selected_pose",
+        default_value="/selected_pose",
+        description="Output topic to remap /selected_pose",
+    )
     hazard_status_arg = DeclareLaunchArgument(
         "hazard_status",
         default_value="/system/emergency/hazard_status",
@@ -91,6 +101,8 @@ def generate_launch_description():
             ("/shoot_motor", LaunchConfiguration("shoot_motor")),
             ("/left/shoot_once", LaunchConfiguration("left_shoot_once")),
             ("/reloading", LaunchConfiguration("reloading")),
+            ("/auto_point_select", LaunchConfiguration("auto_point_select")),
+            ("/selected_pose", LaunchConfiguration("selected_pose")),
             ("/system/emergency/hazard_status", LaunchConfiguration("hazard_status")),
             ("/test_mode", LaunchConfiguration("test_mode")),
         ],
@@ -106,6 +118,8 @@ def generate_launch_description():
         shoot_motor_arg,
         left_shoot_once_arg,
         reloading_arg,
+        auto_point_select_arg,
+        selected_pose_arg,
         hazard_status_arg,
         test_mode_arg,
         params_file_arg,

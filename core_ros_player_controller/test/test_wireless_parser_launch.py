@@ -12,6 +12,7 @@ import launch_testing.asserts
 import pytest
 import rclpy
 from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Bool
 from std_msgs.msg import Float32
 from std_msgs.msg import UInt8MultiArray
@@ -108,11 +109,21 @@ class TestWirelessParserNode(unittest.TestCase):
 
         self.reloading_msg = None
         self.reloading_event = threading.Event()
+        self.reloading_count = 0
         self.node.create_subscription(Bool, "/reloading", self._on_reloading, 10)
 
         self.hazard_status_msg = None
         self.hazard_status_event = threading.Event()
         self.node.create_subscription(Bool, "/system/emergency/hazard_status", self._on_hazard_status, 10)
+
+        self.auto_point_select_msg = None
+        self.auto_point_select_event = threading.Event()
+        self.auto_point_select_count = 0
+        self.node.create_subscription(Bool, "/auto_point_select", self._on_auto_point_select, 10)
+
+        self.selected_pose_msg = None
+        self.selected_pose_event = threading.Event()
+        self.node.create_subscription(PoseStamped, "/selected_pose", self._on_selected_pose, 10)
 
     def tearDown(self):
         self.spin_thread_stop = True
@@ -158,11 +169,41 @@ class TestWirelessParserNode(unittest.TestCase):
 
     def _on_reloading(self, msg: Bool):
         self.reloading_msg = msg
+        self.reloading_count += 1
         self.reloading_event.set()
 
     def _on_hazard_status(self, msg: Bool):
         self.hazard_status_msg = msg
         self.hazard_status_event.set()
+
+    def _on_auto_point_select(self, msg: Bool):
+        self.auto_point_select_msg = msg
+        self.auto_point_select_count += 1
+        self.auto_point_select_event.set()
+
+    def _on_selected_pose(self, msg: PoseStamped):
+        self.selected_pose_msg = msg
+        self.selected_pose_event.set()
+
+    def _wait_for_event_with_predicate(self, event, msg_getter, predicate, timeout_sec):
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            if event.wait(timeout=0.1):
+                event.clear()
+                msg = msg_getter()
+                if msg is not None and predicate(msg):
+                    return msg
+        return None
+
+    def _publish_until_predicate(self, publisher, msg, event, msg_getter, predicate, timeout_sec):
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            event.clear()
+            publisher.publish(msg)
+            result = self._wait_for_event_with_predicate(event, msg_getter, predicate, timeout_sec=0.3)
+            if result is not None:
+                return result
+        return None
 
     def test_test_mode_is_false(self):
         msg = UInt8MultiArray()
@@ -172,12 +213,16 @@ class TestWirelessParserNode(unittest.TestCase):
         while self.wireless_pub.get_subscription_count() == 0 and time.time() < deadline:
             time.sleep(0.05)
 
+        self.test_mode_event.clear()
         self.wireless_pub.publish(msg)
 
-        received = self.test_mode_event.wait(timeout=2.0)
-        self.assertTrue(received, "Did not receive /test_mode")
-        self.assertIsNotNone(self.test_mode_msg)
-        self.assertFalse(self.test_mode_msg.data)
+        received_msg = self._wait_for_event_with_predicate(
+            self.test_mode_event,
+            lambda: self.test_mode_msg,
+            lambda m: m.data is False,
+            timeout_sec=2.0,
+        )
+        self.assertIsNotNone(received_msg, "Did not receive /test_mode with false")
 
     def test_manual_mode_outputs_and_new_bit_mapping(self):
         msg = UInt8MultiArray()
@@ -247,8 +292,8 @@ class TestWirelessParserNode(unittest.TestCase):
 
     def test_auto_mode_suppresses_non_manual_and_non_test_topics(self):
         msg = UInt8MultiArray()
-        # ui_auto_flag=1 (values[3] b1)
-        msg.data = [0b11111010, 127, 64, 0b00000010, 0, 0, 0]
+        # ui_auto_flag=1 (values[3] b1), coord_auto_select=1 (values[3] b2)
+        msg.data = [0b11111010, 127, 64, 0b00000110, 0, 0, 0]
 
         deadline = time.time() + 2.0
         while self.wireless_pub.get_subscription_count() == 0 and time.time() < deadline:
@@ -262,6 +307,8 @@ class TestWirelessParserNode(unittest.TestCase):
         self.rotation_event.clear()
         self.ads_event.clear()
         self.reloading_event.clear()
+        self.auto_point_select_event.clear()
+        self.selected_pose_event.clear()
         self.wireless_pub.publish(msg)
 
         self.assertTrue(self.manual_mode_event.wait(timeout=2.0), "Did not receive /manual_mode")
@@ -276,6 +323,19 @@ class TestWirelessParserNode(unittest.TestCase):
         self.assertFalse(self.ads_event.wait(timeout=0.5), "Unexpected /ads in auto mode")
         self.assertFalse(self.reloading_event.wait(timeout=0.5), "Unexpected /reloading in auto mode")
 
+        received_msg = self._publish_until_predicate(
+            self.wireless_pub,
+            msg,
+            self.auto_point_select_event,
+            lambda: self.auto_point_select_msg,
+            lambda m: m.data is True,
+            timeout_sec=2.0,
+        )
+        self.assertIsNotNone(received_msg, "Did not receive /auto_point_select=true")
+
+        self.assertTrue(self.selected_pose_event.wait(timeout=2.0), "Did not receive /selected_pose")
+        self.assertIsNotNone(self.selected_pose_msg)
+
     def test_reloading_publishes_only_on_rising_edge(self):
         msg_low = UInt8MultiArray()
         msg_low.data = [0b00000000, 0, 0, 0b00000000, 0, 0, 0]
@@ -288,6 +348,7 @@ class TestWirelessParserNode(unittest.TestCase):
             time.sleep(0.05)
 
         self.reloading_event.clear()
+        self.reloading_count = 0
         self.wireless_pub.publish(msg_low)
         time.sleep(0.1)
         self.wireless_pub.publish(msg_high)
@@ -295,10 +356,34 @@ class TestWirelessParserNode(unittest.TestCase):
         self.assertTrue(self.reloading_event.wait(timeout=2.0), "Did not receive /reloading on rising edge")
         self.assertIsNotNone(self.reloading_msg)
         self.assertTrue(self.reloading_msg.data)
+        first_count = self.reloading_count
 
+        time.sleep(0.05)
         self.reloading_event.clear()
         self.wireless_pub.publish(msg_high)
-        self.assertFalse(self.reloading_event.wait(timeout=0.5), "Unexpected /reloading without rising edge")
+        time.sleep(0.5)
+        self.assertEqual(first_count, self.reloading_count, "Unexpected /reloading without rising edge")
+
+    def test_selected_pose_publishes_only_on_change_in_auto_mode(self):
+        msg = UInt8MultiArray()
+        # ui_auto_flag=1 (values[3] b1)
+        # x=1000mm (0x03E8), y=-500mm (0xFE0C)
+        msg.data = [0, 0xE8, 0x03, 0b00000010, 0, 0x0C, 0xFE]
+
+        deadline = time.time() + 2.0
+        while self.wireless_pub.get_subscription_count() == 0 and time.time() < deadline:
+            time.sleep(0.05)
+
+        self.selected_pose_event.clear()
+        self.wireless_pub.publish(msg)
+        self.assertTrue(self.selected_pose_event.wait(timeout=2.0), "Did not receive /selected_pose on first publish")
+        self.assertIsNotNone(self.selected_pose_msg)
+        self.assertAlmostEqual(self.selected_pose_msg.pose.position.x, 1.0, places=4)
+        self.assertAlmostEqual(self.selected_pose_msg.pose.position.y, -0.5, places=4)
+
+        self.selected_pose_event.clear()
+        self.wireless_pub.publish(msg)
+        self.assertFalse(self.selected_pose_event.wait(timeout=0.5), "Unexpected /selected_pose without change")
 
     def test_ui_auto_flag_toggle_for_log_generation(self):
         msg_manual = UInt8MultiArray()
@@ -328,15 +413,23 @@ class TestWirelessParserNode(unittest.TestCase):
 
         self.hazard_status_event.clear()
         self.wireless_pub.publish(msg_off)
-        self.assertTrue(self.hazard_status_event.wait(timeout=2.0), "Did not receive /system/emergency/hazard_status")
-        self.assertIsNotNone(self.hazard_status_msg)
-        self.assertFalse(self.hazard_status_msg.data)
+        received_msg = self._wait_for_event_with_predicate(
+            self.hazard_status_event,
+            lambda: self.hazard_status_msg,
+            lambda m: m.data is False,
+            timeout_sec=2.0,
+        )
+        self.assertIsNotNone(received_msg, "Did not receive /system/emergency/hazard_status=false")
 
         self.hazard_status_event.clear()
         self.wireless_pub.publish(msg_on)
-        self.assertTrue(self.hazard_status_event.wait(timeout=2.0), "Did not receive /system/emergency/hazard_status")
-        self.assertIsNotNone(self.hazard_status_msg)
-        self.assertTrue(self.hazard_status_msg.data)
+        received_msg = self._wait_for_event_with_predicate(
+            self.hazard_status_event,
+            lambda: self.hazard_status_msg,
+            lambda m: m.data is True,
+            timeout_sec=2.0,
+        )
+        self.assertIsNotNone(received_msg, "Did not receive /system/emergency/hazard_status=true")
 
 @launch_testing.post_shutdown_test()
 class TestWirelessParserNodeAfterShutdown(unittest.TestCase):
