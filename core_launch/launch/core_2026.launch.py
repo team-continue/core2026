@@ -43,18 +43,28 @@ def _launch_all(context):
             )
         )
 
-    if _is_true(context, "launch_imu_filter"):
+    if _is_true(context, "launch_imu_filter") or (
+        environment == "real" and _is_true(context, "launch_mid360")
+    ):
         actions.append(
             _include_launch(
                 "core_launch",
-                "imu_filter.launch.py",
+                "sensing.launch.py",
                 {
-                    "use_mag": context.launch_configurations["imu_use_mag"],
-                    "publish_tf": context.launch_configurations["imu_publish_tf"],
-                    "world_frame": context.launch_configurations["imu_world_frame"],
+                    "environment": context.launch_configurations["environment"],
+                    "launch_mid360": context.launch_configurations["launch_mid360"],
+                    "launch_imu_filter": context.launch_configurations[
+                        "launch_imu_filter"
+                    ],
+                    "imu_use_mag": context.launch_configurations["imu_use_mag"],
+                    "imu_publish_tf": context.launch_configurations["imu_publish_tf"],
+                    "imu_world_frame": context.launch_configurations["imu_world_frame"],
                 },
             )
         )
+
+    if environment == "real" and _is_true(context, "launch_usb_camera"):
+        actions.append(_include_launch("core_camera", "usb_cam.launch.py"))
 
     if _is_true(context, "launch_navigation"):
         actions.append(
@@ -69,12 +79,18 @@ def _launch_all(context):
                     "use_rviz": context.launch_configurations["use_rviz"],
                     "use_smoother": context.launch_configurations["use_smoother"],
                     "use_localization": context.launch_configurations["use_localization"],
+                    "launch_mid360": "false",
                 },
             )
         )
 
     if _is_true(context, "launch_mode"):
         actions.append(_include_launch("core_mode", "mode.launch.py"))
+
+    if environment == "real" and _is_true(context, "launch_status_gui"):
+        actions.append(
+            _include_launch("core_status_gui", "status_display_gui.launch.py")
+        )
 
     if _is_true(context, "launch_wireless_parser"):
         actions.append(
@@ -170,6 +186,21 @@ def generate_launch_description():
                 "launch_navigation",
                 default_value="true",
                 description="Include navigation.launch.py",
+            ),
+            DeclareLaunchArgument(
+                "launch_mid360",
+                default_value="true",
+                description="Include sensing.launch.py Mid-360 path when environment:=real",
+            ),
+            DeclareLaunchArgument(
+                "launch_usb_camera",
+                default_value="true",
+                description="Include usb_cam.launch.py when environment:=real",
+            ),
+            DeclareLaunchArgument(
+                "launch_status_gui",
+                default_value="true",
+                description="Include status_display_gui.launch.py when environment:=real",
             ),
             DeclareLaunchArgument(
                 "launch_hardware",

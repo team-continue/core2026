@@ -69,14 +69,14 @@ ros2 run core_launch navigation.sh use_rviz:=false
 ### 実機モードの動作
 
 - TCP endpoint は起動しない
-- Livox driver が起動し `/livox/lidar` を出力
+- `launch_mid360:=true` の場合、Livox driver が起動し `/livox/lidar` を出力
 - FAST-LIO が起動し `/Odometry` を出力（IMUトピック: `/livox/imu`）
 - body_controller が起動し `/cmd_vel` → `/can/tx` に変換
 - odom_source は自動的に `fastlio` に設定
 
 !!! note "sim + FAST-LIO モードとの違い"
     sim + FAST-LIO（`odom_source:=fastlio`）ではシミュレータが `/livox/lidar` と `/imu` を直接出力するため Livox driver は起動しません。
-    実機モードでは Livox driver が起動し、IMUトピック名が `/livox/imu` になります。
+    実機モードでは `sensing.launch.py` 経由で Livox driver が起動し、IMUトピック名が `/livox/imu` になります。
 
 ## 実機テストの手順
 
@@ -130,7 +130,7 @@ RViz2 の **2D Goal Pose** ボタン（上部ツールバー）をクリック�
 | ノード | パッケージ | 役割 | 条件 |
 |--------|-----------|------|------|
 | `ros_tcp_endpoint` | ROS-TCP-Endpoint | Unity接続 | sim時のみ |
-| `livox_lidar_publisher` | livox_ros_driver2 | LiDARドライバ | real時のみ |
+| `livox_lidar_publisher` | livox_ros_driver2 | LiDARドライバ | real時かつ`launch_mid360:=true` |
 | `fastlio_mapping` | fast_lio | FAST-LIOオドメトリ | FAST-LIO時 |
 | `odom_bridge_node` | core_launch | odom変換 | 常時 |
 | `map_server_node` | core_launch | マップ配信 | 常時 |
@@ -156,6 +156,7 @@ RViz2 の **2D Goal Pose** ボタン（上部ツールバー）をクリック�
 | `use_rviz` | `true` | RViz2を起動するか |
 | `use_smoother` | `true` | cmd_vel平滑化を有効にするか |
 | `use_localization` | `false` | グローバル局在化を有効にするか。PCD地図は `map_name` に対応する `pcd_maps/<map_name>.pcd` が自動で使用される |
+| `launch_mid360` | `true` | `environment:=real` のときに Livox Mid-360 ドライバを起動するか |
 
 ## マップ切替
 

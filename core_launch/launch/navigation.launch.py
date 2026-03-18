@@ -50,6 +50,8 @@ def _launch_nodes(context):
     use_rviz = context.launch_configurations['use_rviz']
     use_localization = context.launch_configurations.get(
         'use_localization', 'false').lower() == 'true'
+    launch_mid360 = context.launch_configurations.get(
+        'launch_mid360', 'true').lower() == 'true'
 
     is_real = (env == 'real')
     use_fastlio = is_real or (odom_src == 'fastlio')
@@ -76,10 +78,6 @@ def _launch_nodes(context):
     mppi_params = os.path.join(mppi_share, 'param', 'default_params.yaml')
     costmap_params = os.path.join(costmap_share, 'config', 'costmap_build_node.yaml')
 
-    livox_user_config = PathJoinSubstitution([
-        FindPackageShare('livox_ros_driver2'), 'config', 'MID360_config.json',
-    ])
-
     actions = []
 
     # ── 1. ROS-TCP-Endpoint (sim only) ───────────────────────────────
@@ -92,24 +90,20 @@ def _launch_nodes(context):
             parameters=[{'ROS_IP': '127.0.0.1', 'ROS_TCP_PORT': 10000}],
         ))
 
-    # ── 2. Livox driver (real only) ──────────────────────────────────
-    if is_real:
-        actions.append(Node(
-            package='livox_ros_driver2',
-            executable='livox_ros_driver2_node',
-            name='livox_lidar_publisher',
-            output='screen',
-            parameters=[{
-                'xfer_format': 0,  # PointCloud2 (MID-360)
-                'multi_topic': 0,
-                'data_src': 0,
-                'publish_freq': 10.0,
-                'output_data_type': 0,
-                'frame_id': 'livox_frame',
-                'lvx_file_path': '/home/livox/livox_test.lvx',
-                'user_config_path': livox_user_config,
-                'cmdline_input_bd_code': 'livox0000000001',
-            }],
+    # ── 2. Livox Mid-360 (real only) ─────────────────────────────────
+    if is_real and launch_mid360:
+        actions.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(core_launch_share, 'launch', 'sensing.launch.py'),
+            ),
+            launch_arguments={
+                'environment': env,
+                'launch_mid360': 'true',
+                'launch_imu_filter': 'false',
+                'imu_use_mag': 'false',
+                'imu_publish_tf': 'false',
+                'imu_world_frame': 'enu',
+            }.items(),
         ))
 
     # ── 3. FAST-LIO (when use_fastlio) ──────────────────────────────
@@ -317,6 +311,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_localization', default_value='false',
             description='Enable NDT/ICP localization (dynamic map→odom TF)',
+        ),
+        DeclareLaunchArgument(
+            'launch_mid360', default_value='true',
+            description='Launch Livox Mid-360 driver when environment:=real',
         ),
         OpaqueFunction(function=_launch_nodes),
     ])
