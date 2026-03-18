@@ -31,7 +31,12 @@ add_executable(enemy_detection_coordinator_node src/enemy_detection_coordinator.
 ament_target_dependencies(enemy_detection_coordinator_node rclcpp geometry_msgs std_msgs)
 target_compile_features(enemy_detection_coordinator_node PUBLIC cxx_std_17)
 
-install(TARGETS waypoint_selector waypoint_selector_node behavior_system_node enemy_detection_coordinator_node
+add_executable(attack_shoot_manager_node src/attack_shoot_manager.cpp)
+ament_target_dependencies(attack_shoot_manager_node rclcpp geometry_msgs std_msgs)
+target_compile_features(attack_shoot_manager_node PUBLIC cxx_std_17)
+
+install(TARGETS waypoint_selector waypoint_selector_node behavior_system_node
+  enemy_detection_coordinator_node attack_shoot_manager_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY include/

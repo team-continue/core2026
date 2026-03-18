@@ -32,4 +32,12 @@ def generate_launch_description():
         output="screen",
     )
 
-    return LaunchDescription([manager_node, selector_node, coordinator_node])
+    shoot_manager_node = Node(
+        package="core_behavior_system",
+        executable="attack_shoot_manager_node",
+        name="attack_shoot_manager",
+        parameters=[params_file],
+        output="screen",
+    )
+
+    return LaunchDescription([manager_node, selector_node, coordinator_node, shoot_manager_node])
