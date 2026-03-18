@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import Bool, String
 
 
@@ -27,14 +28,18 @@ class ViewModel:
 
 
 DEFAULT_STYLE = BehaviorStyle(background="#173a63", foreground="#ffffff")
+DEFAULT_BEHAVIOR_TOPIC = "/behavior_system/state_name"
 BEHAVIOR_STYLES = {
-    "MOVE": BehaviorStyle(background="#1f5fbf", foreground="#ffffff"),
     "ATTACK": BehaviorStyle(background="#c78100", foreground="#ffffff"),
-    "SUPPLY": BehaviorStyle(background="#1f8a4c", foreground="#ffffff"),
     "MANUAL": BehaviorStyle(background="#5f6773", foreground="#ffffff"),
-    "MOVE_TO_TARGET": BehaviorStyle(background="#2cacc9", foreground="#ffffff"),
+    "AUTO_SELECTED": BehaviorStyle(background="#1f8a4c", foreground="#ffffff"),
+    "AUTO_WAYPOINT": BehaviorStyle(background="#2cacc9", foreground="#ffffff"),
+    "AUTO_IDLE": BehaviorStyle(background="#24415f", foreground="#ffffff"),
 }
 EMERGENCY_STYLE = BehaviorStyle(background="#b30d0d", foreground="#ffffff")
+DEFAULT_HAZARD_STATUS_TOPIC = "/system/emergency/hazard_status"
+DEFAULT_HAZARD_STATUS_COMPAT_TOPIC = "/system/emergency/hazard_state"
+POLL_INTERVAL_MS = 100
 
 HAZARD_REASON_ALIASES = {
     "EMERGENCY SWITCH TRIGGERED": "E-STOP",
@@ -63,61 +68,98 @@ class StatusDisplayNode(Node):
     def __init__(self) -> None:
         super().__init__("status_display_gui")
 
-        self.declare_parameter("behavior_topic", "/system/behavior")
-        self.declare_parameter("hazard_state_topic", "/system/emergency/hazard_state")
+        self.declare_parameter("behavior_topic", DEFAULT_BEHAVIOR_TOPIC)
+        self.declare_parameter("hazard_status_topic", DEFAULT_HAZARD_STATUS_TOPIC)
         self.declare_parameter(
-            "hazard_state_compat_topic", "/system/emergency/hazard_status"
+            "hazard_status_compat_topic", DEFAULT_HAZARD_STATUS_COMPAT_TOPIC
         )
+        self.declare_parameter("hazard_state_topic", "")
+        self.declare_parameter("hazard_state_compat_topic", "")
         self.declare_parameter("hazard_label_topic", "/system/emergency/hazard_label")
         self.declare_parameter("fullscreen", True)
         self.declare_parameter("screen_index", 0)
         self.declare_parameter("window_title", "ROS Status Display")
 
         self.behavior_topic = self.get_parameter("behavior_topic").value
-        self.hazard_state_topic = self.get_parameter("hazard_state_topic").value
-        self.hazard_state_compat_topic = self.get_parameter("hazard_state_compat_topic").value
+        self.hazard_status_topic = self.get_parameter("hazard_status_topic").value
+        self.hazard_status_compat_topic = self.get_parameter("hazard_status_compat_topic").value
         self.hazard_label_topic = self.get_parameter("hazard_label_topic").value
         self.fullscreen = bool(self.get_parameter("fullscreen").value)
         self.screen_index = int(self.get_parameter("screen_index").value)
         self.window_title = self.get_parameter("window_title").value
+        parameter_overrides = getattr(self, "_parameter_overrides", {})
+        hazard_status_topic_overridden = "hazard_status_topic" in parameter_overrides
+        hazard_status_compat_topic_overridden = (
+            "hazard_status_compat_topic" in parameter_overrides
+        )
+        legacy_hazard_status_topic_overridden = "hazard_state_topic" in parameter_overrides
+        legacy_hazard_status_compat_topic_overridden = (
+            "hazard_state_compat_topic" in parameter_overrides
+        )
+        legacy_hazard_status_topic = self.get_parameter("hazard_state_topic").value
+        legacy_hazard_status_compat_topic = self.get_parameter("hazard_state_compat_topic").value
+
+        if legacy_hazard_status_topic_overridden and legacy_hazard_status_topic:
+            if not hazard_status_topic_overridden:
+                self.hazard_status_topic = legacy_hazard_status_topic
+                self.get_logger().warn(
+                    "parameter 'hazard_state_topic' is deprecated; use 'hazard_status_topic'"
+                )
+            elif self.hazard_status_topic != legacy_hazard_status_topic:
+                self.get_logger().warn(
+                    "both 'hazard_status_topic' and deprecated 'hazard_state_topic' are set; "
+                    "using 'hazard_status_topic'"
+                )
+        if legacy_hazard_status_compat_topic_overridden and legacy_hazard_status_compat_topic:
+            if not hazard_status_compat_topic_overridden:
+                self.hazard_status_compat_topic = legacy_hazard_status_compat_topic
+                self.get_logger().warn(
+                    "parameter 'hazard_state_compat_topic' is deprecated; "
+                    "use 'hazard_status_compat_topic'"
+                )
+            elif self.hazard_status_compat_topic != legacy_hazard_status_compat_topic:
+                self.get_logger().warn(
+                    "both 'hazard_status_compat_topic' and deprecated "
+                    "'hazard_state_compat_topic' are set; using 'hazard_status_compat_topic'"
+                )
 
         self._behavior = ""
-        self._hazard_active = False
+        self._hazard_active = True
+        self._hazard_state_received = False
         self._hazard_label = ""
         self._dirty = True
         self._subscriptions = []
+        latched_hazard_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        live_hazard_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
+        )
 
         self._subscriptions.append(
             self.create_subscription(String, self.behavior_topic, self._behavior_callback, 10)
         )
-        self._subscriptions.append(
-            self.create_subscription(
-                Bool, self.hazard_state_topic, self._hazard_state_callback, 10
-            )
+        self._subscribe_hazard_bool(
+            self.hazard_status_topic, latched_hazard_qos, live_hazard_qos
         )
         if (
-            self.hazard_state_compat_topic
-            and self.hazard_state_compat_topic != self.hazard_state_topic
+            self.hazard_status_compat_topic
+            and self.hazard_status_compat_topic != self.hazard_status_topic
         ):
-            self._subscriptions.append(
-                self.create_subscription(
-                    Bool,
-                    self.hazard_state_compat_topic,
-                    self._hazard_state_callback,
-                    10,
-                )
+            self._subscribe_hazard_bool(
+                self.hazard_status_compat_topic, latched_hazard_qos, live_hazard_qos
             )
-        self._subscriptions.append(
-            self.create_subscription(
-                String, self.hazard_label_topic, self._hazard_label_callback, 10
-            )
-        )
+        self._subscribe_hazard_label(self.hazard_label_topic, latched_hazard_qos, live_hazard_qos)
 
         self.get_logger().info(
             "status_display_gui started: "
             f"behavior_topic={self.behavior_topic}, "
-            f"hazard_state_topic={self.hazard_state_topic}, "
-            f"hazard_state_compat_topic={self.hazard_state_compat_topic}, "
+            f"hazard_status_topic={self.hazard_status_topic}, "
+            f"hazard_status_compat_topic={self.hazard_status_compat_topic}, "
             f"hazard_label_topic={self.hazard_label_topic}, "
             f"fullscreen={'true' if self.fullscreen else 'false'}, "
             f"screen_index={self.screen_index}"
@@ -134,8 +176,40 @@ class StatusDisplayNode(Node):
         self._behavior = msg.data
         self._dirty = True
 
+    def _subscribe_hazard_bool(
+        self,
+        topic: str,
+        latched_qos: QoSProfile,
+        live_qos: QoSProfile,
+    ) -> None:
+        if not topic:
+            return
+        self._subscriptions.append(
+            self.create_subscription(Bool, topic, self._hazard_state_callback, latched_qos)
+        )
+        self._subscriptions.append(
+            self.create_subscription(Bool, topic, self._hazard_state_callback, live_qos)
+        )
+
+    def _subscribe_hazard_label(
+        self,
+        topic: str,
+        latched_qos: QoSProfile,
+        live_qos: QoSProfile,
+    ) -> None:
+        if not topic:
+            return
+        self._subscriptions.append(
+            self.create_subscription(String, topic, self._hazard_label_callback, latched_qos)
+        )
+        self._subscriptions.append(
+            self.create_subscription(String, topic, self._hazard_label_callback, live_qos)
+        )
+
     def _hazard_state_callback(self, msg: Bool) -> None:
-        if bool(msg.data) == self._hazard_active:
+        first_message = not self._hazard_state_received
+        self._hazard_state_received = True
+        if bool(msg.data) == self._hazard_active and not first_message:
             return
         self._hazard_active = bool(msg.data)
         self._dirty = True
@@ -152,6 +226,15 @@ class StatusDisplayNode(Node):
         return dirty
 
     def build_view_model(self) -> ViewModel:
+        if not self._hazard_state_received:
+            return ViewModel(
+                background=EMERGENCY_STYLE.background,
+                foreground=EMERGENCY_STYLE.foreground,
+                title="STATUS UNKNOWN",
+                body_lines=("WAITING FOR", "HAZARD STATUS"),
+                footer="FAIL-SAFE",
+                emergency=True,
+            )
         if self._hazard_active:
             reasons = self._format_hazard_lines()
             return ViewModel(
@@ -245,7 +328,7 @@ class StatusDisplayWindow:
         self.footer_label.place(relx=0.5, rely=0.92, anchor="center")
 
         self.apply_model(self.current_model)
-        self.root.after(33, self._poll_ros)
+        self.root.after(POLL_INTERVAL_MS, self._poll_ros)
 
     def _handle_escape(self, _event) -> None:
         self.root.destroy()
@@ -263,7 +346,7 @@ class StatusDisplayWindow:
             self.apply_model(self.node.build_view_model())
 
         if self.root.winfo_exists():
-            self.root.after(33, self._poll_ros)
+            self.root.after(POLL_INTERVAL_MS, self._poll_ros)
 
     def apply_model(self, model: ViewModel) -> None:
         self.current_model = model
@@ -286,6 +369,7 @@ class StatusDisplayWindow:
 
     def _update_fonts(self) -> None:
         height = max(self.root.winfo_height(), 720)
+        width = max(self.root.winfo_width(), 1280)
         if self.current_model.emergency:
             title_size = max(72, min(150, int(height * 0.18)))
             body_size = max(40, min(72, int(height * 0.08)))
@@ -296,8 +380,23 @@ class StatusDisplayWindow:
             footer_size = max(28, min(52, int(height * 0.055)))
 
         self.title_font.configure(size=title_size)
-        self.body_font.configure(size=body_size)
+        self.body_font.configure(size=self._fit_body_font_size(body_size, width))
         self.footer_font.configure(size=footer_size)
+
+    def _fit_body_font_size(self, max_size: int, width: int) -> int:
+        lines = tuple(line for line in self.current_model.body_lines if line)
+        if not lines:
+            return max_size
+
+        available_width = int(width * 0.86)
+        min_size = 40 if self.current_model.emergency else 80
+        size = max_size
+        while size > min_size:
+            self.body_font.configure(size=size)
+            if max(self.body_font.measure(line) for line in lines) <= available_width:
+                return size
+            size -= 2
+        return min_size
 
 
 def main() -> None:
