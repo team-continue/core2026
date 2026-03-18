@@ -46,8 +46,8 @@ def generate_launch_description():
     )
     shoot_motor_arg = DeclareLaunchArgument(
         "shoot_motor",
-        default_value="/shoot_motor",
-        description="Output topic to remap /shoot_motor",
+        default_value="/shoot_motor_state",
+        description="Output topic to remap /shoot_motor (default: /shoot_motor_state)",
     )
     left_shoot_once_arg = DeclareLaunchArgument(
         "left_shoot_once",
