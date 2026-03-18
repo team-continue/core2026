@@ -20,7 +20,16 @@ def generate_launch_description():
         package="core_behavior_system",
         executable="behavior_system_node",
         name="behavior_system",
+        parameters=[params_file],
         output="screen",
     )
 
-    return LaunchDescription([manager_node, selector_node])
+    coordinator_node = Node(
+        package="core_behavior_system",
+        executable="enemy_detection_coordinator_node",
+        name="enemy_detection_coordinator",
+        parameters=[params_file],
+        output="screen",
+    )
+
+    return LaunchDescription([manager_node, selector_node, coordinator_node])

@@ -15,7 +15,7 @@ waypoint_selector:
     current_y: 0.0
     current_yaw: 0.0
     odom_topic: "/odom"
-    goal_pose_topic: "/goal_pose"
+    goal_pose_topic: "/waypoint_selector/goal_pose"
     pause_topic: "/waypoint_selector/pause"
     arrival_radius: 0.5
     # Flat list: [x1, y1, x2, y2, ...]
@@ -33,3 +33,28 @@ waypoint_selector:
       -7.0, -3.0,
       -4.0, -6.0,
     ]
+
+behavior_system:
+  ros__parameters:
+    manual_mode_topic: "/manual_mode"
+    auto_point_select_topic: "/auto_point_select"
+    selected_pose_topic: "/selected_pose"
+    enemy_detected_topic: "/enemy_detected"
+    goal_reached_topic: "/goal_reached"
+    waypoint_goal_topic: "/waypoint_selector/goal_pose"
+    goal_pose_topic: "/goal_pose"
+    rotation_topic: "/rotation"
+    state_topic: "/behavior_system/state"
+    state_name_topic: "/behavior_system/state_name"
+    pause_topic: "/waypoint_selector/pause"
+    odom_topic: "/odom"
+    publish_rate_hz: 10.0
+    pose_equal_eps: 0.001
+
+enemy_detection_coordinator:
+  ros__parameters:
+    left_target_topic: "/left/target_pose"
+    right_target_topic: "/right/target_pose"
+    enemy_detected_topic: "/enemy_detected"
+    stale_timeout_sec: 0.5
+    detected_z_threshold: 0.5

@@ -24,10 +24,14 @@ target_link_libraries(waypoint_selector_node waypoint_selector)
 target_compile_features(waypoint_selector_node PUBLIC cxx_std_17)
 
 add_executable(behavior_system_node src/behavior_system_manager.cpp)
-ament_target_dependencies(behavior_system_node rclcpp)
+ament_target_dependencies(behavior_system_node rclcpp geometry_msgs nav_msgs std_msgs)
 target_compile_features(behavior_system_node PUBLIC cxx_std_17)
 
-install(TARGETS waypoint_selector waypoint_selector_node behavior_system_node
+add_executable(enemy_detection_coordinator_node src/enemy_detection_coordinator.cpp)
+ament_target_dependencies(enemy_detection_coordinator_node rclcpp geometry_msgs std_msgs)
+target_compile_features(enemy_detection_coordinator_node PUBLIC cxx_std_17)
+
+install(TARGETS waypoint_selector waypoint_selector_node behavior_system_node enemy_detection_coordinator_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY include/
