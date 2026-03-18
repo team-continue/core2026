@@ -457,7 +457,7 @@ private:
                 "Manual mode ON: start interpolated move to yaw=%f, pitch=%f using max_yaw_rate/max_pitch_rate (pitch becomes controllable via manual_pitch_angle)",
                 manual_mode_yaw_fixed_angle_, manual_mode_pitch_initial_angle_);
             }
-          }
+        }
 
           if (!has_manual_pitch_target_) {
             RCLCPP_WARN_THROTTLE(
@@ -474,15 +474,21 @@ private:
               *this->get_clock(), 2000,
               "manual pitch input timed out: hold current pitch");
           }
+          const double manual_pitch_delta = has_manual_pitch_target_ ?
+            std::clamp(manual_pitch_target_, -1.0, 1.0) :
+            0.0;
+          const bool manual_pitch_override_active =
+            has_manual_pitch_target_ &&
+            (!manual_mode_return_active_ || std::fabs(manual_pitch_delta) > 1e-6);
           double manual_pitch = command_pitch_angle_;
-          if (has_manual_pitch_target_) {
+          if (manual_pitch_override_active) {
             manual_mode_return_active_ = false;
-            const double pitch_delta = std::clamp(manual_pitch_target_, -1.0, 1.0);
-            manual_pitch = command_pitch_angle_ + pitch_direction_ * test_pitch_gain_ * pitch_delta;
+            manual_pitch =
+              command_pitch_angle_ + pitch_direction_ * test_pitch_gain_ * manual_pitch_delta;
           } else if (manual_input_timed_out && has_joint_state_) {
             manual_pitch = pitch_angle_;
           }
-          if (manual_mode_return_active_ && !has_manual_pitch_target_) {
+          if (manual_mode_return_active_ && !manual_pitch_override_active) {
             if (!stepCommandTargetTowardManualModeInitial()) {
               publishCommandHold(
                 "manual mode init skipped: command/joint_states not initialized");
