@@ -252,7 +252,7 @@ def _launch_nodes(context):
             name='cmd_vel_smoother_node',
             output='screen',
             parameters=[{
-                'alpha': 0.3,
+                'alpha': 1.0,
                 'input_topic': '/cmd_vel_raw',
                 'output_topic': '/cmd_vel',
                 'timeout_sec': 0.2,

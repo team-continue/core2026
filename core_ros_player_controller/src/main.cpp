@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <vector>
 
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
@@ -36,6 +37,8 @@ public:
     reloading_publisher_ = create_publisher<std_msgs::msg::Bool>("/reloading", 10);
     hazard_status_publisher_ = create_publisher<std_msgs::msg::Bool>("/system/emergency/hazard_status", 10);
     test_mode_publisher_ = create_publisher<std_msgs::msg::Bool>("/test_mode", 10);
+    auto_point_select_publisher_ = create_publisher<std_msgs::msg::Bool>("/auto_point_select", 10);
+    selected_pose_publisher_ = create_publisher<geometry_msgs::msg::PoseStamped>("/selected_pose", 10);
    
     //=================================
     // Parameters
@@ -82,9 +85,7 @@ private:
     const uint8_t raw_ui_flags = values[3];
     [[maybe_unused]]
     const uint8_t raw_flags_2 = values[4];
-    [[maybe_unused]]
     const uint8_t raw_unused_3 = values[5];
-    [[maybe_unused]]
     const uint8_t raw_unused_4 = values[6];
 
     //=================================
@@ -107,6 +108,7 @@ private:
     //=================================
     // UI系グラグ
     //=================================
+    const uint8_t ui_coord_auto_select = (raw_ui_flags >> 2) & 1;
     const uint8_t ui_auto_flag     = (raw_ui_flags >> 1) & 1;
     [[maybe_unused]]
     const uint8_t ui_lock_flag     = (raw_ui_flags >> 0) & 1;
@@ -161,6 +163,8 @@ private:
     manual_mode_publisher_->publish(manual_mode_msg);
     test_mode_publisher_->publish(test_mode_msg);
     hazard_status_publisher_->publish(hazard_status_msg);
+    std_msgs::msg::Bool auto_point_select_msg;
+    auto_point_select_msg.data = ui_coord_auto_select > 0;
 
     
     // 自動フラグON時は、manual_mode/test_mode以外はpublishしない
@@ -179,6 +183,32 @@ private:
       manual_pitch_publisher_->publish(manual_pitch_msg);
       shoot_motor_publisher_->publish(shoot_motor_msg);
       shoot_once_publisher_->publish(shoot_once_msg);
+    } else {
+      auto_point_select_publisher_->publish(auto_point_select_msg);
+      // Auto mode: publish selected_pose only when coordinates change
+      const int16_t auto_x_mm = static_cast<int16_t>(
+        static_cast<uint16_t>(raw_mouse_x) | (static_cast<uint16_t>(raw_mouse_y) << 8));
+      const int16_t auto_y_mm = static_cast<int16_t>(
+        static_cast<uint16_t>(raw_unused_3) | (static_cast<uint16_t>(raw_unused_4) << 8));
+
+      const bool pose_changed = !auto_pose_initialized_ ||
+        auto_x_mm != prev_auto_x_mm_ || auto_y_mm != prev_auto_y_mm_;
+      if (pose_changed) {
+        geometry_msgs::msg::PoseStamped pose_msg;
+        pose_msg.header.stamp = this->now();
+        pose_msg.header.frame_id = "map";
+        pose_msg.pose.position.x = static_cast<double>(auto_x_mm) / 1000.0;
+        pose_msg.pose.position.y = static_cast<double>(auto_y_mm) / 1000.0;
+        pose_msg.pose.position.z = 0.0;
+        pose_msg.pose.orientation.w = 1.0;
+        pose_msg.pose.orientation.x = 0.0;
+        pose_msg.pose.orientation.y = 0.0;
+        pose_msg.pose.orientation.z = 0.0;
+        selected_pose_publisher_->publish(pose_msg);
+      }
+      prev_auto_x_mm_ = auto_x_mm;
+      prev_auto_y_mm_ = auto_y_mm;
+      auto_pose_initialized_ = true;
     }
   }
 
@@ -193,6 +223,8 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr reloading_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr hazard_status_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr test_mode_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr auto_point_select_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr selected_pose_publisher_;
   double mouse_x_sensitivity_;
   double mouse_y_sensitivity_;
   bool mouse_x_inverse_{false};
@@ -201,6 +233,9 @@ private:
   bool prev_key_reload_{false};
   bool prev_ui_auto_flag_{false};
   bool ui_auto_flag_initialized_{false};
+  int16_t prev_auto_x_mm_{0};
+  int16_t prev_auto_y_mm_{0};
+  bool auto_pose_initialized_{false};
 };
 
 int main(int argc, char * argv[])

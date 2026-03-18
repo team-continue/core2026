@@ -174,7 +174,7 @@ public:
       "/test_mode", 10,
       std::bind(&ShooterController::testModeCallback, this, std::placeholders::_1));
     regrip_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "regrip_active", 10,
+      "regrip_active", rclcpp::QoS(1).transient_local(),
       std::bind(&ShooterController::regripActiveCallback, this, std::placeholders::_1));
 
     //========================================
@@ -352,6 +352,7 @@ private:
           // shoot指令
           RCLCPP_INFO(get_logger(), "Initilize, %f", loading_motor_rad_);
 
+          init_sync_in_progress_ = true;
           setAngle(loading_motor_id_, getShootMotorRotationCount() * M_PI);
           last_shoot_time_ = this->now();
 
@@ -379,6 +380,7 @@ private:
             shoot_cnt++;
             RCLCPP_INFO(get_logger(), "internal cnt = %d, %f", shoot_cnt, M_PI + shoot_cnt * M_PI);
 
+            init_sync_in_progress_ = false;
             setAngle(loading_motor_id_, getShootMotorRotationCount() * M_PI + M_PI);
             last_shoot_time_ = this->now();
 
@@ -408,11 +410,17 @@ private:
 
         if (target_angle - (M_PI * 0.05) < loading_motor_rad_) {
           shoot_completed_ = true;
-          shootStatePublish(shoot_completed_);
+
+          if (!init_sync_in_progress_) {
+            shootStatePublish(shoot_completed_);
+          } else {
+            RCLCPP_INFO(get_logger(), "Initial sync completed without publishing shoot_status");
+          }
 
           if (shoot_repeat_count_ >= 1) {
             shoot_repeat_count_--;
           }
+          init_sync_in_progress_ = false;
           state = CMD_WAIT;
           RCLCPP_INFO(get_logger(), "change CMD_WAIT");
         }
@@ -476,7 +484,9 @@ private:
   {
     // hazard_status=true は危険状態なので射撃不可
     const bool test_mode_enabled = isTestModeEnabled();
-    const bool jam_ok = test_mode_enabled || !enable_jam_detection_ || !isJamDetected();
+    // TODO(ytk-wsl): Temporarily disable jam gating until debounce behavior is revisited.
+    // const bool jam_ok = test_mode_enabled || !enable_jam_detection_ || !isJamDetected();
+    const bool jam_ok = true;
     const bool shoot_motor_ready = test_mode_enabled || isShootMotorRotationCommandActive();
     const bool regrip_ok = test_mode_enabled || !regrip_active_;
     return !hazard_state_ && regrip_ok && isValidAngle() && isShootIntervalElapsed() &&
@@ -702,6 +712,7 @@ private:
   // valids
   //========================================
   bool shoot_completed_ = true;
+  bool init_sync_in_progress_ = false;
 
   // the count of repeated shots. (x < -1: fullauto, x = 0: none, x > 1: burst )
   int shoot_repeat_count_ = 0;

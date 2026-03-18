@@ -51,6 +51,11 @@ public:
         this->get_logger(), "Invalid disk_thickness=%f (must be > 0)", disk_thickness_);
       throw std::runtime_error("invalid disk_thickness");
     }
+    if (sensor_height_ <= 0.0) {
+      RCLCPP_FATAL(
+        this->get_logger(), "Invalid sensor_height=%f (must be > 0)", sensor_height_);
+      throw std::runtime_error("invalid sensor_height");
+    }
 
     remaining_disks_ = max_disks_;
 
@@ -86,13 +91,22 @@ public:
     //========================================
     this->declare_parameter<bool>("regrip_enabled", true);
     this->declare_parameter<int>("regrip_release_ms", 200);
+    this->declare_parameter<int>("regrip_trigger_shots", 6);
 
     this->get_parameter("regrip_enabled", regrip_enabled_);
     this->get_parameter("regrip_release_ms", regrip_release_ms_);
+    this->get_parameter("regrip_trigger_shots", regrip_trigger_shots_);
     if (regrip_release_ms_ < 0) {
       RCLCPP_FATAL(
         this->get_logger(), "Invalid regrip_release_ms=%d (must be >= 0)", regrip_release_ms_);
       throw std::runtime_error("invalid regrip_release_ms");
+    }
+    if (regrip_trigger_shots_ <= 0) {
+      RCLCPP_FATAL(
+        this->get_logger(),
+        "Invalid regrip_trigger_shots=%d (must be > 0)",
+        regrip_trigger_shots_);
+      throw std::runtime_error("invalid regrip_trigger_shots");
     }
 
     //========================================
@@ -100,6 +114,13 @@ public:
     //========================================
     this->declare_parameter<double>("hold_disable_height_margin_mm", 0.5);
     this->get_parameter("hold_disable_height_margin_mm", hold_disable_height_margin_mm_);
+    if (hold_disable_height_margin_mm_ < 0.0) {
+      RCLCPP_FATAL(
+        this->get_logger(),
+        "Invalid hold_disable_height_margin_mm=%f (must be >= 0)",
+        hold_disable_height_margin_mm_);
+      throw std::runtime_error("invalid hold_disable_height_margin_mm");
+    }
 
     //========================================
     // subscribers
@@ -134,7 +155,7 @@ public:
     remaining_disk_pub_ = this->create_publisher<std_msgs::msg::Int8>(
       "remaining_disk", rclcpp::QoS(10).transient_local());
     regrip_active_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-      "regrip_active", 10);
+      "regrip_active", rclcpp::QoS(1).transient_local());
     can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("/can/tx", 10);
 
     //========================================
@@ -179,8 +200,11 @@ private:
       // 押さえ中はセンサが歪むので、通常はカウントで減算
       remainingDiskEstimator(-1);
 
-      // hold=true中の射撃回数を数え、10回でregripする
-      if (state_ == State::HOLDING && hold_on_ && !hazard_active_ && remaining_disks_ > 10) {
+      // 10枚超の間だけ、hold中の射撃回数を数える
+      if (
+        state_ == State::HOLDING && hold_on_ && !hazard_active_ &&
+        remaining_disks_ > 10)
+      {
         ++hold_shots_since_grip_;
         RCLCPP_INFO(this->get_logger(), "hold_shots_since_grip: %d", hold_shots_since_grip_);
         maybeStartRegrip();
@@ -192,6 +216,10 @@ private:
   {
     if (msg->data) {
       remaining_disks_ = max_disks_;
+      invalidateLastSensorEstimate();
+      buffer_.clear();
+      regrip_valid_sensor_sample_received_ = false;
+      regrip_sensor_sync_completed_ = false;
       remainingDisksPublish(remaining_disks_);
     }
   }
@@ -202,6 +230,10 @@ private:
       // 押さえの影響でセンサは信用できない想定 → ここでは同期しない
       remaining_disks_ = clampRemainingDisks(
         remaining_disks_ + msg->data, "reloading_increment");
+      invalidateLastSensorEstimate();
+      buffer_.clear();
+      regrip_valid_sensor_sample_received_ = false;
+      regrip_sensor_sync_completed_ = false;
       remainingDisksPublish(remaining_disks_);
     }
   }
@@ -215,6 +247,11 @@ private:
     }
 
     double val = static_cast<double>(msg->data);
+    if (!isDistanceMeasurementValid(val)) {
+      return;
+    }
+
+    regrip_valid_sensor_sample_received_ = true;
 
     // 移動平均フィルタ
     buffer_.push_back(val);
@@ -239,7 +276,7 @@ private:
   //   data = -1 : decrement by shot
   //   data =  0 : sync from sensor (ONLY when regrip/open)
   //========================================
-  void remainingDiskEstimator(int data)
+  bool remainingDiskEstimator(int data)
   {
     // 1枚減らす
     if (data == -1) {
@@ -247,20 +284,20 @@ private:
         remaining_disks_--;
       }
       remainingDisksPublish(remaining_disks_);
-      return;
+      return true;
     }
 
     // センサ同期（リグリップで開いている時だけ呼ぶ）
     if (data == 0) {
       if (disk_thickness_ <= 0.0) {
         RCLCPP_ERROR(this->get_logger(), "disk_thickness must be > 0 for estimation");
-        return;
+        return false;
       }
       estimated_stack_height_mm_ = sensor_height_ - distance_;
 
       if (estimated_stack_height_mm_ <= 0.0) {
         RCLCPP_INFO(this->get_logger(), "disk sensor height error");
-        return;
+        return false;
       }
 
       int estimated = std::round(estimated_stack_height_mm_ / disk_thickness_);
@@ -271,8 +308,30 @@ private:
       last_sensor_height_mm_ = estimated_stack_height_mm_;
 
       remainingDisksPublish(remaining_disks_);
-      return;
+      return true;
     }
+
+    return false;
+  }
+
+  bool isDistanceMeasurementValid(double distance_mm)
+  {
+    const double max_valid_distance_mm = sensor_height_ + disk_thickness_;
+    if (distance_mm < 0.0 || distance_mm > max_valid_distance_mm) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "Ignore out-of-range disk distance=%f mm (valid range: 0..%f)",
+        distance_mm, max_valid_distance_mm);
+      return false;
+    }
+
+    return true;
+  }
+
+  void invalidateLastSensorEstimate()
+  {
+    last_sensor_estimated_disks_ = -1;
+    last_sensor_height_mm_ = -1.0;
   }
 
   int clampRemainingDisks(int value, const char * source)
@@ -364,12 +423,17 @@ private:
   //========================================
   void maybeStartRegrip()
   {
-    if (!regrip_enabled_ || state_ != State::HOLDING || hold_shots_since_grip_ < 10) {
+    if (
+      !regrip_enabled_ || state_ != State::HOLDING ||
+      hold_shots_since_grip_ < regrip_trigger_shots_ || remaining_disks_ <= 10)
+    {
       return;
     }
 
     state_ = State::REGRIP_RELEASING;
     hold_shots_since_grip_ = 0;
+    regrip_valid_sensor_sample_received_ = false;
+    regrip_sensor_sync_completed_ = false;
 
     // 押さえ中の値を捨てて、release後の距離センサだけで同期する。
     buffer_.clear();
@@ -382,8 +446,8 @@ private:
 
     RCLCPP_WARN(
       this->get_logger(),
-      "Regrip triggered after 10 shots: total=%d -> release %d ms",
-      remaining_disks_, regrip_release_ms_);
+      "Regrip triggered after %d shots: total=%d -> release %d ms",
+      regrip_trigger_shots_, remaining_disks_, regrip_release_ms_);
   }
 
   void on_timer()
@@ -403,7 +467,14 @@ private:
     // ============================================================
     // PRIORITY 2: 10枚以下なら必ずrelease(false)（冗長判定含む）
     // ============================================================
-    if (remaining_disks_ <= 10) {
+    const bool cannot_hold_by_count = (remaining_disks_ <= 10);
+    const bool cannot_hold_by_last_sensor =
+      (last_sensor_estimated_disks_ >= 0 && last_sensor_estimated_disks_ <= 10);
+    const bool cannot_hold_by_last_height =
+      (last_sensor_height_mm_ >= 0.0 &&
+      last_sensor_height_mm_ <= (disk_thickness_ * 10.0 + hold_disable_height_margin_mm_));
+
+    if (cannot_hold_by_count || cannot_hold_by_last_sensor || cannot_hold_by_last_height) {
       hold_on_ = false;
       state_ = State::IDLE_RELEASED;
       hold_shots_since_grip_ = 0;
@@ -451,11 +522,23 @@ private:
 
         // ★REGRIP中はセンサが見える想定
         // 移動平均の窓が揃ってから同期（安定化）
-        if ((int)buffer_.size() >= window_size_) {
-          remainingDiskEstimator(0);
+        if (!regrip_sensor_sync_completed_ && (int)buffer_.size() >= window_size_) {
+          regrip_sensor_sync_completed_ = remainingDiskEstimator(0);
         }
 
         if (this->now() >= regrip_release_until_) {
+          if (!regrip_sensor_sync_completed_) {
+            if (regrip_valid_sensor_sample_received_) {
+              RCLCPP_WARN(
+                this->get_logger(),
+                "Regrip finished without successful sensor sync. Keep shot-count estimate.");
+            } else {
+              RCLCPP_WARN(
+                this->get_logger(),
+                "Regrip finished without distance sensor samples. Keep shot-count estimate.");
+            }
+          }
+
           state_ = State::HOLDING;
           hold_shots_since_grip_ = 0;
 
@@ -549,6 +632,9 @@ private:
   // regrip
   bool regrip_enabled_ = true;
   int regrip_release_ms_ = 200;
+  int regrip_trigger_shots_ = 6;
+  bool regrip_valid_sensor_sample_received_ = false;
+  bool regrip_sensor_sync_completed_ = false;
   rclcpp::Time regrip_release_until_{0, 0, RCL_ROS_TIME};
 
   // redundant sensor check (valid ONLY when synced during regrip)

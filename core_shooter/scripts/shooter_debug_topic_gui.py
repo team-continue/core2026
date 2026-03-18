@@ -37,12 +37,12 @@ class DebugTopicPublisher(Node):
             ),
             "/left/reloading": self.create_publisher(Bool, "/left/reloading", 10),
             "/right/reloading": self.create_publisher(Bool, "/right/reloading", 10),
-            "/left_shoot_once": self.create_publisher(Bool, "/left_shoot_once", 10),
-            "/left_shoot_burst": self.create_publisher(Bool, "/left_shoot_burst", 10),
-            "/left_shoot_fullauto": self.create_publisher(Bool, "/left_shoot_fullauto", 10),
-            "/right_shoot_once": self.create_publisher(Bool, "/right_shoot_once", 10),
-            "/right_shoot_burst": self.create_publisher(Bool, "/right_shoot_burst", 10),
-            "/right_shoot_fullauto": self.create_publisher(Bool, "/right_shoot_fullauto", 10),
+            "/left/shoot_once": self.create_publisher(Bool, "/left/shoot_once", 10),
+            "/left/shoot_burst": self.create_publisher(Bool, "/left/shoot_burst", 10),
+            "/left/shoot_fullauto": self.create_publisher(Bool, "/left/shoot_fullauto", 10),
+            "/right/shoot_once": self.create_publisher(Bool, "/right/shoot_once", 10),
+            "/right/shoot_burst": self.create_publisher(Bool, "/right/shoot_burst", 10),
+            "/right/shoot_fullauto": self.create_publisher(Bool, "/right/shoot_fullauto", 10),
             "/left/disk_hold_state": self.create_publisher(Bool, "/left/disk_hold_state", 10),
             "/right/disk_hold_state": self.create_publisher(Bool, "/right/disk_hold_state", 10),
         }
@@ -66,11 +66,11 @@ class DebugTopicPublisher(Node):
             ),
         }
         self.point_publishers = {
-            "/left/target_image_position": self.create_publisher(
-                PointStamped, "/left/target_image_position", 10
+            "/left/target_pose": self.create_publisher(
+                PointStamped, "/left/target_pose", 10
             ),
-            "/right/target_image_position": self.create_publisher(
-                PointStamped, "/right/target_image_position", 10
+            "/right/target_pose": self.create_publisher(
+                PointStamped, "/right/target_pose", 10
             ),
         }
         self.can_tx_pub = self.create_publisher(CANArray, "/can/tx", 10)
@@ -245,7 +245,7 @@ class DebugGui:
         self.target_pad_coord_var = tk.StringVar(
             value="x=0.0, y=0.0 (center origin, +x right, +y up)"
         )
-        self.target_pad_topic_var = tk.StringVar(value="/left/target_image_position")
+        self.target_pad_topic_var = tk.StringVar(value="/left/target_pose")
         self.target_pad_display_w = 640
         self.target_pad_display_h = 360
         self.target_pad_canvas = None
@@ -361,7 +361,7 @@ class DebugGui:
             mode_frame,
             text=(
                 "Runtime topics: hazard_status, manual_mode, test_mode, "
-                "shoot_motor_state, shoot_once, reloading, manual_pitch"
+                "shoot_motor, shoot_once, reloading, manual_pitch"
             ),
             justify=tk.LEFT,
             wraplength=420,
@@ -400,7 +400,7 @@ class DebugGui:
         ttk.Button(
             left_frame,
             text="Shoot Once",
-            command=lambda: self._pulse_bool("/left_shoot_once"),
+            command=lambda: self._pulse_bool("/left/shoot_once"),
         ).pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
             left_frame,
@@ -411,7 +411,7 @@ class DebugGui:
         ttk.Button(
             right_frame,
             text="Shoot Once",
-            command=lambda: self._pulse_bool("/right_shoot_once"),
+            command=lambda: self._pulse_bool("/right/shoot_once"),
         ).pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
             right_frame,
@@ -554,7 +554,7 @@ class DebugGui:
         ttk.Label(
             frame,
             text=(
-                "Click pad to publish target_image_position as geometry_msgs/PointStamped "
+                "Click pad to publish target_pose as geometry_msgs/PointStamped "
                 "(logical area 1280x720, origin at center)"
             ),
             justify=tk.LEFT,
@@ -563,14 +563,14 @@ class DebugGui:
         ttk.Label(frame, text="Target").grid(row=1, column=0, sticky=tk.W, padx=(0, 8))
         ttk.Radiobutton(
             frame,
-            text="Left (/left/target_image_position)",
+            text="Left (/left/target_pose)",
             value="left",
             variable=self.target_pad_side_var,
             command=self._update_target_pad_topic_label,
         ).grid(row=1, column=1, sticky=tk.W, padx=(0, 8))
         ttk.Radiobutton(
             frame,
-            text="Right (/right/target_image_position)",
+            text="Right (/right/target_pose)",
             value="right",
             variable=self.target_pad_side_var,
             command=self._update_target_pad_topic_label,
@@ -614,9 +614,9 @@ class DebugGui:
     def _update_target_pad_topic_label(self) -> None:
         side = self.target_pad_side_var.get()
         if side == "right":
-            self.target_pad_topic_var.set("/right/target_image_position")
+            self.target_pad_topic_var.set("/right/target_pose")
             return
-        self.target_pad_topic_var.set("/left/target_image_position")
+        self.target_pad_topic_var.set("/left/target_pose")
 
     def _on_target_pad_press_or_drag(self, event) -> None:
         if self.target_pad_canvas is None:
@@ -648,9 +648,9 @@ class DebugGui:
         self._draw_target_pad_marker(x_canvas, y_canvas)
 
         topic = (
-            "/right/target_image_position"
+            "/right/target_pose"
             if self.target_pad_side_var.get() == "right"
-            else "/left/target_image_position"
+            else "/left/target_pose"
         )
         self.target_pad_coord_var.set(
             f"x={logical_x:.1f}, y={logical_y:.1f} (center origin, +x right, +y up)"
@@ -964,9 +964,9 @@ class DebugGui:
 
         self._build_shooter_side(
             left_frame,
-            once_topic="/left_shoot_once",
-            burst_topic="/left_shoot_burst",
-            fullauto_topic="/left_shoot_fullauto",
+            once_topic="/left/shoot_once",
+            burst_topic="/left/shoot_burst",
+            fullauto_topic="/left/shoot_fullauto",
             shoot_motor_topic="/left/shoot_motor",
             shoot_motor_slider_var=self.left_shoot_motor_var,
             shoot_motor_entry_var=self.left_shoot_motor_entry_var,
@@ -974,9 +974,9 @@ class DebugGui:
         )
         self._build_shooter_side(
             right_frame,
-            once_topic="/right_shoot_once",
-            burst_topic="/right_shoot_burst",
-            fullauto_topic="/right_shoot_fullauto",
+            once_topic="/right/shoot_once",
+            burst_topic="/right/shoot_burst",
+            fullauto_topic="/right/shoot_fullauto",
             shoot_motor_topic="/right/shoot_motor",
             shoot_motor_slider_var=self.right_shoot_motor_var,
             shoot_motor_entry_var=self.right_shoot_motor_entry_var,
@@ -1282,9 +1282,9 @@ def main() -> None:
     def on_close() -> None:
         try:
             if gui.left_fullauto_var.get():
-                node.publish_bool("/left_shoot_fullauto", False)
+                node.publish_bool("/left/shoot_fullauto", False)
             if gui.right_fullauto_var.get():
-                node.publish_bool("/right_shoot_fullauto", False)
+                node.publish_bool("/right/shoot_fullauto", False)
         except Exception:
             pass
         root.destroy()

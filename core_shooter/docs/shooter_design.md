@@ -10,6 +10,8 @@
   - `core_shooter/src/magazine_manager.cpp`
   - `core_shooter/src/aim_bot.cpp`
   - `core_shooter/scripts/shooter_debug_topic_gui.py`（デバッグ用GUI）
+- 関連資料:
+  - [core_shooter 単体テスト仕様書](./shooter_unit_test_spec.md)
 
 ## 1. 概要
 
@@ -77,7 +79,7 @@
 ```mermaid
 flowchart LR
   subgraph UI["Operator / UI / Vision Inputs"]
-    U1["/left_shoot_once,/burst,/fullauto<br/>/right_shoot_once,/burst,/fullauto"]
+    U1["/left/shoot_once,/shoot_burst,/shoot_fullauto<br/>/right/shoot_once,/shoot_burst,/shoot_fullauto"]
     U2["/manual_mode, /test_mode"]
     U3["/left|right/test_yaw_angle<br/>/left|right/test_pitch_angle"]
     U4["/left|right/target_image_position"]
@@ -161,8 +163,8 @@ flowchart TB
     TM["/test_mode"]
     CAN["/can/tx"]
     MM["/manual_mode"]
-    LSO["/left_shoot_once/burst/fullauto"]
-    RSO["/right_shoot_once/burst/fullauto"]
+    LSO["/left/shoot_once/burst/fullauto"]
+    RSO["/right/shoot_once/burst/fullauto"]
   end
 
   subgraph Left["/left"]
@@ -324,8 +326,8 @@ flowchart TD
 
 入力（購読）
 
-- `left_shoot_once` / `left_shoot_burst` / `left_shoot_fullauto` (`std_msgs/Bool`)
-- `right_shoot_once` / `right_shoot_burst` / `right_shoot_fullauto` (`std_msgs/Bool`)
+- `left/shoot_once` / `left/shoot_burst` / `left/shoot_fullauto` (`std_msgs/Bool`)
+- `right/shoot_once` / `right/shoot_burst` / `right/shoot_fullauto` (`std_msgs/Bool`)
 - `manual_mode` (`std_msgs/Bool`, launch で `/manual_mode` に remap)
 
 出力（発行）
@@ -420,6 +422,7 @@ flowchart TD
   - 手動/外部から補給数を加算（`max_disks` を上限に clamp）
 - `disk_distance_sensor` (`std_msgs/Int32`, launchで `distance`)
   - `REGRIP_RELEASING` 中のみ移動平均に取り込み
+  - トピック未受信時は shot count のみで継続し、センサ同期はスキップする
 - `disk_hold_state` (`std_msgs/Bool`)
   - オペレータ要求（押下中は release 優先）
 - `hazard_status` (`std_msgs/Bool`)
@@ -436,17 +439,18 @@ flowchart TD
 #### ホールド制御の優先順位（`on_timer()`）
 
 1. `hazard_active_ == true` なら強制 release
-2. `remaining_disks_ <= 10` なら強制 release
+2. `remaining_disks_ <= 10` または直近の有効センサ推定が 10 枚以下なら強制 release
 3. `hold_request_on_ == true` なら release（ボタン優先）
 4. それ以外は通常保持（`HOLDING`）
 
 #### regrip 動作
 
-- `HOLDING` 中の射撃回数が 10 回以上で `REGRIP_RELEASING` に遷移（`regrip_enabled=true` 時）
+- `HOLDING` 中の射撃回数が `regrip_trigger_shots` 回以上かつ `remaining_disks > 10` で `REGRIP_RELEASING` に遷移（`regrip_enabled=true` 時）
 - 遷移と同時に `regrip_active=true` を publish し、`shooter_controller` 側の次弾を抑止
 - release 期間中のみ距離センサ移動平均を更新
 - 窓が揃ったら `remainingDiskEstimator(0)` でセンサ同期（`max_disks` を上限に clamp）
-- 時間経過後 `HOLDING` に復帰し `regrip_active=false`
+- 距離センサトピックが来ない、または有効値が揃わない場合でも、時間経過後は shot count 推定のまま `HOLDING` に復帰する
+- 距離センサ値は `0..sensor_height + disk_thickness` の範囲外を無効値として捨てる
 
 ### 7.4 `aim_bot`
 
@@ -486,7 +490,7 @@ flowchart TD
   - ノード再起動後の最初の非常停止解除時のみ `startup_release_yaw_angle` / `startup_release_pitch_angle` へ初期化可能
   - 追尾目標が未到着の間は、その初期角度を保持する
 - `Manual`
-  - ONエッジで `manual_mode_yaw_fixed_angle` と `manual_mode_pitch_initial_angle` を初期値に設定
+  - ONエッジで `manual_mode_yaw_fixed_angle` と `manual_mode_pitch_initial_angle` へ中間目標を刻みながら移動
   - 以後 yaw は固定、pitch は手動入力で相対更新
   - pitch 制限は zone 制限ではなく `pitch_min_angle` / `pitch_max_angle` を使用
 - `Test`
@@ -495,6 +499,10 @@ flowchart TD
   - モード再突入時は古い入力を無効化して新規入力待ち
 - `AutoTrack`
   - 目標画像が timeout 内にある時のみ追尾
+  - 連続する `target_image_position` から画像平面上の速度を推定し、`target_lead_time_sec` 秒先の予測座標を狙える
+  - 速度推定は `target_velocity_min_dt_sec` 未満のサンプルを無視し、`target_velocity_max_px_per_sec` で clamp した上で `target_velocity_ema_alpha` の EMA で平滑化する
+  - 目標喪失直後は現在角を保持し、`target_lost_return_to_startup_delay_sec` 経過後は `startup_release_yaw_angle` / `startup_release_pitch_angle` へ中間目標を刻みながら戻る
+  - 戻り時の 1 秒あたり最大変化量は `max_yaw_rate` / `max_pitch_rate`
   - 追尾方式は2種類
     - `use_fov_image_tracking=true`: 画角ベース（atan変換）
     - `false`: gain による角度加算
@@ -525,6 +533,7 @@ flowchart TD
 - `window_size`
 - `regrip_enabled`
 - `regrip_release_ms`
+- `regrip_trigger_shots`
 - `hold_disable_height_margin_mm`
 
 ### 8.3 照準系
@@ -539,7 +548,14 @@ flowchart TD
 - `use_fov_image_tracking`
 - `horizontal_fov_deg`
 - `image_tolerance_x`, `image_tolerance_y`
+- `target_lead_time_sec`
+- `target_velocity_min_dt_sec`
+- `target_velocity_max_px_per_sec`
+- `target_velocity_ema_alpha`
 - `target_timeout_sec`
+- `target_lost_return_to_startup_delay_sec`
+- `max_yaw_rate`, `max_pitch_rate`
+  - `startup_release_*` への復帰と `manual_mode_*` 初期角への移動で共用
 - `yaw_image_gain`, `pitch_image_gain`
 - `yaw_direction`, `pitch_direction`
 - `pitch_offset`
@@ -550,7 +566,7 @@ flowchart TD
 
 | Topic | Type | 発行 | 購読 | 用途 |
 |---|---|---|---|---|
-| `/left_shoot_once` ほか左右射撃UI | `std_msgs/Bool` | UI/GUI | `shooter_cmd_gate` | 単発/バースト/フルオート入力 |
+| `/left/shoot_once` ほか左右射撃UI | `std_msgs/Bool` | UI/GUI | `shooter_cmd_gate` | 単発/バースト/フルオート入力 |
 | `/manual_mode` | `std_msgs/Bool` | UI/GUI | `shooter_cmd_gate` | manual有効化要求 |
 | `/manual_pitch` | `std_msgs/Float32` | UI/GUI | `shooter_cmd_gate` | manual pitch 差分入力 |
 | `/left/shoot_cmd`, `/right/shoot_cmd` | `std_msgs/Int32` | `shooter_cmd_gate` | 各 `shooter_controller` | 射撃回数/フルオート指令 |
@@ -656,7 +672,7 @@ flowchart LR
 現行コードを読む限り、以下は「設計仕様として固定」ではなく、今後見直し候補となる実装上の特徴。
 
 - `shooter_controller` の `loading_motor_error_state`, `shoot_motor_error_state` publisher は生成されるが publish されていない
-- `magazine_manager` の `hold_disable_height_margin_mm` は取得されるがロジックで未使用
+- `magazine_manager` の低残弾 release 判定は、残弾カウントに加えて直近センサ推定値でも冗長判定する
 - `shooter_controller` では `hazard_state_` 初期値が `true` のため、安全解除が来るまで実質 `EMERGENCY` 相当の挙動になる（安全側デフォルト）
 - `magazine_manager` / `aim_bot` も hazard 初期値は `true`（安全側）
 
