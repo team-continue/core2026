@@ -292,8 +292,13 @@ class StatusDisplayWindow:
         self.root.configure(cursor="none")
 
         if self.node.fullscreen:
-            self.root.overrideredirect(True)
-            self.root.attributes("-fullscreen", True)
+            try:
+                self.root.attributes("-fullscreen", True)
+            except tk.TclError as exc:
+                self.node.get_logger().warn(
+                    f"fullscreen setup failed ({exc}); falling back to windowed mode"
+                )
+                self.root.geometry("1280x720+0+0")
         else:
             self.root.geometry("1280x720+0+0")
 

@@ -6,6 +6,10 @@
 ros2 run core_status_gui status_display_gui
 ```
 
+```bash
+ros2 launch core_status_gui status_display_gui.launch.py
+```
+
 ## 概要
 
 - 通常時は `/behavior_system/state_name` を全画面表示
