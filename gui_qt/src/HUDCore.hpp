@@ -147,6 +147,18 @@ public:
         }
     }
 
+    void setImage1(sensor_msgs::msg::Image::SharedPtr msg) {
+        if (camera_select == 1) {
+            camera1_->setImage(msg, true);
+        }
+    }
+
+    void setImage2(sensor_msgs::msg::Image::SharedPtr msg) {
+        if (camera_select == 2) {
+            camera1_->setImage(msg);
+        }
+    }
+
     void setEnemyPoses(std::vector<geometry_msgs::msg::Pose> poseArray) {
         camera1_->setEnemyPoses(poseArray);
     }
@@ -194,6 +206,10 @@ public:
     
     void onInputOK() {
         setting_menu_->inputCursorOK();
+    }
+
+    void onADS(bool b) {
+        camera_select = b ? 2 : 1;        
     }
 
     void setRangeAimSensitivity(double min, double max) {

@@ -40,10 +40,16 @@ HUDNode::HUDNode(std::shared_ptr<HUDCore> core, std::string global_battle_param_
 
     sub_image_1_ = create_subscription<sensor_msgs::msg::CompressedImage>(
         "~/input/camera", rclcpp::SensorDataQoS(), std::bind(&HUDNode::onImage1, this, std::placeholders::_1));
+    
+    sub_image_noncomp_1_ = create_subscription<sensor_msgs::msg::Image>(
+        "~/input/camera_raw", rclcpp::SensorDataQoS(), std::bind(&HUDNode::onImageNonComp1, this, std::placeholders::_1));
 
     sub_image_2_ = create_subscription<sensor_msgs::msg::CompressedImage>(
         "~/input/camera_sub", rclcpp::SensorDataQoS(), std::bind(&HUDNode::onImage2, this, std::placeholders::_1));
     
+    sub_image_noncomp_2_ = create_subscription<sensor_msgs::msg::Image>(
+        "~/input/camera_sub_raw", rclcpp::SensorDataQoS(), std::bind(&HUDNode::onImageNonComp2, this, std::placeholders::_1));
+
     sub_enemy_poses_ = create_subscription<geometry_msgs::msg::PoseArray>(
         "~/input/enemy_poses", rclcpp::QoS(10), std::bind(&HUDNode::onEnemyPoses, this, std::placeholders::_1));
 
@@ -73,6 +79,9 @@ HUDNode::HUDNode(std::shared_ptr<HUDCore> core, std::string global_battle_param_
 
     sub_input_back_ = create_subscription<std_msgs::msg::Bool>(
         "~/input/cursor_back", rclcpp::QoS(10), std::bind(&HUDNode::onInputBack, this, std::placeholders::_1));
+
+    sub_ads_ = create_subscription<std_msgs::msg::Bool>(
+        "~/input/ads", rclcpp::QoS(10), std::bind(&HUDNode::onADS, this, std::placeholders::_1));
     
 
     // Parameter
@@ -147,6 +156,14 @@ void HUDNode::onImage2(const sensor_msgs::msg::CompressedImage::SharedPtr msg) {
     core_->setImage2(msg);
 }
 
+void HUDNode::onImageNonComp1(const sensor_msgs::msg::Image::SharedPtr msg) {
+    core_->setImage1(msg);
+}
+
+void HUDNode::onImageNonComp2(const sensor_msgs::msg::Image::SharedPtr msg) {
+    core_->setImage2(msg);
+}
+
 void HUDNode::onEnemyPoses(const geometry_msgs::msg::PoseArray::SharedPtr msg) {
     core_->setEnemyPoses(msg->poses);
 }
@@ -193,6 +210,10 @@ void HUDNode::onInputBack(const std_msgs::msg::Bool::SharedPtr msg) {
 void HUDNode::onInputOK(const std_msgs::msg::Bool::SharedPtr msg) {
     if (!msg->data) return;
     core_->onInputOK();
+}
+
+void HUDNode::onADS(const std_msgs::msg::Bool::SharedPtr msg) {
+    core_->onADS(msg->data);
 }
 
 rcl_interfaces::msg::SetParametersResult HUDNode::onSetParam(const std::vector<rclcpp::Parameter> &parameters) {

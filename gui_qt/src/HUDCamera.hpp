@@ -3,6 +3,7 @@
 #include "CommonDefinition.hpp"
 #include "gui_qt/IWidgetComponet.hpp"
 #include <sensor_msgs/msg/compressed_image.hpp>
+#include <sensor_msgs/msg/image.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <QWidget>
@@ -27,5 +28,6 @@ class HUDCamera : public QWidget, public IWidgetComponet {
 public:
     HUDCamera(QWidget *parent);
     void setEnemyPoses(std::vector<geometry_msgs::msg::Pose> poseArray);
-    void setImage(sensor_msgs::msg::CompressedImage::SharedPtr compressedImage);
+    void setImage(sensor_msgs::msg::CompressedImage::SharedPtr compressedImage, bool inverted = false);
+    void setImage(sensor_msgs::msg::Image::SharedPtr Image, bool inverted = false);
 };

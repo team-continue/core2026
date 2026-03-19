@@ -64,9 +64,29 @@ void HUDCamera::setEnemyPoses(std::vector<geometry_msgs::msg::Pose> poseArray) {
     enemy_marker_->setMarker(poseArray);
 }
 
-void HUDCamera::setImage(sensor_msgs::msg::CompressedImage::SharedPtr msg) {
+void HUDCamera::setImage(sensor_msgs::msg::CompressedImage::SharedPtr msg, bool inverted) {
     QByteArray img = QByteArray(reinterpret_cast<const char*>(msg->data.data()), msg->data.size());
     auto qimage = QImage::fromData(img);
     auto imageMain = QPixmap::fromImage(qimage);
     label_->setPixmap(imageMain);
+}
+
+void HUDCamera::setImage(sensor_msgs::msg::Image::SharedPtr msg, bool inverted) {
+    QImage image(
+        msg->data.data(),
+        msg->width,
+        msg->height,
+        msg->step,
+        QImage::Format_RGB888
+    );
+    if (inverted) image = image.mirrored(true, true);
+
+    QSize targetSize = label_->size();
+    QImage resized = image.scaled(
+        targetSize,
+        Qt::KeepAspectRatio,           // 縦横比を維持
+        Qt::SmoothTransformation       // 高品質リサイズ
+    );
+
+    label_->setPixmap(QPixmap::fromImage(resized.copy()));
 }

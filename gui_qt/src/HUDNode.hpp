@@ -9,6 +9,7 @@
 #include <std_msgs/msg/empty.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>
+#include <sensor_msgs/msg/image.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <memory>
 #include <vector>
@@ -26,7 +27,9 @@ class HUDNode : public rclcpp::Node{
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_qe_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_log_;
     rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr sub_image_1_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_image_noncomp_1_;
     rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr sub_image_2_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_image_noncomp_2_;
     rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr sub_enemy_poses_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_hazard_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_input_camera1_;
@@ -37,6 +40,9 @@ class HUDNode : public rclcpp::Node{
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_input_right_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_input_back_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_input_ok_;
+
+    // core2026
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_ads_;
 
     std::vector<rclcpp::AsyncParametersClient::SharedPtr> paramater_clients_;
     std::string global_battle_param_filepath_;
@@ -65,6 +71,8 @@ public:
     void onLog(const std_msgs::msg::String::SharedPtr msg);
     void onImage1(const sensor_msgs::msg::CompressedImage::SharedPtr msg);
     void onImage2(const sensor_msgs::msg::CompressedImage::SharedPtr msg);
+    void onImageNonComp1(const sensor_msgs::msg::Image::SharedPtr msg);
+    void onImageNonComp2(const sensor_msgs::msg::Image::SharedPtr msg);
     void onEnemyPoses(const geometry_msgs::msg::PoseArray::SharedPtr msg);
     void onHazard(const std_msgs::msg::Bool::SharedPtr msg);
     void onInputCamera1(const std_msgs::msg::Bool::SharedPtr msg);
@@ -75,6 +83,7 @@ public:
     void onInputRight(const std_msgs::msg::Bool::SharedPtr msg);
     void onInputBack(const std_msgs::msg::Bool::SharedPtr msg);
     void onInputOK(const std_msgs::msg::Bool::SharedPtr msg);
+    void onADS(const std_msgs::msg::Bool::SharedPtr msg);
     rcl_interfaces::msg::SetParametersResult onSetParam(const std::vector<rclcpp::Parameter> &parameters);
     bool requestSetBattleParameter(BattleParamData &battle_param);
     void saveBattleParamater2Yaml(BattleParamData &battle_param);
