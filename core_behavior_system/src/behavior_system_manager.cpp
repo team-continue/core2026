@@ -269,8 +269,9 @@ private:
       return;
     }
     if (last_state_.has_value() && last_state_.value() != state) {
-      if (state == BehaviorState::AUTO_SELECTED ||
-          last_state_.value() == BehaviorState::AUTO_SELECTED) {
+      // Only clear the selected pose when we are leaving AUTO_SELECTED.
+      if (last_state_.value() == BehaviorState::AUTO_SELECTED &&
+          state != BehaviorState::AUTO_SELECTED) {
         have_selected_pose_ = false;
         selected_pose_dirty_ = false;
       }
