@@ -51,4 +51,4 @@
     - 255
     - 255
     use_sim_time: false
-
+    debugMode: false

@@ -62,6 +62,7 @@ private:
     /*variable for ros2 parameter*/
     cv::Mat kernel_for_led;
     cv::Mat kernel_for_panel;
+    bool debugMode = false;
     std::vector<int> image_size;
     std::vector<int> red_range_lower1 = {0, 0, 0};
     std::vector<int> red_range_lower2 = {0, 0, 0};

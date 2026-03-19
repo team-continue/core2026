@@ -75,13 +75,15 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
     dpInfoPub->publish(dpMsg);
 
     /*** 確認用 ***/
-    publishImage("test_rawImage", Image, "bgr8");
-    publishImage("mask_red", ledMaskImage, "mono8");
-    publishImage("mask_panel", panelMaskImage, "mono8");
-    publishImage("labeled_led", ledLabelMap.image, "mono8");
-    publishImage("labeled_panel", panelLabelMap.image, "mono8");
-    publishResultImage();
-    
+    if(debugMode){
+        publishImage("test_rawImage", Image, "bgr8");
+        publishImage("mask_red", ledMaskImage, "mono8");
+        publishImage("mask_panel", panelMaskImage, "mono8");
+        publishImage("labeled_led", ledLabelMap.image, "mono8");
+        publishImage("labeled_panel", panelLabelMap.image, "mono8");
+        publishResultImage();
+    }
+      
     return;
 }
 
@@ -90,7 +92,11 @@ rcl_interfaces::msg::SetParametersResult targetDetector::changeParameter(const s
     auto result = rcl_interfaces::msg::SetParametersResult();
     for(auto &param : parameters){
         std::string name = param.get_name();
-        if(name == "image_size"){
+        if(name == "debug_mode"){
+            auto paramValue = param.as_bool();
+            debugMode = paramValue;
+            result.successful = true;
+        }else if(name == "image_size"){
             declareIntArray(image_size, param.as_integer_array());
             result.successful = true;
         }else if(name == "red_range_lower1"){
@@ -326,6 +332,8 @@ void targetDetector::declareParameters(){
     for(auto itr = params.begin(); itr != params.end(); itr++){
         this->declare_parameter(itr->first, itr->second);
     }
+    this->declare_parameter<bool>("debug_mode", false);
+    debugMode = this->get_parameter("debug_mode").as_bool();
     kernel_for_led = cv::Mat::ones(this->get_parameter("led_kernel_matrix_size").as_integer_array()[0], this->get_parameter("led_kernel_matrix_size").as_integer_array()[1], CV_8U);
     kernel_for_panel = cv::Mat::ones(this->get_parameter("panel_kernel_matrix_size").as_integer_array()[0], this->get_parameter("panel_kernel_matrix_size").as_integer_array()[1], CV_8U);
     declareIntArray(red_range_lower1, this->get_parameter("red_range_lower1").as_integer_array());
