@@ -22,7 +22,7 @@ def generate_launch_description() -> LaunchDescription:
     )
     auto_rotation_velocity_arg = DeclareLaunchArgument(
         "auto_rotation_velocity",
-        default_value="0.9424777960769379",
+        default_value="-3.141592653589793",
         description="Auto rotation angular velocity [rad/s]",
     )
 
@@ -46,6 +46,7 @@ def generate_launch_description() -> LaunchDescription:
         executable="target_angle_node",
         name="target_angle_node",
         output="screen",
+        remappings=[("/imu", "/livox/imu")],
     )
 
     return LaunchDescription(

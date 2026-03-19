@@ -75,14 +75,15 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_stop_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr target_omega_pub_;
 
-  constexpr static double MAX_ROTATION = M_PI * 10;
+  constexpr static double MAX_ROTATION = M_PI * 2;
   constexpr static std::chrono::milliseconds TIMER_PERIOD = std::chrono::milliseconds(100);
   constexpr static double TIMER_DT = std::chrono::duration<double>(TIMER_PERIOD).count();
 
-  PID pid_ = PID(2.595048087059986, 0.0, TIMER_DT);
+  PID pid_ = PID(4.0, 0.0, TIMER_DT);
   double gimbalControl();
 
-  constexpr static double INITIAL_TARGET_ANGLE = 0.0;
+  constexpr static double INITIAL_TARGET_ANGLE = -M_PI / 2 - M_PI / 10;
+  // constexpr static double INITIAL_TARGET_ANGLE = 0;
 
   rclcpp::TimerBase::SharedPtr timer_;
   void timer_callback();
@@ -101,14 +102,9 @@ private:
   }
 
   double calc_nearlest_target_angle(double current_angle) {
-    double remainder = fmod(current_angle - INITIAL_TARGET_ANGLE, 2 * M_PI);
-    if (remainder <= M_PI / 2) {
-      return current_angle - remainder;
-    } else if (remainder <= 3 * M_PI / 2) {
-      return current_angle - remainder + M_PI;
-    } else {
-      return current_angle - remainder + 2 * M_PI;
-    }
+    constexpr double step = M_PI / 2.0;
+    return std::round((current_angle - INITIAL_TARGET_ANGLE) / step) * step +
+           INITIAL_TARGET_ANGLE;
   }
 };
 
@@ -118,13 +114,17 @@ TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
   rotation_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "/rotation", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
         if (msg->data) {
+          if (!rotation_flag_) {
+            world_target_angle_ = latest_imu_yaw_estimate_;
+            pid_.reset();
+          }
           rotation_flag_ = true;
-          world_target_angle_ = latest_imu_yaw_estimate_;
-          pid_.reset();
         } else {
+          if (rotation_flag_) {
+            body_target_angle_ = calc_nearlest_target_angle(latest_body_angle_);
+            pid_.reset();
+          }
           rotation_flag_ = false;
-          body_target_angle_ = calc_nearlest_target_angle(latest_body_angle_);
-          pid_.reset();
         }
       });
   twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
@@ -163,11 +163,14 @@ double TargetAngleNode::gimbalControl() {
     world_target_angle_ = normalizeAngle(world_target_angle_);
     RCLCPP_INFO(this->get_logger(), "world_target_angle_: %f", world_target_angle_);
     RCLCPP_INFO(this->get_logger(), "latest_imu_yaw_estimate_: %f", latest_imu_yaw_estimate_);
-    return pid_.update(world_target_angle_ - latest_imu_yaw_estimate_, MAX_ROTATION) -
+    const double world_angle_error =
+        normalizeAngle(world_target_angle_ - latest_imu_yaw_estimate_);
+    return pid_.update(world_angle_error, MAX_ROTATION) -
            latest_body_omega_;
   } else {
     RCLCPP_INFO(this->get_logger(), "body_target_angle_: %f", body_target_angle_);
-    return pid_.update(body_target_angle_ - latest_body_angle_, MAX_ROTATION);
+    const double body_angle_error = normalizeAngle(body_target_angle_ - latest_body_angle_);
+    return pid_.update(body_angle_error, MAX_ROTATION);
   }
 }
 
