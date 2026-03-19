@@ -23,7 +23,7 @@
 #define PosCSP_control_mode      5 // 位置模式（CSP）
 
 // ROS2 / CAN timeout
-#define ROBOSTRIDE_ROS2_TIMEOUT  1000 // ms
+#define ROBOSTRIDE_ROS2_TIMEOUT  200 // ms
 #define ROBOSTRIDE_CAN_TIMEOUT   100  // ms
 #define ROBOSTRIDE_RECONNECT_RETRY_MS 200 // ms
 #define ROBOSTRIDE_RECONNECT_STEP_TIMEOUT_MS 100 // ms
