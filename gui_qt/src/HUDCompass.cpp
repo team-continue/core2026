@@ -53,13 +53,13 @@ void HUDCompass::paintEvent(QPaintEvent *event) {
     const QPointF center(base_rect.center().x(), base_rect.bottom());
     const qreal radius = base_rect.width() * 0.55;
     QRadialGradient bg_grad(center, radius);
-    bg_grad.setColorAt(0.0, QColor(0, 0, 0, 90));
+    bg_grad.setColorAt(0.0, QColor(0, 0, 0, 100));
     bg_grad.setColorAt(0.7, QColor(0, 0, 0, 0));
     bg_grad.setColorAt(1.0, QColor(0, 0, 0, 0));
     // Elliptical fade: scale the gradient in Y.
     QTransform grad_xform;
     grad_xform.translate(center.x(), center.y());
-    grad_xform.scale(1.0, 0.2);
+    grad_xform.scale(1.5, 0.2);
     grad_xform.translate(-center.x(), -center.y());
     QBrush bg_brush(bg_grad);
     bg_brush.setTransform(grad_xform);

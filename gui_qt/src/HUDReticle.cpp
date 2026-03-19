@@ -28,7 +28,7 @@ void HUDReticle::paintEvent(QPaintEvent* event) {
 
     QRadialGradient gradient(cx, cy, circle_scale);
     gradient.setColorAt(0.35, QColor(255, 255, 255, 0));    // inner color
-    gradient.setColorAt(1, QColor(255, 255, 255, 20));      // outer color
+    gradient.setColorAt(1, QColor(0, 0, 0, 40));      // outer color
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
