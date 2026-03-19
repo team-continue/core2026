@@ -10,13 +10,16 @@ targetDetector::targetDetector() :
     Node("target_detector")
     {
         imgSub = image_transport::create_subscription(this, "raw_image", std::bind(&targetDetector::detectEnemy, this, _1), "compressed", rmw_qos_profile_default);
-        // coordPub = this->create_publisher<geometry_msgs::msg::PoseArray>("enemy_image_Coords", 10);
+        colorSub = this->create_subscription<std_msgs::msg::Int32>("color", 10, std::bind(&targetDetector::changeTarget, this, _1));
         dpInfoPub = this->create_publisher<core_msgs::msg::DamagePanelInfoArray>("damage_panels_infomation", 1);
-        // tf = std::make_shared<tf2_ros::TransformBroadcaster>(this);
         parameter_callback_handle_ = this->add_on_set_parameters_callback(std::bind(&targetDetector::changeParameter, this, _1));
         declareParameters();
-        // calc = new image2camera_vector_angle::vec2agCalculator(calibrationFilePath);
     }
+
+void targetDetector::changeTarget(const std_msgs::msg::Int32::SharedPtr msg){
+    mode = static_cast<int32_t>(msg->data);
+    return;
+}
 
 /**
  * @brief コールバック関数 画像処理してカメラ座標の敵の方角をpulishする
@@ -38,7 +41,8 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
 
 
     // 色抽出
-    extractHsvRange();
+    if(!extractHsvRange())
+        return;
 
 
     // ノイズ除去
@@ -78,6 +82,7 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
     publishImage("labeled_panel", panelLabelMap.image, "mono8");
     publishResultImage();
     
+    return;
 }
 
 rcl_interfaces::msg::SetParametersResult targetDetector::changeParameter(const std::vector<rclcpp::Parameter> &parameters){
@@ -85,11 +90,7 @@ rcl_interfaces::msg::SetParametersResult targetDetector::changeParameter(const s
     auto result = rcl_interfaces::msg::SetParametersResult();
     for(auto &param : parameters){
         std::string name = param.get_name();
-        if(name == "enemy"){
-            auto paramValue = param.as_integer_array();
-            mode = static_cast<int32_t>(paramValue[0]);
-            result.successful = true;
-        }else if(name == "image_size"){
+        if(name == "image_size"){
             declareIntArray(image_size, param.as_integer_array());
             result.successful = true;
         }else if(name == "red_range_lower1"){
@@ -127,7 +128,6 @@ rcl_interfaces::msg::SetParametersResult targetDetector::changeParameter(const s
         }else if(name == "blue_range_lower"){
             auto paramValue =  param.as_integer_array();
             if((0 <= (int)paramValue[0] && (int)paramValue[0] < blue_range_upper[0]) || (0 <= (int)paramValue[1] && (int)paramValue[1] < blue_range_upper[1]) || (0 <= (int)paramValue[2] && (int)paramValue[2] < blue_range_upper[2])){
-                std::cout << "aaa" << std::endl;
                 declareIntArray(blue_range_lower, paramValue);
                 result.successful = true;
             }else{
@@ -175,8 +175,8 @@ void targetDetector::resetDamagePanelInfo(){
     damagePanels.shrink_to_fit();
 }
 
-void targetDetector::extractHsvRange(){
-    if(mode == 0){
+bool targetDetector::extractHsvRange(){
+    if(mode == 81 || mode == 17){
         // hsv画像に対する検出
         cv::Mat mask1, mask2;
         cv::inRange(hsvImage, red_range_lower1, red_range_upper1, mask1);
@@ -188,8 +188,10 @@ void targetDetector::extractHsvRange(){
         // lab画像に対する検出
         // cv::inRange(labImage, params["red_lab_range_lower"], params["red_lab_range_upper"], ledMaskImage);
         
-    }else{
+    }else if(mode == 67 || mode == 51){
         cv::inRange(hsvImage, blue_range_lower, blue_range_upper, ledMaskImage);
+    }else{
+        return false;
     }
     // hsv画像に対する検出
     // cv::inRange(hsvImage, params["panel_hsv_range_lower"], params["panel_hsv_range_upper"], panelMaskImage);
@@ -198,6 +200,8 @@ void targetDetector::extractHsvRange(){
     cv::Mat dst;
     cv::medianBlur(labImage, dst, 3);
     cv::inRange(dst, panel_lab_range_lower, panel_lab_range_upper, panelMaskImage);
+    
+    return true;
 }
 
 void targetDetector::applyMorphology(){
