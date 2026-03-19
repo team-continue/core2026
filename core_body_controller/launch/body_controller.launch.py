@@ -46,7 +46,7 @@ def generate_launch_description() -> LaunchDescription:
         executable="target_angle_node",
         name="target_angle_node",
         output="screen",
-        remappings=[("/imu", "/livox/imu")],
+        remappings=[("imu", "livox/imu")],
     )
 
     return LaunchDescription(

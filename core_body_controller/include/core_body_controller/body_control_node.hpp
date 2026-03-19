@@ -8,44 +8,6 @@
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64.hpp"
 
-class PID
-{
-public:
-  PID(double kp, double ki, double kd, double max, double min)
-  {
-    kp_ = kp;
-    ki_ = ki;
-    kd_ = kd;
-    max_ = max;
-    min_ = min;
-    integral_ = 0;
-    previous_error_ = 0;
-  }
-  double calculate(double target, double current)
-  {
-    double error = target - current;
-    integral_ += error;
-    double derivative = error - previous_error_;
-    double output = kp_ * error + ki_ * integral_ + kd_ * derivative;
-    if (output > max_) {
-      output = max_;
-    } else if (output < min_) {
-      output = min_;
-    }
-    previous_error_ = error;
-    return output;
-  }
-
-private:
-  double kp_;
-  double ki_;
-  double kd_;
-  double max_;
-  double min_;
-  double integral_;
-  double previous_error_;
-};
-
 class BodyControlNode : public rclcpp::Node
 {
 public:
@@ -59,8 +21,8 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_stop_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
     sub_shooter_angle_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr
-    body_target_angle_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
+    joint_state_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr body_omega_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr rotation_flag_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pad_up_sub_;
@@ -87,7 +49,4 @@ private:
   double AUTO_ROTATION_VELOCITY = 0.3 * M_PI;
 
   static constexpr double TIMER_PERIOD = 0.01; // 10 ms
-
-  PID body_angle_pid_ =
-    PID(1, 0, 0, YAW_ROTATION_VELOCITY, -YAW_ROTATION_VELOCITY);
 };

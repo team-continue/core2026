@@ -8,51 +8,34 @@
 #include <std_msgs/msg/float64.hpp>
 
 class PID {
-  float kp_, ki_;
+  float kp_, ki_, kd_;
   float integral_;
   float dt_;
   float error_prev_;
+  float output_limit_;
+  float output_acceleration_limit_;
 
 public:
-  PID(float kp, float ki, float dt) : dt_(dt), error_prev_(0.0) {
-    reset();
-    setGain(kp, ki);
-  }
+  PID(float kp, float ki, float kd, float dt, float output_limit, float output_acceleration_limit)
+      : kp_(kp), ki_(ki), kd_(kd), integral_(0), dt_(dt), error_prev_(0),
+        output_limit_(output_limit), output_acceleration_limit_(output_acceleration_limit) {}
 
-  float update(float error, float limit) {
-    float output, potential, integral_diff;
-    // P制御
-    potential = kp_ * error;
-    // 台形積分
-    integral_diff = ki_ * 0.5f * (error + error_prev_) * dt_;
+  float update(float error) {
+    integral_ += error * dt_;
+    float derivative = (error - error_prev_) / dt_;
+    float output = kp_ * error + ki_ * integral_ + kd_ * derivative;
+    output = std::clamp(output, -output_limit_, output_limit_);
     error_prev_ = error;
-
-    // P制御 + I制御
-    output = potential + integral_ + integral_diff;
-
-    // antiwindup - limit the output
-    if (output > limit) {
-      if (integral_diff < 0) {
-        integral_ += integral_diff;
-      }
-      return limit;
-    } else if (output < -limit) {
-      if (integral_diff > 0) {
-        integral_ += integral_diff;
-      }
-      return -limit;
-    }
-    integral_ += integral_diff;
     return output;
   }
-
   void reset() {
     integral_ = 0;
     error_prev_ = 0;
   }
-  void setGain(float kp, float ki) {
+  void setGain(float kp, float ki, float kd) {
     kp_ = kp;
     ki_ = ki;
+    kd_ = kd;
   }
 };
 
@@ -61,96 +44,70 @@ public:
   TargetAngleNode();
 
 private:
-  // rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr target_angle_pub_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rotation_pub_;
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pad_ps_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr rotation_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr body_target_angle_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr world_target_angle_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr body_omega_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rotation_flag_pub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_stop_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr target_omega_pub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr rotation_sub_;
 
   constexpr static double MAX_ROTATION = M_PI * 2;
-  constexpr static std::chrono::milliseconds TIMER_PERIOD = std::chrono::milliseconds(100);
+  constexpr static double MAX_ROTATE_ACCELERATION = M_PI * 4;
+  constexpr static std::chrono::milliseconds TIMER_PERIOD = std::chrono::milliseconds(10);
   constexpr static double TIMER_DT = std::chrono::duration<double>(TIMER_PERIOD).count();
 
-  PID pid_ = PID(4.0, 0.0, TIMER_DT);
+  PID pid_ = PID(4.0, 0.1, 0.01, TIMER_DT, MAX_ROTATION, MAX_ROTATE_ACCELERATION);
   double gimbalControl();
-
-  constexpr static double INITIAL_TARGET_ANGLE = -M_PI / 2 - M_PI / 10;
-  // constexpr static double INITIAL_TARGET_ANGLE = 0;
 
   rclcpp::TimerBase::SharedPtr timer_;
   void timer_callback();
   double world_target_angle_ = 0;
-  double body_target_angle_ = INITIAL_TARGET_ANGLE;
-  bool rotation_flag_ = false;
-  double latest_imu_omega_ = 0;
-  double latest_imu_yaw_estimate_ = 0;
+  double latest_world_angle_ = 0;
   double latest_body_omega_ = 0;
-  double latest_body_angle_ = 0;
   bool emergency_stop_flag_ = true;
   bool node_initialized_ = false;
+  bool rotation_flag_ = false;
   geometry_msgs::msg::Twist latest_twist_;
 
   static double normalizeAngle(double angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
   }
-
-  double calc_nearlest_target_angle(double current_angle) {
-    constexpr double step = M_PI / 2.0;
-    return std::round((current_angle - INITIAL_TARGET_ANGLE) / step) * step +
-           INITIAL_TARGET_ANGLE;
-  }
 };
 
 TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
-  // target_angle_pub_ =
-  //     this->create_publisher<std_msgs::msg::Float64>("target_angle", 10);
-  rotation_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "/rotation", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
-        if (msg->data) {
-          if (!rotation_flag_) {
-            world_target_angle_ = latest_imu_yaw_estimate_;
-            pid_.reset();
-          }
-          rotation_flag_ = true;
-        } else {
-          if (rotation_flag_) {
-            body_target_angle_ = calc_nearlest_target_angle(latest_body_angle_);
-            pid_.reset();
-          }
-          rotation_flag_ = false;
-        }
-      });
   twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
       "cmd_vel", 10, [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
         latest_twist_ = *msg;
       });
   timer_ = this->create_wall_timer(TIMER_PERIOD, std::bind(&TargetAngleNode::timer_callback, this));
   can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx", 10);
+  // rotation_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+  //     "/rotation", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
+  //       if (rotation_flag_ && !msg->data) {
+  //         pid_.reset();
+  //       }
+  //       rotation_flag_ = msg->data;
+  //     });
   imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
       "imu", 10, [this](const sensor_msgs::msg::Imu::SharedPtr msg) {
-        // New IMU publishes angular velocity, so estimate yaw by integration in timer callback.
         node_initialized_ = true;
-        latest_imu_omega_ = msg->angular_velocity.z;
+        // quaternion to euler
+        // latest_world_angle_ = std::atan2(2.0 * (msg->orientation.w * msg->orientation.z + msg->orientation.x * msg->orientation.y),
+        //                               1.0 - 2.0 * (msg->orientation.y * msg->orientation.y + msg->orientation.z * msg->orientation.z));
+
+        // only use yaw omega
+        latest_world_angle_ = normalizeAngle(latest_world_angle_ - msg->angular_velocity.z * TIMER_DT + M_PI * 0.0001);
       });
-  body_target_angle_sub_ = this->create_subscription<std_msgs::msg::Float64>(
+  world_target_angle_sub_ = this->create_subscription<std_msgs::msg::Float64>(
       "yaw_target_angle", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) {
-        body_target_angle_ = msg->data + INITIAL_TARGET_ANGLE;
+        world_target_angle_ = msg->data;
       });
   body_omega_sub_ = this->create_subscription<std_msgs::msg::Float64>(
       "body_omega", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) {
         latest_body_omega_ = msg->data;
-      });
-  joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-      "joint_states", 10, [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
-        latest_body_angle_ = msg->position[4];
       });
   emergency_stop_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "/system/emergency/hazard_status", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
@@ -160,19 +117,16 @@ TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
 }
 
 double TargetAngleNode::gimbalControl() {
-  if (rotation_flag_) {
-    world_target_angle_ += latest_twist_.angular.z * TIMER_DT;
-    world_target_angle_ = normalizeAngle(world_target_angle_);
-    RCLCPP_INFO(this->get_logger(), "world_target_angle_: %f", world_target_angle_);
-    RCLCPP_INFO(this->get_logger(), "latest_imu_yaw_estimate_: %f", latest_imu_yaw_estimate_);
-    const double world_angle_error =
-        normalizeAngle(world_target_angle_ - latest_imu_yaw_estimate_);
-    return pid_.update(world_angle_error, MAX_ROTATION) -
-           latest_body_omega_;
-  } else {
-    RCLCPP_INFO(this->get_logger(), "body_target_angle_: %f", body_target_angle_);
-    const double body_angle_error = normalizeAngle(body_target_angle_ - latest_body_angle_);
-    return pid_.update(body_angle_error, MAX_ROTATION);
+  world_target_angle_ += latest_twist_.angular.z * TIMER_DT;
+  world_target_angle_ = normalizeAngle(world_target_angle_);
+  RCLCPP_INFO(this->get_logger(), "world_target_angle_: %f", world_target_angle_);
+  RCLCPP_INFO(this->get_logger(), "latest_world_angle_: %f", latest_world_angle_);
+  const double world_angle_error =
+      normalizeAngle(world_target_angle_ - latest_world_angle_);
+  if(rotation_flag_) {
+    return -pid_.update(world_angle_error) + latest_body_omega_;
+  }else {
+    return -pid_.update(world_angle_error);
   }
 }
 
@@ -181,9 +135,6 @@ void TargetAngleNode::timer_callback() {
     RCLCPP_WARN(this->get_logger(), "Waiting for IMU data...");
     return;
   }
-
-  latest_imu_yaw_estimate_ =
-      normalizeAngle(latest_imu_yaw_estimate_ + latest_imu_omega_ * TIMER_DT);
 
   core_msgs::msg::CANArray can_msg;
   can_msg.array.resize(1);
@@ -195,7 +146,7 @@ void TargetAngleNode::timer_callback() {
     can_msg.array[0].data.push_back(0);
   } else {
     auto omega = gimbalControl();
-    if (std::abs(omega) < 0.2) {
+    if (std::abs(omega) < 0.1) {
       omega = 0;
     }
     can_msg.array[0].data.push_back(omega);
