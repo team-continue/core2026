@@ -95,6 +95,7 @@ private:
   double latest_body_omega_ = 0;
   double latest_body_angle_ = 0;
   bool emergency_stop_flag_ = true;
+  bool node_initialized_ = false;
   geometry_msgs::msg::Twist latest_twist_;
 
   static double normalizeAngle(double angle) {
@@ -136,6 +137,7 @@ TargetAngleNode::TargetAngleNode() : Node("target_angle_node") {
   imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
       "imu", 10, [this](const sensor_msgs::msg::Imu::SharedPtr msg) {
         // New IMU publishes angular velocity, so estimate yaw by integration in timer callback.
+        node_initialized_ = true;
         latest_imu_omega_ = msg->angular_velocity.z;
       });
   body_target_angle_sub_ = this->create_subscription<std_msgs::msg::Float64>(
@@ -175,6 +177,11 @@ double TargetAngleNode::gimbalControl() {
 }
 
 void TargetAngleNode::timer_callback() {
+  if (!node_initialized_) {
+    RCLCPP_WARN(this->get_logger(), "Waiting for IMU data...");
+    return;
+  }
+
   latest_imu_yaw_estimate_ =
       normalizeAngle(latest_imu_yaw_estimate_ + latest_imu_omega_ * TIMER_DT);
 
