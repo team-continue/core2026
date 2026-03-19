@@ -38,6 +38,7 @@ class HUDCore {
 
 
     int camera_select = 0;
+    bool destroyed = false;
 
 public:
     HUDCore(std::shared_ptr<HUDManager> manager)
@@ -101,11 +102,23 @@ public:
     void setHP(int value) {
         RCLCPP_INFO(manager_->getNode()->get_logger(), "HP %d", value);
         hp_panel_->setHP(value);
-        if (value == 0) {
-            large_msg_->setMsg("<span style='font-size: 30pt;'>DESTROYED</span>", 3, QColor(0xFF, 0x40, 0x40));
-        }
+        // if (value == 0) {
+        //     setDestory(true);
+        // }else if (value == 100) {
+        //     setDestory(false);
+        // }
     }
     
+    void setDestory(bool state) {
+        if (state && !destroyed) {
+            destroyed = true;
+            large_msg_->setMsg("<span style='font-size: 30pt;'>DESTROYED</span>", 3, QColor(0xFF, 0x40, 0x40));
+        } else if (!state && destroyed) {
+            large_msg_->setMsg("<span style='font-size: 30pt;'>ENGAGE</span>", 3, QColor(0x40, 0xFF, 0x40));
+            destroyed = false;
+        }
+    }
+
     void setMaxAmmo(int value) {
         reticle_->setMaxAmmo(value);
     }
@@ -166,6 +179,10 @@ public:
     void setHazard(bool state) {
         RCLCPP_INFO(manager_->getNode()->get_logger(), "Set Hazard %d", state);
         hazard_->setState(state);
+    }
+
+    void setHazardInfo(int8_t info) {
+        hazard_->setInfo(info);
     }
 
     void onInputCamera1() {

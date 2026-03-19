@@ -26,6 +26,9 @@ HUDNode::HUDNode(std::shared_ptr<HUDCore> core, std::string global_battle_param_
     sub_ammo_max_ = create_subscription<std_msgs::msg::Int8>(
         "~/input/max_ammo", rclcpp::QoS(10), std::bind(&HUDNode::onMaxAmmo, this, std::placeholders::_1));
 
+    sub_destory_ = create_subscription<std_msgs::msg::Bool>(
+        "~/input/destroy", rclcpp::QoS(10), std::bind(&HUDNode::onDestory, this, std::placeholders::_1));
+
     sub_compass_ = create_subscription<std_msgs::msg::Float32>(
         "~/input/compass", rclcpp::QoS(10), std::bind(&HUDNode::onCompass, this, std::placeholders::_1));
 
@@ -55,6 +58,9 @@ HUDNode::HUDNode(std::shared_ptr<HUDCore> core, std::string global_battle_param_
 
     sub_hazard_ = create_subscription<std_msgs::msg::Bool>(
         "~/input/hazard", rclcpp::QoS(10), std::bind(&HUDNode::onHazard, this, std::placeholders::_1));
+
+    sub_hazard_info_ = create_subscription<std_msgs::msg::Int8>(
+        "~/input/hazard_info", rclcpp::QoS(10), std::bind(&HUDNode::onHazardInfo, this, std::placeholders::_1));
 
     sub_input_camera1_ = create_subscription<std_msgs::msg::Bool>(
         "~/input/camera_change_1", rclcpp::QoS(10), std::bind(&HUDNode::onInputCamera1, this, std::placeholders::_1));
@@ -128,6 +134,11 @@ void HUDNode::onMaxAmmo(const std_msgs::msg::Int8::SharedPtr msg) {
 
 }
 
+void HUDNode::onDestory(const std_msgs::msg::Bool::SharedPtr msg) {
+    bool value =msg->data;
+    core_->setDestory(value);
+}
+
 void HUDNode::onCompass(const std_msgs::msg::Float32::SharedPtr msg) {
     float value =msg->data;
     core_->setCompass(value);
@@ -170,6 +181,10 @@ void HUDNode::onEnemyPoses(const geometry_msgs::msg::PoseArray::SharedPtr msg) {
 
 void HUDNode::onHazard(const std_msgs::msg::Bool::SharedPtr msg) {
     core_->setHazard(msg->data);
+}
+
+void HUDNode::onHazardInfo(const std_msgs::msg::Int8::SharedPtr msg) {
+    core_->setHazardInfo(msg->data);
 }
 
 void HUDNode::onInputCamera1(const std_msgs::msg::Bool::SharedPtr msg) {

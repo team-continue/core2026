@@ -15,9 +15,12 @@
 
 class HUDHazard : public QWidget, public IWidgetComponet {
     QLabel *label_;
+    QLabel *info_;
     bool state_;
 public:
     HUDHazard(QWidget *parent);
     void paintEvent(QPaintEvent*);
     void setState(bool);
+    void setInfo(int8_t);
+    void setInfoText(std::string);
 };

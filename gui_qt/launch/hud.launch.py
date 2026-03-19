@@ -35,6 +35,7 @@ def generate_launch_description():
             ("~/input/ads", "/ads"),
             ("~/input/enemy_poses", "/enemy_poses"),
             ("~/input/hazard", "/system/emergency/hazard_status"),
+            ("~/input/hazard_info", "")
             ("~/input/camera_change_1", "/pad/up"),
             ("~/input/camera_change_2", "/pad/down"),
             ("~/input/cursor_prev", "/pad/up"),

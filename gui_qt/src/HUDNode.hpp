@@ -22,6 +22,7 @@ class HUDNode : public rclcpp::Node{
     rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr sub_ammo_;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr sub_hp_max_;
     rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr sub_ammo_max_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_destory_;
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_compass_;
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_speed_;
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_qe_;
@@ -32,6 +33,7 @@ class HUDNode : public rclcpp::Node{
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_image_noncomp_2_;
     rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr sub_enemy_poses_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_hazard_;
+    rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr sub_hazard_info_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_input_camera1_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_input_camera2_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_input_up_;
@@ -66,6 +68,7 @@ public:
     void onMaxHP(const std_msgs::msg::UInt8::SharedPtr msg);
     void onMaxAmmo(const std_msgs::msg::Int8::SharedPtr msg);
     void onCompass(const std_msgs::msg::Float32::SharedPtr msg);
+    void onDestory(const std_msgs::msg::Bool::SharedPtr msg);
     void onSpeed(const std_msgs::msg::Float32::SharedPtr msg);
     void onQE(const std_msgs::msg::Float32::SharedPtr msg);
     void onLog(const std_msgs::msg::String::SharedPtr msg);
@@ -75,6 +78,7 @@ public:
     void onImageNonComp2(const sensor_msgs::msg::Image::SharedPtr msg);
     void onEnemyPoses(const geometry_msgs::msg::PoseArray::SharedPtr msg);
     void onHazard(const std_msgs::msg::Bool::SharedPtr msg);
+    void onHazardInfo(const std_msgs::msg::Int8::SharedPtr msg);
     void onInputCamera1(const std_msgs::msg::Bool::SharedPtr msg);
     void onInputCamera2(const std_msgs::msg::Bool::SharedPtr msg);
     void onInputUp(const std_msgs::msg::Bool::SharedPtr msg);
