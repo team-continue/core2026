@@ -81,8 +81,10 @@ void ecat_FrameCallBack(){
   ecat_setUint8(101, destory, 1);
   // wireless
   if (wireless.update(wireless_data)) {
-    ecat_setUint8(102, wireless_data, LEN_WIRELESS);
+    ecat_setUint8(102, wireless_data, 7);
   }
+  uint8_t color_payload[1] = { bottom_can3.color() };
+  ecat_setUint8(103, color_payload, 1);
   hardware_enable[0] = damiao_motor[0].connect ? 0 : 1;
   ecat_setUint8(104, hardware_enable, 1);
 }
@@ -94,7 +96,7 @@ void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
     case 1:
     case 2:
     case 3:
-    // case 4:
+    case 4:
       can3_motor[id]->setPacketFrame(data, len);
       break;
     case 5:
@@ -116,11 +118,7 @@ void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
     case 15:
     // case 16:
       if(len >= 1){
-        if(data[0] < 0){
-          // esc.init();
-        }else{
-          esc.write(data[len - 1]);
-        }
+        esc.write(data[len - 1]);
       }
       break;
     // case 17:

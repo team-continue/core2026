@@ -12,7 +12,7 @@
 namespace {
 
 _Objects &obj = Obj;
-constexpr size_t kWirelessBytes = 7;
+constexpr size_t kWirelessPayloadBytes = 7;
 
 int clamp_to_int16(const float value) {
   if (value > 32767.0f) {
@@ -72,9 +72,13 @@ void app_hook() {
   if ((CC_ATOMIC_GET(ESCvar.App.state) & APPSTATE_INPUT) == 0) {
     return;
   }
+  if (!ecat_rxpdo_pending) {
+    return;
+  }
 
   dispatch_received_outputs();
   ecat_FrameCallBack();
+  ecat_rxpdo_pending = false;
 }
 
 void safe_output_hook() {
@@ -86,6 +90,8 @@ void safe_output_hook() {
 }  // namespace
 
 _Objects Obj = {};
+volatile uint32_t ecat_prev_connect_ts = 0;
+volatile bool ecat_rxpdo_pending = false;
 
 bool ecat_setUint8(const uint8_t id, const uint8_t *data, const int u8_len) {
   if (data == nullptr || u8_len <= 0) {
@@ -101,9 +107,17 @@ bool ecat_setUint8(const uint8_t id, const uint8_t *data, const int u8_len) {
       return true;
     case 102: {
       uint8_t *torque_bytes = reinterpret_cast<uint8_t *>(obj.motor_state_torque);
-      const size_t copy_len = static_cast<size_t>(u8_len) < kWirelessBytes ? static_cast<size_t>(u8_len) : kWirelessBytes;
-      memset(torque_bytes, 0, kWirelessBytes);
+      const size_t copy_len = static_cast<size_t>(u8_len) < kWirelessPayloadBytes ? static_cast<size_t>(u8_len) : kWirelessPayloadBytes;
+      memset(torque_bytes, 0, kWirelessPayloadBytes);
       memcpy(torque_bytes, data, copy_len);
+      return true;
+    }
+    case 103: {
+      if (u8_len <= 0) {
+        return false;
+      }
+      uint8_t *torque_bytes = reinterpret_cast<uint8_t *>(obj.motor_state_torque);
+      torque_bytes[kWirelessPayloadBytes] = data[0];
       return true;
     }
     case 104:
@@ -157,6 +171,8 @@ void ecat_begin() {
   };
 
   memset(&obj, 0, sizeof(obj));
+  ecat_prev_connect_ts = millis();
+  ecat_rxpdo_pending = false;
   obj.serial = 1;
   ecat_slv_init(&config);
 }

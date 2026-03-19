@@ -31,6 +31,7 @@ services:
       - .:/ros2_ws/src/
       - ros2_install_data:/ros2_ws/install
       - ros2_build_data:/ros2_ws/build
+      - ~/rosbag:/rosbag
 
     working_dir: /ros2_ws
     command: bash -c "sleep infinity"

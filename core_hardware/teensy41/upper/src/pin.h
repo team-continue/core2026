@@ -9,8 +9,8 @@
 
 #define SERVO_SERIAL Serial7
 
-// #define PIN_ESC1 24
-#define PIN_ESC2 35
+// #define PIN_ESC1 35
+#define PIN_ESC2 24
 
 #define SPIX_ESC SPI1
 
