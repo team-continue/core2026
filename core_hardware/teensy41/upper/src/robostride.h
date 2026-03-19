@@ -25,6 +25,8 @@
 // ROS2 / CAN timeout
 #define ROBOSTRIDE_ROS2_TIMEOUT  1000 // ms
 #define ROBOSTRIDE_CAN_TIMEOUT   100  // ms
+#define ROBOSTRIDE_RECONNECT_RETRY_MS 200 // ms
+#define ROBOSTRIDE_RECONNECT_STEP_TIMEOUT_MS 100 // ms
 
 // init delay
 #define ROBOSTRIDE_INIT_DELAY_MS 100
@@ -143,6 +145,19 @@ static const std::map<ActuatorType, ActuatorOperation> ACTUATOR_OPERATION_MAPPIN
 };
 
 FCTP_CLASS class RoboStride : public MotorBase {
+    enum ReconnectStep : uint8_t {
+        RECONNECT_IDLE = 0,
+        RECONNECT_SEND_DISABLE,
+        RECONNECT_WAIT_DISABLE,
+        RECONNECT_SEND_SET_MODE,
+        RECONNECT_WAIT_SET_MODE,
+        RECONNECT_SEND_GET_MODE,
+        RECONNECT_WAIT_GET_MODE,
+        RECONNECT_SEND_ENABLE,
+        RECONNECT_WAIT_ENABLE,
+        RECONNECT_RETRY_WAIT,
+    };
+
     uint8_t master_id_, motor_id_;
     int actuator_type_;
     FlexCAN_T4<_bus, _rxSize, _txSize> *can_;
@@ -168,6 +183,11 @@ FCTP_CLASS class RoboStride : public MotorBase {
     float mit_torque_command_nm_ = 0.f; // For torque control mode
 
     float pos_offset_ = 0.0f;
+    bool prev_connect_can_ = false;
+    bool reconnecting_ = false;
+    ReconnectStep reconnect_step_ = RECONNECT_IDLE;
+    unsigned long reconnect_step_started_ms_ = 0;
+    unsigned long reconnect_retry_started_ms_ = 0;
 
 public:
     MotorState &feedback;
@@ -337,6 +357,9 @@ public:
             return false;
         }
         last_recv_can_ts_ms_ = millis();
+        if (reconnecting_) {
+            handleReconnectResponse(result);
+        }
         connect = connect_can;
         return true;
     }
@@ -345,6 +368,15 @@ public:
         connect_can = (millis() - last_recv_can_ts_ms_) < ROBOSTRIDE_CAN_TIMEOUT;
         connect_ros2 = (millis() - last_recv_ros2_ts_ms_) < ROBOSTRIDE_ROS2_TIMEOUT;
         connect = connect_can;
+        if (prev_connect_can_ && !connect_can && !reconnecting_) {
+            startReconnect();
+        }
+        prev_connect_can_ = connect_can;
+
+        if (reconnecting_) {
+            processReconnect();
+            return;
+        }
 
         // timeout => disable
         int mode = ref.mode;
@@ -410,6 +442,134 @@ public:
     }
 
 private:
+    void startReconnect() {
+        reconnecting_ = true;
+        reconnect_step_ = RECONNECT_SEND_DISABLE;
+        reconnect_step_started_ms_ = millis();
+        reconnect_retry_started_ms_ = 0;
+    }
+
+    void enterReconnectRetry() {
+        reconnect_step_ = RECONNECT_RETRY_WAIT;
+        reconnect_retry_started_ms_ = millis();
+    }
+
+    void finishReconnect() {
+        reconnecting_ = false;
+        reconnect_step_ = RECONNECT_IDLE;
+        reconnect_step_started_ms_ = 0;
+        reconnect_retry_started_ms_ = 0;
+    }
+
+    void processReconnect() {
+        const unsigned long now_ms = millis();
+        switch (reconnect_step_) {
+            case RECONNECT_SEND_DISABLE:
+                if (Disenable_Motor(0, false)) {
+                    reconnect_step_ = RECONNECT_WAIT_DISABLE;
+                    reconnect_step_started_ms_ = now_ms;
+                } else {
+                    enterReconnectRetry();
+                }
+                return;
+
+            case RECONNECT_WAIT_DISABLE:
+                if ((now_ms - reconnect_step_started_ms_) > ROBOSTRIDE_RECONNECT_STEP_TIMEOUT_MS) {
+                    enterReconnectRetry();
+                }
+                return;
+
+            case RECONNECT_SEND_SET_MODE:
+                if (Set_RobStrite_Motor_parameter(drw.run_mode.index, (float)configured_run_mode_, Set_mode, false)) {
+                    reconnect_step_ = RECONNECT_WAIT_SET_MODE;
+                    reconnect_step_started_ms_ = now_ms;
+                } else {
+                    enterReconnectRetry();
+                }
+                return;
+
+            case RECONNECT_WAIT_SET_MODE:
+                if ((now_ms - reconnect_step_started_ms_) > ROBOSTRIDE_RECONNECT_STEP_TIMEOUT_MS) {
+                    enterReconnectRetry();
+                }
+                return;
+
+            case RECONNECT_SEND_GET_MODE:
+                if (Get_RobStrite_Motor_parameter(drw.run_mode.index, false)) {
+                    reconnect_step_ = RECONNECT_WAIT_GET_MODE;
+                    reconnect_step_started_ms_ = now_ms;
+                } else {
+                    enterReconnectRetry();
+                }
+                return;
+
+            case RECONNECT_WAIT_GET_MODE:
+                if ((now_ms - reconnect_step_started_ms_) > ROBOSTRIDE_RECONNECT_STEP_TIMEOUT_MS) {
+                    enterReconnectRetry();
+                }
+                return;
+
+            case RECONNECT_SEND_ENABLE:
+                if (enable_motor(false)) {
+                    reconnect_step_ = RECONNECT_WAIT_ENABLE;
+                    reconnect_step_started_ms_ = now_ms;
+                } else {
+                    enterReconnectRetry();
+                }
+                return;
+
+            case RECONNECT_WAIT_ENABLE:
+                if ((now_ms - reconnect_step_started_ms_) > ROBOSTRIDE_RECONNECT_STEP_TIMEOUT_MS) {
+                    enterReconnectRetry();
+                }
+                return;
+
+            case RECONNECT_RETRY_WAIT:
+                if ((now_ms - reconnect_retry_started_ms_) >= ROBOSTRIDE_RECONNECT_RETRY_MS) {
+                    reconnect_step_ = RECONNECT_SEND_DISABLE;
+                    reconnect_step_started_ms_ = now_ms;
+                }
+                return;
+
+            case RECONNECT_IDLE:
+            default:
+                finishReconnect();
+                return;
+        }
+    }
+
+    void handleReconnectResponse(const ReceiveResult &result) {
+        switch (reconnect_step_) {
+            case RECONNECT_WAIT_DISABLE:
+                reconnect_step_ = RECONNECT_SEND_SET_MODE;
+                reconnect_step_started_ms_ = millis();
+                return;
+
+            case RECONNECT_WAIT_SET_MODE:
+                reconnect_step_ = RECONNECT_SEND_GET_MODE;
+                reconnect_step_started_ms_ = millis();
+                return;
+
+            case RECONNECT_WAIT_GET_MODE:
+                if (result.communication_type == Communication_Type_GetSingleParameter &&
+                    params_.index == drw.run_mode.index &&
+                    static_cast<uint8_t>(drw.run_mode.data) == configured_run_mode_) {
+                    reconnect_step_ = RECONNECT_SEND_ENABLE;
+                    reconnect_step_started_ms_ = millis();
+                    return;
+                }
+                enterReconnectRetry();
+                return;
+
+            case RECONNECT_WAIT_ENABLE:
+                finishReconnect();
+                return;
+
+            default:
+                return;
+        }
+    }
+
     bool decodeCanFrame(const CAN_message_t &r_msg, ReceiveResult &result){
         if (!r_msg.flags.extended) {
             return false;

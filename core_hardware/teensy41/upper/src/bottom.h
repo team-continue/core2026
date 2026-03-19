@@ -15,10 +15,10 @@ class Bottom : public MotorBase {
  public:
   explicit Bottom(FlexCAN_T4<_bus, _rxSize, _txSize> *can) : can_(can) {}
 
-  void setPacketFrame(const float *data, int len) override {
-    if (data == nullptr || len <= 0) {
-      return;
-    }
+    void setPacketFrame(const float *data, int len) override {
+      if (data == nullptr || len <= 0) {
+        return;
+      }
 
     led_byte_1_ = static_cast<uint8_t>(data[0]);
     if (len > 1) {
@@ -46,14 +46,15 @@ class Bottom : public MotorBase {
     can_->write(msg);
   }
 
-  bool setCanFrame(const CAN_message_t &msg) override {
-    if (msg.id != BOTTOM_RESPONSE_ID || msg.len != 2) {
+    bool setCanFrame(const CAN_message_t &msg) override {
+    if (msg.id != BOTTOM_RESPONSE_ID || msg.len != 3) {
       return false;
     }
 
     last_recv_can_ts_ms_ = millis();
     destroy_ = msg.buf[0] != 0;
     hp_ = msg.buf[1];
+    color_ = msg.buf[2];
 
     motor_state.status = destroy_ ? 1 : 0;
     motor_state.torque_nm = static_cast<float>(hp_);
@@ -65,6 +66,7 @@ class Bottom : public MotorBase {
 
   bool destroy() const { return destroy_; }
   uint8_t hp() const { return hp_; }
+  uint8_t color() const { return color_; }
 
  private:
   FlexCAN_T4<_bus, _rxSize, _txSize> *can_;
@@ -74,4 +76,5 @@ class Bottom : public MotorBase {
   uint8_t led_byte_2_ = 0;
   bool destroy_ = false;
   uint8_t hp_ = 0;
+  uint8_t color_ = 0;
 };

@@ -3,11 +3,15 @@
  * LICENSE file in the project root for full license information
  */
 #include <stddef.h>
+#include <Arduino.h>
 #include "esc.h"
 #include "esc_coe.h"
 #include "esc_foe.h"
 #include "esc_eoe.h"
 #include "ecat_slv.h"
+
+extern volatile uint32_t ecat_prev_connect_ts;
+extern volatile bool ecat_rxpdo_pending;
 
 #define IS_RXPDO(index) ((index) >= 0x1600 && (index) < 0x1800)
 #define IS_TXPDO(index) ((index) >= 0x1A00 && (index) < 0x1C00)
@@ -175,6 +179,8 @@ void RXPDO_update (void)
          COE_pdoUnpack (rxpdo, ESCvar.sm2mappings, SMmap2);
       }
    }
+   ecat_prev_connect_ts = millis();
+   ecat_rxpdo_pending = true;
 }
 
 /* Set the watchdog count value, don't have any affect when using

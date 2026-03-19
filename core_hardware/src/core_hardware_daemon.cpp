@@ -15,6 +15,13 @@ namespace {
 constexpr int kReceiveTimeoutUs = 3000;
 constexpr int kMaxMissedCycles = 10;
 constexpr auto kCyclePeriod = std::chrono::milliseconds(10);
+constexpr auto kCommandTimeout = std::chrono::seconds(1);
+
+uint64_t current_system_time_ms() {
+  return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                   std::chrono::system_clock::now().time_since_epoch())
+                                   .count());
+}
 
 volatile std::sig_atomic_t g_should_stop = 0;
 
@@ -67,9 +74,15 @@ class HardwareDaemon {
       try {
         server_.accept_if_ready();
         drain_commands();
+        update_command_timeout();
       } catch (const std::exception& ex) {
         std::cerr << "Hardware daemon IPC error: " << ex.what() << std::endl;
         handle_client_failure();
+      }
+
+      if (!command_active_) {
+        std::this_thread::sleep_until(next_tick);
+        continue;
       }
 
       try {
@@ -83,12 +96,15 @@ class HardwareDaemon {
           ++missed_cycles_;
           if (missed_cycles_ >= kMaxMissedCycles) {
             std::cerr << "EtherCAT reconnect after missed cycles, wkc=" << wkc << std::endl;
+            ethercat_connected_for_state_ = false;
             ecat_.close();
             ecat_connected_ = false;
             missed_cycles_ = 0;
           }
         } else {
           missed_cycles_ = 0;
+          ethercat_connected_for_state_ = true;
+          last_ethercat_rx_ms_ = current_system_time_ms();
           try {
             publish_state();
           } catch (const std::exception& ex) {
@@ -118,9 +134,31 @@ class HardwareDaemon {
     while (server_.poll_once([this](core_hardware::IpcMessageType type, uint32_t, const std::vector<uint8_t>& payload) {
       if (type == core_hardware::IpcMessageType::kCommandSnapshot) {
         latest_command_ = core_hardware::decode_snapshot(payload);
+        last_command_rx_tp_ = std::chrono::steady_clock::now();
+        command_active_ = true;
       }
     })) {
     }
+  }
+
+  void update_command_timeout() {
+    if (!command_active_) {
+      return;
+    }
+    if ((std::chrono::steady_clock::now() - last_command_rx_tp_) <= kCommandTimeout) {
+      return;
+    }
+
+    command_active_ = false;
+    if (ecat_connected_) {
+      std::cerr << "EtherCAT closed after command timeout" << std::endl;
+      ethercat_connected_for_state_ = false;
+      ecat_.close();
+      ecat_connected_ = false;
+    }
+    missed_cycles_ = 0;
+    pending_float_packets_.clear();
+    pending_uint8_packets_.clear();
   }
 
   void ensure_ecat_connected() {
@@ -145,7 +183,9 @@ class HardwareDaemon {
     if (!server_.has_client()) {
       return;
     }
-    const auto snapshot = core_hardware::snapshot_from_objects(Obj);
+    auto snapshot = core_hardware::snapshot_from_objects(Obj);
+    snapshot.ethercat_connected[0] = ethercat_connected_for_state_ ? 1U : 0U;
+    snapshot.last_ethercat_rx_ms[0] = last_ethercat_rx_ms_;
     server_.send(core_hardware::IpcMessageType::kStateSnapshot, sequence_++, core_hardware::encode_snapshot(snapshot));
     for (const auto& packet : pending_float_packets_) {
       server_.send(core_hardware::IpcMessageType::kFloatPacket, sequence_++, core_hardware::encode_packet_message(packet.first, packet.second));
@@ -159,8 +199,15 @@ class HardwareDaemon {
     if (server_.has_client()) {
       server_.disconnect_client();
     }
-    latest_command_ = {};
-    ecat_.clear_tx_packets();
+    command_active_ = false;
+    if (ecat_connected_) {
+      ethercat_connected_for_state_ = false;
+      ecat_.close();
+      ecat_connected_ = false;
+    }
+    missed_cycles_ = 0;
+    pending_float_packets_.clear();
+    pending_uint8_packets_.clear();
   }
 
   void handle_ecat_failure() {
@@ -169,6 +216,7 @@ class HardwareDaemon {
     if (server_.has_client()) {
       publish_empty_state();
     }
+    ethercat_connected_for_state_ = false;
     ecat_.close();
     ecat_connected_ = false;
     missed_cycles_ = 0;
@@ -196,8 +244,12 @@ class HardwareDaemon {
   std::string if_name_;
   std::string socket_path_;
   bool ecat_connected_ = false;
+  bool command_active_ = false;
+  bool ethercat_connected_for_state_ = false;
   int missed_cycles_ = 0;
   uint32_t sequence_ = 0;
+  uint64_t last_ethercat_rx_ms_ = 0;
+  std::chrono::steady_clock::time_point last_command_rx_tp_{};
 };
 
 }  // namespace
