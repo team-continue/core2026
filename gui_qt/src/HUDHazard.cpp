@@ -63,42 +63,9 @@ void HUDHazard::setState(bool state) {
     this->update();
 }
 
-void HUDHazard::setInfo(int8_t info) {
-    // 数字が大きい方がつよい
-    
-    // 45 ぶつりきんてい
-    if (info == 45) {
-        setInfoText("Reason: HARD Emergency");
-    }
-    
-    // 34 ソフトキンテイ
-    if (info == 34) {
-        setInfoText("Reason: SOFT Emergency");
-    }
-
-    // 23 teensy timeout
-    if (info == 23) {
-        setInfoText("Reason: Teensy timeout");
-    }
-    
-    // 12 receiver timeout
-    if (info == 12) {
-        setInfoText("Reason: Receiver timeout");
-    }
-
-    // 11 destory
-    if (info == 11) {
-        setInfoText("Reason: Destoryed");
-    }
-
-    // 00 非緊急
-    if (info == 0) {
-        setInfoText("");
-        return;
-    }
-
+void HUDHazard::setInfo(std::string info) {
+    setInfoText(info);
     this->update();
-
 }
 
 void HUDHazard::setInfoText(std::string text) {

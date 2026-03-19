@@ -33,7 +33,7 @@ class HUDNode : public rclcpp::Node{
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_image_noncomp_2_;
     rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr sub_enemy_poses_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_hazard_;
-    rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr sub_hazard_info_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_hazard_label_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_input_camera1_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_input_camera2_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_input_up_;
@@ -78,7 +78,7 @@ public:
     void onImageNonComp2(const sensor_msgs::msg::Image::SharedPtr msg);
     void onEnemyPoses(const geometry_msgs::msg::PoseArray::SharedPtr msg);
     void onHazard(const std_msgs::msg::Bool::SharedPtr msg);
-    void onHazardInfo(const std_msgs::msg::Int8::SharedPtr msg);
+    void onHazardLabel(const std_msgs::msg::String::SharedPtr msg);
     void onInputCamera1(const std_msgs::msg::Bool::SharedPtr msg);
     void onInputCamera2(const std_msgs::msg::Bool::SharedPtr msg);
     void onInputUp(const std_msgs::msg::Bool::SharedPtr msg);

@@ -57,10 +57,10 @@ HUDNode::HUDNode(std::shared_ptr<HUDCore> core, std::string global_battle_param_
         "~/input/enemy_poses", rclcpp::QoS(10), std::bind(&HUDNode::onEnemyPoses, this, std::placeholders::_1));
 
     sub_hazard_ = create_subscription<std_msgs::msg::Bool>(
-        "~/input/hazard", rclcpp::QoS(10), std::bind(&HUDNode::onHazard, this, std::placeholders::_1));
+        "~/input/hazard", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local(), std::bind(&HUDNode::onHazard, this, std::placeholders::_1));
 
-    sub_hazard_info_ = create_subscription<std_msgs::msg::Int8>(
-        "~/input/hazard_info", rclcpp::QoS(10), std::bind(&HUDNode::onHazardInfo, this, std::placeholders::_1));
+    sub_hazard_label_ = create_subscription<std_msgs::msg::String>(
+        "~/input/hazard_label", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local(), std::bind(&HUDNode::onHazardLabel, this, std::placeholders::_1));
 
     sub_input_camera1_ = create_subscription<std_msgs::msg::Bool>(
         "~/input/camera_change_1", rclcpp::QoS(10), std::bind(&HUDNode::onInputCamera1, this, std::placeholders::_1));
@@ -183,7 +183,7 @@ void HUDNode::onHazard(const std_msgs::msg::Bool::SharedPtr msg) {
     core_->setHazard(msg->data);
 }
 
-void HUDNode::onHazardInfo(const std_msgs::msg::Int8::SharedPtr msg) {
+void HUDNode::onHazardLabel(const std_msgs::msg::String::SharedPtr msg) {
     core_->setHazardInfo(msg->data);
 }
 

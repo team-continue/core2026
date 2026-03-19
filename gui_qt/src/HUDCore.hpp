@@ -181,7 +181,7 @@ public:
         hazard_->setState(state);
     }
 
-    void setHazardInfo(int8_t info) {
+    void setHazardInfo(std::string info) {
         hazard_->setInfo(info);
     }
 

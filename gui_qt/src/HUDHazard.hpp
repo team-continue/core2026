@@ -21,6 +21,6 @@ public:
     HUDHazard(QWidget *parent);
     void paintEvent(QPaintEvent*);
     void setState(bool);
-    void setInfo(int8_t);
+    void setInfo(std::string);
     void setInfoText(std::string);
 };

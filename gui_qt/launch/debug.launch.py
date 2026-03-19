@@ -41,6 +41,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         rosbridge_launch,
-        wireless_parser_launch,
+        #wireless_parser_launch,
         mode_launch
     ])
