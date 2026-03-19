@@ -11,7 +11,7 @@
 // #include <homing.h>
 #include "motor.h"
 
-#define DAMIAO_ROS2_TIMEOUT 1000 // ms
+#define DAMIAO_ROS2_TIMEOUT 200 // ms
 #define DAMIAO_CAN_TIMEOUT 100 // ms
 #define DAMIAO_GEAR_RATIO (3591. / 187.)
 

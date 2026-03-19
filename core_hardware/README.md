@@ -90,7 +90,8 @@ sudo ./build/ecat_zero_check enp2s0
 
 - `motor_state_pos` は 15 軸すべて publish します
 - `id 0..3` は state frame の `position` / `velocity` は通常どおり使いますが，`torque` は使いません
-- `wireless` 7 byte は EtherCAT PDO 上では独立した field を持たず，`motor_state_torque[0..3]` の先頭 7 byte に載せています
+- `wireless` 7 byte に加え，末尾の 1 byte を `color` に利用し `motor_state_torque[0..3]` の先頭 8 byte に情報を載せます．
+- `/color` は `core_hardware_daemon` が `id 103` で publish するため，wireless と並行して受信できます．
 - この多重化は `core_hardware_daemon` と Teensy 間で吸収し，ROS2 側の `wireless` topic インタフェースは維持します
 
 そのため EtherCAT レイアウトを変更するときは，`utypes.h` だけでなく `objectlist.c` / `esi.json` / PC 側 `ecat.cpp` を必ず同時に揃えてください．

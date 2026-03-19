@@ -15,9 +15,6 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   led1.init();
   led2.init();
-  // 撃破信号
-  pinMode(PIN_DESTROY, INPUT);
-
   client.init();
   can3_init();
 

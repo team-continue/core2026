@@ -31,6 +31,8 @@ constexpr std::size_t kInputCoreStateBitOffset = kInputSystemStateBitOffset + 2U
 constexpr std::size_t kInputRequiredBytes = (kInputCoreStateBitOffset + (2U * 8U) + 7U) / 8U;
 
 constexpr std::array<uint8_t, 15> kPacketJointIds = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
+constexpr std::size_t kWirelessPayloadBytes = 7U;
+constexpr std::size_t kWirelessOverlayBytes = 8U;
 
 void throw_state_error(const char* prefix, const ecx_contextt& ctx) {
   std::ostringstream oss;
@@ -64,10 +66,14 @@ void write_uint16_unaligned(uint8_t* buffer, std::size_t offset, uint16_t value)
   std::memcpy(buffer + offset, &value, sizeof(value));
 }
 
-std::array<uint8_t, 7> unpack_wireless_from_torque_bytes(const uint8_t* inputs) {
-  std::array<uint8_t, 7> wireless{};
+std::array<uint8_t, kWirelessPayloadBytes> unpack_wireless_from_torque_bytes(const uint8_t* inputs) {
+  std::array<uint8_t, kWirelessPayloadBytes> wireless{};
   std::memcpy(wireless.data(), inputs + kInputMotorTorqueOffset, wireless.size());
   return wireless;
+}
+
+uint8_t unpack_color_from_torque_bytes(const uint8_t* inputs) {
+  return inputs[kInputMotorTorqueOffset + kWirelessPayloadBytes];
 }
 }  // namespace
 
@@ -292,11 +298,13 @@ void Ecat::emit_rx_packets() const {
     Obj.core_state[i] = static_cast<uint8_t>(unpack_bits(inputs, kInputCoreStateBitOffset + (i * 8U), 8U));
   }
   const auto wireless = unpack_wireless_from_torque_bytes(inputs);
+  const uint8_t color = unpack_color_from_torque_bytes(inputs);
 
   if (uint8_packet_callback_) {
     uint8_packet_callback_(100U, {Obj.core_state[0]});
     uint8_packet_callback_(101U, {Obj.core_state[1]});
     uint8_packet_callback_(102U, std::vector<uint8_t>(wireless.begin(), wireless.end()));
+    uint8_packet_callback_(103U, {color});
     uint8_packet_callback_(104U, {system_upper});
   }
 }
