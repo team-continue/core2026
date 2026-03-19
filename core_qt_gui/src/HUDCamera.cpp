@@ -64,7 +64,7 @@ void HUDCamera::setEnemyPoses(std::vector<geometry_msgs::msg::Pose> poseArray) {
     enemy_marker_->setMarker(poseArray);
 }
 
-void HUDCamera::setImage(sensor_msgs::msg::CompressedImage::SharedPtr msg, bool inverted) {
+void HUDCamera::setImage(sensor_msgs::msg::CompressedImage::SharedPtr msg, [[maybe_unused]] bool inverted) {
     QByteArray img = QByteArray(reinterpret_cast<const char*>(msg->data.data()), msg->data.size());
     auto qimage = QImage::fromData(img);
     auto imageMain = QPixmap::fromImage(qimage);

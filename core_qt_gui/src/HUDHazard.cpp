@@ -25,6 +25,13 @@ HUDHazard::HUDHazard(QWidget *parent)
     info_->setFont(QFont(USE_FONT, 20));
     info_->setContentsMargins(10,5,10,5);
     info_->setText("");
+    info_->setStyleSheet(
+    "background-color: rgba(0, 0, 0, 160);"
+    "padding: 8px;"
+);
+
+    label_->adjustSize();
+    label_->move(640 - label_->width() / 2, 150);
 
     setInfoText("");
     
@@ -43,6 +50,10 @@ void HUDHazard::paintEvent(QPaintEvent *event) {
     painter.setRenderHint(QPainter::Antialiasing);
     
     if (state_) {
+         // Background first so all HUD drawings stay on top.
+        painter.setPen(QPen(QColor(0, 0, 0, 0)));
+        painter.setBrush(QColor(0, 0, 0, 160));
+        painter.drawRect(QRect(0, 0, label_->width(), label_->height()));
         label_->setVisible(true);
         info_->setVisible(true);
         
@@ -64,6 +75,10 @@ void HUDHazard::setState(bool state) {
 }
 
 void HUDHazard::setInfo(std::string info) {
+    size_t pos = 0;
+    while ((pos = info.find(", ", pos)) != std::string::npos) {
+        info.replace(pos, 2, "\n");
+    }
     setInfoText(info);
     this->update();
 }
@@ -71,5 +86,5 @@ void HUDHazard::setInfo(std::string info) {
 void HUDHazard::setInfoText(std::string text) {
     info_->setText(text.c_str());
     info_->adjustSize();
-    info_->move(640 - info_->width() / 2, 440 + info_->height());
+    info_->move(640 - info_->width() / 2, 480);
 }
