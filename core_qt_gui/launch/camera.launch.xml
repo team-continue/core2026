@@ -1,0 +1,17 @@
+<launch>
+    <node pkg="usb_cam" exec="usb_cam_node_exe" name="usb_cam_node" namespace="camera1" output="screen">
+        <param name="video_device" value="/dev/video0" />
+        <param name="framerate" value="30.0" />
+        <param name="image_width" value="1280" />
+        <param name="image_height" value="720" />
+        <param name="pixel_format" value="mjpeg2rgb" />
+    </node>
+
+    <node pkg="usb_cam" exec="usb_cam_node_exe" name="usb_cam_node" namespace="camera2" output="screen">
+        <param name="video_device" value="/dev/video1" />
+        <param name="framerate" value="30.0" />
+        <param name="image_width" value="1280" />
+        <param name="image_height" value="720" />
+        <param name="pixel_format" value="mjpeg2rgb" />
+    </node>
+</launch>
