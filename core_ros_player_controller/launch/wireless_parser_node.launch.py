@@ -71,8 +71,8 @@ def generate_launch_description():
     )
     hazard_status_arg = DeclareLaunchArgument(
         "hazard_status",
-        default_value="/system/emergency/hazard_status",
-        description="Output topic to remap /system/emergency/hazard_status",
+        default_value="/software_emergency",
+        description="Output topic to remap /software_emergency"
     )
     test_mode_arg = DeclareLaunchArgument(
         "test_mode",
