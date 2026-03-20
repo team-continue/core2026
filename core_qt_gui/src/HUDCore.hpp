@@ -39,6 +39,7 @@ class HUDCore {
 
     int camera_select = 0;
     bool destroyed = false;
+    bool has_first_ammo = false;
 
 public:
     HUDCore(std::shared_ptr<HUDManager> manager)
@@ -125,6 +126,11 @@ public:
 
     void setAmmo(int value) {
         RCLCPP_INFO(manager_->getNode()->get_logger(), "Ammo %d", value);
+        if (!has_first_ammo) {
+            // 最初の値が最大値
+            setMaxAmmo(value);
+            has_first_ammo = true;
+        }
         ammo_panel_->setValue(value);
         reticle_->setAmmo(value);
     }
