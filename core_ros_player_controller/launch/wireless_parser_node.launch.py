@@ -49,10 +49,10 @@ def generate_launch_description():
         default_value="/shoot_motor_state",
         description="Output topic to remap /shoot_motor (default: /shoot_motor_state)",
     )
-    left_shoot_once_arg = DeclareLaunchArgument(
-        "left_shoot_once",
-        default_value="/left/shoot_once",
-        description="Output topic to remap /left/shoot_once",
+    right_shoot_once_arg = DeclareLaunchArgument(
+        "right_shoot_once",
+        default_value="/right/shoot_once",
+        description="Output topic to remap /right/shoot_once",
     )
     reloading_arg = DeclareLaunchArgument(
         "reloading",
@@ -99,7 +99,7 @@ def generate_launch_description():
             ("/manual_mode", LaunchConfiguration("manual_mode")),
             ("/manual_pitch", LaunchConfiguration("manual_pitch")),
             ("/shoot_motor", LaunchConfiguration("shoot_motor")),
-            ("/left/shoot_once", LaunchConfiguration("left_shoot_once")),
+            ("/right/shoot_once", LaunchConfiguration("right_shoot_once")),
             ("/reloading", LaunchConfiguration("reloading")),
             ("/auto_point_select", LaunchConfiguration("auto_point_select")),
             ("/selected_pose", LaunchConfiguration("selected_pose")),
@@ -116,7 +116,7 @@ def generate_launch_description():
         manual_mode_arg,
         manual_pitch_arg,
         shoot_motor_arg,
-        left_shoot_once_arg,
+        right_shoot_once_arg,
         reloading_arg,
         auto_point_select_arg,
         selected_pose_arg,
