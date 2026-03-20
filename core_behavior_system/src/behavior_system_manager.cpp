@@ -3,6 +3,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/int32.hpp>
+#include <std_msgs/msg/u_int8.hpp>
 #include <std_msgs/msg/string.hpp>
 
 #include <cmath>
@@ -121,6 +122,8 @@ public:
     state_name_pub_ = create_publisher<std_msgs::msg::String>(state_name_topic_, 10);
     pause_pub_ = create_publisher<std_msgs::msg::Bool>(pause_topic_, 10);
 
+    led_upper_pub_ = create_publisher<std_msgs::msg::UInt8>("/led/upper", 10);
+
     const double safe_rate = publish_rate_hz_ > 0.0 ? publish_rate_hz_ : 1.0;
     timer_ = create_wall_timer(
         std::chrono::milliseconds(static_cast<int>(1000.0 / safe_rate)),
@@ -150,26 +153,42 @@ private:
     publishState(next_state);
     setPause(next_state != BehaviorState::AUTO_WAYPOINT);
 
+    std_msgs::msg::UInt8 msg;
     switch (next_state) {
       case BehaviorState::MANUAL:
         setRotation(false);
         last_source_ = GoalSource::NONE;
+        
+        msg.data = 2;
+        led_upper_pub_->publish(msg);
         break;
       case BehaviorState::AUTO_SELECTED:
         setRotation(false);
         handleSelectedGoal();
+
+        msg.data = 8;
+        led_upper_pub_->publish(msg);
         break;
       case BehaviorState::ATTACK:
         setRotation(true);
         publishStopGoal();
+
+        msg.data = 9;
+        led_upper_pub_->publish(msg);
         break;
       case BehaviorState::AUTO_WAYPOINT:
         setRotation(false);
         handleWaypointGoal();
+
+        msg.data = 7;
+        led_upper_pub_->publish(msg);
         break;
       case BehaviorState::AUTO_IDLE:
         setRotation(false);
         last_source_ = GoalSource::NONE;
+        
+        msg.data = 6;
+        led_upper_pub_->publish(msg);
         break;
     }
   }
@@ -349,6 +368,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr state_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_name_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pause_pub_;
+  rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr led_upper_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 
