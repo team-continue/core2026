@@ -80,17 +80,15 @@
                 # target_image_position: geometry_msgs/PointStamped
                 #   detected     -> point=(x_px, y_px, 0)  [center-origin pixel coords]
                 #   not detected -> point=(0, 0, 1)
-                image_width: 1280.0
-                image_height: 720.0
+                image_width: 640.0
+                image_height: 480.0
                 use_fov_image_tracking: false # true: 画角+画像比率ベース, false: yaw/pitch_image_gain による加算制御
                 horizontal_fov_deg: 100.0 # 横画角[deg]。縦画角は image_height / image_width 比から導出
                 # image_tolerance_x/y はピクセル誤差ベースで効く（両方式共通）
                 # image_center_x/y は狙う画像中心の正規化座標。0.5,0.5 が幾何学中心
                 # 例: image_center_x=0.55 -> 画像中央より右へ 5% ずらした位置を目標中心にする
-                image_center_x: 0.5
-                image_center_y: 0.5
-                image_tolerance_x: 8.0
-                image_tolerance_y: 8.0
+                image_tolerance_x: 50.0
+                image_tolerance_y: 50.0
                 target_lead_time_sec: 0.0 # [s] 連続する target_image_position から画像平面速度を推定し、この秒数先の予測座標を狙う。0で無効
                 target_velocity_min_dt_sec: 0.01 # [s] これ未満のサンプル間隔では速度を更新しない
                 target_velocity_max_px_per_sec: 1500.0 # [px/s] 画像平面上の速度推定の各軸上限
@@ -99,12 +97,12 @@
                 target_lost_return_to_startup_delay_sec: 2.0 # target喪失後、この秒数だけ現在角を保持したら startup_release_* へ戻す
 
                 # 原点復帰などの動きの速さ
-                max_yaw_rate: 1.0 # [rad/s] startup_release_* や manual_mode 初期角への段階移動で使う最大 yaw 変化速度。0以下で即到達
-                max_pitch_rate: 1.0 # [rad/s] startup_release_* や manual_mode 初期角への段階移動で使う最大 pitch 変化速度。0以下で即到達
+                max_yaw_rate: 3.0 # [rad/s] startup_release_* や manual_mode 初期角への段階移動で使う最大 yaw 変化速度。0以下で即到達
+                max_pitch_rate: 5.0 # [rad/s] startup_release_* や manual_mode 初期角への段階移動で使う最大 pitch 変化速度。0以下で即到達
 
                 # image error -> angle command gain（use_fov_image_tracking=false の時に使用）
-                yaw_image_gain: 0.001
-                pitch_image_gain: 0.01
+                yaw_image_gain: 0.002
+                pitch_image_gain: 0.02
                 yaw_direction: 1.0
                 pitch_direction: 1.0
 
