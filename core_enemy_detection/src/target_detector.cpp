@@ -9,15 +9,20 @@ using namespace core_enemy_detection;
 targetDetector::targetDetector() : 
     Node("target_detector")
     {
-        imgSub = image_transport::create_subscription(this, "raw_image", std::bind(&targetDetector::detectEnemy, this, _1), "compressed", rmw_qos_profile_default);
-        colorSub = this->create_subscription<std_msgs::msg::Int32>("color", 10, std::bind(&targetDetector::changeTarget, this, _1));
+        imgSub = image_transport::create_subscription(this, "raw_image", std::bind(&targetDetector::detectEnemy, this, _1), "raw", rmw_qos_profile_default);
+        colorSub = this->create_subscription<std_msgs::msg::UInt8>("color", 10, std::bind(&targetDetector::changeTarget, this, _1));
         dpInfoPub = this->create_publisher<core_msgs::msg::DamagePanelInfoArray>("damage_panels_infomation", 1);
         parameter_callback_handle_ = this->add_on_set_parameters_callback(std::bind(&targetDetector::changeParameter, this, _1));
         declareParameters();
     }
 
-void targetDetector::changeTarget(const std_msgs::msg::Int32::SharedPtr msg){
-    mode = static_cast<int32_t>(msg->data);
+void targetDetector::changeTarget(const std_msgs::msg::UInt8::SharedPtr msg){
+    mode = static_cast<u_int8_t>(msg->data);
+    if(mode == 81 || mode == 67 || mode == 17 || mode == 51){
+        operate = true;
+    }else{
+        operate = false;
+    }
     return;
 }
 
@@ -35,15 +40,17 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
     float yRatio = (float)image_size[1] / (float)rawImage.size().height;
     cv::resize(rawImage, Image, cv::Size(image_size[0], image_size[1]), xRatio, yRatio);
 
+    if(!operate){
+        Image.setTo(cv::Scalar(0, 0, 0));
+    }
+
     // hsv画像&lab画像に変換
     cv::cvtColor(Image, hsvImage, cv::COLOR_BGR2HSV);
     cv::cvtColor(Image, labImage, cv::COLOR_BGR2Lab);
 
 
     // 色抽出
-    if(!extractHsvRange())
-        return;
-
+    extractHsvRange();
 
     // ノイズ除去
     applyMorphology();
@@ -181,8 +188,8 @@ void targetDetector::resetDamagePanelInfo(){
     damagePanels.shrink_to_fit();
 }
 
-bool targetDetector::extractHsvRange(){
-    if(mode == 81 || mode == 17){
+void targetDetector::extractHsvRange(){
+    if(mode == 67 || mode == 51){
         // hsv画像に対する検出
         cv::Mat mask1, mask2;
         cv::inRange(hsvImage, red_range_lower1, red_range_upper1, mask1);
@@ -194,10 +201,10 @@ bool targetDetector::extractHsvRange(){
         // lab画像に対する検出
         // cv::inRange(labImage, params["red_lab_range_lower"], params["red_lab_range_upper"], ledMaskImage);
         
-    }else if(mode == 67 || mode == 51){
+    }else if(mode == 81 || mode == 17){
         cv::inRange(hsvImage, blue_range_lower, blue_range_upper, ledMaskImage);
     }else{
-        return false;
+        cv::inRange(hsvImage, blue_range_lower, blue_range_upper, ledMaskImage);
     }
     // hsv画像に対する検出
     // cv::inRange(hsvImage, params["panel_hsv_range_lower"], params["panel_hsv_range_upper"], panelMaskImage);
@@ -207,7 +214,7 @@ bool targetDetector::extractHsvRange(){
     cv::medianBlur(labImage, dst, 3);
     cv::inRange(dst, panel_lab_range_lower, panel_lab_range_upper, panelMaskImage);
     
-    return true;
+    return;
 }
 
 void targetDetector::applyMorphology(){
