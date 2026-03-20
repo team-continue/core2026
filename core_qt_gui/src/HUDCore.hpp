@@ -112,7 +112,6 @@ public:
                 // 最大値がくるようなら最大値を更新
                 setMaxHP(value);
             }
-            hp_panel_
         }
         hp_panel_->setHP(value);
         // if (value == 0) {
