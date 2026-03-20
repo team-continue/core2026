@@ -9,7 +9,7 @@ using namespace core_enemy_detection;
 targetDetector::targetDetector() : 
     Node("target_detector")
     {
-        imgSub = image_transport::create_subscription(this, "raw_image", std::bind(&targetDetector::detectEnemy, this, _1), "compressed", rmw_qos_profile_default);
+        imgSub = image_transport::create_subscription(this, "raw_image", std::bind(&targetDetector::detectEnemy, this, _1), "raw", rmw_qos_profile_default);
         colorSub = this->create_subscription<std_msgs::msg::UInt8>("color", 10, std::bind(&targetDetector::changeTarget, this, _1));
         dpInfoPub = this->create_publisher<core_msgs::msg::DamagePanelInfoArray>("damage_panels_infomation", 1);
         parameter_callback_handle_ = this->add_on_set_parameters_callback(std::bind(&targetDetector::changeParameter, this, _1));
