@@ -6,6 +6,7 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/int32.hpp>
 #include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
 
@@ -27,13 +28,13 @@ public:
     //=================================
     ads_publisher_ = create_publisher<std_msgs::msg::Bool>("/ads", 10);
     // For Body Controller
-    rotation_publisher_ = create_publisher<std_msgs::msg::Bool>("/rotation", 10);
+    rotation_publisher_ = create_publisher<std_msgs::msg::Int32>("/rotation", 10);
     cmd_vel_publisher_ = create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
     // For Shooter
     manual_mode_publisher_ = create_publisher<std_msgs::msg::Bool>("/manual_mode", 10);
     manual_pitch_publisher_ = create_publisher<std_msgs::msg::Float32>("/manual_pitch", 10);
     shoot_motor_publisher_ = create_publisher<std_msgs::msg::Bool>("/shoot_motor", 10);
-    shoot_once_publisher_ = create_publisher<std_msgs::msg::Bool>("/left/shoot_once", 10);
+    shoot_once_publisher_ = create_publisher<std_msgs::msg::Bool>("/right/shoot_fullauto", 10);
     reloading_publisher_ = create_publisher<std_msgs::msg::Bool>("/reloading", 10);
     hazard_status_publisher_ = create_publisher<std_msgs::msg::Bool>("/system/emergency/hazard_status", 10);
     test_mode_publisher_ = create_publisher<std_msgs::msg::Bool>("/test_mode", 10);
@@ -53,7 +54,7 @@ public:
     
     RCLCPP_INFO(
       get_logger(),
-      "Subscribed: /wireless (std_msgs/msg/UInt8MultiArray), Publish: /rotation, /ads, /manual_mode, /manual_pitch, /cmd_vel, /shoot_motor, /left/shoot_once, /reloading, /system/emergency/hazard_status, /test_mode");
+      "Subscribed: /wireless (std_msgs/msg/UInt8MultiArray), Publish: /rotation, /ads, /manual_mode, /manual_pitch, /cmd_vel, /shoot_motor, /right/shoot_once, /reloading, /system/emergency/hazard_status, /test_mode");
   }
 
 private:
@@ -68,7 +69,7 @@ private:
 
     RCLCPP_INFO(this->get_logger(), "%d, %d, %d, %d, %d, %d, %d", values[0], values[1], values[2], values[3], values[4], values[5], values[6]);
 
-    std_msgs::msg::Bool rotation_msg;
+    std_msgs::msg::Int32 rotation_msg;
     std_msgs::msg::Bool ads_msg;
     std_msgs::msg::Bool manual_mode_msg;
     std_msgs::msg::Float32 manual_pitch_msg;
@@ -83,7 +84,6 @@ private:
     const uint8_t raw_mouse_x  = values[1];
     const uint8_t raw_mouse_y  = values[2];
     const uint8_t raw_ui_flags = values[3];
-    [[maybe_unused]]
     const uint8_t raw_flags_2 = values[4];
     const uint8_t raw_unused_3 = values[5];
     const uint8_t raw_unused_4 = values[6];
@@ -100,10 +100,8 @@ private:
     const uint8_t key_click           = (raw_flags >> 6) & 1;
     const uint8_t key_roller          = (raw_flags >> 7) & 1;
 
-     [[maybe_unused]]
     const uint8_t key_ADS             = (raw_flags_2 >> 0) & 1;
-     [[maybe_unused]]
-    const uint8_t key_rotation        = (raw_flags_2 >> 1) & 1;
+    const uint8_t key_rotation        = (raw_flags_2 >> 1) & 3;
 
     //=================================
     // UI系グラグ
@@ -141,7 +139,7 @@ private:
     cmd_vel_msg.angular.z = angular_from_mouse;
     
     // body_controllerの回転フラグを設定、プレイヤーの操作によって回転を決定
-    rotation_msg.data = key_rotation > 0;
+    rotation_msg.data = key_rotation;
     ads_msg.data = key_ADS > 0;
     
     // shooterの照準操作モードを設定、UIの自動フラグがOFFのときマニュアルモード
@@ -213,7 +211,7 @@ private:
   }
 
   rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr subscription_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rotation_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr rotation_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr ads_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr manual_mode_publisher_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr manual_pitch_publisher_;
