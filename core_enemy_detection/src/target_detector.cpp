@@ -9,14 +9,22 @@ using namespace core_enemy_detection;
 targetDetector::targetDetector() : 
     Node("target_detector")
     {
-        imgSub = image_transport::create_subscription(this, "raw_image", std::bind(&targetDetector::detectEnemy, this, _1), "compressed", rmw_qos_profile_default);
-        // coordPub = this->create_publisher<geometry_msgs::msg::PoseArray>("enemy_image_Coords", 10);
+        imgSub = image_transport::create_subscription(this, "raw_image", std::bind(&targetDetector::detectEnemy, this, _1), "raw", rmw_qos_profile_default);
+        colorSub = this->create_subscription<std_msgs::msg::UInt8>("color", 10, std::bind(&targetDetector::changeTarget, this, _1));
         dpInfoPub = this->create_publisher<core_msgs::msg::DamagePanelInfoArray>("damage_panels_infomation", 1);
-        // tf = std::make_shared<tf2_ros::TransformBroadcaster>(this);
         parameter_callback_handle_ = this->add_on_set_parameters_callback(std::bind(&targetDetector::changeParameter, this, _1));
         declareParameters();
-        // calc = new image2camera_vector_angle::vec2agCalculator(calibrationFilePath);
     }
+
+void targetDetector::changeTarget(const std_msgs::msg::UInt8::SharedPtr msg){
+    mode = static_cast<u_int8_t>(msg->data);
+    if(mode == 81 || mode == 67 || mode == 17 || mode == 51){
+        operate = true;
+    }else{
+        operate = false;
+    }
+    return;
+}
 
 /**
  * @brief コールバック関数 画像処理してカメラ座標の敵の方角をpulishする
@@ -32,6 +40,10 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
     float yRatio = (float)image_size[1] / (float)rawImage.size().height;
     cv::resize(rawImage, Image, cv::Size(image_size[0], image_size[1]), xRatio, yRatio);
 
+    if(!operate){
+        Image.setTo(cv::Scalar(0, 0, 0));
+    }
+
     // hsv画像&lab画像に変換
     cv::cvtColor(Image, hsvImage, cv::COLOR_BGR2HSV);
     cv::cvtColor(Image, labImage, cv::COLOR_BGR2Lab);
@@ -39,7 +51,6 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
 
     // 色抽出
     extractHsvRange();
-
 
     // ノイズ除去
     applyMorphology();
@@ -71,13 +82,16 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
     dpInfoPub->publish(dpMsg);
 
     /*** 確認用 ***/
-    publishImage("test_rawImage", Image, "bgr8");
-    publishImage("mask_red", ledMaskImage, "mono8");
-    publishImage("mask_panel", panelMaskImage, "mono8");
-    publishImage("labeled_led", ledLabelMap.image, "mono8");
-    publishImage("labeled_panel", panelLabelMap.image, "mono8");
-    publishResultImage();
-    
+    if(debugMode){
+        publishImage("test_rawImage", Image, "bgr8");
+        publishImage("mask_red", ledMaskImage, "mono8");
+        publishImage("mask_panel", panelMaskImage, "mono8");
+        publishImage("labeled_led", ledLabelMap.image, "mono8");
+        publishImage("labeled_panel", panelLabelMap.image, "mono8");
+        publishResultImage();
+    }
+      
+    return;
 }
 
 rcl_interfaces::msg::SetParametersResult targetDetector::changeParameter(const std::vector<rclcpp::Parameter> &parameters){
@@ -85,9 +99,9 @@ rcl_interfaces::msg::SetParametersResult targetDetector::changeParameter(const s
     auto result = rcl_interfaces::msg::SetParametersResult();
     for(auto &param : parameters){
         std::string name = param.get_name();
-        if(name == "enemy"){
-            auto paramValue = param.as_integer_array();
-            mode = static_cast<int32_t>(paramValue[0]);
+        if(name == "debug_mode"){
+            auto paramValue = param.as_bool();
+            debugMode = paramValue;
             result.successful = true;
         }else if(name == "image_size"){
             declareIntArray(image_size, param.as_integer_array());
@@ -127,7 +141,6 @@ rcl_interfaces::msg::SetParametersResult targetDetector::changeParameter(const s
         }else if(name == "blue_range_lower"){
             auto paramValue =  param.as_integer_array();
             if((0 <= (int)paramValue[0] && (int)paramValue[0] < blue_range_upper[0]) || (0 <= (int)paramValue[1] && (int)paramValue[1] < blue_range_upper[1]) || (0 <= (int)paramValue[2] && (int)paramValue[2] < blue_range_upper[2])){
-                std::cout << "aaa" << std::endl;
                 declareIntArray(blue_range_lower, paramValue);
                 result.successful = true;
             }else{
@@ -176,7 +189,7 @@ void targetDetector::resetDamagePanelInfo(){
 }
 
 void targetDetector::extractHsvRange(){
-    if(mode == 0){
+    if(mode == 67 || mode == 51){
         // hsv画像に対する検出
         cv::Mat mask1, mask2;
         cv::inRange(hsvImage, red_range_lower1, red_range_upper1, mask1);
@@ -188,6 +201,8 @@ void targetDetector::extractHsvRange(){
         // lab画像に対する検出
         // cv::inRange(labImage, params["red_lab_range_lower"], params["red_lab_range_upper"], ledMaskImage);
         
+    }else if(mode == 81 || mode == 17){
+        cv::inRange(hsvImage, blue_range_lower, blue_range_upper, ledMaskImage);
     }else{
         cv::inRange(hsvImage, blue_range_lower, blue_range_upper, ledMaskImage);
     }
@@ -198,6 +213,8 @@ void targetDetector::extractHsvRange(){
     cv::Mat dst;
     cv::medianBlur(labImage, dst, 3);
     cv::inRange(dst, panel_lab_range_lower, panel_lab_range_upper, panelMaskImage);
+    
+    return;
 }
 
 void targetDetector::applyMorphology(){
@@ -322,6 +339,8 @@ void targetDetector::declareParameters(){
     for(auto itr = params.begin(); itr != params.end(); itr++){
         this->declare_parameter(itr->first, itr->second);
     }
+    this->declare_parameter<bool>("debug_mode", false);
+    debugMode = this->get_parameter("debug_mode").as_bool();
     kernel_for_led = cv::Mat::ones(this->get_parameter("led_kernel_matrix_size").as_integer_array()[0], this->get_parameter("led_kernel_matrix_size").as_integer_array()[1], CV_8U);
     kernel_for_panel = cv::Mat::ones(this->get_parameter("panel_kernel_matrix_size").as_integer_array()[0], this->get_parameter("panel_kernel_matrix_size").as_integer_array()[1], CV_8U);
     declareIntArray(red_range_lower1, this->get_parameter("red_range_lower1").as_integer_array());

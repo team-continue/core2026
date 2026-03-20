@@ -9,6 +9,7 @@
 #include <image_transport/image_transport.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <std_msgs/msg/u_int8.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <core_msgs/msg/damage_panel_info_array.hpp>
 
@@ -40,7 +41,7 @@ public:
     targetDetector();
 
 private:
-    int mode = 0;
+    uint8_t mode = 0;
 
     cv::Mat rawImage;
     cv::Mat Image;
@@ -61,6 +62,8 @@ private:
     /*variable for ros2 parameter*/
     cv::Mat kernel_for_led;
     cv::Mat kernel_for_panel;
+    bool operate = false;
+    bool debugMode = false;
     std::vector<int> image_size;
     std::vector<int> red_range_lower1 = {0, 0, 0};
     std::vector<int> red_range_lower2 = {0, 0, 0};
@@ -72,12 +75,15 @@ private:
     std::vector<int> panel_lab_range_upper = {0, 255, 255};
 
     image_transport::Subscriber imgSub;
+    rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr colorSub;
+
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr coordPub;
     rclcpp::Publisher<core_msgs::msg::DamagePanelInfoArray>::SharedPtr dpInfoPub;
 
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_handle_;
     rcl_interfaces::msg::SetParametersResult changeParameter(const std::vector<rclcpp::Parameter>&);
     
+    void changeTarget(const std_msgs::msg::UInt8::SharedPtr);
     void detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr);
     void resetDamagePanelInfo();
     void extractHsvRange();
