@@ -83,6 +83,9 @@ MppiNode::MppiNode(const rclcpp::NodeOptions & options)
 void MppiNode::onPath(const nav_msgs::msg::Path::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (goal_reached_) {
+    return;
+  }
   path_.clear();
   path_.reserve(msg->poses.size());
   for (const auto & p : msg->poses) {
@@ -124,15 +127,14 @@ void MppiNode::onGlobalCostmap(const nav_msgs::msg::OccupancyGrid::SharedPtr msg
 void MppiNode::onTimer()
 {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (!have_path_ || !have_odom_) {
-    publishStop();
+
+  // Goal reached — do nothing (stop was already sent once)
+  if (goal_reached_) {
     return;
   }
 
-  // Goal reached — stay stopped
-  if (goal_reached_) {
+  if (!have_path_ || !have_odom_) {
     publishStop();
-    publishGoalReached();
     return;
   }
 
@@ -142,6 +144,9 @@ void MppiNode::onTimer()
     const double dy = goal_pose_.position.y - current_pose_.position.y;
     if (std::hypot(dx, dy) < goal_tolerance_) {
       goal_reached_ = true;
+      have_goal_ = false;
+      have_path_ = false;
+      path_.clear();
       publishStop();
       publishGoalReached();
       RCLCPP_INFO(
