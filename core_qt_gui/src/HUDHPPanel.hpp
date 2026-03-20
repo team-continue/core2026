@@ -54,4 +54,5 @@ public:
     HUDHPPanel(QWidget *parent);
     void setMaxHP(int);
     void setHP(int);
+    int getMaxHP();
 };

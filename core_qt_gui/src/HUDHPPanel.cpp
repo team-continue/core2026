@@ -204,3 +204,7 @@ void HUDHPPanel::setHP(int v) {
 void HUDHPPanel::setMaxHP(int v) {
     max_hp_ = v;
 }
+
+int HUDHPPanel::getMaxHP() {
+    return max_hp_;
+}

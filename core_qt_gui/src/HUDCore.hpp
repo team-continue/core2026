@@ -40,6 +40,7 @@ class HUDCore {
     int camera_select = 0;
     bool destroyed = false;
     bool has_first_ammo = false;
+    bool has_first_hp = false;
 
 public:
     HUDCore(std::shared_ptr<HUDManager> manager)
@@ -102,6 +103,17 @@ public:
 
     void setHP(int value) {
         RCLCPP_INFO(manager_->getNode()->get_logger(), "HP %d", value);
+        if (!has_first_hp) {
+            // 最初の値が最大値
+            setMaxHP(value);
+            has_first_hp = true;
+        } else {
+            if (hp_panel_->getMaxHP() < value) {
+                // 最大値がくるようなら最大値を更新
+                setMaxHP(value);
+            }
+            hp_panel_
+        }
         hp_panel_->setHP(value);
         // if (value == 0) {
         //     setDestory(true);
