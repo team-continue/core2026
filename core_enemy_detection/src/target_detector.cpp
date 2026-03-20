@@ -46,7 +46,7 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
 
     // hsv画像&lab画像に変換
     cv::cvtColor(Image, hsvImage, cv::COLOR_BGR2HSV);
-    cv::cvtColor(Image, labImage, cv::COLOR_BGR2Lab);
+    // cv::cvtColor(Image, labImage, cv::COLOR_BGR2Lab);
 
 
     // 色抽出
@@ -64,11 +64,11 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
         ledLabelMap.centroids
     );
 
-    panelLabelMap.num = cv::connectedComponentsWithStats(
-        panelLabelMap.image,
-        panelLabelMap.labelMap,
-        panelLabelMap.status,
-        panelLabelMap.centroids
+    whiteLabelMap.num = cv::connectedComponentsWithStats(
+        whiteLabelMap.image,
+        whiteLabelMap.labelMap,
+        whiteLabelMap.status,
+        whiteLabelMap.centroids
     );
 
 
@@ -85,9 +85,9 @@ void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr i
     if(debugMode){
         publishImage("test_rawImage", Image, "bgr8");
         publishImage("mask_red", ledMaskImage, "mono8");
-        publishImage("mask_panel", panelMaskImage, "mono8");
+        // publishImage("mask_panel", panelMaskImage, "mono8");
         publishImage("labeled_led", ledLabelMap.image, "mono8");
-        publishImage("labeled_panel", panelLabelMap.image, "mono8");
+        // publishImage("labeled_panel", panelLabelMap.image, "mono8");
         publishResultImage();
     }
       
@@ -184,6 +184,8 @@ rcl_interfaces::msg::SetParametersResult targetDetector::changeParameter(const s
 }
 
 void targetDetector::resetDamagePanelInfo(){
+    dpLabelMap.clear();
+    dpLabelMap.shrink_to_fit();
     damagePanels.clear();
     damagePanels.shrink_to_fit();
 }
@@ -194,7 +196,9 @@ void targetDetector::extractHsvRange(){
         cv::Mat mask1, mask2;
         cv::inRange(hsvImage, red_range_lower1, red_range_upper1, mask1);
         cv::inRange(hsvImage, red_range_lower2, red_range_upper2, mask2);
-        cv::bitwise_or(mask1, mask2, ledMaskImage);
+        ledMaskImage = mask1;
+        whiteMaskImage = mask2;
+        // cv::bitwise_or(mask1, mask2, ledMaskImage);
         // publishImage("red1", mask1, "mono8");
         // publishImage("red2", mask2, "mono8");
 
@@ -210,9 +214,9 @@ void targetDetector::extractHsvRange(){
     // cv::inRange(hsvImage, params["panel_hsv_range_lower"], params["panel_hsv_range_upper"], panelMaskImage);
     
     // lab画像に対する検出
-    cv::Mat dst;
-    cv::medianBlur(labImage, dst, 3);
-    cv::inRange(dst, panel_lab_range_lower, panel_lab_range_upper, panelMaskImage);
+    // cv::Mat dst;
+    // cv::medianBlur(labImage, dst, 3);
+    // cv::inRange(dst, panel_lab_range_lower, panel_lab_range_upper, panelMaskImage);
     
     return;
 }
@@ -220,62 +224,122 @@ void targetDetector::extractHsvRange(){
 void targetDetector::applyMorphology(){
     cv::Mat dst;
 
-    cv::morphologyEx(ledMaskImage, dst, cv::MORPH_OPEN, kernel_for_led);
-    cv::morphologyEx(dst, ledLabelMap.image, cv::MORPH_CLOSE, kernel_for_led);
+    cv::morphologyEx(ledMaskImage, dst, cv::MORPH_CLOSE, kernel_for_led);
+    cv::morphologyEx(dst, ledLabelMap.image, cv::MORPH_OPEN, kernel_for_led);
 
-    cv::morphologyEx(panelMaskImage, dst, cv::MORPH_OPEN, kernel_for_panel);
-    cv::morphologyEx(dst, panelLabelMap.image, cv::MORPH_CLOSE, kernel_for_panel);
+    // cv::morphologyEx(panelMaskImage, dst, cv::MORPH_OPEN, kernel_for_panel);
+    // cv::morphologyEx(dst, panelLabelMap.image, cv::MORPH_CLOSE, kernel_for_panel);
 }
 
 bool targetDetector::detectDamagePanel(){
-    const cv::Mat& panelCenters = panelLabelMap.centroids;
-    const cv::Mat& panelStatus = panelLabelMap.status;
+    // const cv::Mat& panelCenters = panelLabelMap.centroids;
+    // const cv::Mat& panelStatus = panelLabelMap.status;
+    // const cv::Mat& ledCenters = ledLabelMap.centroids;
+    // bool flag = false;
+    // int num = 0;
+    // // std::cout << panelLabelMap.num << std::endl;
+
+    // for(int i = 1; i < panelLabelMap.num; i++){
+    //     bool upperFlag = false;
+    //     bool lowerFlag = false;
+        
+    //     auto pnlRow = panelStatus.ptr<int>(i);
+    //     int pnlLeft = pnlRow[cv::CC_STAT_LEFT];
+    //     int pnlTop = pnlRow[cv::CC_STAT_TOP];
+    //     int pnlWidth = pnlRow[cv::CC_STAT_WIDTH];
+    //     int pnlHeight = pnlRow[cv::CC_STAT_HEIGHT];
+
+    //     for(int j = 1; j < ledLabelMap.num; j++){
+    //         auto ledRow = ledCenters.ptr<double>(j);
+    //         double ledPointX = ledRow[0];
+    //         double ledPointY = ledRow[1];
+
+    //         if(ledPointX >= pnlLeft && ledPointX <= pnlLeft + pnlWidth){
+    //             if(ledPointY >= pnlTop - pnlHeight * 0.5 && ledPointY <= pnlTop + pnlHeight * 0.5){
+    //                 upperFlag = true;
+    //             }
+    //             if(ledPointY >= pnlTop + pnlHeight * 0.5 && ledPointY <= pnlTop + pnlHeight * 1.5){
+    //                 lowerFlag = true;
+    //             }
+    //         }
+    //     }
+        
+    //     if(upperFlag && lowerFlag){
+    //         auto panelPoint = panelCenters.ptr<double>(i);
+    //         core_msgs::msg::DamagePanelInfo dp;
+    //         dp.left = pnlLeft;
+    //         dp.top = pnlTop;
+    //         dp.width = pnlWidth;
+    //         dp.height = pnlHeight;
+    //         dp.area = pnlRow[cv::CC_STAT_AREA];
+    //         dp.x = panelPoint[0];
+    //         dp.y = panelPoint[1];
+
+    //         damagePanels.push_back(dp);
+    //         num++;
+    //     }
+    // }
+
     const cv::Mat& ledCenters = ledLabelMap.centroids;
+    const cv::Mat& ledStatus = ledLabelMap.status;
+    const cv::Mat& whiteCenters = whiteLabelMap.centroids;
+    const cv::Mat& whiteStatus = whiteLabelMap.status;
     bool flag = false;
     int num = 0;
-    // std::cout << panelLabelMap.num << std::endl;
 
-    for(int i = 1; i < panelLabelMap.num; i++){
-        bool upperFlag = false;
-        bool lowerFlag = false;
+    for(int i = 1; i < whiteLabelMap.num; i++){
+        auto whiteStatusRow = whiteStatus.ptr<int>(i);
+        auto whiteCentroidRow = whiteCentroids.ptr<int>(i)
+        int whiteLeft = whiteStatusRow[cv::CC_STAT_LEFT];
+        int whiteTop = whiteStatusRow[cv::CC_STAT_TOP];
+        int whiteWidth = whiteStatusRow[cv::CC_STAT_WIDTH];
+        int whiteHeight = whiteStatusRow[cv::CC_STAT_HEIGHT];
+        double whitePointX = whiteCentroidRow[0];
+        double whitePointY = whiteCentroidRow[1];
+        for(j = 1; j < ledLabelMap.num; j++){
+            auto ledRowCenter = ledCenters.ptr<double>(j);
+            double ledPointX = ledRowCenter[0];
+            double ledPointY = ledRowCenter[1];
+            
+        }
+    }
+
+    for(int i = 1; i < ledLabelMap.num - 1; i++){
         
-        auto pnlRow = panelStatus.ptr<int>(i);
-        int pnlLeft = pnlRow[cv::CC_STAT_LEFT];
-        int pnlTop = pnlRow[cv::CC_STAT_TOP];
-        int pnlWidth = pnlRow[cv::CC_STAT_WIDTH];
-        int pnlHeight = pnlRow[cv::CC_STAT_HEIGHT];
+        auto baseLedRow = ledStatus.ptr<int>(i);
+        int baseLedLeft = baseLedRow[cv::CC_STAT_LEFT];
+        int baseLedTop = baseLedRow[cv::CC_STAT_TOP];
+        int baseLedWidth = baseLedRow[cv::CC_STAT_WIDTH];
+        int baseLedHeight = baseLedRow[cv::CC_STAT_HEIGHT];
+        double baseLedPointX = baseLedRow[0];
+        double baseLedPointY = baseLedRow[1];
 
-        for(int j = 1; j < ledLabelMap.num; j++){
-            auto ledRow = ledCenters.ptr<double>(j);
-            double ledPointX = ledRow[0];
-            double ledPointY = ledRow[1];
 
-            if(ledPointX >= pnlLeft && ledPointX <= pnlLeft + pnlWidth){
-                if(ledPointY >= pnlTop - pnlHeight * 0.5 && ledPointY <= pnlTop + pnlHeight * 0.5){
-                    upperFlag = true;
-                }
-                if(ledPointY >= pnlTop + pnlHeight * 0.5 && ledPointY <= pnlTop + pnlHeight * 1.5){
-                    lowerFlag = true;
+        for(int j = i + 1; j < ledLabelMap.num; j++){
+            auto ledRowStatus = ledStatus.ptr<int>(i);
+            auto ledRowCenter = ledCenters.ptr<double>(j);
+            double ledPointX = ledRowCenter[0];
+            double ledPointY = ledRowCenter[1];
+            int ledTop = ledRowStatus[cv::CC_STAT_TOP];
+
+            if(ledPointX >= baseLedLeft && ledPointX <= baseLedLeft + baseLedWidth){
+                double distance = (ledPointX - baseLedPointX) * (ledPointX - baseLedPointX) + (ledPointY - baseLedPointY) * (ledPointY - baseLedPointY);
+                if(distance > 10 * 10 || distance < 350 * 350){
+                    core_msgs::msg::DamagePanelInfo dp;
+                    dp.left = baseLedLeft;
+                    dp.top = baseLedTop;
+                    dp.width = baseLedWidth;
+                    dp.height = ledTop - baseLedTop;
+                    dp.area = distance;
+                    dp.x = (ledPointX + baseLedPointX) / 2.0;
+                    dp.y = (ledPointY + baseLedPointY) / 2.0;
+                    damagePanels.push_back(dp);
+                    num++;
                 }
             }
         }
-        
-        if(upperFlag && lowerFlag){
-            auto panelPoint = panelCenters.ptr<double>(i);
-            core_msgs::msg::DamagePanelInfo dp;
-            dp.left = pnlLeft;
-            dp.top = pnlTop;
-            dp.width = pnlWidth;
-            dp.height = pnlHeight;
-            dp.area = pnlRow[cv::CC_STAT_AREA];
-            dp.x = panelPoint[0];
-            dp.y = panelPoint[1];
-
-            damagePanels.push_back(dp);
-            num++;
-        }
     }
-    
+
     if(num > 0){
         flag = true;
     }

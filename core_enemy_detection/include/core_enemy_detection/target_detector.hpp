@@ -49,8 +49,11 @@ private:
     cv::Mat labImage;
     cv::Mat ledMaskImage;
     cv::Mat panelMaskImage;
+    cv::Mat whiteMaskImage;
     labeledImage ledLabelMap;
     labeledImage panelLabelMap;
+    labeledImage whiteLabelMap;
+    std::vector<labeledImage> dpLabelMap;
     std::vector<core_msgs::msg::DamagePanelInfo> damagePanels;
     rclcpp::Time timeStamp;
 
