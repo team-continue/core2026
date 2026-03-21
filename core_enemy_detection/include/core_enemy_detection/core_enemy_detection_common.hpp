@@ -18,6 +18,8 @@ namespace core_enemy_detection{
         {"panel_lab_range_lower", std::vector<int>({60, 110, 110})},
         {"panel_lab_range_upper", std::vector<int>({75, 140, 140})},
         {"led_kernel_matrix_size", std::vector<int>({5, 5})},
-        {"panel_kernel_matrix_size", std::vector<int>({20, 20})}
+        {"panel_kernel_matrix_size", std::vector<int>({20, 20})},
+        {"white_range_lower", std::vector<int>({0, 0, 0})},
+        {"white_range_upper", std::vector<int>({255, 255, 255})}
     };
 }

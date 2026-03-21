@@ -50,6 +50,14 @@
     - 180
     - 255
     - 255
+    white_range_lower:
+    - 0
+    - 100
+    - 125
+    white_range_upper:
+    - 179
+    - 255
+    - 255
     use_sim_time: false
     debug_mode: true
 
@@ -94,7 +102,7 @@
     - 100
     - 125
     red_range_lower2:
-    - 0
+    - 175
     - 100
     - 125
     red_range_upper1:
@@ -102,6 +110,14 @@
     - 255
     - 255
     red_range_upper2:
+    - 179
+    - 255
+    - 255
+    white_range_lower:
+    - 0
+    - 100
+    - 125
+    white_range_upper:
     - 179
     - 255
     - 255
