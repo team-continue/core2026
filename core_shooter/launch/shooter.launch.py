@@ -135,7 +135,7 @@ def generate_launch_description():
                 "zone.yaw_boundary": -0.25,
                 "zone.yaw_zone2_end": 0.19,
                 "zone.yaw_zone3_end": 2.2,
-                "zone.pitch_lower_limit": -1.44,
+                "zone.pitch_lower_limit": -1.35,
                 "zone.pitch_zone2_upper": 3.14,
                 "zone.pitch_zone2_lower": -1.44,
                 "zone.pitch_zone2_upper_limit": 3.14,
@@ -144,8 +144,12 @@ def generate_launch_description():
                 "zone.pitch_zone1_upper": 3.14,
                 "control.hysteresis_rad": 0.05,
                 "control.pitch_correct_tolerance": 0.01,
-                "image_center_x": 0.3,
-                "image_center_y": 0.3
+                "image_center_x": 0.4,
+                "image_center_y": 0.4,
+                "image_tolerance_x": 20.0,
+                "image_tolerance_y": 20.0,
+                "yaw_image_gain": 0.0005,
+                "pitch_image_gain": 0.008,
             }
         ],
         remappings=[
@@ -180,10 +184,14 @@ def generate_launch_description():
                 "zone.pitch_zone3_lower": -1.5,
                 "zone.pitch_zone3_upper": 0.0,
                 "zone.pitch_zone1_upper": 3.14,
-                "control.hysteresis_rad": 0.017453292519943295,
+                "control.hysteresis_rad": 0.05,
                 "control.pitch_correct_tolerance": 0.01,
-                "image_center_x": 0.6,
-                "image_center_y": 0.45
+                "image_center_x": 0.55,
+                "image_center_y": 0.5,
+                "image_tolerance_x": 20.0,
+                "image_tolerance_y": 20.0,
+                "yaw_image_gain": 0.0007,
+                "pitch_image_gain": 0.01,
             }
         ],
         remappings=[
