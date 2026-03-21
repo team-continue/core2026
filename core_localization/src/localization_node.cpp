@@ -91,8 +91,18 @@ LocalizationNode::LocalizationNode(const rclcpp::NodeOptions & options)
   timer_ = create_wall_timer(
     std::chrono::milliseconds(period_ms), std::bind(&LocalizationNode::timer_callback, this));
 
-  // Publish initial identity map->odom TF until first match succeeds
-  publish_map_odom_tf(T_map_ci_);
+  // Publish initial identity map->odom TF until odom->camera_init TF becomes available.
+  // Cannot use publish_map_odom_tf(T_map_ci_) here because odom->camera_init TF
+  // does not exist yet, and the fallback (T_map_odom = T_map_ci) includes rot_x(pi)
+  // which corrupts the map->odom transform.
+  {
+    geometry_msgs::msg::TransformStamped tf_msg;
+    tf_msg.header.stamp = now();
+    tf_msg.header.frame_id = map_frame_;
+    tf_msg.child_frame_id = odom_frame_;
+    tf_msg.transform.rotation.w = 1.0;
+    tf_broadcaster_->sendTransform(tf_msg);
+  }
 
   RCLCPP_INFO(
     get_logger(), "Localization node initialized. method=%s, map_points=%zu, rate=%.1fHz",
@@ -325,8 +335,9 @@ void LocalizationNode::publish_map_odom_tf(const Eigen::Matrix4f & T_map_ci)
     T_map_odom = T_map_ci * T_odom_ci.inverse();
   } catch (const tf2::TransformException & ex) {
     // odom→camera_init TF not yet available (odom_bridge hasn't started)
-    // Fall back: assume camera_init ≈ odom (identity relationship)
-    T_map_odom = T_map_ci;
+    // Fall back to identity so map ≈ odom (same as non-localization mode).
+    // Using T_map_ci here would inject rot_x(pi) into map→odom, corrupting the TF.
+    T_map_odom = Eigen::Matrix4f::Identity();
     RCLCPP_DEBUG_THROTTLE(
       get_logger(), *get_clock(), 5000,
       "odom->camera_init TF not available, using T_map_ci as T_map_odom: %s", ex.what());
