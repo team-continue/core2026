@@ -34,7 +34,7 @@ def generate_launch_description():
         output="screen",
         parameters=[mode_params],
         remappings=[
-            ("microcontroller_monitor", "/joint_state"),
+            ("microcontroller_monitor", "/joint_states"),
             ("receive_module_monitor", "/wireless"),
         ]
     )

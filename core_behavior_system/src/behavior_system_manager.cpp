@@ -111,6 +111,12 @@ public:
           have_odom_ = true;
         });
 
+    sub_hazard_ = create_subscription<std_msgs::msg::Bool>(
+        "/system/emergency/hazard_status", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local(),
+        [this](const std_msgs::msg::Bool::SharedPtr msg) {
+          emergency = msg->data;
+        });
+
     rclcpp::QoS goal_qos(1);
     goal_qos.transient_local();
     goal_qos.reliable();
@@ -160,36 +166,38 @@ private:
         last_source_ = GoalSource::NONE;
         
         msg.data = 2;
-        led_upper_pub_->publish(msg);
         break;
       case BehaviorState::AUTO_SELECTED:
         setRotation(false);
         handleSelectedGoal();
 
         msg.data = 8;
-        led_upper_pub_->publish(msg);
         break;
       case BehaviorState::ATTACK:
         setRotation(true);
         publishStopGoal();
 
         msg.data = 9;
-        led_upper_pub_->publish(msg);
         break;
       case BehaviorState::AUTO_WAYPOINT:
         setRotation(false);
         handleWaypointGoal();
 
         msg.data = 7;
-        led_upper_pub_->publish(msg);
         break;
       case BehaviorState::AUTO_IDLE:
         setRotation(false);
         last_source_ = GoalSource::NONE;
         
         msg.data = 6;
-        led_upper_pub_->publish(msg);
         break;
+    }
+
+    if (emergency) {
+      msg.data = 3;
+      led_upper_pub_->publish(msg);
+    } else {
+      led_upper_pub_->publish(msg);
     }
   }
 
@@ -345,6 +353,7 @@ private:
   bool have_waypoint_goal_{false};
   bool selected_pose_dirty_{false};
   bool waypoint_goal_dirty_{false};
+  bool emergency;
   GoalSource last_source_{GoalSource::NONE};
   geometry_msgs::msg::PoseStamped last_goal_pose_;
   geometry_msgs::msg::PoseStamped latest_selected_pose_;
@@ -363,6 +372,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr goal_reached_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr waypoint_goal_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_hazard_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rotation_pub_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr state_pub_;

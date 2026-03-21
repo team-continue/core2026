@@ -1,0 +1,4 @@
+<launch>
+  <!-- Hardware -->
+  <include file="$(find-pkg-share core_hardware)/launch/hardware.launch.py"/>
+</launch>
