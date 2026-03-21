@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-constexpr double INITIAL_ANGLE = 4.485236167907715;
+constexpr double INITIAL_ANGLE = 3.7822790145874023;
 
 BodyControlNode::BodyControlNode() : Node("body_control_node") {
   ACCELERATION = this->declare_parameter<double>("acceleration", ACCELERATION);
@@ -10,6 +10,8 @@ BodyControlNode::BodyControlNode() : Node("body_control_node") {
       this->declare_parameter<double>("rotation_acceleration", ROTATION_ACCELERATION);
   AUTO_ROTATION_VELOCITY =
       this->declare_parameter<double>("auto_rotation_velocity", AUTO_ROTATION_VELOCITY);
+  HIGH_ROTATION_VELOCITY =
+      this->declare_parameter<double>("high_rotation_velocity", HIGH_ROTATION_VELOCITY);
 
   body_control_command_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx", 10);
   timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<int>(TIMER_PERIOD * 1000)),
@@ -27,9 +29,9 @@ BodyControlNode::BodyControlNode() : Node("body_control_node") {
         latest_body_angle_ = msg->position[4] - INITIAL_ANGLE;
       });
   body_omega_ = this->create_publisher<std_msgs::msg::Float64>("body_omega", 10);
-  rotation_flag_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "/rotation", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
-        rotation_flag_ = msg->data;
+  rotation_flag_sub_ = this->create_subscription<std_msgs::msg::Int32>(
+      "/rotation", 10, [this](const std_msgs::msg::Int32::SharedPtr msg) {
+        rotation_mode_ = msg->data;
       });
 }
 
@@ -51,7 +53,13 @@ void BodyControlNode::timer_callback() {
   cmd_vel_.linear.y = apply_rate_limit(cmd_vel_.linear.y, latest_twist_.linear.y, linear_step);
 
   const double angular_step = ROTATION_ACCELERATION * TIMER_PERIOD;
-  const double target_angular_z = rotation_flag_ ? AUTO_ROTATION_VELOCITY + latest_twist_.angular.z : latest_twist_.angular.z;
+  double rotation_velocity = 0.0;
+  if (rotation_mode_ == 1) {
+    rotation_velocity = AUTO_ROTATION_VELOCITY;
+  } else if (rotation_mode_ == 2) {
+    rotation_velocity = HIGH_ROTATION_VELOCITY;
+  }
+  const double target_angular_z = rotation_velocity + latest_twist_.angular.z;
   cmd_vel_.angular.z = apply_rate_limit(cmd_vel_.angular.z, target_angular_z, angular_step);
 
   if (std::abs(cmd_vel_.linear.x) < 0.01) {

@@ -7,6 +7,7 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64.hpp"
+#include "std_msgs/msg/int32.hpp"
 
 class BodyControlNode : public rclcpp::Node
 {
@@ -24,7 +25,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
     joint_state_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr body_omega_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr rotation_flag_sub_;
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rotation_flag_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pad_up_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pad_down_sub_;
 
@@ -38,7 +39,7 @@ private:
   geometry_msgs::msg::Twist cmd_vel_;
   geometry_msgs::msg::Twist latest_twist_;
   bool emergency_stop_flag_ = true;
-  bool rotation_flag_ = false;
+  int rotation_mode_ = 0;
   float body_angle_ = 0;
   float body_target_angle_ = 0;
   double latest_body_angle_ = 0;
@@ -47,6 +48,7 @@ private:
   double ROTATION_ACCELERATION = 1 * M_PI;
   double YAW_ROTATION_VELOCITY = 4 * M_PI;  // yaw
   double AUTO_ROTATION_VELOCITY = 0.3 * M_PI;
+  double HIGH_ROTATION_VELOCITY = 1.0 * M_PI;
 
   static constexpr double TIMER_PERIOD = 0.01; // 10 ms
 };
