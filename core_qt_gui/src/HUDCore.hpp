@@ -99,6 +99,7 @@ public:
 
         // ② スクリーン指定
         main_window_->windowHandle()->setScreen(target);
+        main_window_->move(target->geometry().topLeft());
         
         // debug_overlay_->raise();
         setting_menu_->hide();
