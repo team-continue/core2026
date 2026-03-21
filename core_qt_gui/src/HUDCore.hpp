@@ -90,7 +90,16 @@ public:
         //main_window_->setWindowFlags(Qt::Window);
         //main_window_->showFullScreen();
         main_window_->setWindowFlags(main_window_->windowFlags() | Qt::WindowStaysOnTopHint);
+
+        QList<QScreen*> screens = QGuiApplication::screens();
+        QScreen* target = screens.size() > 1 ? screens[1] : screens[0];
+
+        // ① 先に表示（windowHandle生成）
         main_window_->show();
+
+        // ② スクリーン指定
+        main_window_->windowHandle()->setScreen(target);
+        
         // debug_overlay_->raise();
         setting_menu_->hide();
 
