@@ -1,0 +1,4 @@
+<launch>
+  <include file="$(find-pkg-share gui_qt)/launch/hud.launch.xml" />
+  <execute_process cmd="xrandr --output HDMI-2 --mode 1280x720" output="screen"/>
+</launch>
