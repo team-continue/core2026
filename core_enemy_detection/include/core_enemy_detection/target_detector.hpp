@@ -49,8 +49,11 @@ private:
     cv::Mat labImage;
     cv::Mat ledMaskImage;
     cv::Mat panelMaskImage;
+    cv::Mat whiteMaskImage;
     labeledImage ledLabelMap;
     labeledImage panelLabelMap;
+    labeledImage whiteLabelMap;
+    std::vector<labeledImage> dpLabelMap;
     std::vector<core_msgs::msg::DamagePanelInfo> damagePanels;
     rclcpp::Time timeStamp;
 
@@ -73,6 +76,8 @@ private:
     std::vector<int> blue_range_upper = {0, 255, 255};
     std::vector<int> panel_lab_range_lower = {0, 0, 0};
     std::vector<int> panel_lab_range_upper = {0, 255, 255};
+    std::vector<int> white_range_lower = {0, 0, 0};
+    std::vector<int> white_range_upper = {0, 255, 255};
 
     image_transport::Subscriber imgSub;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr colorSub;

@@ -42,7 +42,7 @@ ros2 launch core_launch navigation.launch.py environment:=real
 ros2 run core_launch navigation.sh
 
 # ボディコントローラ単体
-ros2 launch core_body_controller body_controller.launch.py
+ros2 launch core_launch navigation.launch.py environment:=real map_name:=curious_house.png
 
 # 実機ハードウェア
 ros2 launch core_hardware core_hardware.launch.py

@@ -15,15 +15,20 @@ def generate_launch_description() -> LaunchDescription:
         default_value="3.141592653589793",
         description="Angular acceleration limit [rad/s^2]",
     )
-    yaw_rotation_velocity_arg = DeclareLaunchArgument(
-        "yaw_rotation_velocity",
-        default_value="12.566370614359172",
-        description="Max yaw angular velocity [rad/s]",
-    )
     auto_rotation_velocity_arg = DeclareLaunchArgument(
         "auto_rotation_velocity",
-        default_value="0.9424777960769379",
+        default_value="-3.141592653589793",
         description="Auto rotation angular velocity [rad/s]",
+    )
+    high_rotation_velocity_arg = DeclareLaunchArgument(
+        "high_rotation_velocity",
+        default_value="3.141592653589793",
+        description="High rotation angular velocity [rad/s]",
+    )
+    yaw_rotation_velocity_arg = DeclareLaunchArgument(
+        "yaw_rotation_velocity",
+        default_value="6.28",
+        description="Max yaw angular velocity [rad/s]",
     )
 
     body_control = Node(
@@ -35,8 +40,8 @@ def generate_launch_description() -> LaunchDescription:
             {
                 "acceleration": LaunchConfiguration("acceleration"),
                 "rotation_acceleration": LaunchConfiguration("rotation_acceleration"),
-                "yaw_rotation_velocity": LaunchConfiguration("yaw_rotation_velocity"),
                 "auto_rotation_velocity": LaunchConfiguration("auto_rotation_velocity"),
+                "high_rotation_velocity": LaunchConfiguration("high_rotation_velocity"),
             }
         ],
     )
@@ -46,6 +51,12 @@ def generate_launch_description() -> LaunchDescription:
         executable="target_angle_node",
         name="target_angle_node",
         output="screen",
+        remappings=[("imu", "livox/imu")],
+        parameters=[
+            {
+                "yaw_rotation_velocity": LaunchConfiguration("yaw_rotation_velocity"),
+            }
+        ],
     )
 
     return LaunchDescription(
@@ -54,6 +65,7 @@ def generate_launch_description() -> LaunchDescription:
             rotation_acceleration_arg,
             yaw_rotation_velocity_arg,
             auto_rotation_velocity_arg,
+            high_rotation_velocity_arg,
             body_control,
             target_angle,
         ]

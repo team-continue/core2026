@@ -2,21 +2,16 @@
 
 #include <algorithm>
 
+constexpr double INITIAL_ANGLE = 3.7822790145874023;
+
 BodyControlNode::BodyControlNode() : Node("body_control_node") {
   ACCELERATION = this->declare_parameter<double>("acceleration", ACCELERATION);
   ROTATION_ACCELERATION =
       this->declare_parameter<double>("rotation_acceleration", ROTATION_ACCELERATION);
-  YAW_ROTATION_VELOCITY =
-      this->declare_parameter<double>("yaw_rotation_velocity", YAW_ROTATION_VELOCITY);
   AUTO_ROTATION_VELOCITY =
       this->declare_parameter<double>("auto_rotation_velocity", AUTO_ROTATION_VELOCITY);
-
-  body_angle_pid_ = PID(1, 0, 0, YAW_ROTATION_VELOCITY, -YAW_ROTATION_VELOCITY);
-
-  RCLCPP_INFO(this->get_logger(),
-              "Loaded params: acceleration=%.3f, rotation_acceleration=%.3f, "
-              "yaw_rotation_velocity=%.3f, auto_rotation_velocity=%.3f",
-              ACCELERATION, ROTATION_ACCELERATION, YAW_ROTATION_VELOCITY, AUTO_ROTATION_VELOCITY);
+  HIGH_ROTATION_VELOCITY =
+      this->declare_parameter<double>("high_rotation_velocity", HIGH_ROTATION_VELOCITY);
 
   body_control_command_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx", 10);
   timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<int>(TIMER_PERIOD * 1000)),
@@ -29,31 +24,14 @@ BodyControlNode::BodyControlNode() : Node("body_control_node") {
       "/system/emergency/hazard_status", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
         emergency_stop_flag_ = msg->data;
       });
-
-  body_target_angle_sub_ = this->create_subscription<std_msgs::msg::Float64>(
-      "body_target_angle", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) {
-        body_target_angle_ = msg->data;
+  joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
+      "joint_states", 10, [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
+        latest_body_angle_ = msg->position[4] - INITIAL_ANGLE;
       });
   body_omega_ = this->create_publisher<std_msgs::msg::Float64>("body_omega", 10);
-  rotation_flag_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "/rotation", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
-        rotation_flag_ = msg->data;
-      });
-  sub_shooter_angle_ = this->create_subscription<sensor_msgs::msg::JointState>(
-      "joint_states", 10, [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
-        latest_body_angle_ = msg->position[4];
-      });
-  pad_up_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "pad/up", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
-        if (msg->data) {
-          AUTO_ROTATION_VELOCITY = 1 * M_PI;
-        }
-      });
-  pad_up_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "pad/up", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
-        if (msg->data) {
-          AUTO_ROTATION_VELOCITY = 2 * M_PI;
-        }
+  rotation_flag_sub_ = this->create_subscription<std_msgs::msg::Int32>(
+      "/rotation", 10, [this](const std_msgs::msg::Int32::SharedPtr msg) {
+        rotation_mode_ = msg->data;
       });
 }
 
@@ -75,7 +53,13 @@ void BodyControlNode::timer_callback() {
   cmd_vel_.linear.y = apply_rate_limit(cmd_vel_.linear.y, latest_twist_.linear.y, linear_step);
 
   const double angular_step = ROTATION_ACCELERATION * TIMER_PERIOD;
-  const double target_angular_z = rotation_flag_ ? AUTO_ROTATION_VELOCITY : latest_twist_.angular.z;
+  double rotation_velocity = 0.0;
+  if (rotation_mode_ == 1) {
+    rotation_velocity = AUTO_ROTATION_VELOCITY;
+  } else if (rotation_mode_ == 2) {
+    rotation_velocity = HIGH_ROTATION_VELOCITY;
+  }
+  const double target_angular_z = rotation_velocity + latest_twist_.angular.z;
   cmd_vel_.angular.z = apply_rate_limit(cmd_vel_.angular.z, target_angular_z, angular_step);
 
   if (std::abs(cmd_vel_.linear.x) < 0.01) {
@@ -88,16 +72,10 @@ void BodyControlNode::timer_callback() {
     cmd_vel_.angular.z = 0;
   }
 
-  if (rotation_flag_) {
-    auto body_control_commands =
-        gen_body_control_command(invert_kinematics_calc(cmd_vel_, latest_body_angle_));
-    // invert_kinematics_calc(cmd_vel_, body_target_angle_));
-    body_control_command_pub_->publish(body_control_commands);
-  } else {
-    auto body_control_commands =
-        gen_body_control_command(invert_kinematics_calc(cmd_vel_, body_target_angle_));
-    body_control_command_pub_->publish(body_control_commands);
-  }
+  auto body_control_commands =
+      gen_body_control_command(invert_kinematics_calc(cmd_vel_, latest_body_angle_));
+  body_control_command_pub_->publish(body_control_commands);
+
   std_msgs::msg::Float64 body_omega_msg;
   body_omega_msg.data = cmd_vel_.angular.z;
   body_omega_->publish(body_omega_msg);

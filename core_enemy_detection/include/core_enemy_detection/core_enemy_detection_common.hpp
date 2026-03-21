@@ -10,7 +10,6 @@ namespace core_enemy_detection{
         {"red_range_upper1", std::vector<int>({10, 255, 255})},
         {"red_range_lower2", std::vector<int>({175, 125, 125})},
         {"red_range_upper2", std::vector<int>({180, 255, 255})},
-        // {"red_lab_range_lower", std::vector<int>({230, 0, 105})},
         // {"red_lab_range_upper", std::vector<int>({255, 255, 145})},
         {"blue_range_lower", std::vector<int>({105, 64, 255})},
         {"blue_range_upper", std::vector<int>({135, 255, 255})},
@@ -19,6 +18,8 @@ namespace core_enemy_detection{
         {"panel_lab_range_lower", std::vector<int>({60, 110, 110})},
         {"panel_lab_range_upper", std::vector<int>({75, 140, 140})},
         {"led_kernel_matrix_size", std::vector<int>({5, 5})},
-        {"panel_kernel_matrix_size", std::vector<int>({20, 20})}
+        {"panel_kernel_matrix_size", std::vector<int>({20, 20})},
+        {"white_range_lower", std::vector<int>({0, 0, 0})},
+        {"white_range_upper", std::vector<int>({255, 255, 255})}
     };
 }
