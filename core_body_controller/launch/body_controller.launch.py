@@ -22,7 +22,7 @@ def generate_launch_description() -> LaunchDescription:
     )
     high_rotation_velocity_arg = DeclareLaunchArgument(
         "high_rotation_velocity",
-        default_value="3.141592653589793",
+        default_value="-6.28",
         description="High rotation angular velocity [rad/s]",
     )
     yaw_rotation_velocity_arg = DeclareLaunchArgument(
