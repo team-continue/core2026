@@ -2,8 +2,8 @@
   <!-- Navigation -->
   <include file="$(find-pkg-share core_launch)/launch/navigation.launch.py">
     <arg name="environment" value="real"/>
-    <arg name="use_localization" value="true"/>
-    <arg name="use_rviz" value="false"/>
+    <!-- <arg name="use_localization" value="true"/> -->
+    <!-- <arg name="use_rviz" value="false"/> -->
   </include>
 
   <!-- Shooter -->

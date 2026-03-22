@@ -59,7 +59,7 @@ private:
   constexpr static std::chrono::milliseconds TIMER_PERIOD = std::chrono::milliseconds(10);
   constexpr static double TIMER_DT = std::chrono::duration<double>(TIMER_PERIOD).count();
 
-  PID pid_ = PID(4.0, 0.1, 0.01, TIMER_DT, MAX_ROTATION, MAX_ROTATE_ACCELERATION);
+  PID pid_ = PID(2.0, 0.0, 0.00, TIMER_DT, MAX_ROTATION, MAX_ROTATE_ACCELERATION);
   double gimbalControl();
 
   rclcpp::TimerBase::SharedPtr timer_;
