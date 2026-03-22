@@ -194,7 +194,7 @@ private:
     }
 
     if (emergency) {
-      msg.data = 3;
+      msg.data = 4;
       led_upper_pub_->publish(msg);
     } else {
       led_upper_pub_->publish(msg);

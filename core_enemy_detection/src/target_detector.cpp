@@ -33,6 +33,7 @@ void targetDetector::changeTarget(const std_msgs::msg::UInt8::SharedPtr msg){
  */
 void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr imgMsg){
     resetDamagePanelInfo();
+    operate = true;
 
     // subscribeされたイメージ取得
     rawImage = cv_bridge::toCvShare(imgMsg, "bgr8")->image;
@@ -207,6 +208,7 @@ void targetDetector::resetDamagePanelInfo(){
 }
 
 void targetDetector::extractHsvRange(){
+    mode = 17;
     if(mode == 67 || mode == 51){
         // hsv画像に対する検出
         cv::Mat mask1, mask2;
@@ -356,11 +358,11 @@ bool targetDetector::detectDamagePanel(){
             int ledTop = dpLabelMap[j].status.at<double>(0, 1);
             if(ledPointX >= baseLedLeft && ledPointX <= baseLedLeft + baseLedWidth){
                 double distance = (ledPointX - baseLedPointX) * (ledPointX - baseLedPointX) + (ledPointY - baseLedPointY) * (ledPointY - baseLedPointY);
-                if(distance > 5 * 5 || distance < 350 * 350){
+                if(distance > 10 * 10 || distance < 350 * 350){
                     // std::cout << "aaa" << std::endl;
                     core_msgs::msg::DamagePanelInfo dp;
                     dp.left = baseLedLeft;
-                    dp.top = baseLedTop;
+                    dp.top = baseLedTo  p;
                     dp.width = baseLedWidth;
                     dp.height = ledTop - baseLedTop;
                     dp.area = distance;

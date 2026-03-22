@@ -12,7 +12,7 @@ public:
   AttackShootManager() : rclcpp::Node("attack_shoot_manager") {
     state_topic_ = declare_parameter<std::string>("state_topic", "/behavior_system/state");
     left_target_topic_ =
-        declare_parameter<std::string>("left_target_topic", "/left/damage_panel_pose");
+        declare_parameter<std::string>("left_target_topic", "/left/target_pose");
     right_target_topic_ =
         declare_parameter<std::string>("right_target_topic", "/right/damage_panel_pose");
     left_shoot_once_topic_ =
@@ -54,9 +54,9 @@ public:
         });
 
     left_shoot_once_pub_ =
-        create_publisher<std_msgs::msg::Bool>(left_shoot_once_topic_, 10);
+        create_publisher<std_msgs::msg::Bool>("/left/shoot_fullauto", 10);
     right_shoot_once_pub_ =
-        create_publisher<std_msgs::msg::Bool>(right_shoot_once_topic_, 10);
+        create_publisher<std_msgs::msg::Bool>("/right/shoot_fullauto", 10);
 
     const double safe_rate = publish_rate_hz_ > 0.0 ? publish_rate_hz_ : 10.0;
     timer_ = create_wall_timer(
@@ -68,41 +68,60 @@ public:
 
 private:
   void onTimer() {
-    if (!current_state_.has_value() || current_state_.value() != attack_state_value_) {
-      return;
-    }
+    // if (!current_state_.has_value() || current_state_.value() != attack_state_value_)
+    // if (!current_state_.has_value() || current_state_.value() != attack_state_value_) {
+    //   std_msgs::msg::Bool off_msg;
+    //   off_msg.data = false;
+    //   left_shoot_once_pub_->publish(off_msg);
+    //   right_shoot_once_pub_->publish(off_msg);
+    //   return;
+    // }
 
     const auto now_time = now();
+    std_msgs::msg::Bool right_msg;
+    std_msgs::msg::Bool left_msg;
+
     if (shouldFire(last_left_target_, last_left_target_time_, now_time, last_left_fire_time_)) {
-      publishShootOnce(left_shoot_once_pub_);
+      // publishShootOnce(left_shoot_once_pub_);
+      left_msg.data = true;
       last_left_fire_time_ = now_time;
+    } else {
+      left_msg.data = false;
     }
 
-    if (shouldFire(last_right_target_, last_right_target_time_, now_time, last_right_fire_time_)) {
-      publishShootOnce(right_shoot_once_pub_);
-      last_right_fire_time_ = now_time;
-    }
+    // if (shouldFire(last_right_target_, last_right_target_time_, now_time, last_right_fire_time_)) {
+    //   right_msg.data = true;
+    //   // publishShootOnce(right_shoot_once_pub_);
+    //   last_right_fire_time_ = now_time;
+    // } else {
+    //   right_msg.data = false;
+    // }
+    left_shoot_once_pub_->publish(left_msg);
+    // right_shoot_once_pub_->publish(right_msg);
   }
 
   bool shouldFire(const std::optional<geometry_msgs::msg::PointStamped> &target,
                   const rclcpp::Time &target_time, const rclcpp::Time &now_time,
                   const rclcpp::Time &last_fire_time) const {
-    if (!target.has_value()) {
+    // if (!target.has_value()) {
+    //   return false;
+    // }
+
+    // if ((now_time - target_time).seconds() > stale_timeout_sec_) {
+    //   return false;
+    // }
+
+    // if ((now_time - last_fire_time).seconds() < shoot_cooldown_sec_) {
+    //   return false;
+    // }
+
+    RCLCPP_INFO(get_logger(), "target %f",target->point.z);
+    
+    if (target->point.z == 1.0) {
       return false;
     }
 
-    if ((now_time - target_time).seconds() > stale_timeout_sec_) {
-      return false;
-    }
-
-    if ((now_time - last_fire_time).seconds() < shoot_cooldown_sec_) {
-      return false;
-    }
-
-    if (target->point.z >= detected_z_threshold_) {
-      return false;
-    }
-
+    RCLCPP_INFO(get_logger(), "target %d",!isNearCenter(*target));
     if (!isNearCenter(*target)) {
       return false;
     }
@@ -120,7 +139,7 @@ private:
     const double dx = target.point.x - center_x_px;
     const double dy = target.point.y - center_y_px;
 
-    return std::fabs(dx) <= center_tolerance_x_px_ && std::fabs(dy) <= center_tolerance_y_px_;
+    return std::fabs(dx) <= 100.0 && std::fabs(dy) <= 200.0;
   }
 
   void publishShootOnce(const rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr &pub) {
