@@ -123,7 +123,7 @@ public:
     goal_pose_pub_ =
         create_publisher<geometry_msgs::msg::PoseStamped>(goal_pose_topic_, goal_qos);
 
-    rotation_pub_ = create_publisher<std_msgs::msg::Bool>(rotation_topic_, 10);
+    rotation_pub_ = create_publisher<std_msgs::msg::Int32>(rotation_topic_, 10);
     state_pub_ = create_publisher<std_msgs::msg::Int32>(state_topic_, 10);
     state_name_pub_ = create_publisher<std_msgs::msg::String>(state_name_topic_, 10);
     pause_pub_ = create_publisher<std_msgs::msg::Bool>(pause_topic_, 10);
@@ -262,8 +262,8 @@ private:
     if (rotation_state_.has_value() && rotation_state_.value() == enabled) {
       return;
     }
-    std_msgs::msg::Bool msg;
-    msg.data = enabled;
+    std_msgs::msg::Int32 msg;
+    msg.data = enabled ? 1 : 0;
     rotation_pub_->publish(msg);
     rotation_state_ = enabled;
   }
@@ -374,7 +374,7 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_hazard_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_pub_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rotation_pub_;
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr rotation_pub_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr state_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_name_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pause_pub_;
