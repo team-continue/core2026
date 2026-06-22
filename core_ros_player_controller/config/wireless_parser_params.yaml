@@ -3,5 +3,5 @@
     mouse_x_sensitivity: 2.0
     mouse_y_sensitivity: 1.0
     mouse_x_inverse: true
-    mouse_y_inverse: false
+    mouse_y_inverse: true
     cmd_vel_xy_scale: 0.5

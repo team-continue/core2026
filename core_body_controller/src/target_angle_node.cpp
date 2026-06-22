@@ -54,8 +54,8 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr target_omega_pub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr rotation_sub_;
 
-  constexpr static double MAX_ROTATION = M_PI * 2;
-  constexpr static double MAX_ROTATE_ACCELERATION = M_PI * 4;
+  constexpr static double MAX_ROTATION = M_PI * 2.5;
+  constexpr static double MAX_ROTATE_ACCELERATION = M_PI * 3;
   constexpr static std::chrono::milliseconds TIMER_PERIOD = std::chrono::milliseconds(10);
   constexpr static double TIMER_DT = std::chrono::duration<double>(TIMER_PERIOD).count();
 
