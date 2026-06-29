@@ -53,8 +53,8 @@ behavior_system:
 
 enemy_detection_coordinator:
   ros__parameters:
-    left_target_topic: "/left/damage_panel_pose"
-    right_target_topic: "/right/damage_panel_pose"
+    left_target_topic: "/left/target_pose"
+    right_target_topic: "/right/target_pose"
     enemy_detected_topic: "/enemy_detected"
     stale_timeout_sec: 0.5
     detected_z_threshold: 0.5
@@ -63,7 +63,7 @@ attack_shoot_manager:
   ros__parameters:
     state_topic: "/behavior_system/state"
     left_target_topic: "/left/target_pose"
-    right_target_topic: "/right/damage_panel_pose"
+    right_target_topic: "/right/target_pose"
     left_shoot_once_topic: "/left_shoot_once"
     right_shoot_once_topic: "/right_shoot_once"
     image_width: 640.0

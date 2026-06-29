@@ -14,7 +14,7 @@ public:
     left_target_topic_ =
         declare_parameter<std::string>("left_target_topic", "/left/target_pose");
     right_target_topic_ =
-        declare_parameter<std::string>("right_target_topic", "/right/damage_panel_pose");
+        declare_parameter<std::string>("right_target_topic", "/right/target_pose");
     left_shoot_once_topic_ =
         declare_parameter<std::string>("left_shoot_once_topic", "/left_shoot_once");
     right_shoot_once_topic_ =
