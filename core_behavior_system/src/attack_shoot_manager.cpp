@@ -10,6 +10,9 @@
 class AttackShootManager : public rclcpp::Node {
 public:
   AttackShootManager() : rclcpp::Node("attack_shoot_manager") {
+    //---------------------------------
+    // Parameter
+    //---------------------------------
     state_topic_ = declare_parameter<std::string>("state_topic", "/behavior_system/state");
     left_target_topic_ =
         declare_parameter<std::string>("left_target_topic", "/left/target_pose");
@@ -24,10 +27,8 @@ public:
     image_height_ = declare_parameter<double>("image_height", 720.0);
     image_center_x_ = declare_parameter<double>("image_center_x", 0.5);
     image_center_y_ = declare_parameter<double>("image_center_y", 0.5);
-    center_tolerance_x_px_ =
-        declare_parameter<double>("center_tolerance_x_px", 20.0);
-    center_tolerance_y_px_ =
-        declare_parameter<double>("center_tolerance_y_px", 20.0);
+    center_tolerance_x_px_ = declare_parameter<double>("center_tolerance_x_px", 20.0);
+    center_tolerance_y_px_ = declare_parameter<double>("center_tolerance_y_px", 20.0);
 
     detected_z_threshold_ = declare_parameter<double>("detected_z_threshold", 0.5);
     stale_timeout_sec_ = declare_parameter<double>("stale_timeout_sec", 0.2);
@@ -35,6 +36,9 @@ public:
     attack_state_value_ = declare_parameter<int>("attack_state_value", 1);
     publish_rate_hz_ = declare_parameter<double>("publish_rate_hz", 20.0);
 
+    //---------------------------------
+    // Subscriber
+    //---------------------------------
     state_sub_ = create_subscription<std_msgs::msg::Int32>(
         state_topic_, rclcpp::QoS(10),
         [this](const std_msgs::msg::Int32::SharedPtr msg) { current_state_ = msg->data; });
@@ -53,10 +57,8 @@ public:
           last_right_target_time_ = now();
         });
 
-    left_shoot_once_pub_ =
-        create_publisher<std_msgs::msg::Bool>("/left/shoot_fullauto", 10);
-    right_shoot_once_pub_ =
-        create_publisher<std_msgs::msg::Bool>("/right/shoot_fullauto", 10);
+    left_shoot_once_pub_ = create_publisher<std_msgs::msg::Bool>("/left/shoot_fullauto", 10);
+    right_shoot_once_pub_ = create_publisher<std_msgs::msg::Bool>("/right/shoot_fullauto", 10);
 
     const double safe_rate = publish_rate_hz_ > 0.0 ? publish_rate_hz_ : 10.0;
     timer_ = create_wall_timer(
@@ -68,60 +70,49 @@ public:
 
 private:
   void onTimer() {
-    // if (!current_state_.has_value() || current_state_.value() != attack_state_value_)
-    // if (!current_state_.has_value() || current_state_.value() != attack_state_value_) {
-    //   std_msgs::msg::Bool off_msg;
-    //   off_msg.data = false;
-    //   left_shoot_once_pub_->publish(off_msg);
-    //   right_shoot_once_pub_->publish(off_msg);
-    //   return;
-    // }
+    // Todo: Each Turret Shot Enable / Disable
 
     const auto now_time = now();
     std_msgs::msg::Bool right_msg;
     std_msgs::msg::Bool left_msg;
 
     if (shouldFire(last_left_target_, last_left_target_time_, now_time, last_left_fire_time_)) {
-      // publishShootOnce(left_shoot_once_pub_);
       left_msg.data = true;
       last_left_fire_time_ = now_time;
     } else {
       left_msg.data = false;
     }
 
-    // if (shouldFire(last_right_target_, last_right_target_time_, now_time, last_right_fire_time_)) {
-    //   right_msg.data = true;
-    //   // publishShootOnce(right_shoot_once_pub_);
-    //   last_right_fire_time_ = now_time;
-    // } else {
-    //   right_msg.data = false;
-    // }
+    if (shouldFire(last_right_target_, last_right_target_time_, now_time, last_right_fire_time_)) {
+      right_msg.data = true;
+      last_right_fire_time_ = now_time;
+    } else {
+      right_msg.data = false;
+    }
+
     left_shoot_once_pub_->publish(left_msg);
-    // right_shoot_once_pub_->publish(right_msg);
+    right_shoot_once_pub_->publish(right_msg);
   }
 
   bool shouldFire(const std::optional<geometry_msgs::msg::PointStamped> &target,
                   const rclcpp::Time &target_time, const rclcpp::Time &now_time,
                   const rclcpp::Time &last_fire_time) const {
-    // if (!target.has_value()) {
-    //   return false;
-    // }
+    if (!target.has_value()) {
+      return false;
+    }
 
-    // if ((now_time - target_time).seconds() > stale_timeout_sec_) {
-    //   return false;
-    // }
+    if ((now_time - target_time).seconds() > stale_timeout_sec_) {
+      return false;
+    }
 
-    // if ((now_time - last_fire_time).seconds() < shoot_cooldown_sec_) {
-    //   return false;
-    // }
-
-    RCLCPP_INFO(get_logger(), "target %f",target->point.z);
+    // RCLCPP_INFO(get_logger(), "target %f",target->point.z);
     
     if (target->point.z == 1.0) {
       return false;
     }
 
-    RCLCPP_INFO(get_logger(), "target %d",!isNearCenter(*target));
+    // RCLCPP_INFO(get_logger(), "target %d",!isNearCenter(*target));
+    
     if (!isNearCenter(*target)) {
       return false;
     }
@@ -140,12 +131,6 @@ private:
     const double dy = target.point.y - center_y_px;
 
     return std::fabs(dx) <= 100.0 && std::fabs(dy) <= 200.0;
-  }
-
-  void publishShootOnce(const rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr &pub) {
-    std_msgs::msg::Bool msg;
-    msg.data = true;
-    pub->publish(msg);
   }
 
   // Parameters
