@@ -5,10 +5,10 @@
 ```mermaid
 graph TB
     subgraph Inputs
-        Unity["Unity Sim\n/sim_odom"]
-        FASTLIO["FAST-LIO\n/Odometry"]
+        Unity["Unity Sim"]
+        FASTLIO["FAST-LIO"]
         MapPNG["core1_field.png"]
-        LiDAR["Livox Mid-360\n/livox/lidar"]
+        LiDAR["Livox Mid-360"]
     end
 
     BehaviorSystem["Behavior System"]
@@ -58,28 +58,30 @@ graph TB
     style FASTLIO fill:#e1f5fe,color:#333
     style LiDAR fill:#e1f5fe,color:#333
     subgraph Shooter["射撃系"]
-        Camera["カメラ"] -->|画像| TargetDetector["target_detector"]
-        TargetDetector --> TargetSelector["target_selector"]
-        TargetSelector -->|target_pose| AimBot["aim_bot"]
-        ShooterGate["shooter_cmd_gate"] --> ShooterCtrl["shooter_controller"]
-        MagazineMgr["magazine_manager"]
+        Camera["カメラ"] -->|raw_image| TargetDetector["target_detector"]
+        TargetDetector -->|damage_panels_infomation| TargetSelector["target_selector"]
+        TargetSelector -->|damage_panel_pose| AimBot["aim_bot"]
+        ShooterGate["shooter_cmd_gate"] -->|shoot_cmd| ShooterCtrl["shooter_controller"]
+        MagazineMgr["magazine_manager"] -->|regrip_active| ShooterCtrl
+        ShooterCtrl -->|shoot_status| MagazineMgr
     end
 
     subgraph SystemMode["システム管理"]
         WirelessParser["wireless_parser_node"]
-        EmergencyHandler["emergency_handler_node"]
-        Diagnostic["diagnostic_node"]
-        Diagnostic --> EmergencyHandler
+        EmergencyHandler["emergency_handler"]
+        Diagnostic["diagnostic"]
+        Diagnostic -->|"microcontroller_emergency<br>receiver_emergency"| EmergencyHandler
     end
 
     WirelessParser -->|/cmd_vel| BodyController
-    EmergencyHandler -->|/hazard_status| BodyController
+    EmergencyHandler -->|"/system/emergency/hazard_status"| BodyController
+    EmergencyHandler -->|"/system/emergency/hazard_status"| ShooterCtrl
 
     AimBot -->|can/tx| Hardware
     ShooterCtrl -->|can/tx| Hardware
 
     subgraph Localization["局在化（実機オプション）"]
-        PCDMap["PCD地図"] -->|点群| LocalizationNode["localization_node"]
+        PCDMap["PCD地図"] --> LocalizationNode["localization_node"]
     end
 
     FASTLIO -->|/cloud_registered| LocalizationNode

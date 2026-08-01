@@ -64,23 +64,79 @@ nav:
     - TFフレームと座標系: architecture/tf-tree.md
     - トピック・メッセージ一覧: architecture/topics.md
   - パッケージ:
-    - core_launch: packages/core_launch.md
-    - core_msgs: packages/core_msgs.md
-    - core_path_planner: packages/core_path_planner.md
-    - core_mppi: packages/core_mppi.md
-    - core_path_follower: packages/core_path_follower.md
-    - core_costmap_builder: packages/core_costmap_builder.md
-    - core_cmd_vel_smoother: packages/core_cmd_vel_smoother.md
-    - core_body_controller: packages/core_body_controller.md
-    - core_enemy_detection: packages/core_enemy_detection.md
-    - core_mode: packages/core_mode.md
-    - core_ros_player_controller: packages/core_ros_player_controller.md
-    - core_shooter: packages/core_shooter.md
-    - core_hardware: packages/core_hardware.md
-    - core_localization: packages/core_localization.md
-    - core_tools: packages/core_tools.md
-    - core_test: packages/core_test.md
-    - ROS-TCP-Endpoint: packages/ros_tcp_endpoint.md
+    - core_launch:
+      - 概要: packages/core_launch/index.md
+      - odom_bridge_node: packages/core_launch/odom_bridge_node.md
+      - map_server_node: packages/core_launch/map_server_node.md
+    - core_msgs:
+      - 概要: packages/core_msgs/index.md
+    - core_behavior_system:
+      - 概要: packages/core_behavior_system/index.md
+      - behavior_system_node: packages/core_behavior_system/behavior_system_node.md
+      - waypoint_selector_node: packages/core_behavior_system/waypoint_selector_node.md
+      - enemy_detection_coordinator_node: packages/core_behavior_system/enemy_detection_coordinator_node.md
+      - attack_shoot_manager_node: packages/core_behavior_system/attack_shoot_manager_node.md
+    - core_path_planner:
+      - 概要: packages/core_path_planner/index.md
+      - path_planner_node: packages/core_path_planner/path_planner_node.md
+      - costmap_publisher_node: packages/core_path_planner/costmap_publisher_node.md
+    - core_mppi:
+      - 概要: packages/core_mppi/index.md
+      - core_mppi_node: packages/core_mppi/core_mppi_node.md
+    - core_path_follower:
+      - 概要: packages/core_path_follower/index.md
+      - path_follower_node: packages/core_path_follower/path_follower_node.md
+    - core_costmap_builder:
+      - 概要: packages/core_costmap_builder/index.md
+      - costmap_build_node: packages/core_costmap_builder/costmap_build_node.md
+    - core_cmd_vel_smoother:
+      - 概要: packages/core_cmd_vel_smoother/index.md
+      - cmd_vel_smoother_node: packages/core_cmd_vel_smoother/cmd_vel_smoother_node.md
+    - core_localization:
+      - 概要: packages/core_localization/index.md
+      - localization_node: packages/core_localization/localization_node.md
+    - core_body_controller:
+      - 概要: packages/core_body_controller/index.md
+      - body_control_node: packages/core_body_controller/body_control_node.md
+      - target_angle_node: packages/core_body_controller/target_angle_node.md
+      - temp_joy_parser: packages/core_body_controller/temp_joy_parser.md
+    - core_camera:
+      - 概要: packages/core_camera/index.md
+    - core_enemy_detection:
+      - 概要: packages/core_enemy_detection/index.md
+      - target_detector: packages/core_enemy_detection/target_detector.md
+      - target_selector: packages/core_enemy_detection/target_selector.md
+    - core_shooter:
+      - 概要: packages/core_shooter/index.md
+      - shooter_cmd_gate: packages/core_shooter/shooter_cmd_gate.md
+      - shooter_controller: packages/core_shooter/shooter_controller.md
+      - magazine_manager: packages/core_shooter/magazine_manager.md
+      - aim_bot: packages/core_shooter/aim_bot.md
+      - shooter_debug_topic_gui: packages/core_shooter/shooter_debug_topic_gui.md
+    - core_mode:
+      - 概要: packages/core_mode/index.md
+      - emergency_handler: packages/core_mode/emergency_handler.md
+      - diagnostic: packages/core_mode/diagnostic.md
+    - core_ros_player_controller:
+      - 概要: packages/core_ros_player_controller/index.md
+      - wireless_parser_node: packages/core_ros_player_controller/wireless_parser_node.md
+    - core_hardware:
+      - 概要: packages/core_hardware/index.md
+      - core_hardware: packages/core_hardware/core_hardware.md
+      - core_hardware_usb: packages/core_hardware/core_hardware_usb.md
+    - core_qt_gui:
+      - 概要: packages/core_qt_gui/index.md
+      - gui_qt: packages/core_qt_gui/gui_qt.md
+      - hardware_ui_converter_node: packages/core_qt_gui/hardware_ui_converter_node.md
+    - core_status_gui:
+      - 概要: packages/core_status_gui/index.md
+      - status_display_gui: packages/core_status_gui/status_display_gui.md
+    - core_tools:
+      - 概要: packages/core_tools/index.md
+    - core_test:
+      - 概要: packages/core_test/index.md
+    - ROS-TCP-Endpoint:
+      - 概要: packages/ros_tcp_endpoint/index.md
   - ガイド:
     - ナビゲーション起動・実機テスト: guides/navigation.md
     - パラメータチューニング: guides/tuning.md
@@ -89,3 +145,4 @@ nav:
   - 開発:
     - 開発ワークフロー: contributing/workflow.md
     - コードスタイル: contributing/code-style.md
+    - ノードドキュメントの書き方: contributing/node-documentation.md
