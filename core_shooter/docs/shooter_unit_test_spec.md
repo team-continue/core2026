@@ -120,7 +120,7 @@
 |---|---|---|---|---|
 | `SCT-001` | P1 | モータID妥当性 | `shoot_motor_id<0` または `loading_motor_id<0` | `std::runtime_error` を送出する |
 | `SCT-002` | P1 | 射撃パラメータ妥当性 | `burst_count<=0`、各 interval<0、`shoot_motor_rotation_cmd_activation_delay_sec<0` のいずれか | `std::runtime_error` を送出する |
-| `SCT-003` | P1 | ベクタ長妥当性 | `limit_rad.size()!=4`、`loading_motor_initial_angle.size()!=3`、`target_speed.size()!=3` | それぞれ `std::runtime_error` を送出する |
+| `SCT-003` | P1 | ベクタ長妥当性 | `limit_rad.size()!=4`、`target_speed.size()!=3` | それぞれ `std::runtime_error` を送出する |
 | `SCT-004` | P1 | ジャム検知パラメータ妥当性 | `jam_detect_time_sec<0` | `std::runtime_error` を送出する |
 
 #### 5.2.3 コールバック/判定ロジック
@@ -190,12 +190,13 @@
 | `MGM-013` | P1 | hold 要求入力 | `disk_hold_state=true` | `hold_request_on_=true`、`hold_on_=false`、`state=IDLE_RELEASED` に寄せる |
 | `MGM-014` | P1 | hazard 強制 release | `hazard_status: false -> true` | 即時に `hold_on_=false`、`state=IDLE_RELEASED`、`hold_shots_since_grip_=0`、release 指令 publish |
 | `MGM-015` | P1 | hazard 解除 | `hazard_status: true -> false` | `on_timer()` を即時反映し、通常ロジックへ復帰する |
-| `MGM-016` | P1 | `on_timer()` 優先順位 | `hazard_active_`, `remaining<=10`, `hold_request_on_`, 正常時を個別に設定 | 優先順位が `hazard > remaining<=10(or last valid sensor says <=10) > hold_request > normal` になる |
+| `MGM-016` | P1 | `on_timer()` 優先順位 | `hazard_active_`, `remaining<=10`, `hold_request_on_`, 正常時を個別に設定 | 優先順位が `hazard > remaining<=10(or last valid sensor says <=10) > hold_request > normal` になる。ただし `state=REGRIP_RELEASING` 中は `hold_request_on_=true` でも中断しない |
 | `MGM-017` | P1 | 通常 hold 開始 | `hazard=false`, `remaining>10`, `hold_request=false`, `state=IDLE_RELEASED` | `state=HOLDING` へ遷移し、close 角度を publish する |
 | `MGM-018` | P1 | regrip 開始条件 | `state=HOLDING`, `hold_on_=true`, `remaining>10`, `hazard=false`, 立上り射撃 `regrip_trigger_shots` 回 | `state=REGRIP_RELEASING`、`hold_shots_since_grip_=0`、`buffer_.clear()`、release 指令、`regrip_active=true` を publish する |
 | `MGM-019` | P1 | regrip 期間中の同期 | `state=REGRIP_RELEASING`、`buffer_.size()>=window_size_` | `remainingDiskEstimator(0)` を実行する |
 | `MGM-020` | P1 | regrip 完了 | `state=REGRIP_RELEASING`、現在時刻が `regrip_release_until_` 以上 | センサ同期成功時は同期値を使い、未成功時は shot count のまま `state=HOLDING` に戻る |
 | `MGM-021` | P2 | hold 指令角 | `publish_hold_command(true/false)` | `true` で index 0 の角度、`false` で index 1 の角度を左右モータへ publish する |
+| `MGM-022` | P1 | regrip 中のボタン押下 | `state=REGRIP_RELEASING` 中に `disk_hold_state=true` を受信 | `state` は `REGRIP_RELEASING` を維持しセンサ同期を継続する。`regrip_release_until_` 到達で `HOLDING` に遷移した直後の tick で `hold_request_on_=true` のまま残っていれば即座に `state=IDLE_RELEASED` へ確定する |
 
 ### 5.4 `aim_bot`
 

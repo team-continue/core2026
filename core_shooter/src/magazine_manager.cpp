@@ -383,7 +383,8 @@ private:
     // ボタン指示（hazard / <=10枚 は on_timer で優先上書き）
     hold_request_on_ = msg->data;
 
-    // ボタン押下時は即release側へ寄せる（最終決定は on_timer）
+    // ボタン押下時は即release側へ寄せる（最終決定は on_timer）。
+    // regrip進行中は on_timer 側も中断しない設計なので、ここでも状態を壊さない。
     if (hold_request_on_) {
       hold_on_ = false;
       hold_shots_since_grip_ = 0;
@@ -485,8 +486,12 @@ private:
 
     // ============================================================
     // PRIORITY 3: ボタン押下時はrelease
+    //   ただし regrip 進行中は中断しない。regrip 中は既に release 済みで
+    //   ボタン要求と矛盾しないため、センサ同期を最後まで行わせる。
+    //   regrip が自然完了して HOLDING に戻った次の tick で、このまま
+    //   hold_request_on_ が true なら即座に IDLE_RELEASED へ確定する。
     // ============================================================
-    if (hold_request_on_) {
+    if (hold_request_on_ && state_ != State::REGRIP_RELEASING) {
       hold_on_ = false;
       state_ = State::IDLE_RELEASED;
       hold_shots_since_grip_ = 0;

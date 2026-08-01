@@ -93,27 +93,6 @@ public:
       this->get_logger(), "enable_panel_synchronizer: %d", enable_panel_synchronizer_);
 
     //========================================
-    // loading motor parameters
-    //========================================
-    this->declare_parameter<double>("loading_motor_speed", 3.0);
-    this->declare_parameter<std::vector<double>>(
-      "loading_motor_initial_angle", std::vector<double>(3, 0.0));
-
-    this->get_parameter("loading_motor_speed", loading_motor_speed_);
-    this->get_parameter("loading_motor_initial_angle", loading_motor_initial_angle_);
-    if (loading_motor_initial_angle_.size() != 3) {
-      RCLCPP_FATAL(
-        this->get_logger(), "Invalid loading_motor_initial_angle size=%zu (expected 3)",
-        loading_motor_initial_angle_.size());
-      throw std::runtime_error("invalid loading_motor_initial_angle size");
-    }
-
-    RCLCPP_INFO(
-      this->get_logger(), "loading_motor_speed: %f, loading_motor1_initial_angle: %f, loading_motor2_initial_angle: %f, loading_motor3_initial_angle: %f",
-      loading_motor_speed_, loading_motor_initial_angle_[0], loading_motor_initial_angle_[1],
-      loading_motor_initial_angle_[2]);
-
-    //========================================
     // shoot motor parameters
     //========================================
     this->declare_parameter<std::vector<double>>("target_speed", std::vector<double>(3, 0.0));
@@ -148,15 +127,6 @@ public:
     RCLCPP_INFO(
       this->get_logger(), "enable_jam_detection: %d, jam_detect_time_sec_: %f",
       enable_jam_detection_, jam_detect_time_sec_);
-
-    //========================================
-    // debug parameters
-    //========================================
-    this->declare_parameter<double>("set_initial_rad", 0.0);
-
-    this->get_parameter("set_initial_rad", set_initial_rad_);
-
-    RCLCPP_INFO(this->get_logger(), "set_initial_rad_: %f", set_initial_rad_);
 
     //========================================
     // subscribers sensor
@@ -307,6 +277,10 @@ private:
 
   void shootMotorCallback(const std_msgs::msg::Float32::SharedPtr msg)
   {
+    // msg->data is normally an analog joystick value in [0,1], but shooter_cmd_gate's
+    // on/off "shoot_motor_state" path also publishes here using shoot_motor_on_command_
+    // (default 2000.0) as a magic value that just needs to stay above 0.7 to land in the
+    // top tier below. Keep these thresholds and shoot_motor_on_command_ in sync.
     float commanded_speed = 0.0f;
     switch (state) {
       case EMERGENCY:
@@ -390,7 +364,9 @@ private:
             state = SHOOT;
             RCLCPP_INFO(get_logger(), "change SHOOT");
           }
-          RCLCPP_INFO(this->get_logger(), "Remaining number of repeats: %d", shoot_repeat_count_);
+          RCLCPP_INFO_THROTTLE(
+            this->get_logger(), *this->get_clock(), 1000,
+            "Remaining number of repeats: %d", shoot_repeat_count_);
           break;
         }
       case SHOOT:
@@ -660,8 +636,6 @@ private:
   rclcpp::TimerBase::SharedPtr timer_;
 
   rclcpp::Time last_shoot_time_ = now();
-  rclcpp::Clock system_clock(rcl_clock_type_t RCL_SYSTEM_TIME);
-  // rclcpp::Clock system_clock(RCL_SYSTEM_TIME);
 
   //========================================
   // subscription valids
@@ -682,7 +656,6 @@ private:
   //========================================
   // parameter valids
   //========================================
-  std::string shoot_cmd_topic_;
   int shoot_motor_id_;
   int loading_motor_id_;
 
@@ -693,13 +666,6 @@ private:
 
   std::vector<double> limit_rad_;
   bool enable_panel_synchronizer_;
-
-  float loading_motor_speed_;
-  std::vector<double> loading_motor_initial_angle_;
-
-  bool shoot_completed_disable_;
-  bool shoot_ready_state_disable_;
-  double set_initial_rad_;
 
   std::vector<double> shoot_motor_target_speed_;
 
@@ -732,12 +698,6 @@ private:
   rclcpp::Time start_time_;
   bool jam_tracking_ = false;
   bool is_jam_detected_ = false;
-
-
-  //========================================
-  // debug parameters
-  //========================================
-  // turret_angle_from_chassis_ = set_initial_rad_;
 };
 
 

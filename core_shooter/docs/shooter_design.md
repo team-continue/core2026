@@ -441,6 +441,7 @@ flowchart TD
 1. `hazard_active_ == true` なら強制 release
 2. `remaining_disks_ <= 10` または直近の有効センサ推定が 10 枚以下なら強制 release
 3. `hold_request_on_ == true` なら release（ボタン優先）
+   - ただし `state_ == REGRIP_RELEASING` の間は中断しない。regrip 中は既に release 済みでボタン要求と矛盾しないため、センサ同期を完了させてから `HOLDING` に戻し、次の tick でボタン要求を反映する
 4. それ以外は通常保持（`HOLDING`）
 
 #### regrip 動作
@@ -520,7 +521,6 @@ flowchart TD
 - `shoot_motor_rotation_cmd_activation_delay_sec`
 - `limit_rad`
 - `enable_panel_synchronizer`
-- `loading_motor_speed`
 - `target_speed`
 - `enable_jam_detection`
 - `jam_detect_time_sec`

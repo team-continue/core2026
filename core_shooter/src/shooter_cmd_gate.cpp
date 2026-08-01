@@ -168,6 +168,11 @@ public:
 
   void shootMotorStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
+    // /left|right/shoot_motor is also fed directly by an analog joystick (0..1) that
+    // shooter_controller buckets into 3 speed tiers via thresholds (0.7/0.4/0.1).
+    // shoot_motor_on_command_ (default 2000.0) is not a real motor speed; it only needs
+    // to stay above 0.7 so this boolean path lands in the same top speed tier. Keep the
+    // two producers in sync if either side's threshold/value range changes.
     const float command = msg->data ? static_cast<float>(shoot_motor_on_command_) : 0.0F;
     publishShootMotor(left_shoot_motor_pub_, command);
     publishShootMotor(right_shoot_motor_pub_, command);

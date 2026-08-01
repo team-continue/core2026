@@ -25,18 +25,12 @@
                 # limit_rad_[2]
                 enable_panel_synchronizer: false
 
-                # loading motor parameters
-                loading_motor_speed: 6.5
-
                 # shoot motor parameters
                 target_speed: [1400.0, 1300.0, 1200.0]
 
                 # jam parameters
                 enable_jam_detection: false
                 jam_detect_time_sec: 0.1
-
-                # debug parameters
-                set_initial_rad: 0.0
 
                 # ========================================
                 # MagazineManager
