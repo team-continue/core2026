@@ -20,7 +20,7 @@ graph TD
 ```
 
 !!! info "localization有効時の動作"
-    `use_localization:=true` で起動すると、`map→odom` は `localization_node`（core_localization パッケージ）がNDT/ICPマッチングの結果に基づいて動的に発行します。これにより、FAST-LIOのオドメトリドリフトがグローバル座標上で補正されます。詳細は[core_localization パッケージ](../packages/core_localization.md)を参照してください。
+    `use_localization:=true` で起動すると、`map→odom` は `localization_node`（core_localization パッケージ）がNDT/ICPマッチングの結果に基づいて動的に発行します。これにより、FAST-LIOのオドメトリドリフトがグローバル座標上で補正されます。詳細は[core_localization パッケージ](../packages/core_localization/index.md)を参照してください。
 
 ## 各フレームの説明
 

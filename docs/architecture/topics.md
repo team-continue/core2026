@@ -47,15 +47,23 @@
 
 ### シューター
 
+`{side}` は `left` / `right` を表します。
+
 | トピック | 型 | Publisher | Subscriber |
 |---------|------|-----------|------------|
-| `/left/shoot_once` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
+| `/right/shoot_fullauto` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
+| `/{side}/shoot_fullauto` | `std_msgs/Bool` | attack_shoot_manager | shooter_cmd_gate |
 | `/shoot_motor` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
 | `/manual_mode` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
 | `/manual_pitch` | `std_msgs/Float32` | wireless_parser | shooter_cmd_gate |
-| `/reloading` | `std_msgs/Bool` | wireless_parser | magazine_manager |
-| `shoot_cmd` | `std_msgs/Int32` | shooter_controller | (CAN) |
-| `shoot_motor` | `std_msgs/Float32` | shooter_cmd_gate | shooter_controller |
+| `/{side}/shoot_cmd` | `std_msgs/Int32` | shooter_cmd_gate | shooter_controller |
+| `/{side}/shoot_motor` | `std_msgs/Float32` | shooter_cmd_gate | shooter_controller |
+| `/{side}/manual_mode` | `std_msgs/Bool` | shooter_cmd_gate | aim_bot |
+| `/{side}/manual_pitch_angle` | `std_msgs/Float32` | shooter_cmd_gate | aim_bot |
+| `/{side}/shoot_status` | `std_msgs/Bool` | shooter_controller | magazine_manager |
+| `/{side}/regrip_active` | `std_msgs/Bool` | magazine_manager | shooter_controller |
+| `/{side}/remaining_disk` | `std_msgs/Int8` | magazine_manager | GUI |
+| `/reloading` | `std_msgs/Bool` | wireless_parser | （要リマップ）magazine_manager |
 
 ### コントローラ入力
 
