@@ -29,6 +29,16 @@ def generate_launch_description():
         default_value="/ads",
         description="Output topic to remap /ads",
     )
+    left_turret_auto_arg = DeclareLaunchArgument(
+        "left_turret_auto",
+        default_value="/left/turret_auto",
+        description="Output topic to remap /left/turret_auto",
+    )
+    right_turret_auto_arg = DeclareLaunchArgument(
+        "right_turret_auto",
+        default_value="/right/turret_auto",
+        description="Output topic to remap /right/turret_auto",
+    )
     cmd_vel_arg = DeclareLaunchArgument(
         "cmd_vel",
         default_value="/cmd_vel",
@@ -100,6 +110,8 @@ def generate_launch_description():
             ("/wireless", LaunchConfiguration("wireless")),
             ("/rotation", LaunchConfiguration("rotation")),
             ("/ads", LaunchConfiguration("ads")),
+            ("/left/turret_auto", LaunchConfiguration("left_turret_auto")),
+            ("/right/turret_auto", LaunchConfiguration("right_turret_auto")),
             ("/cmd_vel", LaunchConfiguration("cmd_vel")),
             ("/manual_mode", LaunchConfiguration("manual_mode")),
             ("/manual_pitch", LaunchConfiguration("manual_pitch")),
@@ -118,6 +130,8 @@ def generate_launch_description():
         wireless_arg,
         rotation_arg,
         ads_arg,
+        left_turret_auto_arg,
+        right_turret_auto_arg,
         cmd_vel_arg,
         manual_mode_arg,
         manual_pitch_arg,

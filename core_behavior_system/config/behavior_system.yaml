@@ -65,6 +65,8 @@ attack_shoot_manager:
     right_target_topic: "/right/target_pose"
     left_shoot_fullauto_topic: "/left/shoot_fullauto"
     right_shoot_fullauto_topic: "/right/shoot_fullauto"
+    left_turret_auto_topic: "/left/turret_auto"
+    right_turret_auto_topic: "/right/turret_auto"
     image_width: 640.0
     image_height: 480.0
     image_center_x: 0.5

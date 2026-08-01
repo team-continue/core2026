@@ -38,6 +38,10 @@ public:
       std::bind(&WirelessParserNode::wireless_callback, this, std::placeholders::_1));
 
     ads_publisher_ = create_publisher<std_msgs::msg::Bool>("/ads", 10);
+    left_turret_auto_publisher_ = create_publisher<std_msgs::msg::Bool>(
+      "/left/turret_auto", 10);
+    right_turret_auto_publisher_ = create_publisher<std_msgs::msg::Bool>(
+      "/right/turret_auto", 10);
     rotation_publisher_ = create_publisher<std_msgs::msg::Int32>("/rotation", 10);
     cmd_vel_publisher_ = create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
     manual_mode_publisher_ = create_publisher<std_msgs::msg::Bool>("/manual_mode", 10);
@@ -88,6 +92,8 @@ private:
     const bool reload = bit(flags, 2);
     const bool shoot = bit(flags, 3);
     const bool ads = bit(flags, 4);
+    const bool left_turret_auto = bit(flags, 5);
+    const bool right_turret_auto = bit(flags, 6);
 
     // byte 3: W, A, S, D, InfiniteRotate (00=off, 01=R1, 10=R2)
     const bool key_w = bit(movement, 0);
@@ -112,6 +118,11 @@ private:
     std_msgs::msg::Bool bool_msg;
     bool_msg.data = ads;
     ads_publisher_->publish(bool_msg);
+
+    bool_msg.data = left_turret_auto;
+    left_turret_auto_publisher_->publish(bool_msg);
+    bool_msg.data = right_turret_auto;
+    right_turret_auto_publisher_->publish(bool_msg);
 
     std_msgs::msg::Int32 rotation_msg;
     rotation_msg.data = infinite_rotate;
@@ -155,6 +166,8 @@ private:
 
   rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr subscription_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr ads_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr left_turret_auto_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr right_turret_auto_publisher_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr rotation_publisher_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr manual_mode_publisher_;

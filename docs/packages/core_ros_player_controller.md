@@ -12,6 +12,8 @@ graph LR
     WP --> CmdVel["/cmd_vel"]
     WP --> Rotation["/rotation"]
     WP --> ADS["/ads"]
+    WP --> LeftAuto["/left/turret_auto"]
+    WP --> RightAuto["/right/turret_auto"]
     WP --> Manual["/manual_mode"]
     WP --> Pitch["/manual_pitch"]
     WP --> Shoot["/left|right/shoot_fullauto"]
@@ -60,6 +62,7 @@ byte 1/2 は符号付き8ビットの `mouseVX` / `mouseVY`、byte 4-6 は予約
 | `/cmd_vel` | `geometry_msgs/Twist` | 車体速度指令（linear.x=W/S, linear.y=A/D, angular.z=mouse_x） |
 | `/rotation` | `std_msgs/Int32` | InfiniteRotate（0=OFF, 1=R1, 2=R2） |
 | `/ads` | `std_msgs/Bool` | ADSモード |
+| `/left/turret_auto`, `/right/turret_auto` | `std_msgs/Bool` | 各砲塔の自動制御フラグ |
 | `/manual_pitch` | `std_msgs/Float32` | 手動ピッチ入力（mouse_y） |
 | `/shoot_motor` | `std_msgs/Bool` | シューターローラーモーター制御 |
 | `/left/shoot_fullauto`, `/right/shoot_fullauto` | `std_msgs/Bool` | 選択側のフルオート射撃トリガー |

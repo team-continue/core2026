@@ -77,6 +77,8 @@ def generate_launch_description():
             "wireless": "/my_robot/wireless",
             "rotation": "/my_robot/rotation",
             "ads": "/my_robot/ads",
+            "left_turret_auto": "/my_robot/left/turret_auto",
+            "right_turret_auto": "/my_robot/right/turret_auto",
             "cmd_vel": "/my_robot/cmd_vel",
             "manual_mode": "/my_robot/manual_mode",
             "manual_pitch": "/my_robot/manual_pitch",
