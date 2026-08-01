@@ -457,7 +457,7 @@ private:
                 "Manual mode ON: start interpolated move to yaw=%f, pitch=%f using max_yaw_rate/max_pitch_rate (pitch becomes controllable via manual_pitch_angle)",
                 manual_mode_yaw_fixed_angle_, manual_mode_pitch_initial_angle_);
             }
-        }
+          }
 
           if (!has_manual_pitch_target_) {
             RCLCPP_WARN_THROTTLE(
