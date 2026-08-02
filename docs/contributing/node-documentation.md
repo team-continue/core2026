@@ -1,6 +1,6 @@
 # ノードドキュメントの書き方
 
-各ROS2ノードのドキュメントは、[Autoware Universe](https://autowarefoundation.github.io/autoware_universe/main/)の構成に倣います。パッケージが複数ノードを持つ場合は、**ノードごとに個別ページ**を作成してください。
+各ROS2ノードのドキュメントは、以下の構成で統一します。パッケージが複数ノードを持つ場合は、**ノードごとに個別ページ**を作成してください。
 
 ## ディレクトリ構成
 
@@ -14,16 +14,31 @@ docs/packages/
 
 ノードが1つしかないパッケージは `docs/packages/<package_name>.md` のように単一ファイルのままで構いません。
 
-`mkdocs.yml` の `nav` には次のようにネストして追加します:
+`mkdocs.yml` の `nav` には、**ソフトウェア**章の該当する層グループ配下にネストして追加します:
 
 ```yaml
 nav:
-  - パッケージ:
-    - core_example:
-      - 概要: packages/core_example/index.md
-      - node_a: packages/core_example/node_a.md
-      - node_b: packages/core_example/node_b.md
+  - ソフトウェア:
+    - Planning:                # 層グループ（既存のものから選ぶ）
+      - core_example:
+        - packages/core_example/index.md   # タイトルを付けない
+        - node_a: packages/core_example/node_a.md
+        - node_b: packages/core_example/node_b.md
 ```
+
+!!! warning "`index.md` にはタイトルを付けないでください"
+    テーマの `navigation.indexes` が有効なため、`index.md` は**タイトルなしの先頭要素**として書きます。こう書くとパッケージ名の見出し自体が概要ページへのリンクになり、冗長な「概要」項目が出ません。
+
+    逆に `- core_example: packages/core_example/index.md` のように1行で書くと、それが**役割グループ全体の見出しリンクとして吸収され、パッケージ名がサイドバーから消えます**。ノードが1つだけのパッケージでも、上記のネスト形式で書いてください。
+
+層グループは [システム概要](../architecture/overview.md#全体構成図)の全体構成図の層に対応しており、`Sensing` / `Localization` / `Perception` / `Planning` / `Behavior` / `Mecha` / `Control` / `System` / `UI` / `Hardware` の10個です。これに加えて、図のいずれの層にも属さないものを入れる次の2グループがあります。
+
+| グループ | 用途 |
+|---------|------|
+| `Launch` | システムの起動を担うパッケージ（`core_launch`） |
+| `Common` | メッセージ定義、デバッグツール、テスト基盤、外部ブリッジなど |
+
+新しいパッケージを追加するときは、まず全体構成図のどの層に置かれるかを決めてから、対応するグループに入れてください。
 
 ## パッケージ概要ページ（index.md）のテンプレート
 
