@@ -2,119 +2,99 @@
 
 ## Purpose
 
-ワイヤレス受信機から届く生バイト列（`std_msgs/UInt8MultiArray`）は、そのままではROS側の制御ノードが解釈できません。このパッケージは生入力をビットマップとして解析し、車体移動・タレット照準・射撃といった意味のあるROSトピックへ変換する、手動操縦の入口となるノードを提供します。
+`/wireless` の7Byte入力を解析し、車体移動・砲塔操作・射撃・緊急停止などのROSトピックへ変換するノードです。7バイト未満のパケットは無視します。
 
 ## Inner-workings / Algorithms
 
-`/wireless` を受信するたびに、先頭7バイト以上のペイロードをビットフィールドとして解釈し、対応するトピックを発行します。
+パケット受信時にbyte 0とbyte 3のビットを展開し、マウス入力を正規化して各トピックへ発行します。Reloadは立ち上がりエッジでのみ発行するため、ボタンを押し続けても連続発火しません。Shootは`manual_mode_target_side`で指定した側の`shoot_fullauto`にだけ発行されます。
 
-`ui_flags` の自動フラグ（bit 1）がONの場合、`/cmd_vel` などの操縦系トピックは発行されません。自律走行中に手動入力が競合して車体が二重制御されるのを防ぐためのゲートです。一方 `/manual_mode` や `/system/emergency/hazard_status` は自律・手動を問わず常に発行されます。
+## Input format
 
-`/reloading` は立ち上がりエッジでのみ発行され、ボタン押下中に連続発火しないようになっています。
+パケットは次の形式です。
 
-```mermaid
-graph LR
-    HW["core_hardware"] -->|"/wireless"| WP["wireless_parser_node"]
-    WP -->|"/cmd_vel<br>/rotation"| BC["core_body_controller"]
-    WP -->|"/right/shoot_fullauto<br>/shoot_motor<br>/manual_pitch<br>/reloading<br>/ads"| SH["core_shooter"]
-    WP -->|"/manual_mode<br>/test_mode<br>/auto_point_select<br>/selected_pose"| BS["core_behavior_system"]
-    WP -->|"/system/emergency/hazard_status"| EM["core_mode"]
-```
+`[flags, mouse_x, mouse_y, movement, reserved, reserved, reserved]`
 
-### 入力フォーマット
+`mouse_x` と `mouse_y` は符号付き8bitの2の補数で、`-127..127`を`-1.0..1.0`へ正規化します。
 
-`[flags, mouse_x, mouse_y, ui_flags, flags_2, ...]`
+### byte 0: flags
 
-#### flags ビットマップ（byte 0）
+| Bit | 内容 |
+|---:|---|
+| 0 | EStop |
+| 1 | Roller |
+| 2 | Reload |
+| 3 | Shoot |
+| 4 | ADS |
+| 5 | LeftTurretAuto |
+| 6 | RightTurretAuto |
+| 7 | Reserved |
 
-| ビット | キー | 説明 |
-|--------|------|------|
-| 0 | Space | 緊急停止 |
-| 1 | W | 前進 |
-| 2 | S | 後退 |
-| 3 | A | 左移動 |
-| 4 | D | 右移動 |
-| 5 | Reload | リロード |
-| 6 | Click | 射撃トリガー |
-| 7 | Roller | シューターモーター |
+### byte 3: movement
 
-#### flags_2 ビットマップ（byte 4）
-
-| ビット | キー | 説明 |
-|--------|------|------|
-| 0 | ADS | ADS（照準器を覗く）モード |
-| 1 | Rotation | 車体回転モード切替 |
-
-#### ui_flags ビットマップ（byte 3）
-
-| ビット | 説明 |
-|--------|------|
-| 0 | ロックフラグ |
-| 1 | 自動フラグ（ON時はcmd_vel等をパブリッシュしない） |
+| Bit | 内容 |
+|---:|---|
+| 0 | W（前進） |
+| 1 | A（左移動） |
+| 2 | S（後退） |
+| 3 | D（右移動） |
+| 4-5 | InfiniteRotate（`0=OFF`, `1=R1`, `2=R2`） |
 
 ## Inputs / Outputs
 
 ### Input
 
-| トピック | 型 | 説明 |
-|---------|------|------|
-| `/wireless` | `std_msgs/UInt8MultiArray` | ワイヤレス入力（7バイト以上） |
+| Topic / Service | Type | QoS | 内容 |
+|---|---|---|---|
+| `/wireless` | `std_msgs/msg/UInt8MultiArray` | reliable(10) | 7バイト以上のワイヤレス入力 |
 
 ### Output
 
-UI自動フラグがOFFの場合のみパブリッシュされるトピック（手動操作時）:
+有効なパケットを受信するたびに、次のトピックを発行します。
 
-| トピック | 型 | 説明 |
-|---------|------|------|
-| `/cmd_vel` | `geometry_msgs/Twist` | 車体速度指令（linear.x=W/S, linear.y=A/D, angular.z=mouse_x） |
-| `/rotation` | `std_msgs/Int32` | 車体回転モード |
-| `/ads` | `std_msgs/Bool` | ADSモード |
-| `/manual_pitch` | `std_msgs/Float32` | 手動ピッチ入力（mouse_y） |
-| `/shoot_motor` | `std_msgs/Bool` | シューターローラーモーター制御 |
-| `/right/shoot_fullauto` | `std_msgs/Bool` | 射撃トリガー（右タレット固定） |
+| Topic / Service | Type | QoS | 内容 |
+|---|---|---|---|
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | reliable(10) | WASDによる移動と`mouse_x`による旋回 |
+| `/rotation` | `std_msgs/msg/Int32` | reliable(10) | InfiniteRotateの値 |
+| `/ads` | `std_msgs/msg/Bool` | reliable(10) | ADS状態 |
+| `/left/turret_auto` | `std_msgs/msg/Bool` | reliable(10) | 左砲塔の自動制御フラグ |
+| `/right/turret_auto` | `std_msgs/msg/Bool` | reliable(10) | 右砲塔の自動制御フラグ |
+| `/manual_pitch` | `std_msgs/msg/Float32` | reliable(10) | `mouse_y`による手動ピッチ入力 |
+| `/shoot_motor` | `std_msgs/msg/Bool` | reliable(10) | ローラーモーター制御 |
+| `/reloading` | `std_msgs/msg/Bool` | reliable(10) | Reloadの立ち上がりエッジでのみ発行 |
+| `/system/emergency/hazard_status` | `std_msgs/msg/Bool` | reliable(10) | EStop状態 |
+| `/test_mode` | `std_msgs/msg/Bool` | reliable(10) | 常に`false` |
+| `/manual_mode` | `std_msgs/msg/Bool` | reliable(10) | 対象側の自動制御フラグを反転した手動モード |
 
-`/reloading` は自動フラグOFFかつリロードキーの立ち上がりエッジでのみ発行されます。
+Shootは`manual_mode_target_side`で指定した側にだけ発行します。
 
-| トピック | 型 | 説明 |
-|---------|------|------|
-| `/reloading` | `std_msgs/Bool` | マガジンリロードトリガー |
+| Topic / Service | Type | QoS | 内容 |
+|---|---|---|---|
+| `/left/shoot_fullauto` | `std_msgs/msg/Bool` | reliable(10) | 左側を選択した場合の射撃トリガー |
+| `/right/shoot_fullauto` | `std_msgs/msg/Bool` | reliable(10) | 右側を選択した場合の射撃トリガー |
 
-UI自動フラグがONの場合のみパブリッシュされるトピック（自律走行時）:
-
-| トピック | 型 | 説明 |
-|---------|------|------|
-| `/auto_point_select` | `std_msgs/Bool` | 自動地点選択の有効/無効 |
-| `/selected_pose` | `geometry_msgs/PoseStamped` | 操縦UIで指定された移動先（`map` フレーム。座標変化時のみ発行） |
-
-常にパブリッシュされるトピック:
-
-| トピック | 型 | 説明 |
-|---------|------|------|
-| `/manual_mode` | `std_msgs/Bool` | シューター手動照準モード（UI自動フラグの反転） |
-| `/test_mode` | `std_msgs/Bool` | テストモード（常に `false`） |
-| `/system/emergency/hazard_status` | `std_msgs/Bool` | 緊急停止状態 |
+`/manual_mode` も常に発行され、選択側の砲塔自動制御フラグを反転した値になります。例えば対象側が`right`の場合、`/right/turret_auto=false`で`/manual_mode=true`です。
 
 ## Parameters
 
-設定ファイル: `config/wireless_parser_params.yaml`
+設定ファイルは`config/wireless_parser_params.yaml`です。
 
-| パラメータ | デフォルト | 説明 |
-|-----------|-----------|------|
-| `mouse_x_sensitivity` | `1.0` | 水平マウス感度 |
-| `mouse_y_sensitivity` | `1.0` | 垂直マウス感度 |
-| `mouse_x_inverse` | `false` | 水平マウス方向反転 |
-| `mouse_y_inverse` | `false` | 垂直マウス方向反転 |
-| `cmd_vel_xy_scale` | `1.0` | WASD速度指令スケール係数 |
+| パラメータ | 型 | デフォルト | 説明 |
+|---|---|---:|---|
+| `mouse_x_sensitivity` | double | `1.0` | 水平マウス感度 |
+| `mouse_y_sensitivity` | double | `1.0` | 垂直マウス感度 |
+| `mouse_x_inverse` | bool | `false` | 水平入力の反転 |
+| `mouse_y_inverse` | bool | `false` | 垂直入力の反転 |
+| `cmd_vel_xy_scale` | double | `1.0` | XY速度のスケール |
+| `manual_mode_target_side` | string | `right` | `/manual_mode`とShootの対象側（`left`または`right`） |
 
 ## Assumptions / Known limits
 
-- `/wireless` のペイロードが7バイト未満の場合、そのメッセージは解釈できません。受信機側のフォーマット変更時はビットマップ定義の同期が必要です。
-- 入力が途絶えてもこのノードはゼロ速度を発行しません。通信断の検知は [core_mode](../core_mode/index.md) の `diagnostic` ノードが `/wireless` のハートビート監視で担当します。
-- `/test_mode` は常に `false` を発行します。テストモードを使う場合は本ノードを起動せず、`shooter_debug_topic_gui` などから直接発行してください。
-- 射撃トリガーの発行先は `/right/shoot_fullauto` に固定されています。左タレットの射撃はこのノードからは発行されません。実装上のパブリッシャ変数名は `shoot_once_publisher_` ですが、発行先はフルオート用トピックです。
-- `/reloading` はルート名前空間に発行されます。一方 [magazine_manager](../core_shooter/magazine_manager.md) は `left/` `right/` 名前空間内で `reloading` を購読するため（`/left/reloading`）、既定のランチ構成では直接つながりません。接続にはリマップが必要です。
+- `/wireless` のペイロードは7バイト以上である必要があります。短いパケットは警告を出して無視します。
+- マウス入力は受信したパケットごとに発行されます。入力が途絶えた場合、このノード自身はゼロ速度を発行しません。
+- `/manual_mode` と射撃トリガーの対象側は、`manual_mode_target_side` の値（`left`または`right`）で決まります。
+- Reloadは立ち上がりエッジのみ発行されるため、押下中の繰り返し発行はありません。
 
-## 起動
+## Launch
 
 ```bash
 ros2 launch core_ros_player_controller wireless_parser_node.launch.py

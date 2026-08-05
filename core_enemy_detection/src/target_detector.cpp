@@ -362,7 +362,7 @@ bool targetDetector::detectDamagePanel(){
                     // std::cout << "aaa" << std::endl;
                     core_msgs::msg::DamagePanelInfo dp;
                     dp.left = baseLedLeft;
-                    dp.top = baseLedTo  p;
+                    dp.top = baseLedTop;
                     dp.width = baseLedWidth;
                     dp.height = ledTop - baseLedTop;
                     dp.area = distance;

@@ -6,14 +6,12 @@ CORE 2026 スタック向けのワイヤレスコントローラ解析ノード�
 
 `wireless_parser_node` は `/wireless`（`std_msgs/msg/UInt8MultiArray`）を購読し、ボディ系・シューター系の制御トピックを発行します。
 
-動作概要:
-- `values[0]` のビットフラグからキー入力（W/A/S/D, reload, click, roller, emergency）を取得します。
+動作概要（7Byteプロトコル）:
+- `values[0]` のビットフラグから EStop / Roller / Reload / Shoot / ADS / turret-auto を取得します。
 - `values[1]`（X）と `values[2]`（Y）からマウス入力を取り出し、`[-1.0, 1.0]` に正規化して感度と反転を適用します。
 - W/A/S/D とマウス X から `cmd_vel` を生成します。
-- UI の自動フラグが OFF のとき、マウス Y からシューターのピッチ入力を生成します。
-- UI の自動フラグが ON のときは、`manual_mode` / `test_mode` / `hazard_status` / `auto_point_select` / `selected_pose` を publish します。
-- UI の自動フラグが OFF のときは、ボディ・シューター系のトピックを publish します。
-- `reloading` は立ち上がりエッジのみ publish します（手動モード時のみ）。
+- `values[3]` の bit0-3 から W/A/S/D、bit4-5 から InfiniteRotate を取得します。
+- `reloading` は立ち上がりエッジのみ publish します。
 
 AutoMode 時の座標送信:
 - `values[1..2]` を X、`values[5..6]` を Y として座標を取り出します（little endian）。
@@ -23,12 +21,10 @@ AutoMode 時の座標送信:
 
 ### rotation の詳細
 
-`/rotation` は `std_msgs/msg/Bool` で publish され、ボディの回転フラグとして扱います。
+`/rotation` は `std_msgs/msg/Int32` で publish され、InfiniteRotate（0=OFF, 1=R1, 2=R2）を出力します。
 
-- 参照元の入力: `values[4]`（`raw_flags_2`）の bit1
-- 判定式: `key_rotation = (raw_flags_2 >> 1) & 1`
-- publish 条件: UI の自動フラグが OFF（`ui_auto_flag == 0`）のときのみ
-- 出力値: `true` で回転 ON、`false` で回転 OFF
+- 参照元の入力: `values[3]` の bit4-5
+- `manual_mode_target_side` に指定した側（`left` / `right`）のTurretAuto反転値を `manual_mode` に出力します。
 
 ### パラメータ
 
@@ -36,6 +32,7 @@ AutoMode 時の座標送信:
 - `mouse_y_sensitivity` (double, default: `1.0`)
 - `mouse_x_inverse` (bool, default: `false`)
 - `mouse_y_inverse` (bool, default: `false`)
+- `manual_mode_target_side` (string, default: `right`)
 
 デフォルトのパラメータは以下にあります:
 - `config/wireless_parser_params.yaml`
@@ -80,11 +77,14 @@ def generate_launch_description():
             "wireless": "/my_robot/wireless",
             "rotation": "/my_robot/rotation",
             "ads": "/my_robot/ads",
+            "left_turret_auto": "/my_robot/left/turret_auto",
+            "right_turret_auto": "/my_robot/right/turret_auto",
             "cmd_vel": "/my_robot/cmd_vel",
             "manual_mode": "/my_robot/manual_mode",
             "manual_pitch": "/my_robot/manual_pitch",
             "shoot_motor": "/my_robot/shoot_motor",
-            "left_shoot_once": "/my_robot/left/shoot_once",
+            "left_shoot_fullauto": "/my_robot/left/shoot_fullauto",
+            "right_shoot_fullauto": "/my_robot/right/shoot_fullauto",
             "reloading": "/my_robot/reloading",
             "auto_point_select": "/my_robot/auto_point_select",
             "selected_pose": "/my_robot/selected_pose",

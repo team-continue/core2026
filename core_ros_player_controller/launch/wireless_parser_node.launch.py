@@ -29,6 +29,16 @@ def generate_launch_description():
         default_value="/ads",
         description="Output topic to remap /ads",
     )
+    left_turret_auto_arg = DeclareLaunchArgument(
+        "left_turret_auto",
+        default_value="/left/turret_auto",
+        description="Output topic to remap /left/turret_auto",
+    )
+    right_turret_auto_arg = DeclareLaunchArgument(
+        "right_turret_auto",
+        default_value="/right/turret_auto",
+        description="Output topic to remap /right/turret_auto",
+    )
     cmd_vel_arg = DeclareLaunchArgument(
         "cmd_vel",
         default_value="/cmd_vel",
@@ -49,10 +59,15 @@ def generate_launch_description():
         default_value="/shoot_motor_state",
         description="Output topic to remap /shoot_motor (default: /shoot_motor_state)",
     )
-    right_shoot_once_arg = DeclareLaunchArgument(
-        "right_shoot_once",
-        default_value="/right/shoot_once",
-        description="Output topic to remap /right/shoot_once",
+    left_shoot_fullauto_arg = DeclareLaunchArgument(
+        "left_shoot_fullauto",
+        default_value="/left/shoot_fullauto",
+        description="Output topic to remap /left/shoot_fullauto",
+    )
+    right_shoot_fullauto_arg = DeclareLaunchArgument(
+        "right_shoot_fullauto",
+        default_value="/right/shoot_fullauto",
+        description="Output topic to remap /right/shoot_fullauto",
     )
     reloading_arg = DeclareLaunchArgument(
         "reloading",
@@ -95,11 +110,14 @@ def generate_launch_description():
             ("/wireless", LaunchConfiguration("wireless")),
             ("/rotation", LaunchConfiguration("rotation")),
             ("/ads", LaunchConfiguration("ads")),
+            ("/left/turret_auto", LaunchConfiguration("left_turret_auto")),
+            ("/right/turret_auto", LaunchConfiguration("right_turret_auto")),
             ("/cmd_vel", LaunchConfiguration("cmd_vel")),
             ("/manual_mode", LaunchConfiguration("manual_mode")),
             ("/manual_pitch", LaunchConfiguration("manual_pitch")),
             ("/shoot_motor", LaunchConfiguration("shoot_motor")),
-            ("/right/shoot_once", LaunchConfiguration("right_shoot_once")),
+            ("/left/shoot_fullauto", LaunchConfiguration("left_shoot_fullauto")),
+            ("/right/shoot_fullauto", LaunchConfiguration("right_shoot_fullauto")),
             ("/reloading", LaunchConfiguration("reloading")),
             ("/auto_point_select", LaunchConfiguration("auto_point_select")),
             ("/selected_pose", LaunchConfiguration("selected_pose")),
@@ -112,11 +130,14 @@ def generate_launch_description():
         wireless_arg,
         rotation_arg,
         ads_arg,
+        left_turret_auto_arg,
+        right_turret_auto_arg,
         cmd_vel_arg,
         manual_mode_arg,
         manual_pitch_arg,
         shoot_motor_arg,
-        right_shoot_once_arg,
+        left_shoot_fullauto_arg,
+        right_shoot_fullauto_arg,
         reloading_arg,
         auto_point_select_arg,
         selected_pose_arg,
