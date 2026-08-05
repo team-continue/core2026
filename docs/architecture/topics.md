@@ -1,5 +1,7 @@
 # トピック・メッセージ一覧
 
+**このページは各トピックのインタフェース仕様（型・Publisher / Subscriber・QoS・リマップ）を扱います。** ノード構成とデータの流れ、起動構成は[システム概要](overview.md)を参照してください。
+
 ## 主要トピック
 
 ### ナビゲーションパイプライン
@@ -15,8 +17,11 @@
 | `/costmap/global` | `nav_msgs/OccupancyGrid` | map_server | mppi | transient_local(1) |
 | `/costmap/local` | `nav_msgs/OccupancyGrid` | costmap_builder | mppi | reliable |
 | `/planned_path` | `nav_msgs/Path` | path_planner | mppi, path_follower | reliable |
-| `/cmd_vel_raw` | `geometry_msgs/Twist` | mppi or path_follower | cmd_vel_smoother | reliable(10) |
-| `/cmd_vel` | `geometry_msgs/Twist` | cmd_vel_smoother | body_controller | reliable(10) |
+| `/cmd_vel_raw` | `geometry_msgs/Twist` | mppi | cmd_vel_smoother | reliable(10) |
+| `/cmd_vel` | `geometry_msgs/Twist` | cmd_vel_smoother, path_follower, wireless_parser | body_controller | reliable(10) |
+
+!!! note "`/cmd_vel` には複数のPublisherが存在します"
+    `core_path_follower` の `cmd_vel_topic` はデフォルトで `/cmd_vel`（`cmd_vel_smoother` を経由しない）、`wireless_parser` も手動操縦時に `/cmd_vel` を発行します。MPPIを使う場合のみ `/cmd_vel_raw` → `cmd_vel_smoother` → `/cmd_vel` の経路になります。
 
 ### センサ
 
@@ -30,32 +35,52 @@
 
 | トピック | 型 | Publisher | Subscriber |
 |---------|------|-----------|------------|
-| `/can/tx` | `core_msgs/CANArray` | body_controller | core_hardware |
-| `/system/emergency/hazard_status` | `std_msgs/Bool` | (外部) | body_controller |
-| `/body_target_angle` | `std_msgs/Float64` | (外部) | body_controller |
+| `/can/tx` | `core_msgs/CANArray` | body_controller, shooter_controller, magazine_manager, aim_bot | core_hardware |
+| `/system/emergency/hazard_status` | `std_msgs/Bool` | emergency_handler, wireless_parser | body_controller |
+| `/body_target_angle` | `std_msgs/Float64` | target_angle_node | body_controller |
 | `/body_omega` | `std_msgs/Float64` | body_controller | (外部) |
-| `/joint_states` | `sensor_msgs/JointState` | core_hardware | body_controller |
-| `/goal_reached` | `std_msgs/Bool` | mppi, path_follower | (外部) |
+| `/joint_states` | `sensor_msgs/JointState` | core_hardware | body_controller, diagnostic |
+| `/goal_reached` | `std_msgs/Bool` | mppi, path_follower | behavior_system |
+| `/livox/imu` | `sensor_msgs/Imu` | Livox Mid-360 | target_angle_node（`imu` からリマップ） |
 
 ### 敵検出
 
+`target_detector` / `target_selector` は砲塔ごと（`left` / `right` 名前空間）に1組ずつ起動します。以下はノード内部でのトピック名です。
+
+| トピック（内部名） | 型 | Publisher | Subscriber | リマップ先 |
+|---------|------|-----------|------------|-----------|
+| `raw_image` | `sensor_msgs/Image` | usb_cam | target_detector | `/turret_camera_{side}/color/image` |
+| `damage_panels_infomation` | `core_msgs/DamagePanelInfoArray` | target_detector | target_selector | （そのまま、名前空間内） |
+| `damage_panel_pose` | `geometry_msgs/PointStamped` | target_selector | aim_bot, enemy_detection_coordinator | `/{side}/target_pose` |
+| `target_image_position` | `geometry_msgs/PointStamped` | （上記） | aim_bot | `/{side}/target_pose` |
+
+カメラのトピックは以下の通りです。
+
 | トピック | 型 | Publisher | Subscriber |
 |---------|------|-----------|------------|
-| `raw_image/compressed` | `sensor_msgs/Image` | カメラ | target_detector |
-| `damage_panels_infomation` | `core_msgs/DamagePanelInfoArray` | target_detector | target_selector |
-| `damage_panel_pose` | `geometry_msgs/PointStamped` | target_selector | aim_bot |
+| `/turret_camera_left/color/image` | `sensor_msgs/Image` | usb_cam (camera_left) | left/target_detector |
+| `/turret_camera_right/color/image` | `sensor_msgs/Image` | usb_cam (camera_right) | right/target_detector, gui_qt |
+| `/turret_camera_tps/color/image` | `sensor_msgs/Image` | usb_cam (camera_tps) | gui_qt |
 
 ### シューター
 
+`{side}` は `left` / `right` を表します。
+
 | トピック | 型 | Publisher | Subscriber |
 |---------|------|-----------|------------|
-| `/left/shoot_once` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
+| `/right/shoot_fullauto` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
+| `/{side}/shoot_fullauto` | `std_msgs/Bool` | attack_shoot_manager | shooter_cmd_gate |
 | `/shoot_motor` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
 | `/manual_mode` | `std_msgs/Bool` | wireless_parser | shooter_cmd_gate |
 | `/manual_pitch` | `std_msgs/Float32` | wireless_parser | shooter_cmd_gate |
-| `/reloading` | `std_msgs/Bool` | wireless_parser | magazine_manager |
-| `shoot_cmd` | `std_msgs/Int32` | shooter_controller | (CAN) |
-| `shoot_motor` | `std_msgs/Float32` | shooter_cmd_gate | shooter_controller |
+| `/{side}/shoot_cmd` | `std_msgs/Int32` | shooter_cmd_gate | shooter_controller |
+| `/{side}/shoot_motor` | `std_msgs/Float32` | shooter_cmd_gate | shooter_controller |
+| `/{side}/manual_mode` | `std_msgs/Bool` | shooter_cmd_gate | aim_bot |
+| `/{side}/manual_pitch_angle` | `std_msgs/Float32` | shooter_cmd_gate | aim_bot |
+| `/{side}/shoot_status` | `std_msgs/Bool` | shooter_controller | magazine_manager |
+| `/{side}/regrip_active` | `std_msgs/Bool` | magazine_manager | shooter_controller |
+| `/{side}/remaining_disk` | `std_msgs/Int8` | magazine_manager | GUI |
+| `/reloading` | `std_msgs/Bool` | wireless_parser | （要リマップ）magazine_manager |
 
 ### コントローラ入力
 
@@ -78,10 +103,39 @@
 
 | トピック | 型 | Publisher | Subscriber |
 |---------|------|-----------|------------|
-| `/system/emergency/hazard_status` | `std_msgs/Bool` | emergency_handler | body_controller, aim_bot |
+| `/system/emergency/hazard_status` | `std_msgs/Bool` | emergency_handler, **wireless_parser** | body_controller, shooter_controller, magazine_manager, aim_bot, gui_qt, status_display_gui |
 | `/system/emergency/hazard_states` | `std_msgs/Int8MultiArray` | emergency_handler | (外部) |
-| `/system/emergency/hazard_label` | `std_msgs/String` | emergency_handler | (外部) |
+| `/system/emergency/hazard_label` | `std_msgs/String` | emergency_handler | gui_qt, status_display_gui |
 | `/emergency` | `std_msgs/Bool` | ハードウェアスイッチ | emergency_handler |
+| `/software_emergency` | `std_msgs/Bool` | (外部) | emergency_handler |
+| `/destroy` | `std_msgs/Bool` | (外部) | emergency_handler, gui_qt |
+
+!!! warning "`/system/emergency/hazard_status` は2箇所から発行されます"
+    `emergency_handler`（`core_mode`）に加えて `wireless_parser`（`core_ros_player_controller`）も同トピックを直接発行します。片方が `false` を出し続けると非常停止が解除されうるため、変更時は両方を確認してください。
+
+`emergency_handler` と `diagnostic` は `mode.launch.py` で `/system/emergency` 名前空間に配置され、入力は以下にリマップされます。
+
+| ノード内部名 | リマップ先 |
+|---|---|
+| `emergency_switch` | `/emergency` |
+| `destroy` | `/destroy` |
+| `software_emergency` | `/software_emergency` |
+| `microcontroller_monitor` | `/joint_states` |
+| `receive_module_monitor` | `/wireless` |
+
+### 行動計画（core_behavior_system）
+
+| トピック | 型 | Publisher | Subscriber |
+|---------|------|-----------|------------|
+| `/selected_pose` | `geometry_msgs/PoseStamped` | waypoint_selector | behavior_system |
+| `/goal_pose` | `geometry_msgs/PoseStamped` | behavior_system | path_planner |
+| `/goal_reached` | `std_msgs/Bool` | mppi, path_follower | behavior_system |
+| `/enemy_detected` | `std_msgs/Bool` | enemy_detection_coordinator | behavior_system, attack_shoot_manager |
+| `/behavior_system/state` | `std_msgs/Int32` | behavior_system | (外部) |
+| `/behavior_system/state_name` | `std_msgs/String` | behavior_system | status_display_gui |
+| `/waypoint_selector/pause` | `std_msgs/Bool` | (外部) | waypoint_selector |
+| `waypoints` | `visualization_msgs/Marker` | waypoint_selector | RViz2 |
+| `/led/upper` | `std_msgs/UInt8` | behavior_system | (外部) |
 
 ## カスタムメッセージ（core_msgs）
 
