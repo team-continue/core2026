@@ -45,7 +45,7 @@ def generate_launch_description():
             output='screen',
             parameters=[param_file],
             remappings=[
-                ('raw_image/compressed', input_topic),
+                ('raw_image', input_topic),
             ]
         ),
 

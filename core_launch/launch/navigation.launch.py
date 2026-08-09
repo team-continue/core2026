@@ -113,23 +113,23 @@ def _launch_nodes(context):
         ))
 
     # ── 3. FAST-LIO (when use_fastlio) ──────────────────────────────
-    if use_fastlio:
-        actions.append(Node(
-            package='fast_lio',
-            executable='fastlio_mapping',
-            name='fastlio_mapping',
-            output='screen',
-            parameters=[
-                PathJoinSubstitution([
-                    FindPackageShare('fast_lio'), 'config', 'mid360.yaml',
-                ]),
-                {
-                    'common.lid_topic': '/livox/lidar',
-                    'common.imu_topic': imu_topic,
-                    'preprocess.lidar_type': lidar_type,
-                },
-            ],
-        ))
+    # if use_fastlio:
+    #     actions.append(Node(
+    #         package='fast_lio',
+    #         executable='fastlio_mapping',
+    #         name='fastlio_mapping',
+    #         output='screen',
+    #         parameters=[
+    #             PathJoinSubstitution([
+    #                 FindPackageShare('fast_lio'), 'config', 'mid360.yaml',
+    #             ]),
+    #             {
+    #                 'common.lid_topic': '/livox/lidar',
+    #                 'common.imu_topic': imu_topic,
+    #                 'preprocess.lidar_type': lidar_type,
+    #             },
+    #         ],
+    #     ))
 
     # ── 4. Static TF / Localization ──────────────────────────────────
     if use_localization:
@@ -189,84 +189,84 @@ def _launch_nodes(context):
     ))
 
     # ── 5. Map server ───────────────────────────────────────────────
-    actions.append(Node(
-        package='core_launch',
-        executable='map_server_node.py',
-        name='map_server_node',
-        output='screen',
-        parameters=[{
-            'image_path': map_image_path,
-            'resolution': preset['resolution'],
-            'origin_x': preset['origin_x'],
-            'origin_y': preset['origin_y'],
-            'inflation_radius_m': 0.40,
-            'decay_margin_m': 0.20,
-        }],
-    ))
+    # actions.append(Node(
+    #     package='core_launch',
+    #     executable='map_server_node.py',
+    #     name='map_server_node',
+    #     output='screen',
+    #     parameters=[{
+    #         'image_path': map_image_path,
+    #         'resolution': preset['resolution'],
+    #         'origin_x': preset['origin_x'],
+    #         'origin_y': preset['origin_y'],
+    #         'inflation_radius_m': 0.40,
+    #         'decay_margin_m': 0.20,
+    #     }],
+    # ))
 
     # ── 6. Odom bridge ──────────────────────────────────────────────
-    actions.append(Node(
-        package='core_launch',
-        executable='odom_bridge_node.py',
-        name='odom_bridge_node',
-        output='screen',
-        parameters=[{
-            'odom_source': effective_odom_source,
-            'init_x': preset['init_x'],
-            'init_y': preset['init_y'],
-            'init_yaw': float(init_yaw),
-        }],
-    ))
+    # actions.append(Node(
+    #     package='core_launch',
+    #     executable='odom_bridge_node.py',
+    #     name='odom_bridge_node',
+    #     output='screen',
+    #     parameters=[{
+    #         'odom_source': effective_odom_source,
+    #         'init_x': preset['init_x'],
+    #         'init_y': preset['init_y'],
+    #         'init_yaw': float(init_yaw),
+    #     }],
+    # ))
 
     # ── 7. Path planner ─────────────────────────────────────────────
-    actions.append(Node(
-        package='core_path_planner',
-        executable='path_planner_node',
-        name='core_path_planner_node',
-        output='screen',
-        parameters=[{
-            'local_costmap_topic': '/costmap/local',
-            'publish_in_global_frame': True,
-            'global_frame_id': 'odom',
-            'cost_weight': 2.0,
-        }],
-    ))
+    # actions.append(Node(
+    #     package='core_path_planner',
+    #     executable='path_planner_node',
+    #     name='core_path_planner_node',
+    #     output='screen',
+    #     parameters=[{
+    #         'local_costmap_topic': '/costmap/local',
+    #         'publish_in_global_frame': True,
+    #         'global_frame_id': 'odom',
+    #         'cost_weight': 2.0,
+    #     }],
+    # ))
 
     # ── 8. MPPI controller ──────────────────────────────────────────
-    use_smoother = context.launch_configurations.get('use_smoother', 'true')
-    mppi_cmd_vel_topic = '/cmd_vel_raw' if use_smoother.lower() == 'true' else '/cmd_vel'
+    # use_smoother = context.launch_configurations.get('use_smoother', 'true')
+    # mppi_cmd_vel_topic = '/cmd_vel_raw' if use_smoother.lower() == 'true' else '/cmd_vel'
 
-    actions.append(Node(
-        package='core_mppi',
-        executable='core_mppi_node',
-        name='core_mppi_node',
-        output='screen',
-        parameters=[mppi_params, {'cmd_vel_topic': mppi_cmd_vel_topic}],
-    ))
+    # actions.append(Node(
+    #     package='core_mppi',
+    #     executable='core_mppi_node',
+    #     name='core_mppi_node',
+    #     output='screen',
+    #     parameters=[mppi_params, {'cmd_vel_topic': mppi_cmd_vel_topic}],
+    # ))
 
     # ── 9. cmd_vel smoother ──────────────────────────────────────────
-    if use_smoother.lower() == 'true':
-        actions.append(Node(
-            package='core_cmd_vel_smoother',
-            executable='cmd_vel_smoother_node',
-            name='cmd_vel_smoother_node',
-            output='screen',
-            parameters=[{
-                'alpha': 1.0,
-                'input_topic': '/cmd_vel_raw',
-                'output_topic': '/cmd_vel',
-                'timeout_sec': 0.2,
-            }],
-        ))
+    # if use_smoother.lower() == 'true':
+    #     actions.append(Node(
+    #         package='core_cmd_vel_smoother',
+    #         executable='cmd_vel_smoother_node',
+    #         name='cmd_vel_smoother_node',
+    #         output='screen',
+    #         parameters=[{
+    #             'alpha': 1.0,
+    #             'input_topic': '/cmd_vel_raw',
+    #             'output_topic': '/cmd_vel',
+    #             'timeout_sec': 0.2,
+    #         }],
+    #     ))
 
     # ── 10. Costmap builder ─────────────────────────────────────────
-    actions.append(Node(
-        package='core_costmap_builder',
-        executable='costmap_build_node',
-        name='costmap_build_node',
-        output='screen',
-        parameters=[costmap_params],
-    ))
+    # actions.append(Node(
+    #     package='core_costmap_builder',
+    #     executable='costmap_build_node',
+    #     name='costmap_build_node',
+    #     output='screen',
+    #     parameters=[costmap_params],
+    # ))
 
     # ── 11. Body controller ─────────────────────────────────────────
     actions.append(IncludeLaunchDescription(

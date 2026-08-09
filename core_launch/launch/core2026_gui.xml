@@ -1,0 +1,4 @@
+<launch>
+    <include file="$(find-pkg-share core_launch)/launch/core2026_status_gui.xml" />
+    <include file="$(find-pkg-share core_launch)/launch/core2026_qt_gui.xml" />
+</launch>

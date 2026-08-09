@@ -16,13 +16,17 @@ public:
       "emergency_switch", 10,
       std::bind(&EmergencyHandlerNode::emergencySwitchCallback, this, std::placeholders::_1));
 
-    software_emergency_on_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "emergency_button_on", 10,
-      std::bind(&EmergencyHandlerNode::softwareEmergencyOnCallback, this, std::placeholders::_1));
+    // software_emergency_on_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+    //   "emergency_button_on", 10,
+    //   std::bind(&EmergencyHandlerNode::softwareEmergencyOnCallback, this, std::placeholders::_1));
 
-    software_emergency_off_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "emergency_button_off", 10,
-      std::bind(&EmergencyHandlerNode::softwareEmergencyOffCallback, this, std::placeholders::_1));
+    // software_emergency_off_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+    //   "emergency_button_off", 10,
+    //   std::bind(&EmergencyHandlerNode::softwareEmergencyOffCallback, this, std::placeholders::_1));
+
+    software_emergency_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+        "software_emergency", 10,
+        std::bind(&EmergencyHandlerNode::softwareEmergencyCallback, this, std::placeholders::_1));
 
     destroy_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "destroy", 10,
@@ -88,6 +92,28 @@ private:
           "Software Emergency OFF ignored — other hazards still active");
       }
     }
+    evaluateHazardStates();
+  }
+
+  void softwareEmergencyCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  {
+    if (msg->data) {
+      // ===== ON =====
+      software_emergency_state_ = true;
+      high_emergency_level_ = true;
+
+    } else {
+      // ===== OFF =====
+      if (!isEmergency()) {
+        software_emergency_state_ = false;
+        high_emergency_level_ = false;
+      } else {
+        RCLCPP_WARN(
+          this->get_logger(),
+          "Software Emergency OFF ignored — other hazards still active");
+      }
+    }
+
     evaluateHazardStates();
   }
 
@@ -200,6 +226,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_switch_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr software_emergency_on_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr software_emergency_off_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr software_emergency_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr destroy_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr microcontroller_emergency_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr receiver_emergency_sub_;

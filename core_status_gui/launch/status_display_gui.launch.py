@@ -27,7 +27,7 @@ def generate_launch_description():
     )
     fullscreen_arg = DeclareLaunchArgument(
         "fullscreen",
-        default_value="true",
+        default_value="false",
         description="Launch the GUI in fullscreen mode",
     )
     screen_index_arg = DeclareLaunchArgument(

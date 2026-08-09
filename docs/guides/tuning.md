@@ -4,7 +4,7 @@
 
 ## MPPI コントローラ
 
-設定ファイル: `core_mppi/param/default_params.yaml`（パラメータ一覧は[core_mppi](../packages/core_mppi.md#パラメータ)を参照）
+設定ファイル: `core_mppi/param/default_params.yaml`（パラメータ一覧は[core_mppi](../packages/core_mppi/index.md)を参照）
 
 ### コスト重みのチューニング
 
@@ -25,7 +25,7 @@ MPPIの挙動を最も大きく左右するのはコスト重み（`w_path`, `w_
 
 ## PathFollower（PID制御）
 
-設定ファイル: `core_path_follower/param/default_params.yaml`（パラメータ一覧は[core_path_follower](../packages/core_path_follower.md#パラメータ)を参照）
+設定ファイル: `core_path_follower/param/default_params.yaml`（パラメータ一覧は[core_path_follower](../packages/core_path_follower/index.md)を参照）
 
 カスケードPID構成です:
 
@@ -36,7 +36,7 @@ MPPIの挙動を最も大きく左右するのはコスト重み（`w_path`, `w_
 
 ## cmd_vel スムーザー
 
-`navigation.launch.py` 内のパラメータで設定（デフォルト有効）。パラメータ一覧は[core_cmd_vel_smoother](../packages/core_cmd_vel_smoother.md#パラメータ)を参照。
+`navigation.launch.py` 内のパラメータで設定（デフォルト有効）。パラメータ一覧は[core_cmd_vel_smoother](../packages/core_cmd_vel_smoother/index.md)を参照。
 
 `alpha`（EMAフィルタ係数）が最も重要なパラメータです:
 
@@ -54,7 +54,7 @@ MPPIの挙動を最も大きく左右するのはコスト重み（`w_path`, `w_
 
 ## グローバルマップ膨張（map_server_node）
 
-`navigation.launch.py` のmap_server_nodeパラメータで設定。パラメータ一覧は[core_launch — map_server_node](../packages/core_launch.md#map_server_node)を参照。
+`navigation.launch.py` のmap_server_nodeパラメータで設定。パラメータ一覧は[core_launch — map_server_node](../packages/core_launch/map_server_node.md)を参照。
 
 - `inflation_radius_m`（デフォルト `0.40`）: 障害物周囲のLETHAL膨張半径。A*はこの範囲内を通れない
 - `decay_margin_m`（デフォルト `0.20`）: LETHAL外側の減衰幅。`cost_weight` と組み合わせて障害物から離れたパスを誘導
@@ -65,13 +65,13 @@ MPPIの挙動を最も大きく左右するのはコスト重み（`w_path`, `w_
 
 ## A* コスト重み（path_planner_node）
 
-`navigation.launch.py` のpath_planner_nodeパラメータで設定。パラメータ一覧は[core_path_planner](../packages/core_path_planner.md#パラメータ)を参照。
+`navigation.launch.py` のpath_planner_nodeパラメータで設定。パラメータ一覧は[core_path_planner](../packages/core_path_planner/path_planner_node.md#parameters)を参照。
 
 `cost_weight`（デフォルト `2.0`）は decay zone のペナルティ倍率です。大きいほど障害物から離れたパスを選び、`0.0` で従来動作（コスト無視）になります。
 
 ## ローカルコストマップ
 
-設定ファイル: `core_costmap_builder/config/costmap_build_node.yaml`（パラメータ一覧は[core_costmap_builder](../packages/core_costmap_builder.md#パラメータ)を参照）
+設定ファイル: `core_costmap_builder/config/costmap_build_node.yaml`（パラメータ一覧は[core_costmap_builder](../packages/core_costmap_builder/index.md)を参照）
 
 チューニングのポイント:
 

@@ -1,13 +1,31 @@
-#include <algorithm>
+#include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <functional>
+#include <stdexcept>
+#include <string>
 
-#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float32.hpp>
+#include <std_msgs/msg/int32.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
+
+namespace
+{
+constexpr std::size_t kPacketSize = 7;
+
+bool bit(std::uint8_t value, unsigned int index)
+{
+  return ((value >> index) & 1U) != 0U;
+}
+
+// mouse values are transmitted as an 8-bit two's-complement delta.
+float signed_mouse_delta(std::uint8_t value)
+{
+  return static_cast<float>(static_cast<std::int8_t>(value)) / 127.0F;
+}
+}  // namespace
 
 class WirelessParserNode : public rclcpp::Node
 {
@@ -15,227 +33,158 @@ public:
   WirelessParserNode()
   : Node("wireless_parser_node")
   {
-    //=================================
-    // Subscribers
-    //=================================
     subscription_ = create_subscription<std_msgs::msg::UInt8MultiArray>(
       "/wireless", 10,
       std::bind(&WirelessParserNode::wireless_callback, this, std::placeholders::_1));
-    
-    //=================================
-    // Publishers
-    //=================================
+
     ads_publisher_ = create_publisher<std_msgs::msg::Bool>("/ads", 10);
-    // For Body Controller
-    rotation_publisher_ = create_publisher<std_msgs::msg::Bool>("/rotation", 10);
+    left_turret_auto_publisher_ = create_publisher<std_msgs::msg::Bool>(
+      "/left/turret_auto", 10);
+    right_turret_auto_publisher_ = create_publisher<std_msgs::msg::Bool>(
+      "/right/turret_auto", 10);
+    rotation_publisher_ = create_publisher<std_msgs::msg::Int32>("/rotation", 10);
     cmd_vel_publisher_ = create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
-    // For Shooter
     manual_mode_publisher_ = create_publisher<std_msgs::msg::Bool>("/manual_mode", 10);
     manual_pitch_publisher_ = create_publisher<std_msgs::msg::Float32>("/manual_pitch", 10);
     shoot_motor_publisher_ = create_publisher<std_msgs::msg::Bool>("/shoot_motor", 10);
-    shoot_once_publisher_ = create_publisher<std_msgs::msg::Bool>("/left/shoot_once", 10);
+    left_fullauto_publisher_ = create_publisher<std_msgs::msg::Bool>(
+      "/left/shoot_fullauto", 10);
+    right_fullauto_publisher_ = create_publisher<std_msgs::msg::Bool>(
+      "/right/shoot_fullauto", 10);
     reloading_publisher_ = create_publisher<std_msgs::msg::Bool>("/reloading", 10);
-    hazard_status_publisher_ = create_publisher<std_msgs::msg::Bool>("/system/emergency/hazard_status", 10);
+    hazard_status_publisher_ = create_publisher<std_msgs::msg::Bool>(
+      "/system/emergency/hazard_status", 10);
     test_mode_publisher_ = create_publisher<std_msgs::msg::Bool>("/test_mode", 10);
-    auto_point_select_publisher_ = create_publisher<std_msgs::msg::Bool>("/auto_point_select", 10);
-    selected_pose_publisher_ = create_publisher<geometry_msgs::msg::PoseStamped>("/selected_pose", 10);
-   
-    //=================================
-    // Parameters
-    //=================================
+
     mouse_x_sensitivity_ = declare_parameter<double>("mouse_x_sensitivity", 1.0);
     mouse_y_sensitivity_ = declare_parameter<double>("mouse_y_sensitivity", 1.0);
     mouse_x_inverse_ = declare_parameter<bool>("mouse_x_inverse", false);
     mouse_y_inverse_ = declare_parameter<bool>("mouse_y_inverse", false);
     cmd_vel_xy_scale_ = declare_parameter<double>("cmd_vel_xy_scale", 1.0);
-    
-    
-    
-    RCLCPP_INFO(
-      get_logger(),
-      "Subscribed: /wireless (std_msgs/msg/UInt8MultiArray), Publish: /rotation, /ads, /manual_mode, /manual_pitch, /cmd_vel, /shoot_motor, /left/shoot_once, /reloading, /system/emergency/hazard_status, /test_mode");
+    manual_mode_target_side_ = declare_parameter<std::string>(
+      "manual_mode_target_side", "right");
+    if (manual_mode_target_side_ != "left" && manual_mode_target_side_ != "right") {
+      throw std::invalid_argument(
+        "manual_mode_target_side must be either 'left' or 'right'");
+    }
+
+    RCLCPP_INFO(get_logger(), "Subscribed to 7-byte /wireless controller packets");
   }
 
 private:
   void wireless_callback(const std_msgs::msg::UInt8MultiArray::SharedPtr msg)
   {
-    // Check Size
-    const auto & values = msg->data;
-    if (values.size() < 7) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "values.size() < 7");
-        return;
+    if (msg->data.size() < kPacketSize) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000, "Ignoring wireless packet shorter than 7 bytes");
+      return;
     }
 
-    RCLCPP_INFO(this->get_logger(), "%d, %d, %d, %d, %d, %d, %d", values[0], values[1], values[2], values[3], values[4], values[5], values[6]);
+    const auto & data = msg->data;
+    const std::uint8_t flags = data[0];
+    const std::uint8_t mouse_x_raw = data[1];
+    const std::uint8_t mouse_y_raw = data[2];
+    const std::uint8_t movement = data[3];
 
-    std_msgs::msg::Bool rotation_msg;
-    std_msgs::msg::Bool ads_msg;
+    // byte 0: EStop, Roller, Reload, Shoot, ADS, LeftTurretAuto, RightTurretAuto, reserved
+    const bool estop = bit(flags, 0);
+    const bool roller = bit(flags, 1);
+    const bool reload = bit(flags, 2);
+    const bool shoot = bit(flags, 3);
+    const bool ads = bit(flags, 4);
+    const bool left_turret_auto = bit(flags, 5);
+    const bool right_turret_auto = bit(flags, 6);
+
+    // byte 3: W, A, S, D, InfiniteRotate (00=off, 01=R1, 10=R2)
+    const bool key_w = bit(movement, 0);
+    const bool key_a = bit(movement, 1);
+    const bool key_s = bit(movement, 2);
+    const bool key_d = bit(movement, 3);
+    const std::int32_t infinite_rotate = static_cast<std::int32_t>((movement >> 4) & 0x03U);
+
+    const double mouse_x = static_cast<double>(signed_mouse_delta(mouse_x_raw)) *
+      mouse_x_sensitivity_ * (mouse_x_inverse_ ? -1.0 : 1.0);
+    const double mouse_y = static_cast<double>(signed_mouse_delta(mouse_y_raw)) *
+      mouse_y_sensitivity_ * (mouse_y_inverse_ ? -1.0 : 1.0);
+
+    geometry_msgs::msg::Twist cmd_vel;
+    cmd_vel.linear.x = (static_cast<double>(key_w) - static_cast<double>(key_s)) *
+      cmd_vel_xy_scale_;
+    cmd_vel.linear.y = (static_cast<double>(key_a) - static_cast<double>(key_d)) *
+      cmd_vel_xy_scale_;
+    cmd_vel.angular.z = mouse_x;
+    cmd_vel_publisher_->publish(cmd_vel);
+
+    std_msgs::msg::Bool bool_msg;
+    bool_msg.data = ads;
+    ads_publisher_->publish(bool_msg);
+
+    bool_msg.data = left_turret_auto;
+    left_turret_auto_publisher_->publish(bool_msg);
+    bool_msg.data = right_turret_auto;
+    right_turret_auto_publisher_->publish(bool_msg);
+
+    std_msgs::msg::Int32 rotation_msg;
+    rotation_msg.data = infinite_rotate;
+    rotation_publisher_->publish(rotation_msg);
+
+    // LeftTurretAuto and RightTurretAuto are independent.  The legacy single
+    // /manual_mode topic uses the configured shooter target side.
     std_msgs::msg::Bool manual_mode_msg;
-    std_msgs::msg::Float32 manual_pitch_msg;
-    geometry_msgs::msg::Twist cmd_vel_msg;
-    std_msgs::msg::Bool shoot_motor_msg;
-    std_msgs::msg::Bool shoot_once_msg;
-    std_msgs::msg::Bool reloading_msg;
-    std_msgs::msg::Bool hazard_status_msg;
-    std_msgs::msg::Bool test_mode_msg;
-
-    const uint8_t raw_flags    = values[0];
-    const uint8_t raw_mouse_x  = values[1];
-    const uint8_t raw_mouse_y  = values[2];
-    const uint8_t raw_ui_flags = values[3];
-    [[maybe_unused]]
-    const uint8_t raw_flags_2 = values[4];
-    const uint8_t raw_unused_3 = values[5];
-    const uint8_t raw_unused_4 = values[6];
-
-    //=================================
-    // キー入力系グラグ
-    //=================================
-    const uint8_t key_space_emergency = (raw_flags >> 0) & 1;
-    const uint8_t key_w               = (raw_flags >> 1) & 1;
-    const uint8_t key_s               = (raw_flags >> 2) & 1;
-    const uint8_t key_a               = (raw_flags >> 3) & 1;
-    const uint8_t key_d               = (raw_flags >> 4) & 1;
-    const uint8_t key_reload          = (raw_flags >> 5) & 1;
-    const uint8_t key_click           = (raw_flags >> 6) & 1;
-    const uint8_t key_roller          = (raw_flags >> 7) & 1;
-
-     [[maybe_unused]]
-    const uint8_t key_ADS             = (raw_flags_2 >> 0) & 1;
-     [[maybe_unused]]
-    const uint8_t key_rotation        = (raw_flags_2 >> 1) & 1;
-
-    //=================================
-    // UI系グラグ
-    //=================================
-    const uint8_t ui_coord_auto_select = (raw_ui_flags >> 2) & 1;
-    const uint8_t ui_auto_flag     = (raw_ui_flags >> 1) & 1;
-    [[maybe_unused]]
-    const uint8_t ui_lock_flag     = (raw_ui_flags >> 0) & 1;
-    const bool is_auto_mode = ui_auto_flag > 0;
-
-    // 自動、手動が切り替わったときにログを出力
-    if (ui_auto_flag_initialized_ && prev_ui_auto_flag_ != is_auto_mode) {
-      RCLCPP_INFO(
-        this->get_logger(),
-        "ui_auto_flag changed: %s -> %s",
-        prev_ui_auto_flag_ ? "true" : "false",
-        is_auto_mode ? "true" : "false");
-    }
-    prev_ui_auto_flag_ = is_auto_mode;
-    ui_auto_flag_initialized_ = true;
-
-    // マウス入力の正規化、感度適用
-    const float mouse_x = (static_cast<float>(static_cast<int8_t>(raw_mouse_x)) / 127.0f) *
-      static_cast<float>(mouse_x_sensitivity_) * (mouse_x_inverse_ ? -1.0f : 1.0f);
-    const float mouse_y = (static_cast<float>(static_cast<int8_t>(raw_mouse_y)) / 127.0f) *
-      static_cast<float>(mouse_y_sensitivity_) * (mouse_y_inverse_ ? -1.0f : 1.0f);
-
-    // キー入力とマウス入力からcmd_vel生成
-    const double linear_x_from_wa = static_cast<double>(key_w) - static_cast<double>(key_s);
-    const double linear_y_from_ad = static_cast<double>(key_a) - static_cast<double>(key_d);
-    const double angular_from_mouse = static_cast<double>(mouse_x);
-
-    cmd_vel_msg.linear.x = linear_x_from_wa * cmd_vel_xy_scale_;
-    cmd_vel_msg.linear.y = linear_y_from_ad * cmd_vel_xy_scale_;
-    cmd_vel_msg.angular.z = angular_from_mouse;
-    
-    // body_controllerの回転フラグを設定、プレイヤーの操作によって回転を決定
-    rotation_msg.data = key_rotation > 0;
-    ads_msg.data = key_ADS > 0;
-    
-    // shooterの照準操作モードを設定、UIの自動フラグがOFFのときマニュアルモード
-    manual_mode_msg.data = ui_auto_flag == 0;
-    // shooterのピッチ入力をマウス入力で生成
-    manual_pitch_msg.data = mouse_y;
-    // shooterのローラーの動作グラグ (values[0] b7)
-    shoot_motor_msg.data = key_roller > 0;
-    // shooterの単発発射トリガー
-    shoot_once_msg.data = key_click > 0;
-    // shooterのリロードトリガー（立ち上がりエッジのみtrueをpublish）
-    reloading_msg.data = true;
-    // emergencyのハザード状態
-    hazard_status_msg.data = key_space_emergency > 0;
-    // shooterのtest_modeは常にfalse
-    test_mode_msg.data = false;
-
-    // For Shooter (常にpublish)
+    const unsigned int target_auto_bit = manual_mode_target_side_ == "left" ? 5U : 6U;
+    manual_mode_msg.data = !bit(flags, target_auto_bit);
     manual_mode_publisher_->publish(manual_mode_msg);
-    test_mode_publisher_->publish(test_mode_msg);
-    hazard_status_publisher_->publish(hazard_status_msg);
-    std_msgs::msg::Bool auto_point_select_msg;
-    auto_point_select_msg.data = ui_coord_auto_select > 0;
 
-    
-    // 自動フラグON時は、manual_mode/test_mode以外はpublishしない
-    if (ui_auto_flag == 0 && key_reload > 0 && !prev_key_reload_) {
-      reloading_publisher_->publish(reloading_msg);
-    }
-    prev_key_reload_ = key_reload > 0;
-    
-    if (ui_auto_flag == 0) {
-      // For body_controller
-      cmd_vel_publisher_->publish(cmd_vel_msg);
-      rotation_publisher_->publish(rotation_msg);
-      ads_publisher_->publish(ads_msg);
+    std_msgs::msg::Float32 pitch_msg;
+    pitch_msg.data = static_cast<float>(mouse_y);
+    manual_pitch_publisher_->publish(pitch_msg);
 
-      // For Shooter
-      manual_pitch_publisher_->publish(manual_pitch_msg);
-      shoot_motor_publisher_->publish(shoot_motor_msg);
-      shoot_once_publisher_->publish(shoot_once_msg);
+    bool_msg.data = roller;
+    shoot_motor_publisher_->publish(bool_msg);
+
+    bool_msg.data = shoot;
+    if (manual_mode_target_side_ == "left") {
+      left_fullauto_publisher_->publish(bool_msg);
     } else {
-      auto_point_select_publisher_->publish(auto_point_select_msg);
-      // Auto mode: publish selected_pose only when coordinates change
-      const int16_t auto_x_mm = static_cast<int16_t>(
-        static_cast<uint16_t>(raw_mouse_x) | (static_cast<uint16_t>(raw_mouse_y) << 8));
-      const int16_t auto_y_mm = static_cast<int16_t>(
-        static_cast<uint16_t>(raw_unused_3) | (static_cast<uint16_t>(raw_unused_4) << 8));
-
-      const bool pose_changed = !auto_pose_initialized_ ||
-        auto_x_mm != prev_auto_x_mm_ || auto_y_mm != prev_auto_y_mm_;
-      if (pose_changed) {
-        geometry_msgs::msg::PoseStamped pose_msg;
-        pose_msg.header.stamp = this->now();
-        pose_msg.header.frame_id = "map";
-        pose_msg.pose.position.x = static_cast<double>(auto_x_mm) / 1000.0;
-        pose_msg.pose.position.y = static_cast<double>(auto_y_mm) / 1000.0;
-        pose_msg.pose.position.z = 0.0;
-        pose_msg.pose.orientation.w = 1.0;
-        pose_msg.pose.orientation.x = 0.0;
-        pose_msg.pose.orientation.y = 0.0;
-        pose_msg.pose.orientation.z = 0.0;
-        selected_pose_publisher_->publish(pose_msg);
-      }
-      prev_auto_x_mm_ = auto_x_mm;
-      prev_auto_y_mm_ = auto_y_mm;
-      auto_pose_initialized_ = true;
+      right_fullauto_publisher_->publish(bool_msg);
     }
+
+    bool_msg.data = estop;
+    hazard_status_publisher_->publish(bool_msg);
+
+    std_msgs::msg::Bool test_mode_msg;
+    test_mode_msg.data = false;
+    test_mode_publisher_->publish(test_mode_msg);
+
+    if (reload && !previous_reload_) {
+      std_msgs::msg::Bool reload_msg;
+      reload_msg.data = true;
+      reloading_publisher_->publish(reload_msg);
+    }
+    previous_reload_ = reload;
   }
 
   rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr subscription_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rotation_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr ads_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr left_turret_auto_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr right_turret_auto_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr rotation_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr manual_mode_publisher_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr manual_pitch_publisher_;
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr shoot_motor_publisher_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr shoot_once_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr left_fullauto_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr right_fullauto_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr reloading_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr hazard_status_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr test_mode_publisher_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr auto_point_select_publisher_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr selected_pose_publisher_;
-  double mouse_x_sensitivity_;
-  double mouse_y_sensitivity_;
+  double mouse_x_sensitivity_{1.0};
+  double mouse_y_sensitivity_{1.0};
   bool mouse_x_inverse_{false};
   bool mouse_y_inverse_{false};
   double cmd_vel_xy_scale_{1.0};
-  bool prev_key_reload_{false};
-  bool prev_ui_auto_flag_{false};
-  bool ui_auto_flag_initialized_{false};
-  int16_t prev_auto_x_mm_{0};
-  int16_t prev_auto_y_mm_{0};
-  bool auto_pose_initialized_{false};
+  std::string manual_mode_target_side_{"right"};
+  bool previous_reload_{false};
 };
 
 int main(int argc, char * argv[])

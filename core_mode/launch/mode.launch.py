@@ -23,8 +23,7 @@ def generate_launch_description():
         remappings=[
             ("emergency_switch", "/emergency"),
             ("destroy", "/destroy"),
-            ("emergency_button_on", "/left/shoot_cmd"),
-            ("emergency_button_off", "/right/shoot_cmd"),
+            ("software_emergency", "/software_emergency")
         ]
     )
 
@@ -35,7 +34,7 @@ def generate_launch_description():
         output="screen",
         parameters=[mode_params],
         remappings=[
-            ("microcontroller_monitor", "/joint_state"),
+            ("microcontroller_monitor", "/joint_states"),
             ("receive_module_monitor", "/wireless"),
         ]
     )
