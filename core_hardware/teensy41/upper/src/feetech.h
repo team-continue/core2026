@@ -8,7 +8,9 @@
 #define STS_CONTROL_DT 0.02f
 #define STS_LIMIT_VEL_STS3215 ((67.0f / 60.0f) * 2.0f * M_PI)
 #define STS_LIMIT_VEL_STS3020 ((100.0f / 60.0f) * 2.0f * M_PI)
-#define STS_PID_P 2.0
+#define STS_PID_P_1 2.0
+#define STS_PID_P_2 4.0
+#define STS_GAIN_TH 0.5f
 
 #define STS_CONTROL_INTERVAL_US 10000UL
 #define STS_CONNECT_TIMEOUT_MS 1000UL
@@ -29,7 +31,8 @@ struct STS_SERVO {
   float limit_vel = STS_LIMIT_VEL_STS3020;
 
   uint8_t torque = 0;
-  PID pos_pid{STS_PID_P, 0.0f, STS_CONTROL_DT};
+  PID pos_pid1{STS_PID_P_1, 0.0f, STS_CONTROL_DT};
+  PID pos_pid2{STS_PID_P_2, 0.0f, STS_CONTROL_DT};
   bool vel_cmd = false;
   bool reverse = false;
   uint8_t id = 0;
@@ -51,7 +54,7 @@ class STS {
       M_PI,
       M_PI+1.1,
       M_PI-0.2,
-      M_PI,
+      M_PI+1.1182,
       M_PI,
       M_PI-0.3,
       M_PI-0.4,
@@ -64,6 +67,7 @@ class STS {
     servos[4].reverse = true;
     servos[1].vel_cmd = true;
     servos[5].vel_cmd = true;
+    servos[5].reverse = true;
   }
 
   void init() {
@@ -298,10 +302,15 @@ class STS {
       if (servos[i].vel_cmd) {
         if (disable) {
           servos[i].ref_vel = 0.0f;
-          servos[i].pos_pid.reset();
+          servos[i].pos_pid1.reset();
+          servos[i].pos_pid2.reset();
         } else {
           const float pos_error = servos[i].ref_pos - servos[i].pos;
-          servos[i].ref_vel = servos[i].pos_pid.update(pos_error, servos[i].limit_vel);
+          if(fabs(pos_error) < STS_GAIN_TH){
+            servos[i].ref_vel = servos[i].pos_pid1.update(pos_error, servos[i].limit_vel);
+          }else{
+            servos[i].ref_vel = servos[i].pos_pid2.update(pos_error, servos[i].limit_vel);
+          }
         }
         vel_ids[vel_len] = servos[i].id;
         vel_data[vel_len++] = externalToInternal(servos[i], servos[i].ref_vel);

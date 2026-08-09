@@ -5,11 +5,36 @@
 
 class Led {
  public:
-  Led(uint8_t serial_pin, uint16_t led_num, unsigned long update_ms)
-      : serial_pin_(serial_pin), led_num_(led_num), update_ms_(update_ms) {}
+  Led(uint8_t serial_pin, uint16_t led_num, unsigned long update_ms,
+      float chase_speed_leds_per_sec, float multi_chase_speed_leds_per_sec,
+      float blink_period_sec, float double_flash_period_sec,
+      uint8_t center_out_multi_base_brightness, uint8_t brightness)
+      : serial_pin_(serial_pin),
+        led_num_(led_num),
+        update_ms_(update_ms),
+        chase_speed_leds_per_sec_(chase_speed_leds_per_sec),
+        multi_chase_speed_leds_per_sec_(multi_chase_speed_leds_per_sec),
+        blink_period_sec_(blink_period_sec),
+        double_flash_period_sec_(double_flash_period_sec),
+        center_out_multi_base_brightness_(center_out_multi_base_brightness),
+        brightness_(brightness) {}
+
+  enum Mode : uint8_t {
+    kOff = 0,
+    kGaming = 1,
+    kChase = 2,
+    kMultiChase = 3,
+    kRainbowChase = 4,
+    kRainbowMultiChase = 5,
+    kCenterOutChase = 6,
+    kCenterOutRainbowMultiChase = 7,
+    kBlink = 8,
+    kDoubleFlash = 9,
+    kFade = 10,
+  };
 
   void init() {
-    if (pixels_ != nullptr) {
+    if (pixels_ != nullptr || led_num_ == 0) {
       return;
     }
     drawing_memory_ = new uint8_t[led_num_ * 3];
@@ -21,7 +46,35 @@ class Led {
   }
 
   void write(uint8_t value) {
+    if (mode_ == value) {
+      return;
+    }
     mode_ = value;
+    resetAnimationState();
+  }
+
+  void setChaseSpeed(float leds_per_sec) {
+    chase_speed_leds_per_sec_ = leds_per_sec < 0.0f ? 0.0f : leds_per_sec;
+  }
+
+  void setBrightness(uint8_t brightness) {
+    brightness_ = brightness;
+  }
+
+  void setMultiChaseSpeed(float leds_per_sec) {
+    multi_chase_speed_leds_per_sec_ = leds_per_sec < 0.0f ? 0.0f : leds_per_sec;
+  }
+
+  void setBlinkPeriod(float period_sec) {
+    blink_period_sec_ = period_sec <= 0.0f ? 0.5f : period_sec;
+  }
+
+  void setDoubleFlashPeriod(float period_sec) {
+    double_flash_period_sec_ = period_sec <= 0.0f ? 0.9f : period_sec;
+  }
+
+  void setCenterOutMultiBaseBrightness(uint8_t brightness) {
+    center_out_multi_base_brightness_ = brightness;
   }
 
   void update() {
@@ -29,35 +82,386 @@ class Led {
     if ((now_ms - last_update_ms_) < update_ms_) {
       return;
     }
+    float dt_sec = 0.0f;
+    if (last_update_ms_ != 0) {
+      dt_sec = static_cast<float>(now_ms - last_update_ms_) / 1000.0f;
+    }
     last_update_ms_ = now_ms;
     if (pixels_ == nullptr) {
       return;
     }
 
-    if (mode_ == 0) {
-      pixels_->clear();
-      pixels_->show();
-      return;
-    }
-
     switch (mode_) {
-      case 1:
-        pixels_->setBrightness(32);
-        for (uint16_t i = 0; i < led_num_; ++i) {
-          const uint8_t wheel_pos = static_cast<uint8_t>((i * 256U / led_num_ + rainbow_offset_) & 0xFFU);
-          pixels_->setPixel(i, wheel(wheel_pos));
-        }
-        pixels_->show();
-        rainbow_offset_ = static_cast<uint8_t>(rainbow_offset_ + 1U);
+      case kOff:
+        renderOff();
+        return;
+      case kGaming:
+        renderGaming();
+        return;
+      case kChase:
+        renderInwardChase(dt_sec);
+        return;
+      case kMultiChase:
+        renderMultiChase(dt_sec);
+        return;
+      case kRainbowChase:
+        renderChase(dt_sec, true);
+        return;
+      case kRainbowMultiChase:
+        renderMultiChase(dt_sec, true);
+        return;
+      case kCenterOutChase:
+        renderCenterOutChase(dt_sec);
+        return;
+      case kCenterOutRainbowMultiChase:
+        renderCenterOutMultiChase(dt_sec);
+        return;
+      case kBlink:
+        renderBlink(dt_sec);
+        return;
+      case kDoubleFlash:
+        renderDoubleFlash(dt_sec);
+        return;
+      case kFade:
+        renderFade(dt_sec);
         return;
       default:
-        pixels_->clear();
-        pixels_->show();
+        renderOff();
         return;
     }
   }
 
  private:
+  void resetAnimationState() {
+    rainbow_offset_ = 0;
+    chase_head_position_ = -static_cast<float>(kChaseBandLength);
+    chase_waiting_ = false;
+    chase_wait_started_ms_ = 0;
+    blink_phase_ = 0.0f;
+    double_flash_phase_ = 0.0f;
+    fade_phase_ = 0.0f;
+  }
+
+  void renderOff() {
+    pixels_->setBrightness(brightness_);
+    pixels_->clear();
+    pixels_->show();
+  }
+
+  void renderGaming() {
+    pixels_->setBrightness(brightness_);
+    for (uint16_t i = 0; i < led_num_; ++i) {
+      const uint16_t scaled_index = led_num_ > 0 ? (i * 256U / led_num_) : 0U;
+      const uint8_t wheel_pos =
+          static_cast<uint8_t>((scaled_index + rainbow_offset_) & 0xFFU);
+      pixels_->setPixel(i, wheel(wheel_pos));
+    }
+    pixels_->show();
+    rainbow_offset_ = static_cast<uint8_t>(rainbow_offset_ + 1U);
+  }
+
+  void renderChase(float dt_sec, bool rainbow = false) {
+    pixels_->setBrightness(brightness_);
+    if (led_num_ == 0) {
+      pixels_->clear();
+      pixels_->show();
+      return;
+    }
+
+    const unsigned long now_ms = millis();
+    if (chase_waiting_) {
+      if ((now_ms - chase_wait_started_ms_) >= kChaseLoopWaitMs) {
+        chase_waiting_ = false;
+        chase_head_position_ = -static_cast<float>(kChaseBandLength);
+      }
+    } else if (dt_sec > 0.0f && chase_speed_leds_per_sec_ > 0.0f) {
+      chase_head_position_ += chase_speed_leds_per_sec_ * dt_sec;
+      if (chase_head_position_ > static_cast<float>(led_num_ - 1 + kChaseBandLength)) {
+        chase_waiting_ = true;
+        chase_wait_started_ms_ = now_ms;
+      }
+    }
+
+    for (uint16_t i = 0; i < led_num_; ++i) {
+      uint8_t intensity = kChaseBaseBrightness;
+      uint32_t pixel_color =
+          rainbow ? scaleColor(rainbowColorAt(i), intensity)
+                  : color(intensity, intensity, intensity);
+      const float distance_from_head = chase_head_position_ - static_cast<float>(i);
+      if (distance_from_head >= 0.0f &&
+          distance_from_head < static_cast<float>(kChaseBandLength)) {
+        const float blend =
+            1.0f - (distance_from_head / static_cast<float>(kChaseBandLength));
+        intensity = static_cast<uint8_t>(
+            kChaseBaseBrightness +
+            (kChasePeakBrightness - kChaseBaseBrightness) * blend);
+        pixel_color =
+            rainbow ? scaleColor(rainbowColorAt(i), intensity)
+                    : color(intensity, intensity, intensity);
+      }
+      pixels_->setPixel(i, pixel_color);
+    }
+
+    pixels_->show();
+    if (rainbow) {
+      rainbow_offset_ = static_cast<uint8_t>(rainbow_offset_ + 1U);
+    }
+  }
+
+  void renderInwardChase(float dt_sec) {
+    pixels_->setBrightness(brightness_);
+    if (led_num_ == 0) {
+      pixels_->clear();
+      pixels_->show();
+      return;
+    }
+
+    const unsigned long now_ms = millis();
+    const float center = static_cast<float>(led_num_ - 1) * 0.5f;
+    const float chase_span = center + static_cast<float>(kChaseBandLength);
+
+    if (chase_waiting_) {
+      if ((now_ms - chase_wait_started_ms_) >= kChaseLoopWaitMs) {
+        chase_waiting_ = false;
+        chase_head_position_ = 0.0f;
+      }
+    } else if (dt_sec > 0.0f && chase_speed_leds_per_sec_ > 0.0f) {
+      chase_head_position_ += chase_speed_leds_per_sec_ * dt_sec;
+      if (chase_head_position_ > chase_span) {
+        chase_waiting_ = true;
+        chase_wait_started_ms_ = now_ms;
+      }
+    }
+
+    for (uint16_t i = 0; i < led_num_; ++i) {
+      uint8_t intensity = kChaseBaseBrightness;
+      const float distance_to_nearest_edge =
+          min(static_cast<float>(i), static_cast<float>(led_num_ - 1 - i));
+      const float distance_from_head = chase_head_position_ - distance_to_nearest_edge;
+      if (distance_from_head >= 0.0f &&
+          distance_from_head < static_cast<float>(kChaseBandLength)) {
+        const float blend =
+            1.0f - (distance_from_head / static_cast<float>(kChaseBandLength));
+        intensity = static_cast<uint8_t>(
+            kChaseBaseBrightness +
+            (kChasePeakBrightness - kChaseBaseBrightness) * blend);
+      }
+      pixels_->setPixel(i, color(intensity, intensity, intensity));
+    }
+
+    pixels_->show();
+  }
+
+  void renderCenterOutChase(float dt_sec) {
+    pixels_->setBrightness(brightness_);
+    if (led_num_ == 0) {
+      pixels_->clear();
+      pixels_->show();
+      return;
+    }
+
+    const unsigned long now_ms = millis();
+    const float center = static_cast<float>(led_num_ - 1) * 0.5f;
+    const float chase_span = center + static_cast<float>(kChaseBandLength);
+
+    if (chase_waiting_) {
+      if ((now_ms - chase_wait_started_ms_) >= kChaseLoopWaitMs) {
+        chase_waiting_ = false;
+        chase_head_position_ = 0.0f;
+      }
+    } else if (dt_sec > 0.0f && chase_speed_leds_per_sec_ > 0.0f) {
+      chase_head_position_ += chase_speed_leds_per_sec_ * dt_sec;
+      if (chase_head_position_ > chase_span) {
+        chase_waiting_ = true;
+        chase_wait_started_ms_ = now_ms;
+      }
+    }
+
+    for (uint16_t i = 0; i < led_num_; ++i) {
+      uint8_t intensity = kChaseBaseBrightness;
+      const float distance_from_center = fabsf(static_cast<float>(i) - center);
+      const float distance_from_head = chase_head_position_ - distance_from_center;
+      if (distance_from_head >= 0.0f &&
+          distance_from_head < static_cast<float>(kChaseBandLength)) {
+        const float blend =
+            1.0f - (distance_from_head / static_cast<float>(kChaseBandLength));
+        intensity = static_cast<uint8_t>(
+            kChaseBaseBrightness +
+            (kChasePeakBrightness - kChaseBaseBrightness) * blend);
+      }
+      pixels_->setPixel(i, color(intensity, intensity, intensity));
+    }
+
+    pixels_->show();
+  }
+
+  void renderCenterOutMultiChase(float dt_sec, bool rainbow = false) {
+    pixels_->setBrightness(brightness_);
+    if (led_num_ == 0) {
+      pixels_->clear();
+      pixels_->show();
+      return;
+    }
+
+    const float center = static_cast<float>(led_num_ - 1) * 0.5f;
+    const float radial_span = center + 1.0f;
+    const float spacing = radial_span / kMultiChaseBandCount;
+    if (dt_sec > 0.0f && multi_chase_speed_leds_per_sec_ > 0.0f) {
+      chase_head_position_ += multi_chase_speed_leds_per_sec_ * dt_sec;
+      while (chase_head_position_ >= spacing) {
+        chase_head_position_ -= spacing;
+      }
+    }
+
+    for (uint16_t i = 0; i < led_num_; ++i) {
+      uint8_t intensity = kChaseBaseBrightness;
+      uint32_t pixel_color =
+          rainbow ? scaleColor(rainbowColorAt(i), intensity)
+                  : color(intensity, intensity, intensity);
+      const float distance_from_center = fabsf(static_cast<float>(i) - center);
+      for (uint8_t band = 0; band < kMultiChaseBandCount; ++band) {
+        const float head_distance = chase_head_position_ + spacing * band;
+        float distance_from_head = head_distance - distance_from_center;
+        while (distance_from_head < 0.0f) {
+          distance_from_head += radial_span;
+        }
+        while (distance_from_head >= radial_span) {
+          distance_from_head -= radial_span;
+        }
+        if (distance_from_head < static_cast<float>(kChaseBandLength)) {
+          const float blend =
+              1.0f - (distance_from_head / static_cast<float>(kChaseBandLength));
+          const uint8_t band_intensity = static_cast<uint8_t>(
+              center_out_multi_base_brightness_ +
+              (kChasePeakBrightness - center_out_multi_base_brightness_) * blend);
+          if (band_intensity > intensity) {
+            intensity = band_intensity;
+            pixel_color =
+                rainbow ? scaleColor(rainbowColorAt(i), intensity)
+                        : color(intensity, intensity, intensity);
+          }
+        }
+      }
+      pixels_->setPixel(i, pixel_color);
+    }
+
+    pixels_->show();
+    if (rainbow) {
+      rainbow_offset_ = static_cast<uint8_t>(rainbow_offset_ + 1U);
+    }
+  }
+
+  void renderMultiChase(float dt_sec, bool rainbow = false) {
+    pixels_->setBrightness(brightness_);
+    if (led_num_ == 0) {
+      pixels_->clear();
+      pixels_->show();
+      return;
+    }
+
+    if (dt_sec > 0.0f && multi_chase_speed_leds_per_sec_ > 0.0f) {
+      chase_head_position_ += multi_chase_speed_leds_per_sec_ * dt_sec;
+      const float loop_length = static_cast<float>(led_num_) / kMultiChaseBandCount;
+      while (chase_head_position_ >= loop_length) {
+        chase_head_position_ -= loop_length;
+      }
+    }
+
+    const float spacing = static_cast<float>(led_num_) / kMultiChaseBandCount;
+    for (uint16_t i = 0; i < led_num_; ++i) {
+      uint8_t intensity = kChaseBaseBrightness;
+      uint32_t pixel_color =
+          rainbow ? scaleColor(rainbowColorAt(i), intensity)
+                  : color(intensity, intensity, intensity);
+      for (uint8_t band = 0; band < kMultiChaseBandCount; ++band) {
+        const float head_position = chase_head_position_ + spacing * band;
+        float distance_from_head = head_position - static_cast<float>(i);
+        while (distance_from_head < 0.0f) {
+          distance_from_head += static_cast<float>(led_num_);
+        }
+        while (distance_from_head >= static_cast<float>(led_num_)) {
+          distance_from_head -= static_cast<float>(led_num_);
+        }
+        if (distance_from_head < static_cast<float>(kChaseBandLength)) {
+          const float blend =
+              1.0f - (distance_from_head / static_cast<float>(kChaseBandLength));
+          const uint8_t band_intensity = static_cast<uint8_t>(
+              kChaseBaseBrightness +
+              (kChasePeakBrightness - kChaseBaseBrightness) * blend);
+          if (band_intensity > intensity) {
+            intensity = band_intensity;
+            pixel_color =
+                rainbow ? scaleColor(rainbowColorAt(i), intensity)
+                        : color(intensity, intensity, intensity);
+          }
+        }
+      }
+      pixels_->setPixel(i, pixel_color);
+    }
+
+    pixels_->show();
+    if (rainbow) {
+      rainbow_offset_ = static_cast<uint8_t>(rainbow_offset_ + 1U);
+    }
+  }
+
+  void renderBlink(float dt_sec) {
+    pixels_->setBrightness(brightness_);
+    if (dt_sec > 0.0f && blink_period_sec_ > 0.0f) {
+      blink_phase_ += dt_sec / blink_period_sec_;
+      while (blink_phase_ >= 1.0f) {
+        blink_phase_ -= 1.0f;
+      }
+    }
+
+    const bool is_on = blink_phase_ < 0.5f;
+    const uint8_t intensity = is_on ? kChasePeakBrightness : 0U;
+    const uint32_t blink_color = color(intensity, intensity, intensity);
+    for (uint16_t i = 0; i < led_num_; ++i) {
+      pixels_->setPixel(i, blink_color);
+    }
+    pixels_->show();
+  }
+
+  void renderDoubleFlash(float dt_sec) {
+    pixels_->setBrightness(brightness_);
+    if (dt_sec > 0.0f && double_flash_period_sec_ > 0.0f) {
+      double_flash_phase_ += dt_sec / double_flash_period_sec_;
+      while (double_flash_phase_ >= 1.0f) {
+        double_flash_phase_ -= 1.0f;
+      }
+    }
+
+    const bool is_on =
+        double_flash_phase_ < 0.12f ||
+        (double_flash_phase_ >= 0.24f && double_flash_phase_ < 0.36f);
+    const uint8_t intensity = is_on ? kChasePeakBrightness : 0U;
+    const uint32_t flash_color = color(intensity, intensity, intensity);
+    for (uint16_t i = 0; i < led_num_; ++i) {
+      pixels_->setPixel(i, flash_color);
+    }
+    pixels_->show();
+  }
+
+  void renderFade(float dt_sec) {
+    pixels_->setBrightness(brightness_);
+    if (dt_sec > 0.0f) {
+      fade_phase_ += dt_sec / kFadePeriodSec;
+      while (fade_phase_ >= 1.0f) {
+        fade_phase_ -= 1.0f;
+      }
+    }
+
+    const float triangle =
+        fade_phase_ < 0.5f ? fade_phase_ * 2.0f : (1.0f - fade_phase_) * 2.0f;
+    const uint8_t intensity = static_cast<uint8_t>(kChasePeakBrightness * triangle);
+    const uint32_t fade_color = color(intensity, intensity, intensity);
+    for (uint16_t i = 0; i < led_num_; ++i) {
+      pixels_->setPixel(i, fade_color);
+    }
+    pixels_->show();
+  }
+
   uint32_t wheel(uint8_t wheel_pos) const {
     wheel_pos = 255U - wheel_pos;
     if (wheel_pos < 85U) {
@@ -69,6 +473,20 @@ class Led {
     }
     wheel_pos = static_cast<uint8_t>(wheel_pos - 170U);
     return color(wheel_pos * 3U, 255U - wheel_pos * 3U, 0U);
+  }
+
+  uint32_t rainbowColorAt(uint16_t index) const {
+    const uint16_t scaled_index = led_num_ > 0 ? (index * 256U / led_num_) : 0U;
+    const uint8_t wheel_pos =
+        static_cast<uint8_t>((scaled_index + rainbow_offset_) & 0xFFU);
+    return wheel(wheel_pos);
+  }
+
+  static uint32_t scaleColor(uint32_t rgb, uint8_t intensity) {
+    const uint8_t red = static_cast<uint8_t>(((rgb >> 16) & 0xFFU) * intensity / 255U);
+    const uint8_t green = static_cast<uint8_t>(((rgb >> 8) & 0xFFU) * intensity / 255U);
+    const uint8_t blue = static_cast<uint8_t>((rgb & 0xFFU) * intensity / 255U);
+    return color(red, green, blue);
   }
 
   static uint32_t color(uint8_t red, uint8_t green, uint8_t blue) {
@@ -86,4 +504,22 @@ class Led {
   unsigned long last_update_ms_ = 0;
   uint8_t mode_ = 0;
   uint8_t rainbow_offset_ = 0;
+  float chase_head_position_ = 0.0f;
+  float blink_phase_ = 0.0f;
+  float double_flash_phase_ = 0.0f;
+  float fade_phase_ = 0.0f;
+  float chase_speed_leds_per_sec_ = 0.0f;
+  float multi_chase_speed_leds_per_sec_ = 0.0f;
+  float blink_period_sec_ = 0.5f;
+  float double_flash_period_sec_ = 0.9f;
+  uint8_t center_out_multi_base_brightness_ = 18U;
+  bool chase_waiting_ = false;
+  unsigned long chase_wait_started_ms_ = 0;
+  uint8_t brightness_ = 32;
+  static constexpr float kFadePeriodSec = 2.5f;
+  static constexpr uint8_t kChaseBaseBrightness = 18U;
+  static constexpr uint8_t kChasePeakBrightness = 255U;
+  static constexpr uint8_t kChaseBandLength = 10U;
+  static constexpr unsigned long kChaseLoopWaitMs = 250UL;
+  static constexpr uint8_t kMultiChaseBandCount = 5U;
 };
