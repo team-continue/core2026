@@ -13,8 +13,9 @@ void setup() {
   pinMode(PIN_EMERGENCY, OUTPUT);
   // LED
   pinMode(LED_BUILTIN, OUTPUT);
-  led1.init();
-  led2.init();
+  bottom_led.init();
+  // led1.init();
+  // led2.init();
   client.init();
   can3_init();
 
@@ -22,8 +23,9 @@ void setup() {
 }
 
 void loop() {
-  led1.update();
-  led2.update();
+  bottom_led.update();
+  // led1.update();
+  // led2.update();
 }
 
 void led_timer_cb() {

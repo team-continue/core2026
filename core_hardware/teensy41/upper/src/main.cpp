@@ -16,18 +16,36 @@
 
 #define DEFAULT_EMERGENCY_STATE HIGH
 
+#define WIRELESS_TIMEOUT_MS 3000
+
 STS sts;
 unsigned long prev_connect_ros2_ts_=0;
 bool connect_ros2 = false;
+bool connect_bottom = false;
+bool connect_wireless = false;
+bool hardware_emergency = false;
+unsigned long wireless_prev_connect_ms = 0;
 uint8_t wireless_data[LEN_WIRELESS] = {0};
 uint8_t hardware_enable[1] = {0};
 uint8_t destory[1] = {0};
 uint8_t damege[1] = {0};
 unsigned long prev_ts = 0;
-int counter1 = 0, counter2 = 0, led=0;
-int len_wireless = 0;
+int led=0;
 WirelessModule wireless;
-Led upper_led(LED_UPPER_SERIAL_PIN, 1, 20);
+uint16_t upper_led_count = 43;
+float upper_led_chase_speed_leds_per_sec = 100.0f;
+float upper_led_multi_chase_speed_leds_per_sec = 10.0f;
+float upper_led_blink_period_sec = 0.2f;
+float upper_led_double_flash_period_sec = 0.5f;
+uint8_t upper_led_center_out_multi_base_brightness = 0;
+uint8_t upper_led_brightness = 32;
+Led upper_led(LED_UPPER_SERIAL_PIN, upper_led_count, 20,
+              upper_led_chase_speed_leds_per_sec,
+              upper_led_multi_chase_speed_leds_per_sec,
+              upper_led_blink_period_sec,
+              upper_led_double_flash_period_sec,
+              upper_led_center_out_multi_base_brightness,
+              upper_led_brightness);
 
 // LED timer
 void led_timer_cb();
@@ -82,15 +100,20 @@ void ecat_FrameCallBack(){
   // wireless
   if (wireless.update(wireless_data)) {
     ecat_setUint8(102, wireless_data, 7);
+    wireless_prev_connect_ms = millis();
   }
   uint8_t color_payload[1] = { bottom_can3.color() };
   ecat_setUint8(103, color_payload, 1);
-  hardware_enable[0] = damiao_motor[0].connect ? 0 : 1;
+  hardware_enable[0] = hardware_emergency ? 0 : 1;
   ecat_setUint8(104, hardware_enable, 1);
 }
 
 // // PCから受信時にパケットごとに呼ばれるやつ
 void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
+  // 下の基板に接続できない場合は，命令を処理しない -> すべて停止
+  if(!connect_bottom || !connect_wireless){
+    return;
+  }
   switch(id){
     case 0:
     case 1:
@@ -135,9 +158,8 @@ void ecat_PacketCallBack(const uint8_t id, const uint8_t *data, const uint8_t le
   if (id != 100 || data == nullptr || len < 3) {
     return;
   }
-
   upper_led.write(data[0]);
-  bottom_can3.setLedBytes(data[1], data[2]);
+  bottom_can3.setLedBytes(data[0], data[2]); // upperのLEをコピー
 }
 
 void setup(void) {
@@ -161,7 +183,10 @@ void setup(void) {
 void led_timer_cb(){
   // ros2と接続しているか確認
   connect_ros2 = (millis() - prev_connect_ros2_ts_) < 500;
-  if(!connect_ros2){
+  connect_bottom = (millis() - can3_last_receive_time) < 200;
+  connect_wireless = (millis() - wireless_prev_connect_ms) < WIRELESS_TIMEOUT_MS;
+  hardware_emergency = (!connect_ros2 || !connect_bottom || !connect_wireless);
+  if(hardware_emergency){
     digitalWrite(LED_BUILTIN, HIGH);
     sts.disable = true;
   }else{
@@ -175,6 +200,7 @@ void loop() {
   upper_led.update();
   ecat_update();
   sts.loop();
+  esc.loop();
   can3_loop();
   can2_loop();
 }

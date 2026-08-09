@@ -22,6 +22,7 @@
 
 
 volatile bool can3_waiting_reply = false;
+unsigned long can3_last_receive_time = 0;
 
 FlexCAN_T4<CAN3, RX_SIZE_256, TX_SIZE_16> can3;
 Damiao<CAN3, RX_SIZE_256, TX_SIZE_16> damiao_motor[CAN3_NUM_DAMIAO] = {
@@ -48,6 +49,7 @@ void can3_cb(const CAN_message_t &msg) {
   for (int i = 0; i < CAN3_NUM_DEVICE; ++i) {
     if (can3_motor[i]->setCanFrame(msg)) {
       can3_waiting_reply = false;
+      can3_last_receive_time = millis();
       break;
     }
   }
