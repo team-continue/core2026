@@ -44,18 +44,12 @@ def _launch_nodes(context):
     """Resolve map preset and return all node actions."""
     # ── Resolve launch arguments ─────────────────────────────────────
     env = context.launch_configurations['environment']
-    odom_src = context.launch_configurations['odom_source']
     map_name = context.launch_configurations['map_name']
-    init_yaw = context.launch_configurations['init_yaw']
     use_rviz = context.launch_configurations['use_rviz']
     use_localization = context.launch_configurations.get(
         'use_localization', 'false').lower() == 'true'
 
     is_real = (env == 'real')
-    use_fastlio = is_real or (odom_src == 'fastlio')
-    effective_odom_source = 'fastlio' if is_real else odom_src
-    imu_topic = '/livox/imu' if is_real else '/imu'
-    lidar_type = 4 if is_real else 0
 
     # ── Map preset ───────────────────────────────────────────────────
     preset = MAP_PRESETS.get(map_name)
@@ -65,16 +59,11 @@ def _launch_nodes(context):
             f"Unknown map_name '{map_name}'. Available: {available}")
 
     core_launch_share = get_package_share_directory('core_launch')
-    map_image_path = os.path.join(core_launch_share, 'maps', preset['image'])
 
     # ── Package directories ──────────────────────────────────────────
-    mppi_share = get_package_share_directory('core_mppi')
-    costmap_share = get_package_share_directory('core_costmap_builder')
     body_ctrl_share = get_package_share_directory('core_body_controller')
 
     rviz_config = os.path.join(core_launch_share, 'config', 'navigation.rviz')
-    mppi_params = os.path.join(mppi_share, 'param', 'default_params.yaml')
-    costmap_params = os.path.join(costmap_share, 'config', 'costmap_build_node.yaml')
 
     livox_user_config = PathJoinSubstitution([
         FindPackageShare('livox_ros_driver2'), 'config', 'MID360_config.json',
