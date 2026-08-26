@@ -8,9 +8,7 @@
 
 #define CAN3_NUM_DAMIAO 4
 #define CAN3_NUM_ROBOSTRIDE 1
-#define CAN3_NUM_BOTTOM 1
 #define CAN3_NUM_MOTOR (CAN3_NUM_DAMIAO + CAN3_NUM_ROBOSTRIDE)
-#define CAN3_NUM_DEVICE (CAN3_NUM_MOTOR + CAN3_NUM_BOTTOM)
 #define CAN3_RESEND_INTERVAL_MS 1
 #define CAN3_TIMEOUT_MS 1000
 #define CAN3_RS05_SPEED_LIMIT 1.0 // rad/s
@@ -22,7 +20,6 @@
 
 
 volatile bool can3_waiting_reply = false;
-unsigned long can3_last_receive_time = 0;
 
 FlexCAN_T4<CAN3, RX_SIZE_256, TX_SIZE_16> can3;
 Damiao<CAN3, RX_SIZE_256, TX_SIZE_16> damiao_motor[CAN3_NUM_DAMIAO] = {
@@ -36,20 +33,22 @@ RoboStride<CAN3, RX_SIZE_256, TX_SIZE_16> robostride_can3[CAN3_NUM_ROBOSTRIDE] =
 };
 Bottom<CAN3, RX_SIZE_256, TX_SIZE_16> bottom_can3(&can3);
 
-MotorBase *can3_motor[CAN3_NUM_DEVICE] = {
+MotorBase *can3_motor[CAN3_NUM_MOTOR] = {
   &damiao_motor[0],
   &damiao_motor[1],
   &damiao_motor[2],
   &damiao_motor[3],
-  &robostride_can3[0],
-  &bottom_can3
+  &robostride_can3[0]
 };
 
 void can3_cb(const CAN_message_t &msg) {
-  for (int i = 0; i < CAN3_NUM_DEVICE; ++i) {
+  if (bottom_can3.setCanFrame(msg)) {
+    return;
+  }
+
+  for (int i = 0; i < CAN3_NUM_MOTOR; ++i) {
     if (can3_motor[i]->setCanFrame(msg)) {
       can3_waiting_reply = false;
-      can3_last_receive_time = millis();
       break;
     }
   }
@@ -105,9 +104,16 @@ void can3_init() {
 
 void can3_loop() {
   static int motor_control_i = 0;
-  static uint32_t motor_last_send_us[CAN3_NUM_DEVICE] = {0};
+  static uint32_t motor_last_send_us[CAN3_NUM_MOTOR] = {0};
+  static uint32_t bottom_last_send_ms = 0;
+  const uint32_t now_ms = millis();
   const uint32_t now_us = micros();
   const int idx = motor_control_i;
+
+  if ((uint32_t)(now_ms - bottom_last_send_ms) >= BOTTOM_REQUEST_INTERVAL_MS) {
+    bottom_can3.writeCanFrame();
+    bottom_last_send_ms = now_ms;
+  }
 
   const bool period_elapsed =
       (!can3_waiting_reply) &&
@@ -121,5 +127,5 @@ void can3_loop() {
   can3_motor[idx]->writeCanFrame();
   can3_waiting_reply = true;
   motor_last_send_us[idx] = now_us;
-  motor_control_i = (motor_control_i + 1) % CAN3_NUM_DEVICE;
+  motor_control_i = (motor_control_i + 1) % CAN3_NUM_MOTOR;
 }
