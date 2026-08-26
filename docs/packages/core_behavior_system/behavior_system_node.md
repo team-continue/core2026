@@ -100,5 +100,5 @@ flowchart TD
 
 - 状態判定は現在のフラグのみに基づき、遷移の履歴やヒステリシスを持ちません。`enemy_detected` が短時間で切り替わると `ATTACK` と `AUTO_WAYPOINT` を往復し、走行が断続的になる可能性があります。ロスト判定の平滑化は [enemy_detection_coordinator_node](enemy_detection_coordinator_node.md) の `stale_timeout_sec` に依存します。
 - 緊急停止（`hazard_status`）はLED表示にのみ反映され、状態判定には影響しません。実際のモータ停止は各制御ノードが個別に `hazard_status` を見て行います。
-- `/rotation` は `std_msgs/Int32` で発行され、[body_control_node](../core_body_controller/body_control_node.md) が回転モードとして受け取ります。[target_angle_node](../core_body_controller/target_angle_node.md) 側の `/rotation` 購読は現在コメントアウトされているため、このノードからの回転指示は目標角度制御には直接反映されません。
+- `/rotation` は `std_msgs/Int32` で発行され、[body_control_node](../core_body_controller/body_control_node.md) がベース回転速度の選択に、[target_angle_node](../core_body_controller/target_angle_node.md) が回転中のYaw補償切り替えに使用します。
 - `ATTACK` 状態では停止ゴールを出すのみで、敵から距離を取る・遮蔽物に隠れるといった戦術的な移動は行いません。

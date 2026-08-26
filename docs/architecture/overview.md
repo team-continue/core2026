@@ -126,8 +126,9 @@ graph TB
     PathFollower -->|/cmd_vel| BodyController
     MPPI -->|/goal_reached| BehaviorSystem
     PathFollower -->|/goal_reached| BehaviorSystem
-    TargetAngle -->|/body_target_angle| BodyController
+    BodyController -->|/body_omega| TargetAngle
     BodyController -->|/can/tx| Hardware
+    TargetAngle -->|"/can/tx（ID=4）"| Hardware
 
     subgraph Localization["局在化（実機オプション）"]
         PCDMap["PCD地図"] --> LocalizationNode["localization_node"]

@@ -12,9 +12,11 @@
 4. **逆運動学**: オムニホイール配置に基づき、(vx, vy, ω) を各ホイールの回転速度に分解
 5. **CAN指令生成**: 各ホイールのモータIDと速度をまとめて `/can/tx` に発行
 
-`/rotation` の状態に応じて回転速度の扱いを切り替え、回転モードでは `/cmd_vel` の角速度成分を [target_angle_node](target_angle_node.md) 側の制御に委ねます。
+`/rotation` の状態に応じてベースへ加算する回転速度を切り替えます（0=加算なし、1=通常回転、2=高速回転）。[target_angle_node](target_angle_node.md) は同じモードを受け取り、回転中だけベース角速度指令をYaw制御へフィードフォワードします。
 
-現在の車体角速度は `joint_states` のホイールエンコーダから逆算し、`/body_omega` として発行します。この値は `target_angle_node` の内側ループで使用されます。
+レート制限適用後のベース角速度指令は `/body_omega` として発行します。この値は実測角速度ではなく、`target_angle_node` の回転補償に使用するフィードフォワード値です。
+
+`/cmd_vel` が `cmd_vel_timeout_sec` を超えて更新されない場合、回転モードによる加算を止め、既存の加速度制限に従って全速度指令をゼロへ戻します。
 
 ## Inputs / Outputs
 
@@ -32,7 +34,7 @@
 | トピック | 型 | 説明 |
 |---------|------|------|
 | `can/tx` | `core_msgs/CANArray` | ホイールモータのCAN指令 |
-| `body_omega` | `std_msgs/Float64` | 現在の車体角速度 [rad/s] |
+| `body_omega` | `std_msgs/Float64` | レート制限後のベース角速度指令 [rad/s] |
 
 ## Parameters
 
@@ -42,10 +44,11 @@
 | `rotation_acceleration` | double | 回転加速度制限 [rad/s²] |
 | `auto_rotation_velocity` | double | 自動回転モード時の回転速度 [rad/s] |
 | `high_rotation_velocity` | double | 高速回転時の回転速度 [rad/s] |
+| `cmd_vel_timeout_sec` | double | `/cmd_vel` を有効とみなす最大経過時間 [s] |
 
 ## Assumptions / Known limits
 
 - オムニホイール（全方向移動）機構を前提とした逆運動学です。差動二輪やメカナム以外の構成には適用できません。
 - レートリミットは指令値に対してのみ作用します。実際のホイールが指令に追従できているかは検証しません（オープンループ）。
 - 緊急停止時はCAN指令をゼロにするのみで、機械的なブレーキは作動させません。惰性による移動は残ります。
-- `/cmd_vel` が途絶えた場合、このノードは自動停止しません。タイムアウトによる停止は上流の [core_cmd_vel_smoother](../core_cmd_vel_smoother/index.md) が担当します。
+- `joint_states.position[4]` が不足または非有限値の場合、そのメッセージを無視して最後の正常な車体角を維持します。

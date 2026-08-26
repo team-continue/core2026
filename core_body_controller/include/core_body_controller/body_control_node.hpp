@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cmath>
 
 #include "core_msgs/msg/can.hpp"
@@ -21,13 +22,9 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_stop_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
-    sub_shooter_angle_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
     joint_state_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr body_omega_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rotation_flag_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pad_up_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr pad_down_sub_;
 
   void timer_callback();
   std::vector<float> invert_kinematics_calc(
@@ -39,16 +36,16 @@ private:
   geometry_msgs::msg::Twist cmd_vel_;
   geometry_msgs::msg::Twist latest_twist_;
   bool emergency_stop_flag_ = true;
+  bool has_received_cmd_vel_ = false;
   int rotation_mode_ = 0;
-  float body_angle_ = 0;
-  float body_target_angle_ = 0;
   double latest_body_angle_ = 0;
+  std::chrono::steady_clock::time_point last_cmd_vel_time_;
 
-  double ACCELERATION = 2;  // m/s
+  double ACCELERATION = 2;  // m/s^2
   double ROTATION_ACCELERATION = 1 * M_PI;
-  double YAW_ROTATION_VELOCITY = 4 * M_PI;  // yaw
   double AUTO_ROTATION_VELOCITY = 0.3 * M_PI;
   double HIGH_ROTATION_VELOCITY = 1.0 * M_PI;
+  double CMD_VEL_TIMEOUT_SEC = 0.2;
 
-  static constexpr double TIMER_PERIOD = 0.01; // 10 ms
+  static constexpr double TIMER_PERIOD = 0.01;  // 10 ms
 };
