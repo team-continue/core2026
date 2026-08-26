@@ -9,17 +9,13 @@
 #define CAN3_NUM_DAMIAO 4
 #define CAN3_NUM_ROBOSTRIDE 1
 #define CAN3_NUM_MOTOR (CAN3_NUM_DAMIAO + CAN3_NUM_ROBOSTRIDE)
-#define CAN3_RESEND_INTERVAL_MS 1
-#define CAN3_TIMEOUT_MS 1000
+#define CAN3_SEND_INTERVAL_US 1000UL
 #define CAN3_RS05_SPEED_LIMIT 1.0 // rad/s
 #define CAN3_RS05_ACC_LIMIT 3.0f // rad/s^2
 #define CAN3_RS05_INIT_RUN_MODE Speed_control_mode
 #define CAN3_RS5_SET_GAIN false
 #define CAN3_RS5_CHECK_GAIN false
 #define CAN3_RS5_OFFSET_POSITION 0.0f
-
-
-volatile bool can3_waiting_reply = false;
 
 FlexCAN_T4<CAN3, RX_SIZE_256, TX_SIZE_16> can3;
 Damiao<CAN3, RX_SIZE_256, TX_SIZE_16> damiao_motor[CAN3_NUM_DAMIAO] = {
@@ -48,7 +44,6 @@ void can3_cb(const CAN_message_t &msg) {
 
   for (int i = 0; i < CAN3_NUM_MOTOR; ++i) {
     if (can3_motor[i]->setCanFrame(msg)) {
-      can3_waiting_reply = false;
       break;
     }
   }
@@ -104,28 +99,21 @@ void can3_init() {
 
 void can3_loop() {
   static int motor_control_i = 0;
-  static uint32_t motor_last_send_us[CAN3_NUM_MOTOR] = {0};
+  static uint32_t motor_last_send_us = 0;
   static uint32_t bottom_last_send_ms = 0;
   const uint32_t now_ms = millis();
   const uint32_t now_us = micros();
-  const int idx = motor_control_i;
 
   if ((uint32_t)(now_ms - bottom_last_send_ms) >= BOTTOM_REQUEST_INTERVAL_MS) {
     bottom_can3.writeCanFrame();
     bottom_last_send_ms = now_ms;
   }
 
-  const bool period_elapsed =
-      (!can3_waiting_reply) &&
-      ((uint32_t)(now_us - motor_last_send_us[idx]) >= CAN3_RESEND_INTERVAL_MS * 1000UL);
-  const bool timeout_elapsed =
-      ((uint32_t)(now_us - motor_last_send_us[idx]) >= CAN3_TIMEOUT_MS * 1000UL);
-  if (!(period_elapsed || timeout_elapsed)) {
+  if ((uint32_t)(now_us - motor_last_send_us) < CAN3_SEND_INTERVAL_US) {
     return;
   }
 
-  can3_motor[idx]->writeCanFrame();
-  can3_waiting_reply = true;
-  motor_last_send_us[idx] = now_us;
+  can3_motor[motor_control_i]->writeCanFrame();
+  motor_last_send_us = now_us;
   motor_control_i = (motor_control_i + 1) % CAN3_NUM_MOTOR;
 }
