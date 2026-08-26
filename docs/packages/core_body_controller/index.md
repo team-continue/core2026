@@ -7,7 +7,7 @@
 | ノード | 役割 |
 |-------|------|
 | [`body_control_node`](body_control_node.md) | `/cmd_vel` を逆運動学でホイール指令に変換。加速度制限と緊急停止を担当 |
-| [`target_angle_node`](target_angle_node.md) | 車体の向きをPID制御。回転モードと自動復帰モードを持つ |
+| [`target_angle_node`](target_angle_node.md) | IMU推定角から車体YawをPID制御し、回転中のベース角速度を補償 |
 | [`temp_joy_parser`](temp_joy_parser.md) | 開発用のゲームパッド入力パーサー |
 
 ## データフロー
@@ -17,6 +17,7 @@ graph LR
     SM["core_cmd_vel_smoother"] -->|"/cmd_vel"| BC["body_control_node"]
     Emg["core_mode"] -->|"/system/emergency/hazard_status"| BC
     BS["core_behavior_system"] -->|"/rotation"| BC
+    BS -->|"/rotation"| TA
     IMU["IMUフィルタ"] -->|"imu"| TA["target_angle_node"]
     Emg -->|"/system/emergency/hazard_status"| TA
 

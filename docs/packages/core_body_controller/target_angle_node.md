@@ -2,30 +2,18 @@
 
 ## Purpose
 
-この機体は車体の向きと走行方向を独立に制御します。操縦者はマウスで車体を旋回させ、自律走行時は特定の方位を保持したいという要求があります。このノードは目標角度に対するPID追従を担当し、車体の向きを「速度指令」ではなく「角度指令」として扱えるようにします。
+IMUのヨー角速度を積分した推定角と目標角の差から、車体無限回転Yawモータ（CAN ID 4）の角速度指令を生成します。`cmd_vel.angular.z` は目標角の変化率として扱われるため、入力を止めると最後の目標方位を保持します。
 
 ## Inner-workings / Algorithms
 
-内部の回転フラグ `rotation_flag_` の値で2つのモードを切り替える設計です。
+1. `imu` の連続するタイムスタンプから実際の経過時間を求め、ヨー角速度と `imu_yaw_bias` を積分します。タイムスタンプが利用できない場合はsteady clockの受信間隔へフォールバックします。
+2. 新しい `/cmd_vel` が届いている間だけ `angular.z × 制御周期` を目標角へ加算します。
+3. 正規化した目標角誤差をPIDへ入力し、`/rotation` が1または2なら `/body_omega` をフィードフォワードとして加えます。
+4. 合成後の指令へ `yaw_rotation_velocity` と `yaw_rotation_acceleration` の制限を適用し、`/can/tx` と `/target_omega` へ発行します。
 
-!!! warning "現在の実装状態"
-    `/rotation` の購読は現在コメントアウトされており、内部の `rotation_flag_` は `false` 固定です。したがって以下の2モードのうち、実際に動作するのは非回転モードのみです。回転モードを使う場合は購読部の有効化が必要です。
+`/rotation` は `std_msgs/Int32` で、0は通常、1は通常回転、2は高速回転です。1と2はいずれもYaw側の回転補償を有効にし、ベースの速度差は `body_control_node` が選択します。
 
-### 回転モード（`rotation_flag_` が `true`）
-
-IMUベースのワールド座標系で目標角度を追従します。`cmd_vel.angular.z`（マウス入力）を積分して目標角度を更新するため、操縦者は「回し続けた分だけ向きが変わる」という直感的な操作になります。
-
-制御は目標角度と現在角度の差分から角速度指令を作り、`body_omega`（実測角速度）との差でさらに補正する二重ループ構成です。外側で角度、内側で角速度を扱うことで、負荷変動に対する追従性を確保しています。
-
-現在のヨー角は `imu` の角速度を積分して推定します。
-
-### 非回転モード（`rotation_flag_` が `false`、現在の既定動作）
-
-エンコーダベースで、最寄りの90°角度に自動復帰します。射撃や走行の基準姿勢に車体を戻すための動作で、操縦者が向きを気にせず走行できるようにします。
-
-### 緊急停止
-
-`/system/emergency/hazard_status` が true の間はモータ指令を停止します。
+IMUが未受信または `imu_timeout_sec` より古い場合と、非常停止中は、保持されている古い制御値を使わずID 4へゼロ指令を継続送信します。タイムアウト後にIMUが復帰した最初のサンプルは新しい積分時刻の基準として扱い、欠落期間を外挿しません。`cmd_vel` だけが期限切れになった場合は、IMUによる方位保持を継続しつつ目標角の更新を停止します。`body_omega` が期限切れになった場合は、PID制御を継続しつつ回転フィードフォワードだけを無効化します。
 
 ## Inputs / Outputs
 
@@ -33,30 +21,33 @@ IMUベースのワールド座標系で目標角度を追従します。`cmd_vel
 
 | トピック | 型 | 説明 |
 |---------|------|------|
-| `cmd_vel` | `geometry_msgs/Twist` | マウス入力由来の角速度（目標角度の更新に使用） |
-| `imu` | `sensor_msgs/Imu` | IMU角速度（ヨー角推定用） |
-| `yaw_target_angle` | `std_msgs/Float64` | 車体回転目標角度の外部指定 |
-| `body_omega` | `std_msgs/Float64` | 現在の車体角速度（`body_control_node` から） |
-| `/system/emergency/hazard_status` | `std_msgs/Bool` | 緊急停止フラグ |
+| `cmd_vel` | `geometry_msgs/Twist` | `angular.z`を目標角の変化率として使用 |
+| `imu` | `sensor_msgs/Imu` | ヨー角速度とタイムスタンプ |
+| `yaw_target_angle` | `std_msgs/Float64` | ワールド基準の目標角 [rad] |
+| `body_omega` | `std_msgs/Float64` | ベース角速度指令のフィードフォワード値 [rad/s] |
+| `/rotation` | `std_msgs/Int32` | 回転モード（0=OFF、1=通常、2=高速） |
+| `/system/emergency/hazard_status` | `std_msgs/Bool` | 非常停止フラグ |
 
 ### Output
 
 | トピック | 型 | 説明 |
 |---------|------|------|
-| `can/tx` | `core_msgs/CANArray` | 回転モータCAN指令（ID=4） |
-| `target_omega` | `std_msgs/Float64` | 目標角速度（デバッグ用） |
+| `can/tx` | `core_msgs/CANArray` | ID 4のYawモータ指令。`data=[3, omega]` |
+| `target_omega` | `std_msgs/Float64` | 制限適用後のYaw角速度指令 [rad/s] |
 
 ## Parameters
 
-| パラメータ | 型 | 説明 |
-|-----------|------|------|
-| `yaw_rotation_velocity` | double | ヨー回転速度の上限 [rad/s] |
-| `auto_rotation_velocity` | double | 非回転モードでの自動復帰速度 [rad/s] |
+| パラメータ | 既定値 | 説明 |
+|-----------|--------|------|
+| `yaw_rotation_velocity` | `6.28` | 最終Yaw角速度の絶対上限 [rad/s] |
+| `yaw_rotation_acceleration` | `3π` | 最終Yaw角速度の変化率上限 [rad/s²] |
+| `cmd_vel_timeout_sec` | `0.2` | `/cmd_vel` を有効とみなす最大経過時間 [s] |
+| `imu_timeout_sec` | `0.2` | IMUを有効とみなす最大経過時間 [s] |
+| `body_omega_timeout_sec` | `0.2` | `/body_omega` を有効とみなす最大経過時間 [s] |
+| `imu_yaw_bias` | `π×0.01` | ヨー角速度へ加えるバイアス補正 [rad/s] |
 
 ## Assumptions / Known limits
 
-- ヨー角はIMU角速度の積分で推定するため、時間とともにドリフトします。長時間の連続運用では絶対角度がずれていきます。
-- 非回転モードの「最寄りの90°」判定はエンコーダ基準です。IMU由来の推定角とは基準が異なるため、モード切替時に不連続が生じる場合があります。
-- `/rotation` の購読がコメントアウトされているため、回転モードへ切り替える手段が現状ありません。
-- 回転モータのCAN IDは `4` に固定されており、パラメータ化されていません。
-- PIDゲインはパラメータとして公開されていません。調整にはソースの変更と再ビルドが必要です。
+- Livox IMUは姿勢を提供しないため、ヨー角は角速度積分による相対角です。バイアス設定が不正確な場合は時間とともにドリフトします。
+- PIDゲイン、デッドバンド、CAN IDは現在パラメータ化していません。
+- `/body_omega` は実測値ではなく、`body_control_node` が生成したベース角速度指令です。

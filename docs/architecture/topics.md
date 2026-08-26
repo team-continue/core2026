@@ -36,10 +36,10 @@
 | トピック | 型 | Publisher | Subscriber |
 |---------|------|-----------|------------|
 | `/can/tx` | `core_msgs/CANArray` | body_controller, shooter_controller, magazine_manager, aim_bot | core_hardware |
-| `/system/emergency/hazard_status` | `std_msgs/Bool` | emergency_handler, wireless_parser | body_controller |
-| `/body_target_angle` | `std_msgs/Float64` | target_angle_node | body_controller |
-| `/body_omega` | `std_msgs/Float64` | body_controller | (外部) |
+| `/system/emergency/hazard_status` | `std_msgs/Bool` | emergency_handler, wireless_parser | body_controller, target_angle_node |
+| `/body_omega` | `std_msgs/Float64` | body_controller | target_angle_node |
 | `/joint_states` | `sensor_msgs/JointState` | core_hardware | body_controller, diagnostic |
+| `/rotation` | `std_msgs/Int32` | wireless_parser, behavior_system | body_controller, target_angle_node |
 | `/goal_reached` | `std_msgs/Bool` | mppi, path_follower | behavior_system |
 | `/livox/imu` | `sensor_msgs/Imu` | Livox Mid-360 | target_angle_node（`imu` からリマップ） |
 
