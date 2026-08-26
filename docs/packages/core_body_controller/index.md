@@ -18,7 +18,7 @@ graph LR
     Emg["core_mode"] -->|"/system/emergency/hazard_status"| BC
     BS["core_behavior_system"] -->|"/rotation"| BC
     BS -->|"/rotation"| TA
-    IMU["IMUフィルタ"] -->|"imu"| TA["target_angle_node"]
+    IMU["core_damiao_imu"] -->|"/imu"| TA["target_angle_node"]
     Emg -->|"/system/emergency/hazard_status"| TA
 
     BC -->|"/body_omega"| TA
@@ -36,3 +36,6 @@ graph LR
 ```bash
 ros2 launch core_body_controller body_controller.launch.py
 ```
+
+このlaunchは既定でDM-IMU-L1ドライバも起動します。シミュレーションなど外部から`/imu`を供給する場合は
+`use_damiao_imu:=false`を指定してください。

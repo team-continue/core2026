@@ -14,6 +14,8 @@
   <exec_depend>core_mppi</exec_depend>
   <exec_depend>core_costmap_builder</exec_depend>
   <exec_depend>core_path_planner</exec_depend>
+  <exec_depend>core_body_controller</exec_depend>
+  <exec_depend>core_damiao_imu</exec_depend>
 
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>nav_msgs</exec_depend>

@@ -57,7 +57,7 @@ graph TD
 | カメラ（左砲塔） | `/dev/camera_left`、640×480 @30fps | `core_camera/launch/camera.launch.py` |
 | カメラ（右砲塔） | `/dev/camera_right`、640×480 @30fps | 同上 |
 | カメラ（TPS視点） | `/dev/camera_tps`、1280×720 @30fps | 同上 |
-| IMU | Livox Mid-360 内蔵（`/livox/imu`） | `body_controller.launch.py` のリマップ |
+| DM-IMU-L1 | 回転上部車体へ+X前方・+Z上向きで固定（`/imu`） | `core_damiao_imu` / `body_controller.launch.py` |
 
 !!! note "LiDAR取り付け高さの記述が2箇所で異なります"
     `costmap_build.launch.py` のデバッグ用静的TFは z=+0.6 m / pitch=π で定義されており、`navigation.launch.py`（z=+0.5 m / roll=π）と一致しません。詳細は [TFフレームと座標系](../architecture/tf-tree.md) を参照してください。

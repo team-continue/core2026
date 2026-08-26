@@ -50,6 +50,8 @@ def _launch_nodes(context):
         'use_localization', 'false').lower() == 'true'
 
     is_real = (env == 'real')
+    use_damiao_imu = is_real and context.launch_configurations.get(
+        'use_damiao_imu', 'true').lower() == 'true'
 
     # ── Map preset ───────────────────────────────────────────────────
     preset = MAP_PRESETS.get(map_name)
@@ -262,6 +264,14 @@ def _launch_nodes(context):
         PythonLaunchDescriptionSource(
             os.path.join(body_ctrl_share, 'launch', 'body_controller.launch.py'),
         ),
+        launch_arguments={
+            'use_damiao_imu': 'true' if use_damiao_imu else 'false',
+            'imu_port': context.launch_configurations['imu_port'],
+            'imu_baudrate': context.launch_configurations['imu_baudrate'],
+            'imu_frame_id': context.launch_configurations['imu_frame_id'],
+            'imu_output_rate_hz': context.launch_configurations[
+                'imu_output_rate_hz'],
+        }.items(),
     ))
 
     # ── 12. RViz ────────────────────────────────────────────────────
@@ -306,6 +316,26 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_localization', default_value='false',
             description='Enable NDT/ICP localization (dynamic map→odom TF)',
+        ),
+        DeclareLaunchArgument(
+            'use_damiao_imu', default_value='true',
+            description='Launch DM-IMU-L1 in real mode; always disabled in sim',
+        ),
+        DeclareLaunchArgument(
+            'imu_port', default_value='/dev/ttyACM0',
+            description='DM-IMU-L1 USB serial device (real mode only)',
+        ),
+        DeclareLaunchArgument(
+            'imu_baudrate', default_value='921600',
+            description='DM-IMU-L1 USB serial baud rate',
+        ),
+        DeclareLaunchArgument(
+            'imu_frame_id', default_value='damiao_imu_link',
+            description='Frame ID assigned to DM-IMU-L1 messages',
+        ),
+        DeclareLaunchArgument(
+            'imu_output_rate_hz', default_value='200',
+            description='DM-IMU-L1 output rate [Hz]',
         ),
         OpaqueFunction(function=_launch_nodes),
     ])

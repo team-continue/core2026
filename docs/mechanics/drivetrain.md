@@ -48,7 +48,6 @@ w[3] = -(-vx·cos(π/4) - vy·sin(π/4) - √2·BODY_WIDTH/2·omega ) / WHEEL_RA
 | `cmd_vel_timeout_sec` | 0.2 | s |
 | `imu_timeout_sec` | 0.2 | s |
 | `body_omega_timeout_sec` | 0.2 | s |
-| `imu_yaw_bias` | π×0.01（0.0314159…） | rad/s |
 
 ## 旋回機構
 
@@ -67,7 +66,7 @@ w[3] = -(-vx·cos(π/4) - vy·sin(π/4) - √2·BODY_WIDTH/2·omega ) / WHEEL_RA
 | `CAN2_RS05_SPEED_LIMIT` | 1.0 rad/s |
 | `CAN2_RS05_ACC_LIMIT` | 3.0 rad/s² |
 
-車体角度のフィードバック制御は `target_angle_node` が担当し、IMU（`/livox/imu`）から推定した相対ヨー角をPID制御して、モータID 4の角速度指令を `/can/tx` へ生成します。ベースの回転中は `body_control_node` の `/body_omega` 指令値をフィードフォワードに使用します。
+車体角度のフィードバック制御は `target_angle_node` が担当し、DM-IMU-L1（`/imu`）内部EKFのYawから作った連続相対角をPID制御して、モータID 4の角速度指令を `/can/tx` へ生成します。ベースの回転中は `body_control_node` の `/body_omega` 指令値をフィードフォワードに使用します。
 
 ## 関連ページ
 
