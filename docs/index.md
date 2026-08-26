@@ -30,6 +30,7 @@ CoRE2026用のメインROS2リポジトリです。ナビゲーション、経�
 | [core_path_follower](packages/core_path_follower/index.md) | 経路追従コントローラ（PID/Pure Pursuit） |
 | [core_cmd_vel_smoother](packages/core_cmd_vel_smoother/index.md) | cmd_vel EMA平滑化フィルタ |
 | [core_body_controller](packages/core_body_controller/index.md) | 車体モータ制御（オムニホイール逆運動学） |
+| [core_damiao_imu](packages/core_damiao_imu/index.md) | DM-IMU-L1 USBドライバ・姿勢配信 |
 
 ### 射撃・機構
 

@@ -1,17 +1,15 @@
 #include <chrono>
 #include <cmath>
-#include <cstdint>
-#include <functional>
-#include <memory>
-#include <stdexcept>
-
 #include <core_msgs/msg/can_array.hpp>
+#include <functional>
 #include <geometry_msgs/msg/twist.hpp>
+#include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float64.hpp>
 #include <std_msgs/msg/int32.hpp>
+#include <stdexcept>
 
 #include "core_body_controller/target_angle_controller.hpp"
 
@@ -44,14 +42,12 @@ private:
   double cmd_vel_timeout_sec_ = 0.2;
   double imu_timeout_sec_ = 0.2;
   double body_omega_timeout_sec_ = 0.2;
-  double imu_yaw_bias_ = M_PI * 0.01;
   bool emergency_stop_flag_ = true;
   bool has_received_cmd_vel_ = false;
   bool has_received_imu_ = false;
   bool has_received_body_omega_ = false;
-  bool previous_imu_stamp_usable_ = false;
   int rotation_mode_ = 0;
-  int64_t previous_imu_stamp_ns_ = 0;
+  core_body_controller::YawTracker yaw_tracker_;
   SteadyTime last_cmd_vel_time_;
   SteadyTime last_imu_time_;
   SteadyTime last_body_omega_time_;
@@ -76,20 +72,15 @@ TargetAngleNode::TargetAngleNode()
   imu_timeout_sec_ = this->declare_parameter<double>("imu_timeout_sec", imu_timeout_sec_);
   body_omega_timeout_sec_ =
     this->declare_parameter<double>("body_omega_timeout_sec", body_omega_timeout_sec_);
-  imu_yaw_bias_ = this->declare_parameter<double>("imu_yaw_bias", imu_yaw_bias_);
 
-  if (!std::isfinite(yaw_rotation_velocity) ||
-    !std::isfinite(yaw_rotation_acceleration) ||
+  if (
+    !std::isfinite(yaw_rotation_velocity) || !std::isfinite(yaw_rotation_acceleration) ||
     !std::isfinite(cmd_vel_timeout_sec_) || !std::isfinite(imu_timeout_sec_) ||
-    !std::isfinite(body_omega_timeout_sec_) ||
-    yaw_rotation_velocity <= 0.0 || yaw_rotation_acceleration <= 0.0 ||
-    cmd_vel_timeout_sec_ <= 0.0 || imu_timeout_sec_ <= 0.0 ||
-    body_omega_timeout_sec_ <= 0.0 ||
-    !std::isfinite(imu_yaw_bias_))
+    !std::isfinite(body_omega_timeout_sec_) || yaw_rotation_velocity <= 0.0 ||
+    yaw_rotation_acceleration <= 0.0 || cmd_vel_timeout_sec_ <= 0.0 || imu_timeout_sec_ <= 0.0 ||
+    body_omega_timeout_sec_ <= 0.0)
   {
-    throw std::invalid_argument(
-            "yaw limits and timeout parameters must be finite and positive; imu_yaw_bias must "
-            "be finite");
+    throw std::invalid_argument("yaw limits and timeout parameters must be finite and positive");
   }
   controller_ = std::make_unique<core_body_controller::TargetAngleController>(
     2.0, 0.0, 0.0, yaw_rotation_velocity, yaw_rotation_acceleration);
@@ -108,17 +99,15 @@ TargetAngleNode::TargetAngleNode()
     });
   can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx", 10);
   rotation_sub_ = this->create_subscription<std_msgs::msg::Int32>(
-    "/rotation", 10, [this](const std_msgs::msg::Int32::SharedPtr msg) {
-      rotation_mode_ = msg->data;
-    });
+    "/rotation", 10,
+    [this](const std_msgs::msg::Int32::SharedPtr msg) {rotation_mode_ = msg->data;});
   imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
     "imu", 10, std::bind(&TargetAngleNode::imu_callback, this, std::placeholders::_1));
   world_target_angle_sub_ = this->create_subscription<std_msgs::msg::Float64>(
     "yaw_target_angle", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) {
       if (!std::isfinite(msg->data)) {
         RCLCPP_WARN_THROTTLE(
-          this->get_logger(), *this->get_clock(), 1000,
-          "Ignoring non-finite yaw_target_angle");
+          this->get_logger(), *this->get_clock(), 1000, "Ignoring non-finite yaw_target_angle");
         return;
       }
       world_target_angle_ = core_body_controller::normalize_angle(msg->data);
@@ -130,8 +119,7 @@ TargetAngleNode::TargetAngleNode()
       }
       if (!std::isfinite(msg->data)) {
         RCLCPP_WARN_THROTTLE(
-          this->get_logger(), *this->get_clock(), 1000,
-          "Ignoring non-finite body_omega");
+          this->get_logger(), *this->get_clock(), 1000, "Ignoring non-finite body_omega");
         return;
       }
       latest_body_omega_ = msg->data;
@@ -139,8 +127,7 @@ TargetAngleNode::TargetAngleNode()
       has_received_body_omega_ = true;
     });
   emergency_stop_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "/system/emergency/hazard_status", 10,
-    [this](const std_msgs::msg::Bool::SharedPtr msg) {
+    "/system/emergency/hazard_status", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
       emergency_stop_flag_ = msg->data;
       if (emergency_stop_flag_) {
         latest_body_omega_ = 0.0;
@@ -148,67 +135,37 @@ TargetAngleNode::TargetAngleNode()
       }
     });
   target_omega_pub_ = this->create_publisher<std_msgs::msg::Float64>("target_omega", 10);
-  timer_ = this->create_wall_timer(
-    TIMER_PERIOD, std::bind(&TargetAngleNode::timer_callback, this));
+  timer_ = this->create_wall_timer(TIMER_PERIOD, std::bind(&TargetAngleNode::timer_callback, this));
 }
 
 void TargetAngleNode::imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg)
 {
-  if (!std::isfinite(msg->angular_velocity.z)) {
+  double measured_yaw = 0.0;
+  if (!core_body_controller::quaternion_to_yaw(
+      msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w,
+      measured_yaw))
+  {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000,
-      "Ignoring IMU message containing non-finite angular_velocity.z");
+      "Ignoring IMU message containing an invalid orientation quaternion");
     return;
   }
 
   const auto arrival_time = std::chrono::steady_clock::now();
-  const int64_t stamp_ns =
-    static_cast<int64_t>(msg->header.stamp.sec) * 1000000000LL + msg->header.stamp.nanosec;
-
-  const double arrival_dt = has_received_imu_ ?
-    std::chrono::duration<double>(arrival_time - last_imu_time_).count() : 0.0;
+  const double arrival_dt =
+    has_received_imu_ ? std::chrono::duration<double>(arrival_time - last_imu_time_).count() : 0.0;
   const bool imu_stream_is_continuous = has_received_imu_ && std::isfinite(arrival_dt) &&
     arrival_dt > 0.0 && arrival_dt <= imu_timeout_sec_;
 
-  if (imu_stream_is_continuous) {
-    double dt = arrival_dt;
-    const bool current_stamp_usable = stamp_ns > 0;
-    if (current_stamp_usable && previous_imu_stamp_usable_ &&
-      stamp_ns > previous_imu_stamp_ns_)
-    {
-      const double stamp_dt = static_cast<double>(stamp_ns - previous_imu_stamp_ns_) * 1e-9;
-      if (std::isfinite(stamp_dt) && stamp_dt <= imu_timeout_sec_) {
-        dt = stamp_dt;
-      } else {
-        RCLCPP_WARN_THROTTLE(
-          this->get_logger(), *this->get_clock(), 1000,
-          "IMU timestamp interval is too large; using steady-clock arrival interval");
-      }
-    } else if (stamp_ns > 0 && previous_imu_stamp_ns_ > 0 &&
-      stamp_ns <= previous_imu_stamp_ns_)
-    {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 1000,
-        "IMU timestamp is not monotonic; using steady-clock arrival interval");
-    }
-
-    if (std::isfinite(dt) && dt > 0.0) {
-      latest_world_angle_ = core_body_controller::integrate_yaw(
-        latest_world_angle_, msg->angular_velocity.z, imu_yaw_bias_, dt);
-    }
-    previous_imu_stamp_usable_ = current_stamp_usable &&
-      (previous_imu_stamp_ns_ == 0 || stamp_ns > previous_imu_stamp_ns_);
-  } else {
-    if (has_received_imu_) {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 1000,
-        "IMU stream resumed after a timeout; resetting the integration time baseline");
-    }
-    has_received_imu_ = true;
-    previous_imu_stamp_usable_ = stamp_ns > 0;
+  if (has_received_imu_ && !imu_stream_is_continuous) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 1000,
+      "IMU stream resumed after a timeout; rebasing orientation without a yaw jump");
   }
 
-  previous_imu_stamp_ns_ = stamp_ns;
+  yaw_tracker_.update(measured_yaw, imu_stream_is_continuous);
+  latest_world_angle_ = yaw_tracker_.yaw();
+  has_received_imu_ = true;
   last_imu_time_ = arrival_time;
 }
 
@@ -220,19 +177,18 @@ bool TargetAngleNode::is_fresh(
          timeout_sec;
 }
 
-double TargetAngleNode::gimbal_control(
-  double dt, bool cmd_vel_is_fresh, bool body_omega_is_fresh)
+double TargetAngleNode::gimbal_control(double dt, bool cmd_vel_is_fresh, bool body_omega_is_fresh)
 {
   if (cmd_vel_is_fresh) {
-    world_target_angle_ = core_body_controller::normalize_angle(
-      world_target_angle_ + latest_twist_.angular.z * dt);
+    world_target_angle_ =
+      core_body_controller::normalize_angle(world_target_angle_ + latest_twist_.angular.z * dt);
   }
 
-  const double world_angle_error = core_body_controller::normalize_angle(
-    world_target_angle_ - latest_world_angle_);
+  const double world_angle_error =
+    core_body_controller::normalize_angle(world_target_angle_ - latest_world_angle_);
   const bool rotation_compensation_enabled = rotation_mode_ == 1 || rotation_mode_ == 2;
-  const double feedforward = rotation_compensation_enabled && body_omega_is_fresh ?
-    latest_body_omega_ : 0.0;
+  const double feedforward =
+    rotation_compensation_enabled && body_omega_is_fresh ? latest_body_omega_ : 0.0;
   return controller_->update(world_angle_error, feedforward, dt);
 }
 
@@ -295,8 +251,8 @@ void TargetAngleNode::timer_callback()
   publish_command(omega);
   RCLCPP_INFO_THROTTLE(
     this->get_logger(), *this->get_clock(), 1000,
-    "yaw target=%.3f estimate=%.3f command=%.3f mode=%d",
-    world_target_angle_, latest_world_angle_, omega, rotation_mode_);
+    "yaw target=%.3f estimate=%.3f command=%.3f mode=%d", world_target_angle_, latest_world_angle_,
+    omega, rotation_mode_);
 }
 
 int main(int argc, char * argv[])

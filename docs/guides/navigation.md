@@ -28,6 +28,7 @@ ros2 launch core_launch navigation.launch.py
 ### 前提条件
 
 - Livox Mid-360 LiDARが接続済み
+- DM-IMU-L1がType-C USBで接続され、静止状態で事前校正済み
 - `fast_lio` パッケージがインストール済み
 - `core_hardware` デーモンが起動済み
 
@@ -38,7 +39,9 @@ ros2 launch core_launch navigation.launch.py
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/core_ws/install/setup.bash
-ros2 launch core_launch navigation.launch.py environment:=real
+DM_IMU_PORT=/dev/serial/by-id/DM_IMU_L1_DEVICE_ID  # 実機で確認した名前へ置換
+ros2 launch core_launch navigation.launch.py environment:=real \
+  imu_port:="$DM_IMU_PORT"
 ```
 
 初期ヨー角（ロボットの向き）を指定する場合:
@@ -70,13 +73,13 @@ ros2 run core_launch navigation.sh use_rviz:=false
 
 - TCP endpoint は起動しない
 - Livox driver が起動し `/livox/lidar` を出力
-- FAST-LIO が起動し `/Odometry` を出力（IMUトピック: `/livox/imu`）
-- body_controller が起動し `/cmd_vel` → `/can/tx` に変換
+- DM-IMU-L1ドライバが起動し、内部EKF姿勢を`/imu`へ約200 Hzで出力
+- body_controller が`/imu`のYaw姿勢を使用し、`/cmd_vel` → `/can/tx` に変換
 - odom_source は自動的に `fastlio` に設定
 
-!!! note "sim + FAST-LIO モードとの違い"
-    sim + FAST-LIO（`odom_source:=fastlio`）ではシミュレータが `/livox/lidar` と `/imu` を直接出力するため Livox driver は起動しません。
-    実機モードでは Livox driver が起動し、IMUトピック名が `/livox/imu` になります。
+!!! note "simモードとの違い"
+    simではDM-IMU-L1ドライバを起動せず、シミュレータが`/imu`を供給します。実機モードでは
+    `use_damiao_imu:=true`のときだけUSBドライバを起動します。
 
 ## 実機テストの手順
 
@@ -131,6 +134,7 @@ RViz2 の **2D Goal Pose** ボタン（上部ツールバー）をクリック�
 |--------|-----------|------|------|
 | `ros_tcp_endpoint` | ROS-TCP-Endpoint | Unity接続 | sim時のみ |
 | `livox_lidar_publisher` | livox_ros_driver2 | LiDARドライバ | real時のみ |
+| `damiao_imu_node` | core_damiao_imu | DM-IMU-L1姿勢配信 | realかつuse_damiao_imu時 |
 | `fastlio_mapping` | fast_lio | FAST-LIOオドメトリ | FAST-LIO時 |
 | `odom_bridge_node` | core_launch | odom変換 | 常時 |
 | `map_server_node` | core_launch | マップ配信 | 常時 |
@@ -156,6 +160,11 @@ RViz2 の **2D Goal Pose** ボタン（上部ツールバー）をクリック�
 | `use_rviz` | `true` | RViz2を起動するか |
 | `use_smoother` | `true` | cmd_vel平滑化を有効にするか |
 | `use_localization` | `false` | グローバル局在化を有効にするか。PCD地図は `map_name` に対応する `pcd_maps/<map_name>.pcd` が自動で使用される |
+| `use_damiao_imu` | `true` | 実機モードでDM-IMU-L1ドライバを起動するか。simでは常に無効 |
+| `imu_port` | `/dev/ttyACM0` | DM-IMU-L1のシリアルデバイス。本番は`/dev/serial/by-id/...`を推奨 |
+| `imu_baudrate` | `921600` | DM-IMU-L1のbaud rate |
+| `imu_frame_id` | `damiao_imu_link` | `/imu`のframe ID |
+| `imu_output_rate_hz` | `200` | IMU出力周期 [Hz] |
 
 ## マップ切替
 
@@ -196,6 +205,15 @@ SSH経由やデスクトップショートカットからの起動で発生し�
 - `/cmd_vel` が出力されているか確認: `ros2 topic echo /cmd_vel`
 - `/odom` が更新されているか確認: `ros2 topic hz /odom`
 - body_controllerが起動しているか確認: `ros2 node list | grep body_control`
+- `/imu`が約200 Hzか確認: `ros2 topic hz /imu`
+- IMUを抜いた状態では安全機能によりYawモータへゼロ指令が送られます
+
+### DM-IMU-L1を開けない / 接続先が変わる
+
+- `ls -l /dev/serial/by-id/ /dev/ttyACM*`で実デバイスを確認
+- `dialout`グループ所属を`groups`で確認
+- `/dev/ttyACM0`は使用可能ですが、他のACMデバイスとの接続順で番号が変わるため、本番は
+  `imu_port:=/dev/serial/by-id/...`を使用
 
 ### ロボットの動きがガタガタ
 

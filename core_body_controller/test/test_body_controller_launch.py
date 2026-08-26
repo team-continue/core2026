@@ -52,7 +52,6 @@ def generate_test_description():
                 "cmd_vel_timeout_sec": 0.15,
                 "imu_timeout_sec": 0.15,
                 "body_omega_timeout_sec": 0.15,
-                "imu_yaw_bias": 0.0,
             }
         ],
         remappings=[
@@ -181,11 +180,12 @@ class TestBodyControllerNodes(unittest.TestCase):
             publisher.publish(msg)
             time.sleep(0.02)
 
-    def _publish_fresh_imu(self, count=3):
+    def _publish_fresh_imu(self, count=3, yaw=0.0):
         for _ in range(count):
             msg = Imu()
             msg.header.stamp = self.node.get_clock().now().to_msg()
-            msg.angular_velocity.z = 0.0
+            msg.orientation.z = math.sin(yaw * 0.5)
+            msg.orientation.w = math.cos(yaw * 0.5)
             self.target_imu_pub.publish(msg)
             time.sleep(0.02)
 
@@ -237,6 +237,17 @@ class TestBodyControllerNodes(unittest.TestCase):
             )
 
         self._clear_can("target")
+        self._publish_repeatedly(self.target_rotation_pub, Int32(data=0))
+        self._publish_fresh_imu(yaw=0.3)
+        tracked = self._wait_for_can(
+            "target",
+            lambda msg: self._target_value(msg) is not None
+            and math.isclose(self._target_value(msg), 0.6, abs_tol=0.1),
+        )
+        self.assertGreater(self._target_value(tracked), 0.0)
+        self._publish_fresh_imu(yaw=0.0)
+
+        self._clear_can("target")
         self._publish_repeatedly(self.target_body_omega_pub, Float64(data=5.0))
         self._publish_repeatedly(self.target_rotation_pub, Int32(data=1))
         self._publish_fresh_imu()
@@ -278,7 +289,8 @@ class TestBodyControllerNodes(unittest.TestCase):
         self._clear_can("target")
         resumed_imu = Imu()
         resumed_imu.header.stamp = self.node.get_clock().now().to_msg()
-        resumed_imu.angular_velocity.z = 1.0
+        resumed_imu.orientation.z = math.sin(1.0)
+        resumed_imu.orientation.w = math.cos(1.0)
         self.target_imu_pub.publish(resumed_imu)
         self._wait_for_can_count(
             "target",

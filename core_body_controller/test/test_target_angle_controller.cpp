@@ -1,52 +1,79 @@
-#include <cmath>
-
 #include <gtest/gtest.h>
+
+#include <cmath>
 
 #include "core_body_controller/target_angle_controller.hpp"
 
 namespace
 {
 
-TEST(TargetAngleControllerTest, ImuIntegrationUsesElapsedTime)
+TEST(TargetAngleControllerTest, QuaternionIsNormalizedBeforeExtractingYaw)
 {
-  double angle_at_100_hz = 0.0;
-  double angle_at_50_hz = 0.0;
+  double yaw = 0.0;
+  constexpr double HALF_YAW = M_PI / 4.0;
 
-  for (int i = 0; i < 100; ++i) {
-    angle_at_100_hz = core_body_controller::integrate_yaw(
-      angle_at_100_hz, 1.0, 0.0, 0.01);
-  }
-  for (int i = 0; i < 50; ++i) {
-    angle_at_50_hz = core_body_controller::integrate_yaw(
-      angle_at_50_hz, 1.0, 0.0, 0.02);
-  }
-
-  EXPECT_NEAR(angle_at_100_hz, -1.0, 1e-12);
-  EXPECT_NEAR(angle_at_50_hz, angle_at_100_hz, 1e-12);
+  EXPECT_TRUE(
+    core_body_controller::quaternion_to_yaw(
+      0.0, 0.0, 2.0 * std::sin(HALF_YAW), 2.0 * std::cos(HALF_YAW), yaw));
+  EXPECT_NEAR(yaw, M_PI / 2.0, 1e-12);
 }
 
-TEST(TargetAngleControllerTest, BiasCompensationIsIndependentOfSampleCount)
+TEST(TargetAngleControllerTest, InvalidQuaternionsAreRejected)
 {
-  double angle_at_100_hz = 0.0;
-  double angle_at_50_hz = 0.0;
+  double yaw = 0.0;
 
-  for (int i = 0; i < 100; ++i) {
-    angle_at_100_hz = core_body_controller::integrate_yaw(
-      angle_at_100_hz, 0.0, 0.03, 0.01);
-  }
-  for (int i = 0; i < 50; ++i) {
-    angle_at_50_hz = core_body_controller::integrate_yaw(
-      angle_at_50_hz, 0.0, 0.03, 0.02);
-  }
+  EXPECT_FALSE(core_body_controller::quaternion_to_yaw(0.0, 0.0, 0.0, 0.0, yaw));
+  EXPECT_FALSE(core_body_controller::quaternion_to_yaw(0.0, 0.0, std::nan(""), 1.0, yaw));
+  EXPECT_FALSE(core_body_controller::quaternion_to_yaw(0.0, 0.0, 0.0, 1.0e7, yaw));
+}
 
-  EXPECT_NEAR(angle_at_100_hz, 0.03, 1e-12);
-  EXPECT_NEAR(angle_at_50_hz, angle_at_100_hz, 1e-12);
+TEST(TargetAngleControllerTest, FirstYawSampleDefinesZero)
+{
+  core_body_controller::YawTracker tracker;
+
+  EXPECT_TRUE(tracker.update(1.2, false));
+  EXPECT_DOUBLE_EQ(tracker.yaw(), 0.0);
+  EXPECT_TRUE(tracker.update(1.4, true));
+  EXPECT_NEAR(tracker.yaw(), 0.2, 1e-12);
+}
+
+TEST(TargetAngleControllerTest, YawIsUnwrappedAcrossPiBoundary)
+{
+  core_body_controller::YawTracker tracker;
+  const double first = 179.0 * M_PI / 180.0;
+  const double second = -179.0 * M_PI / 180.0;
+
+  tracker.update(first, false);
+  tracker.update(second, true);
+
+  EXPECT_NEAR(tracker.yaw(), 2.0 * M_PI / 180.0, 1e-12);
+}
+
+TEST(TargetAngleControllerTest, ResumeSampleRebasesWithoutChangingTrackedYaw)
+{
+  core_body_controller::YawTracker tracker;
+
+  tracker.update(0.2, false);
+  tracker.update(0.7, true);
+  tracker.update(-2.5, false);
+
+  EXPECT_NEAR(tracker.yaw(), 0.5, 1e-12);
+  tracker.update(-2.4, true);
+  EXPECT_NEAR(tracker.yaw(), 0.6, 1e-12);
+}
+
+TEST(TargetAngleControllerTest, NonFiniteYawDoesNotChangeState)
+{
+  core_body_controller::YawTracker tracker;
+
+  tracker.update(0.0, false);
+  EXPECT_FALSE(tracker.update(std::nan(""), true));
+  EXPECT_DOUBLE_EQ(tracker.yaw(), 0.0);
 }
 
 TEST(TargetAngleControllerTest, FinalOutputHonorsVelocityAndAccelerationLimits)
 {
-  core_body_controller::TargetAngleController controller(
-    2.0, 0.0, 0.0, 1.0, 2.0, 0.0);
+  core_body_controller::TargetAngleController controller(2.0, 0.0, 0.0, 1.0, 2.0, 0.0);
 
   EXPECT_NEAR(controller.update(-10.0, 100.0, 0.1), 0.2, 1e-12);
   EXPECT_NEAR(controller.update(-10.0, 100.0, 0.1), 0.4, 1e-12);
@@ -58,8 +85,7 @@ TEST(TargetAngleControllerTest, FinalOutputHonorsVelocityAndAccelerationLimits)
 
 TEST(TargetAngleControllerTest, FeedforwardCanBeEnabledWithoutBypassingLimits)
 {
-  core_body_controller::TargetAngleController controller(
-    2.0, 0.0, 0.0, 1.0, 1000.0, 0.0);
+  core_body_controller::TargetAngleController controller(2.0, 0.0, 0.0, 1.0, 1000.0, 0.0);
 
   EXPECT_DOUBLE_EQ(controller.update(0.0, 0.0, 0.01), 0.0);
   EXPECT_NEAR(controller.update(0.0, 0.5, 0.01), 0.5, 1e-12);

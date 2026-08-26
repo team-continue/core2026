@@ -63,6 +63,7 @@ jobs:
             core_body_controller \
             core_cmd_vel_smoother \
             core_costmap_builder \
+            core_damiao_imu \
             core_hardware \
             core_launch \
             core_mppi \
