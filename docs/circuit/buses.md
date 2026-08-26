@@ -2,7 +2,7 @@
 
 ## CANバス構成
 
-いずれも FlexCAN_T4（受信バッファ 256、送信バッファ 16）を使用し、1 ms 間隔でラウンドロビン送信します。
+いずれも FlexCAN_T4（受信バッファ 256、送信バッファ 16）を使用します。CANモータは1 ms間隔でラウンドロビン送信し、bottomへの問い合わせはモータの応答待ちから独立して50 ms周期で送信します。
 
 ### CAN3（足回り + 無限回転Yaw + bottom）
 
@@ -10,9 +10,10 @@
 |------|-----|
 | `CAN3_NUM_DAMIAO` | 4 |
 | `CAN3_NUM_ROBOSTRIDE` | 1 |
-| `CAN3_NUM_BOTTOM` | 1 |
 | `CAN3_RESEND_INTERVAL_MS` | 1 |
 | `CAN3_TIMEOUT_MS` | 1000 |
+| `BOTTOM_REQUEST_INTERVAL_MS` | 50 |
+| `BOTTOM_CAN_TIMEOUT_MS` | 200 |
 | `CAN3_RS05_SPEED_LIMIT` | 1.0 rad/s |
 | `CAN3_RS05_ACC_LIMIT` | 3.0 rad/s² |
 | 初期制御モード | `Speed_control_mode` |
@@ -94,6 +95,8 @@ ID 0–4 は `can3_motor[]`、5–6 は `can2_motor[id-5]`、7–14 は `sts.set
 | 103 | color（チーム色） | 1 B |
 | 104 | hardware_enable | 1 B |
 
+`hardware_enable` はROS2またはbottomが未接続の場合に0になります。無線機器が未導入のため、`connect_wireless` は現在この安全条件から一時的に除外しています。無線の初期化・受信と接続状態の更新処理は維持しています。
+
 ### 指令（PC → Teensy、uint8）
 
 | パケットID | 内容 |
@@ -110,10 +113,11 @@ ID 0–4 は `can3_motor[]`、5–6 は `can2_motor[id-5]`、7–14 は `sts.set
 | 監視対象 | 条件 | 動作 |
 |---------|------|------|
 | ROS2接続（upper） | 最終受信から 500 ms 経過 | `LED_BUILTIN` 点灯、Feetechサーボを `disable` |
-| CAN3受信（bottom） | 最終受信から 500 ms 経過 | `LED_BUILTIN` 点灯 |
+| bottom接続（upper） | CAN ID `0x00`、3 Bの正常応答を未受信、または最終応答から200 ms経過 | 全モータ指令を拒否、`hardware_enable` を0、`LED_BUILTIN` 点灯、Feetechサーボを`disable` |
+| upper接続（bottom） | 最終問い合わせ受信から500 ms経過 | `LED_BUILTIN` 点灯 |
 | CANモータ | `CAN2/CAN3_TIMEOUT_MS` = 1000 ms | 該当モータを未接続扱い |
 
-`led_timer` は upper / bottom ともに 50 ms 周期（20 Hz）で上記の判定を行います。ROS2側の死活監視は `core_mode` の `diagnostic` ノードが `/joint_states` と `/wireless` のハートビートで実施します（[システム概要](../architecture/overview.md) を参照）。
+upperの接続判定とbottomのLED表示は、それぞれの`led_timer`で50 ms周期（20 Hz）に実行します。bottomの正常応答はモータ応答と区別し、モータ用の応答待ち状態を解除しません。ROS2側の死活監視は `core_mode` の `diagnostic` ノードが `/joint_states` と `/wireless` のハートビートで実施します（[システム概要](../architecture/overview.md) を参照）。
 
 ## 関連ページ
 
