@@ -7,8 +7,6 @@
   <maintainer email="curious.ks.jp@gmail.com">curious</maintainer>
   <license>Apache-2.0</license>
 
-  <buildtool_depend>ament_python</buildtool_depend>
-
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-serial</exec_depend>
