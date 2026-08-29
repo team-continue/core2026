@@ -86,7 +86,7 @@ void BodyControlNode::timer_callback()
   } else if (has_received_cmd_vel_) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000,
-      "cmd_vel timed out; decelerating body command to zero");
+      "cmd_vel timed out; decelerating its body command contribution to zero");
   }
 
   auto apply_rate_limit = [](double current, double target, double max_step_per_tick) {
@@ -101,9 +101,9 @@ void BodyControlNode::timer_callback()
 
   const double angular_step = ROTATION_ACCELERATION * TIMER_PERIOD;
   double rotation_velocity = 0.0;
-  if (cmd_vel_is_fresh && rotation_mode_ == 1) {
+  if (rotation_mode_ == 1) {
     rotation_velocity = AUTO_ROTATION_VELOCITY;
-  } else if (cmd_vel_is_fresh && rotation_mode_ == 2) {
+  } else if (rotation_mode_ == 2) {
     rotation_velocity = HIGH_ROTATION_VELOCITY;
   }
   const double target_angular_z = rotation_velocity + target_twist.angular.z;
@@ -139,6 +139,11 @@ void BodyControlNode::emergency_stop()
     body_control_command_array.array.push_back(body_control_command);
   }
   body_control_command_pub_->publish(body_control_command_array);
+
+  std_msgs::msg::Float64 body_omega_msg;
+  body_omega_msg.data = 0.0;
+  body_omega_->publish(body_omega_msg);
+
   cmd_vel_.linear.x = 0;
   cmd_vel_.linear.y = 0;
   cmd_vel_.linear.z = 0;

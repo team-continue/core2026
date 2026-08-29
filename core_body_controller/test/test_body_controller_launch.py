@@ -28,6 +28,8 @@ def generate_test_description():
             {
                 "acceleration": 100.0,
                 "rotation_acceleration": 100.0,
+                "auto_rotation_velocity": 1.0,
+                "high_rotation_velocity": 2.0,
                 "cmd_vel_timeout_sec": 0.15,
             }
         ],
@@ -86,6 +88,7 @@ class TestBodyControllerNodes(unittest.TestCase):
         self.stop = False
         self.lock = threading.Lock()
         self.can_messages = {"body": [], "target": []}
+        self.body_omega_messages = []
         self.thread = threading.Thread(target=self._spin, daemon=True)
         self.thread.start()
 
@@ -95,6 +98,9 @@ class TestBodyControllerNodes(unittest.TestCase):
         )
         self.body_hazard_pub = self.node.create_publisher(
             Bool, "/body_test/hazard_status", 10
+        )
+        self.body_rotation_pub = self.node.create_publisher(
+            Int32, "/body_test/rotation", 10
         )
         self.target_cmd_pub = self.node.create_publisher(
             Twist, "/target_test/cmd_vel", 10
@@ -121,6 +127,12 @@ class TestBodyControllerNodes(unittest.TestCase):
             lambda msg: self._record_can("target", msg),
             10,
         )
+        self.node.create_subscription(
+            Float64,
+            "/body_test/body_omega",
+            self._record_body_omega,
+            10,
+        )
 
     def tearDown(self):
         self.stop = True
@@ -140,6 +152,15 @@ class TestBodyControllerNodes(unittest.TestCase):
     def _clear_can(self, source):
         with self.lock:
             self.can_messages[source].clear()
+
+    def _record_body_omega(self, msg):
+        with self.lock:
+            self.body_omega_messages.append(msg.data)
+            self.body_omega_messages = self.body_omega_messages[-200:]
+
+    def _clear_body_omega(self):
+        with self.lock:
+            self.body_omega_messages.clear()
 
     def _wait_for_can(self, source, predicate, timeout=2.0):
         deadline = time.monotonic() + timeout
@@ -161,6 +182,17 @@ class TestBodyControllerNodes(unittest.TestCase):
                 return
             time.sleep(0.01)
         self.fail(f"timed out waiting for {count} matching {source} CAN messages")
+
+    def _wait_for_body_omega(self, predicate, timeout=2.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with self.lock:
+                values = list(self.body_omega_messages)
+            for value in reversed(values):
+                if predicate(value):
+                    return value
+            time.sleep(0.01)
+        self.fail("timed out waiting for matching body omega message")
 
     @staticmethod
     def _target_value(msg):
@@ -216,6 +248,93 @@ class TestBodyControllerNodes(unittest.TestCase):
 
         false_msg = Bool(data=False)
         zero_twist = Twist()
+
+        # Rotation is a latched state and must work without any cmd_vel input.
+        self._publish_repeatedly(self.body_hazard_pub, false_msg)
+        pure_rotation_scale = math.sqrt(2.0) * 0.5304 / 0.13
+
+        self._clear_can("body")
+        self._clear_body_omega()
+        self._publish_repeatedly(self.body_rotation_pub, Int32(data=1))
+        mode_1 = self._wait_for_can(
+            "body",
+            lambda msg: self._body_values(msg) is not None
+            and all(
+                math.isclose(value, pure_rotation_scale, abs_tol=0.05)
+                for value in self._body_values(msg)
+            ),
+        )
+        self.assertTrue(all(value > 0.0 for value in self._body_values(mode_1)))
+        self._wait_for_body_omega(
+            lambda value: math.isclose(value, 1.0, abs_tol=0.01)
+        )
+
+        self._clear_can("body")
+        time.sleep(0.2)
+        self._wait_for_can(
+            "body",
+            lambda msg: self._body_values(msg) is not None
+            and all(
+                math.isclose(value, pure_rotation_scale, abs_tol=0.05)
+                for value in self._body_values(msg)
+            ),
+        )
+
+        self._clear_can("body")
+        self._publish_repeatedly(self.body_rotation_pub, Int32(data=2))
+        self._wait_for_can(
+            "body",
+            lambda msg: self._body_values(msg) is not None
+            and all(
+                math.isclose(value, 2.0 * pure_rotation_scale, abs_tol=0.05)
+                for value in self._body_values(msg)
+            ),
+        )
+
+        self._clear_can("body")
+        self._publish_repeatedly(self.body_rotation_pub, Int32(data=0))
+        self._wait_for_can(
+            "body",
+            lambda msg: self._body_values(msg) is not None
+            and all(abs(value) < 1e-6 for value in self._body_values(msg)),
+        )
+
+        combined_twist = Twist()
+        combined_twist.linear.x = 0.2
+        combined_twist.angular.z = 0.4
+        self._publish_repeatedly(self.body_rotation_pub, Int32(data=1))
+        self._clear_can("body")
+        self._publish_repeatedly(self.body_cmd_pub, combined_twist)
+        self._wait_for_can(
+            "body",
+            lambda msg: self._body_values(msg) is not None
+            and max(self._body_values(msg)) - min(self._body_values(msg)) > 0.1,
+        )
+
+        self._clear_can("body")
+        time.sleep(0.2)
+        self._wait_for_can(
+            "body",
+            lambda msg: self._body_values(msg) is not None
+            and all(
+                math.isclose(value, pure_rotation_scale, abs_tol=0.05)
+                for value in self._body_values(msg)
+            ),
+        )
+
+        self._clear_can("body")
+        self._clear_body_omega()
+        self._publish_repeatedly(self.body_hazard_pub, Bool(data=True))
+        self._wait_for_can_count(
+            "body",
+            lambda msg: self._body_values(msg) is not None
+            and all(abs(value) < 1e-6 for value in self._body_values(msg)),
+        )
+        self._wait_for_body_omega(lambda value: abs(value) < 1e-6)
+
+        self._publish_repeatedly(self.body_rotation_pub, Int32(data=0))
+        self._publish_repeatedly(self.body_hazard_pub, false_msg)
+
         self._publish_repeatedly(self.target_hazard_pub, false_msg)
         self._publish_repeatedly(self.target_cmd_pub, zero_twist)
         self._publish_repeatedly(self.target_body_omega_pub, Float64(data=0.5))
