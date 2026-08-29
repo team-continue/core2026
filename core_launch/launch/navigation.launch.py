@@ -322,7 +322,11 @@ def generate_launch_description():
             description='Launch DM-IMU-L1 in real mode; always disabled in sim',
         ),
         DeclareLaunchArgument(
-            'imu_port', default_value='/dev/ttyACM0',
+            'imu_port',
+            default_value=(
+                '/dev/serial/by-id/'
+                'usb-DM-IMU_DM-IMU_USB_CDC_2025021200-if00'
+            ),
             description='DM-IMU-L1 USB serial device (real mode only)',
         ),
         DeclareLaunchArgument(

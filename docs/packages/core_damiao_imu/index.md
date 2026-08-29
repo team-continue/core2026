@@ -39,7 +39,7 @@ IMUのフラッシュ寿命を不要に消費しないよう、設定保存命�
 
 | パラメータ | 既定値 | 説明 |
 |-----------|--------|------|
-| `port` | `/dev/ttyACM0` | USB仮想シリアルデバイス |
+| `port` | `/dev/serial/by-id/usb-DM-IMU_DM-IMU_USB_CDC_2025021200-if00` | 本番機のUSBシリアルデバイス |
 | `baudrate` | `921600` | シリアルbaud rate |
 | `frame_id` | `damiao_imu_link` | `/imu.header.frame_id` |
 | `output_rate_hz` | `200` | 出力周期。100/125/200/250/500/1000 Hzに対応 |
@@ -50,14 +50,11 @@ IMUのフラッシュ寿命を不要に消費しないよう、設定保存命�
 単体起動:
 
 ```bash
-DM_IMU_PORT=/dev/serial/by-id/DM_IMU_L1_DEVICE_ID  # 実機で確認した名前へ置換
-ros2 launch core_damiao_imu damiao_imu.launch.py \
-  imu_port:="$DM_IMU_PORT"
+ros2 launch core_damiao_imu damiao_imu.launch.py
 ```
 
-`body_controller.launch.py`からも既定で起動します。実機のUSB構成が固定できたら、
-`/dev/ttyACM0`より`/dev/serial/by-id/...`を指定してください。`/dev/ttyACM0`も使用できますが、
-別のACMデバイスとの接続順で番号が変わる可能性があります。
+`body_controller.launch.py`からも既定で起動します。既定値は本番機のby-idに固定しています。
+別のIMUを使う場合は`imu_port:=/dev/serial/by-id/...`で上書きできます。
 
 ## 取り付けと校正
 

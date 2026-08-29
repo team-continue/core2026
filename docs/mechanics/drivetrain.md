@@ -89,7 +89,7 @@ w[3] = -(-vx·cos(π/4) - vy·sin(π/4) - √2·BODY_WIDTH/2·omega ) / WHEEL_RA
 | 引数 | デフォルト | 単位 |
 |------|-----------|------|
 | `acceleration` | 2.0 | m/s² |
-| `rotation_acceleration` | π（3.14159…） | rad/s² |
+| `rotation_acceleration` | 1.0 | rad/s² |
 | `auto_rotation_velocity` | -π | rad/s |
 | `high_rotation_velocity` | -6.28 | rad/s |
 | `yaw_rotation_velocity` | 6.28 | rad/s |
