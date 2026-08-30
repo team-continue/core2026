@@ -1,127 +1,145 @@
 # CANバスとモータID
 
-## CANバス構成
+upper TeensyはCAN2とCAN3の2系統を1 Mbpsで使用します。どちらもFlexCAN_T4の受信キュー256、送信キュー16で動作します。
 
-いずれも FlexCAN_T4（受信バッファ 256、送信バッファ 16）を使用します。CANモータは1 ms間隔でラウンドロビン送信し、bottomへの問い合わせはモータの応答待ちから独立して50 ms周期で送信します。
+!!! important "論理IDとCAN IDは別物です"
+    `/can/tx`、`motor_ref[]`、`ecat_PacketCallBack()` が使う **論理ID** と、CANフレーム内でモータを識別する **CANプロトコルID** は異なります。たとえば論理ID 0のDamiaoは、ファームウェア上では `master_id=0x11`、`slave_id=0x01` です。
 
-### CAN3（足回り + 無限回転Yaw + bottom）
+## CAN3
 
-| 定数 | 値 |
-|------|-----|
-| `CAN3_NUM_DAMIAO` | 4 |
-| `CAN3_NUM_ROBOSTRIDE` | 1 |
-| `CAN3_RESEND_INTERVAL_MS` | 1 |
-| `CAN3_TIMEOUT_MS` | 1000 |
-| `BOTTOM_REQUEST_INTERVAL_MS` | 50 |
-| `BOTTOM_CAN_TIMEOUT_MS` | 200 |
-| `CAN3_RS05_SPEED_LIMIT` | 1.0 rad/s |
-| `CAN3_RS05_ACC_LIMIT` | 3.0 rad/s² |
-| 初期制御モード | `Speed_control_mode` |
+CAN3にはupper Teensy、Damiao 4台、RoboStride 06 1台、bottom Teensyが同一バス上に接続されます。
 
-### CAN2（砲台Yaw）
+| 項目 | 現在値 |
+|------|-------|
+| ボーレート | 1 Mbps |
+| Damiao台数 | 4 |
+| RoboStride台数 | 1 |
+| モータ送信間隔 | `CAN3_SEND_INTERVAL_US = 1000` µs |
+| bottom問い合わせ周期 | `BOTTOM_REQUEST_INTERVAL_MS = 50` ms |
+| bottom接続タイムアウト | `BOTTOM_CAN_TIMEOUT_MS = 200` ms |
+| RoboStride速度上限 | 1.0 rad/s |
+| RoboStride加速度上限 | 3.0 rad/s² |
+| RoboStride初期モード | `Speed_control_mode` |
 
-| 定数 | 値 |
-|------|-----|
-| `CAN2_NUM_MOTOR` | 2（すべて RoboStride） |
-| `CAN2_RESEND_INTERVAL_MS` | 1 |
-| `CAN2_TIMEOUT_MS` | 1000 |
-| `CAN2_RS05_SPEED_LIMIT` | 1.0 rad/s |
-| `CAN2_RS05_ACC_LIMIT` | 3.0 rad/s² |
-| 初期制御モード | `PosPP_control_mode` |
+CAN3モータは5台をラウンドロビンし、1 ms以上の間隔で1台ずつ送信します。送信処理はモータの返信待ちに依存しません。bottomへの問い合わせもモータ送信とは独立して50 ms周期で実行します。
 
-## モータID割り当て
+### CAN3デバイスID
 
-EtherCAT の float パケットIDが、そのままモータIDになります。
+| 論理ID | デバイス | ファームウェアのID設定 | 用途 |
+|-------:|---------|-------------------------|------|
+| 0 | Damiao | `master_id=0x11`, `slave_id=0x01` | 足回りモータ0 |
+| 1 | Damiao | `master_id=0x12`, `slave_id=0x02` | 足回りモータ1 |
+| 2 | Damiao | `master_id=0x13`, `slave_id=0x03` | 足回りモータ2 |
+| 3 | Damiao | `master_id=0x14`, `slave_id=0x04` | 足回りモータ3 |
+| 4 | RoboStride 06 | `master_id=0x01`, `motor_id=0x01` | 車体無限回転Yaw |
+| — | bottom Teensy | 問い合わせ `0xff`、応答 `0x00`（標準ID） | 競技状態とLED |
 
-| ID | アクチュエータ | バス / 接続 | 用途 |
-|----|--------------|-----------|------|
-| 0–3 | Damiao × 4 | CAN3 | 足回りオムニホイール |
-| 4 | RoboStride 06 | CAN3 | 車体無限回転Yaw |
-| 5 | RoboStride 05 | CAN2 | 左砲台Yaw |
-| 6 | RoboStride 05 | CAN2 | 右砲台Yaw |
-| 7 | Feetech STS | Serial7 | 右砲塔 Pitch |
-| 8 | Feetech STS | Serial7 | 右砲塔 装填 |
-| 9 | Feetech STS | Serial7 | 右砲塔 ディスク保持（右） |
-| 10 | Feetech STS | Serial7 | 右砲塔 ディスク保持（左） |
-| 11 | Feetech STS | Serial7 | 左砲塔 Pitch |
-| 12 | Feetech STS | Serial7 | 左砲塔 装填 |
-| 13 | Feetech STS | Serial7 | 左砲塔 ディスク保持（右） |
-| 14 | Feetech STS | Serial7 | 左砲塔 ディスク保持（左） |
-| 15 | ESC | PWM（ピン24） | 左砲塔 発射モータ |
-| 16 | ESC | — | 右砲塔 発射モータ（**ファームウェア未実装**） |
-| 17 | — | GPIO 32 | 非常停止（**ファームウェアでコメントアウト**） |
+DamiaoとRoboStrideは異なるCANプロトコルを使用するため、同じ数値のIDが含まれていてもフレーム形式と照合方法が異なります。
 
-ID 0–4 は `can3_motor[]`、5–6 は `can2_motor[id-5]`、7–14 は `sts.setRefPos(id-7, …)` にディスパッチされます（`upper/src/main.cpp` の `ecat_PacketCallBack`）。
+### upper ↔ bottomフレーム
 
-!!! warning "ID 16 と 17 は現在のファームウェアで無効です"
-    `ecat_PacketCallBack` の `case 16:`（右ESC）と `case 17:`（非常停止のGPIO出力）はどちらもコメントアウトされています。ROS2側は `shooter.launch.py` で ID 16 を設定していますが、指令は届きません。
+upperは標準ID `0xff`、長さ2 Bでbottomへ問い合わせます。
 
-### Feetechサーボ
+| リクエスト | 現在の用途 |
+|-----------|-----------|
+| `buf[0]` | bottom LEDモード。upper LEDと同じ `LED_TAPE[0]` の下位8 bit |
+| `buf[1]` | `LED_TAPE[2]` の下位8 bitを送信するが、bottom側では現在未使用 |
 
-| 項目 | 値 |
-|------|-----|
-| 台数（`LEN_SERVO`） | 8 |
+bottomは標準ID `0x00`、長さ3 Bで応答します。
+
+| レスポンス | 内容 |
+|-----------|------|
+| `buf[0]` | destroy（撃破フラグ） |
+| `buf[1]` | hp（残HP） |
+| `buf[2]` | color（チーム色） |
+
+## CAN2
+
+CAN2にはupper TeensyとRoboStride 05 2台が接続されます。
+
+| 項目 | 現在値 |
+|------|-------|
+| ボーレート | 1 Mbps |
+| RoboStride台数 | 2 |
+| 最小再送間隔 | `CAN2_RESEND_INTERVAL_MS = 1` ms |
+| 応答待ちの送信フォールバック | `CAN2_TIMEOUT_MS = 1000` ms |
+| 速度上限 | 1.0 rad/s |
+| 加速度上限 | 3.0 rad/s² |
+| 初期モード | `PosPP_control_mode` |
+| 位置オフセット（論理ID 5） | `M_PI + 1.25` rad |
+| 位置オフセット（論理ID 6） | `M_PI + 0.1` rad |
+
+CAN2は1台への送信後に返信を待ち、返信を受けたら次のモータへ進みます。返信がない場合でも1000 ms経過後に送信を再開します。`CAN2_TIMEOUT_MS` はこの送信スケジューラのフォールバックであり、モータ接続判定のタイムアウトではありません。
+
+### CAN2デバイスID
+
+| 論理ID | デバイス | ファームウェアのID設定 | 用途 |
+|-------:|---------|-------------------------|------|
+| 5 | RoboStride 05 | `master_id=0xfd`, `motor_id=0x01` | 左砲台Yaw |
+| 6 | RoboStride 05 | `master_id=0xfd`, `motor_id=0x02` | 右砲台Yaw |
+
+## アプリ側論理ID
+
+論理IDはROS 2の `/can/tx`、EtherCATの `motor_ref[]`、upperの指令ディスパッチで共通して使用します。CANの生IDではありません。
+
+| 論理ID | アクチュエータ | 物理接続 | デバイスID | 用途 |
+|-------:|--------------|---------|-----------|------|
+| 0–3 | Damiao × 4 | CAN3 | slave ID 1–4 | 足回りオムニホイール |
+| 4 | RoboStride 06 | CAN3 | motor ID 1 | 車体無限回転Yaw |
+| 5 | RoboStride 05 | CAN2 | motor ID 1 | 左砲台Yaw |
+| 6 | RoboStride 05 | CAN2 | motor ID 2 | 右砲台Yaw |
+| 7 | Feetech STS | Serial7 | servo ID 1 | 右砲塔 Pitch |
+| 8 | Feetech STS | Serial7 | servo ID 2 | 右砲塔 装填 |
+| 9 | Feetech STS | Serial7 | servo ID 3 | 右砲塔 ディスク保持（右） |
+| 10 | Feetech STS | Serial7 | servo ID 4 | 右砲塔 ディスク保持（左） |
+| 11 | Feetech STS | Serial7 | servo ID 5 | 左砲塔 Pitch |
+| 12 | Feetech STS | Serial7 | servo ID 6 | 左砲塔 装填 |
+| 13 | Feetech STS | Serial7 | servo ID 7 | 左砲塔 ディスク保持（右） |
+| 14 | Feetech STS | Serial7 | servo ID 8 | 左砲塔 ディスク保持（左） |
+| 15 | ESC | PWM、ピン24 | — | 左砲塔 発射モータ |
+| 16 | 未実装 | — | — | 右砲塔 発射モータ用としてlaunchに設定されるが、PDOとupper処理に未実装 |
+| 17 | 非常停止指令 | GPIO 32 | — | `system_ref` として転送されるが、upperのGPIO処理はコメントアウト |
+
+ID 0–4は `can3_motor[]`、5–6は `can2_motor[id-5]`、7–14は `sts.setRefPos(id-7, …)`、15は `esc.write()` にディスパッチされます。
+
+!!! warning "論理ID 16と17はアクチュエータを動かしません"
+    EtherCATの `motor_ref` はID 0–15までです。ID 16用の右ESC指令はPDOに存在せず、upperの `case 16` もコメントアウトされています。ID 17は別の `system_ref` でupperへ届きますが、非常停止GPIOの処理がコメントアウトされています。
+
+## Feetechサーボ
+
+| 項目 | 現在値 |
+|------|-------|
+| 台数 | 8（servo ID 1–8） |
 | ボーレート | 1 Mbps（Serial7） |
-| 制御周期 | 10 ms（`STS_CONTROL_INTERVAL_US`） |
-| 位置PID P項 | 2.0 |
-| 速度上限（STS3215） | 67 rpm 相当 |
-| 速度上限（STS3020） | 100 rpm 相当 |
+| 制御周期 | 10 ms |
+| 位置誤差が0.5 rad未満のPゲイン | 2.0 |
+| 位置誤差が0.5 rad以上のPゲイン | 4.0 |
+| 速度上限（STS3215） | 67 rpm相当 |
+| 速度上限（STS3020） | 100 rpm相当 |
 | 接続タイムアウト | 1000 ms |
 | 再接続間隔 | 500 ms |
 | SyncReadタイムアウト | 50 ms |
 
-## EtherCAT PDO / パケット構成
+## 死活監視と安全動作
 
-### 状態フィードバック（Teensy → PC、float × 6）
+| 監視対象 | タイムアウト | 現在の動作 |
+|---------|-------------|-----------|
+| upperへのEtherCAT指令 | 500 ms | `hardware_enable=0`、`LED_BUILTIN`点灯、Feetechをdisable |
+| bottomのCAN応答 | 200 ms | 全アクチュエータ指令を拒否し、上記と同じ安全状態へ移行 |
+| upperから各CANモータへの指令 | 200 ms | Damiao / RoboStride側で指令切断として扱う |
+| Damiao / RoboStrideのCAN応答 | 100 ms | 該当モータをCAN未接続として扱う |
+| upperからbottomへの問い合わせ | 500 ms | bottomの `LED_BUILTIN` を点灯 |
+| 無線受信 | 3000 ms | 接続状態は計算するが、無線機器未導入のため安全条件から一時的に除外 |
 
-全15軸（ID 0–14）について、各軸6要素のfloat配列を送信します。
+bottom応答はモータ応答より先に専用処理されます。これによりbottomの応答がモータの応答待ち状態を誤って解除することはありません。
 
-| 要素 | 内容 |
-|------|------|
-| `[0]` | 予約（未使用） |
-| `[1]` | 実トルク / 電流 |
-| `[2]` | 目標速度 |
-| `[3]` | 実速度 |
-| `[4]` | 目標位置 |
-| `[5]` | 実位置 |
-
-### 状態フィードバック（Teensy → PC、uint8）
-
-| パケットID | 内容 | サイズ |
-|-----------|------|-------|
-| 100 | damage（HP） | 1 B |
-| 101 | destroy（撃破フラグ） | 1 B |
-| 102 | wireless（受信機データ） | 7 B |
-| 103 | color（チーム色） | 1 B |
-| 104 | hardware_enable | 1 B |
-
-`hardware_enable` はROS2またはbottomが未接続の場合に0になります。無線機器が未導入のため、`connect_wireless` は現在この安全条件から一時的に除外しています。無線の初期化・受信と接続状態の更新処理は維持しています。
-
-### 指令（PC → Teensy、uint8）
-
-| パケットID | 内容 |
-|-----------|------|
-| 100 | `data[0]`: upper LED、`data[1..2]`: bottom LED（`setLedBytes`） |
-
-!!! warning "wireless と color はPDO上で多重化されています"
-    `core_hardware/README.md` の記載通り、`wireless` 7バイトに加えて末尾1バイトを `color` に使い、`motor_state_torque[0..3]` の先頭8バイトに載せています。多重化は `core_hardware_daemon` と Teensy の間で吸収され、ROS2側の `/wireless` トピックのインタフェースは維持されます。
-
-    そのため **EtherCATレイアウトを変更するときは `utypes.h` だけでなく `objectlist.c` / `esi.json` / PC側 `ecat.cpp` を必ず同時に揃えてください**。ID 0–3 の `torque` は通常用途では使いません。
-
-## 死活監視と非常停止
-
-| 監視対象 | 条件 | 動作 |
-|---------|------|------|
-| ROS2接続（upper） | 最終受信から 500 ms 経過 | `LED_BUILTIN` 点灯、Feetechサーボを `disable` |
-| bottom接続（upper） | CAN ID `0x00`、3 Bの正常応答を未受信、または最終応答から200 ms経過 | 全モータ指令を拒否、`hardware_enable` を0、`LED_BUILTIN` 点灯、Feetechサーボを`disable` |
-| upper接続（bottom） | 最終問い合わせ受信から500 ms経過 | `LED_BUILTIN` 点灯 |
-| CANモータ | `CAN2/CAN3_TIMEOUT_MS` = 1000 ms | 該当モータを未接続扱い |
-
-upperの接続判定とbottomのLED表示は、それぞれの`led_timer`で50 ms周期（20 Hz）に実行します。bottomの正常応答はモータ応答と区別し、モータ用の応答待ち状態を解除しません。ROS2側の死活監視は `core_mode` の `diagnostic` ノードが `/joint_states` と `/wireless` のハートビートで実施します（[システム概要](../architecture/overview.md) を参照）。
+EtherCATマスタ側の周期、WKC監視、PDO構成は [EtherCATとPDO](ethercat.md) を参照してください。
 
 ## 関連ページ
 
+- [回路・通信構成](index.md)
 - [基板とピン配置](boards.md)
+- [EtherCATとPDO](ethercat.md)
 - [メカ構成：駆動系・旋回機構](../mechanics/drivetrain.md)
 - [メカ構成：砲塔・装填・発射機構](../mechanics/turret.md)
 - [トピック・メッセージ一覧](../architecture/topics.md) — `core_msgs/CANArray` の定義
