@@ -13,12 +13,15 @@
 
 ## 砲台Yaw 
 RoboStride 05を用いて発射機構を左右に動かす機構である。<br>
+画像3に機構を示す。<br>
 砲台Pitchと合わせることで発射機構を自由に動かす。<br>
 
 ![alt text](image-10.png)
+<div style="text-align: center">画像3</div>
 
 ## 砲台Pitch
 サーボモータを用いて発射機構を縦に動かす機構である。<br>
+画像4に機構を示す。<br>
 砲台Yaw と合わせることで発射機構を自由に動かす。<br>
 
 ![alt text](image-9.png)
