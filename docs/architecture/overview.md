@@ -11,7 +11,7 @@
 | 層 | 含まれるもの |
 |----|-------------|
 | Sensing（LiDAR） | lidar → lidar_filter（Livox Mid-360の点群） |
-| Sensing（IMU） | imu → imu_filter（`imu_filter_madgwick`） |
+| Sensing（IMU） | DM-IMU-L1 → core_damiao_imu（`/imu`） |
 | Sensing（Camera） | camera_l, camera_r（左右砲塔）, camera_tps（TPS視点） |
 | Localization | fastlio_mapping, odom_bridge |
 | Perception（EnemyDetection） | target_detector, target_selector（left / right の2系統） |
@@ -32,7 +32,7 @@
     `core_launch/launch/navigation.launch.py` では、ナビゲーションパイプラインの主要ノードが**コメントアウトされており起動しません**。
 
     - 無効化中: `map_server_node` / `odom_bridge_node` / `path_planner_node` / `core_mppi_node` / `cmd_vel_smoother_node` / `costmap_build_node` / FAST-LIO
-    - 実際に起動するもの: ROS-TCP-Endpoint（sim時）、Livoxドライバ（実機時）、静的TF 2本、`body_controller.launch.py`、RViz2、`localization_node`（`use_localization:=true` 時）
+    - 実際に起動するもの: ROS-TCP-Endpoint（sim時）、LivoxドライバとDM-IMU-L1ドライバ（実機時）、静的TF 2本、`body_controller.launch.py`、RViz2、`localization_node`（`use_localization:=true` 時）
 
     現在は**パッケージごとのlaunchファイルを個別に起動する構成**に移行しています。以下の各launchファイルを必要に応じて組み合わせて使用してください。
 
@@ -40,10 +40,11 @@
 
 | launchファイル | 起動するノード |
 |---------------|---------------|
-| `core_launch/navigation.launch.py` | ros_tcp_endpoint（sim）/ livox_ros_driver2（実機）/ 静的TF / body_controller / RViz2 / localization_node（オプション） |
+| `core_launch/navigation.launch.py` | ros_tcp_endpoint（sim）/ livox_ros_driver2・damiao_imu_node（実機）/ 静的TF / body_controller / RViz2 / localization_node（オプション） |
 | `core_launch/state_publisher.launch.py` | robot_state_publisher, joint_state_publisher（URDF: `core2025_attacker.urdf`） |
 | `core_launch/imu_filter.launch.py` | imu_filter_madgwick（`imu` → `filtered_imu`） |
-| `core_body_controller/body_controller.launch.py` | body_control_node, target_angle_node |
+| `core_body_controller/body_controller.launch.py` | damiao_imu_node（既定）、body_control_node, target_angle_node |
+| `core_damiao_imu/damiao_imu.launch.py` | damiao_imu_node |
 | `core_path_planner/path_planner.launch.py` | path_planner_node |
 | `core_mppi/mppi.launch.py` | core_mppi_node |
 | `core_path_follower/path_follower.launch.py` | core_path_follower_node |
@@ -70,6 +71,7 @@ graph TB
         FASTLIO["FAST-LIO"]
         MapPNG["core1_field.png"]
         LiDAR["Livox Mid-360"]
+        DMIMU["DM-IMU-L1"]
     end
 
     subgraph Behavior["行動計画"]
@@ -106,6 +108,7 @@ graph TB
     FASTLIO -->|/Odometry| OdomBridge
     MapPNG --> MapServer
     LiDAR -->|/livox/lidar| CostmapBuilder
+    DMIMU -->|/imu| TargetAngle
 
     WaypointSelector -->|/selected_pose| BehaviorSystem
     BehaviorSystem -->|/goal_pose| PathPlanner
@@ -126,8 +129,9 @@ graph TB
     PathFollower -->|/cmd_vel| BodyController
     MPPI -->|/goal_reached| BehaviorSystem
     PathFollower -->|/goal_reached| BehaviorSystem
-    TargetAngle -->|/body_target_angle| BodyController
+    BodyController -->|/body_omega| TargetAngle
     BodyController -->|/can/tx| Hardware
+    TargetAngle -->|"/can/tx（ID=4）"| Hardware
 
     subgraph Localization["局在化（実機オプション）"]
         PCDMap["PCD地図"] --> LocalizationNode["localization_node"]
@@ -140,6 +144,7 @@ graph TB
     style Unity fill:#e1f5fe,color:#333
     style FASTLIO fill:#e1f5fe,color:#333
     style LiDAR fill:#e1f5fe,color:#333
+    style DMIMU fill:#e1f5fe,color:#333
     style Localization fill:#e8f5e9,color:#333
     style Behavior fill:#fff3e0,color:#333
 
@@ -282,10 +287,10 @@ graph LR
 |--------|-----------|------|------|
 | `body_control_node` | core_body_controller | C++ | cmd_vel→オムニホイールCAN指令変換、レートリミッタ |
 | `target_angle_node` | core_body_controller | C++ | 車体回転角度PID制御（IMU+エンコーダ） |
+| `damiao_imu_node` | core_damiao_imu | Python | DM-IMU-L1 USB受信、内部EKF姿勢を`/imu`へ配信 |
 | `core_hardware` | core_hardware | C++ | EtherCAT（SOEM）によるTeensy41スレーブ通信 |
 | `core_hardware_usb` | core_hardware | C++ | USBシリアル経由のTeensy通信（launchでは未起動） |
 | `robot_state_publisher` | （外部） | C++ | URDF（`core2025_attacker.urdf`）からのTF配信 |
-| `imu_filter_madgwick` | （外部） | C++ | IMU姿勢推定フィルタ（`imu` → `filtered_imu`） |
 
 ### 操縦入力
 

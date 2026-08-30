@@ -19,7 +19,7 @@ find_package(backward_ros REQUIRED)
 ament_auto_find_build_dependencies()
 
 ament_auto_add_library(${PROJECT_NAME}
-   SHARED
+  SHARED
   src/joy_cmd_parser.cpp
   include/core_body_controller/joy_cmd_parser.hpp
 )
@@ -38,6 +38,16 @@ ament_auto_add_executable(target_angle_node
 
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(launch_testing_ament_cmake REQUIRED)
+
+  ament_add_gtest(test_target_angle_controller
+    test/test_target_angle_controller.cpp
+  )
+  target_include_directories(test_target_angle_controller PRIVATE include)
+
+  add_launch_test(test/test_body_controller_launch.py TIMEOUT 45)
+
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
   # comment the line when a copyright and license is added to all source files

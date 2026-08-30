@@ -44,18 +44,14 @@ def _launch_nodes(context):
     """Resolve map preset and return all node actions."""
     # ── Resolve launch arguments ─────────────────────────────────────
     env = context.launch_configurations['environment']
-    odom_src = context.launch_configurations['odom_source']
     map_name = context.launch_configurations['map_name']
-    init_yaw = context.launch_configurations['init_yaw']
     use_rviz = context.launch_configurations['use_rviz']
     use_localization = context.launch_configurations.get(
         'use_localization', 'false').lower() == 'true'
 
     is_real = (env == 'real')
-    use_fastlio = is_real or (odom_src == 'fastlio')
-    effective_odom_source = 'fastlio' if is_real else odom_src
-    imu_topic = '/livox/imu' if is_real else '/imu'
-    lidar_type = 4 if is_real else 0
+    use_damiao_imu = is_real and context.launch_configurations.get(
+        'use_damiao_imu', 'true').lower() == 'true'
 
     # ── Map preset ───────────────────────────────────────────────────
     preset = MAP_PRESETS.get(map_name)
@@ -65,16 +61,11 @@ def _launch_nodes(context):
             f"Unknown map_name '{map_name}'. Available: {available}")
 
     core_launch_share = get_package_share_directory('core_launch')
-    map_image_path = os.path.join(core_launch_share, 'maps', preset['image'])
 
     # ── Package directories ──────────────────────────────────────────
-    mppi_share = get_package_share_directory('core_mppi')
-    costmap_share = get_package_share_directory('core_costmap_builder')
     body_ctrl_share = get_package_share_directory('core_body_controller')
 
     rviz_config = os.path.join(core_launch_share, 'config', 'navigation.rviz')
-    mppi_params = os.path.join(mppi_share, 'param', 'default_params.yaml')
-    costmap_params = os.path.join(costmap_share, 'config', 'costmap_build_node.yaml')
 
     livox_user_config = PathJoinSubstitution([
         FindPackageShare('livox_ros_driver2'), 'config', 'MID360_config.json',
@@ -273,6 +264,14 @@ def _launch_nodes(context):
         PythonLaunchDescriptionSource(
             os.path.join(body_ctrl_share, 'launch', 'body_controller.launch.py'),
         ),
+        launch_arguments={
+            'use_damiao_imu': 'true' if use_damiao_imu else 'false',
+            'imu_port': context.launch_configurations['imu_port'],
+            'imu_baudrate': context.launch_configurations['imu_baudrate'],
+            'imu_frame_id': context.launch_configurations['imu_frame_id'],
+            'imu_output_rate_hz': context.launch_configurations[
+                'imu_output_rate_hz'],
+        }.items(),
     ))
 
     # ── 12. RViz ────────────────────────────────────────────────────
@@ -317,6 +316,26 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_localization', default_value='false',
             description='Enable NDT/ICP localization (dynamic map→odom TF)',
+        ),
+        DeclareLaunchArgument(
+            'use_damiao_imu', default_value='true',
+            description='Launch DM-IMU-L1 in real mode; always disabled in sim',
+        ),
+        DeclareLaunchArgument(
+            'imu_port', default_value='/dev/ttyACM0',
+            description='DM-IMU-L1 USB serial device (real mode only)',
+        ),
+        DeclareLaunchArgument(
+            'imu_baudrate', default_value='921600',
+            description='DM-IMU-L1 USB serial baud rate',
+        ),
+        DeclareLaunchArgument(
+            'imu_frame_id', default_value='damiao_imu_link',
+            description='Frame ID assigned to DM-IMU-L1 messages',
+        ),
+        DeclareLaunchArgument(
+            'imu_output_rate_hz', default_value='200',
+            description='DM-IMU-L1 output rate [Hz]',
         ),
         OpaqueFunction(function=_launch_nodes),
     ])

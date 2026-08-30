@@ -111,7 +111,8 @@ void ecat_FrameCallBack(){
 // // PCから受信時にパケットごとに呼ばれるやつ
 void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
   // 下の基板に接続できない場合は，命令を処理しない -> すべて停止
-  if(!connect_bottom || !connect_wireless){
+  // TODO: 無線機器の導入後に connect_wireless の条件を戻す。
+  if(!connect_bottom /* || !connect_wireless */){
     return;
   }
   switch(id){
@@ -181,11 +182,13 @@ void setup(void) {
 }
 
 void led_timer_cb(){
+  const uint32_t now_ms = millis();
   // ros2と接続しているか確認
-  connect_ros2 = (millis() - prev_connect_ros2_ts_) < 500;
-  connect_bottom = (millis() - can3_last_receive_time) < 200;
-  connect_wireless = (millis() - wireless_prev_connect_ms) < WIRELESS_TIMEOUT_MS;
-  hardware_emergency = (!connect_ros2 || !connect_bottom || !connect_wireless);
+  connect_ros2 = (now_ms - prev_connect_ros2_ts_) < 500;
+  connect_bottom = bottom_can3.isCanConnected(now_ms);
+  connect_wireless = (now_ms - wireless_prev_connect_ms) < WIRELESS_TIMEOUT_MS;
+  // TODO: 無線機器の導入後に connect_wireless の条件を戻す。
+  hardware_emergency = (!connect_ros2 || !connect_bottom /* || !connect_wireless */);
   if(hardware_emergency){
     digitalWrite(LED_BUILTIN, HIGH);
     sts.disable = true;

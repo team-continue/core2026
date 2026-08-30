@@ -44,7 +44,9 @@ ros2 launch core_hardware core_hardware.launch.py
 ### ボディコントローラ
 
 ```bash
-ros2 launch core_body_controller body_controller.launch.py
+DM_IMU_PORT=/dev/serial/by-id/DM_IMU_L1_DEVICE_ID  # 実機で確認した名前へ置換
+ros2 launch core_body_controller body_controller.launch.py \
+  imu_port:="$DM_IMU_PORT"
 ```
 
 ## 動作確認
@@ -65,6 +67,10 @@ ros2 topic echo /can/tx
 
 # ジョイントステートの確認
 ros2 topic echo /joint_states
+
+# DM-IMU-L1の姿勢と発行周期
+ros2 topic echo /imu --once
+ros2 topic hz /imu
 ```
 
 ## Docker環境での使用
@@ -77,6 +83,49 @@ cap_add:
   - NET_RAW
   - NET_ADMIN
 ```
+
+## Damiao DM-IMU-L1
+
+### 取り付けとUSB接続
+
+DM-IMU-L1を無限回転する上部車体に剛体固定し、センサの+Xを機体前方、+Zを上向きにします。
+Type-CケーブルでPCへ直結し、デバイス名を確認します。
+
+```bash
+ls -l /dev/serial/by-id/
+ls -l /dev/ttyACM*
+```
+
+既定値の`/dev/ttyACM0`でも動作します。ただし複数のUSB仮想シリアル機器があると、接続順によって
+`ttyACM0`の対象が変わります。本番機では確認後の`/dev/serial/by-id/...`を`imu_port`へ指定してください。
+
+デバイスを一般ユーザーで開けない場合は、ユーザーを`dialout`グループへ追加して再ログインします。
+
+```bash
+sudo usermod -aG dialout $USER
+```
+
+### 事前ジャイロ校正
+
+公式[DM-IMUリポジトリ](https://github.com/dmBots/DM-IMU)のWindows用`DM-IMU-Upper`を使用します。
+IMUを実機へ固定して完全に静止させ、公式V1.2マニュアルの手順でジャイロ校正を実行します。
+校正処理が完了するまで機体へ振動を与えず、必要な保存操作はこの事前作業でのみ行います。
+
+ROSドライバは起動のたびに加速度・角速度・Euler出力と200 Hzを揮発設定しますが、自動校正や
+フラッシュ保存は行いません。
+
+### 単体確認
+
+```bash
+DM_IMU_PORT=/dev/serial/by-id/DM_IMU_L1_DEVICE_ID  # 実機で確認した名前へ置換
+ros2 launch core_damiao_imu damiao_imu.launch.py \
+  imu_port:="$DM_IMU_PORT"
+ros2 topic hz /imu
+ros2 topic echo /imu --once
+```
+
+上から見て機体を反時計回りに回したときYawが正になることを確認してください。逆になる場合は
+ソフトウェアで符号反転せず、まず+X前方・+Z上向きの取り付け方向を修正します。
 
 ## Livox Mid-360 LiDAR
 
