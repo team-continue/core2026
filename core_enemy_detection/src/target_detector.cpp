@@ -33,7 +33,6 @@ void targetDetector::changeTarget(const std_msgs::msg::UInt8::SharedPtr msg){
  */
 void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr imgMsg){
     resetDamagePanelInfo();
-    operate = true;
 
     // subscribeされたイメージ取得
     rawImage = cv_bridge::toCvShare(imgMsg, "bgr8")->image;
@@ -208,7 +207,6 @@ void targetDetector::resetDamagePanelInfo(){
 }
 
 void targetDetector::extractHsvRange(){
-    mode = 17;
     if(mode == 67 || mode == 51){
         // hsv画像に対する検出
         cv::Mat mask1, mask2;
