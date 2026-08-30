@@ -2,13 +2,15 @@
 
 ## Purpose
 
-ROS2側で生成されたモータ指令を実機に届け、実機の状態をROS2側に返すための境界ノードです。EtherCAT（SOEMライブラリ）を用いてTeensy41スレーブと通信し、モータ制御・LED制御・試合情報の受信を一手に担います。
+ROS2側で生成されたモータ指令を実機に届け、実機の状態をROS2側に返すための境界ノードです。`core_hardware_daemon` とのIPCを介してTeensy41スレーブと通信し、モータ制御・LED制御・試合情報の受信を一手に担います。SOEMによるEtherCAT通信はデーモン側が担当します。
 
 ## Inner-workings / Algorithms
 
 ### 権限分離とIPC
 
 EtherCATの生パケット送受信には `NET_RAW` / `NET_ADMIN` 権限が必要です。ROSノード自体を特権で動かすことを避けるため、実際のEtherCAT通信は別プロセスの `core_hardware_daemon` が担当し、このノードとは `socket_path` のUNIXドメインソケット経由で通信します。
+
+AX58100との接続、PDOレイアウト、wireless / colorの多重化、デーモンの通信周期は[EtherCATとPDO](../../circuit/ethercat.md)を参照してください。
 
 ### 通信サイクル
 
@@ -55,6 +57,6 @@ EtherCATの生パケット送受信には `NET_RAW` / `NET_ADMIN` 権限が必�
 ## Assumptions / Known limits
 
 - `core_hardware_daemon` が起動しており、指定した `socket_path` で待ち受けていることが前提です。デーモンが落ちるとモータ指令は一切届きません。
-- EtherCATスレーブ（Teensy41）のEEPROMが正しく書き込まれている必要があります。手順は[ハードウェアセットアップガイド](../../guides/hardware-setup.md)を参照してください。
+- EtherCATスレーブ（Teensy41）のEEPROMが正しく書き込まれている必要があります。PDOとEEPROMの詳細は[EtherCATとPDO](../../circuit/ethercat.md)、実機導入手順は[ハードウェアセットアップガイド](../../guides/hardware-setup.md)を参照してください。
 - `can/tx` に届いた指令の妥当性検証（速度上限や可動範囲）は行いません。安全確認は各制御ノードの責務です。
 - 通信周期はEtherCATサイクルに従います。ROS側のトピック発行レートを上げても実効的な制御周期は変わりません。
