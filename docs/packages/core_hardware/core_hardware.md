@@ -55,6 +55,6 @@ EtherCATの生パケット送受信には `NET_RAW` / `NET_ADMIN` 権限が必�
 ## Assumptions / Known limits
 
 - `core_hardware_daemon` が起動しており、指定した `socket_path` で待ち受けていることが前提です。デーモンが落ちるとモータ指令は一切届きません。
-- EtherCATスレーブ（Teensy41）のEEPROMが正しく書き込まれている必要があります。手順は[ハードウェアセットアップガイド](../../guides/hardware-setup.md)を参照してください。
+- EtherCATスレーブ（Teensy41）のEEPROMが正しく書き込まれている必要があります。
 - `can/tx` に届いた指令の妥当性検証（速度上限や可動範囲）は行いません。安全確認は各制御ノードの責務です。
 - 通信周期はEtherCATサイクルに従います。ROS側のトピック発行レートを上げても実効的な制御周期は変わりません。

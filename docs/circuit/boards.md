@@ -96,4 +96,3 @@ sudo ./build/ecat_zero_check enp2s0
 ## 関連ページ
 
 - [CANバスとモータID](buses.md) — バス構成とID割り当て
-- [ハードウェアセットアップ](../guides/hardware-setup.md) — 実機の配線・起動手順

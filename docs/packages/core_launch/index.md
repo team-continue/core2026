@@ -40,4 +40,4 @@ graph LR
 ros2 launch core_launch navigation.launch.py
 ```
 
-起動オプションの詳細は[ナビゲーション起動・実機テストガイド](../../guides/navigation.md)を参照してください。
+実機システムの起動順は[クイックスタート](../../getting-started/quick-start.md)を参照してください。

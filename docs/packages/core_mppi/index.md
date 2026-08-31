@@ -68,5 +68,3 @@ ros2 launch core_mppi mppi.launch.py
 ```
 
 設定ファイル: `param/default_params.yaml`
-
-コスト重みのチューニング手順は[パラメータチューニングガイド](../../guides/tuning.md#mppi-コントローラ)を参照してください。

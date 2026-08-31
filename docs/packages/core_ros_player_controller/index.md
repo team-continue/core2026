@@ -48,7 +48,7 @@ byte:  0        1        2        3         4        5        6
        └─ EStop / Roller / Reload / Shoot / ADS / 左右TurretAuto
 ```
 
-ビットの詳細な割り当ては[ノードページ](wireless_parser_node.md#入力フォーマット)を参照してください。
+ビットの詳細な割り当ては[ノードページ](wireless_parser_node.md#input-format)を参照してください。
 
 ## 起動
 

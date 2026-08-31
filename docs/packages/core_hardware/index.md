@@ -37,4 +37,4 @@ ros2 launch core_hardware core_hardware.launch.py
 !!! warning "権限"
     EtherCAT通信には `NET_RAW` / `NET_ADMIN` 権限が必要です。Docker環境では `docker-compose.yaml` で設定済みです。
 
-セットアップ手順（EEPROM書き込み、通信テスト、LiDAR接続など）は[ハードウェアセットアップガイド](../../guides/hardware-setup.md)を参照してください。
+EtherCATデーモンを含む実機システムの起動手順は[クイックスタート](../../getting-started/quick-start.md)を参照してください。

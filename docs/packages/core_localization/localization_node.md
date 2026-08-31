@@ -117,7 +117,7 @@ ros2 launch core_launch navigation.launch.py \
   use_localization:=true
 ```
 
-PCD地図の構築・配置方法やフィールドごとの地図選択については[PCD地図構築ガイド](../../guides/pcd-mapping.md)を参照してください。
+走行するフィールドのPCD地図を`global_map_path`で指定してください。
 
 ### 単体起動（テスト・開発用）
 

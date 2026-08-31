@@ -38,4 +38,4 @@ Unity から ROS2 に送信されるトピック:
 | `/sim_odom` | `nav_msgs/Odometry` | ロボットのオドメトリ |
 
 !!! note "座標変換"
-    Unity の座標系（X=右, Y=上, Z=前）は odom_bridge で ROS2 の座標系（X=前, Y=左, Z=上）に変換されます。詳細は[座標系](../architecture/tf-tree.md)を参照。
+    Unityの座標系（X=右、Y=上、Z=前）は`odom_bridge`でROS 2の座標系（X=前、Y=左、Z=上）に変換されます。

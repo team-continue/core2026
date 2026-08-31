@@ -35,4 +35,4 @@ colcon test-result --verbose
 ## Assumptions / Known limits
 
 - GTest（C++）のみを対象とします。Pythonパッケージのテストは各パッケージ側で `pytest` を使って個別に設定してください。
-- ハードウェアやEtherCAT接続を必要とするテストは対象外です。実機依存の確認は[ハードウェアセットアップガイド](../../guides/hardware-setup.md)の手順で行ってください。
+- ハードウェアやEtherCAT接続を必要とするテストは対象外です。実機依存の確認は、[core_hardware](../core_hardware/index.md)の構成に合わせて個別に行ってください。
