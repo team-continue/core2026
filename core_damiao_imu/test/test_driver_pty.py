@@ -86,14 +86,15 @@ def test_pty_configuration_publish_disconnect_and_reconnect(tmp_path):
             + make_frame(2, (0.1, 0.2, 0.3))
             + make_frame(3, (0.0, 0.0, 90.0))
         )
-        for _ in range(20):
+        sample_count = 20
+        for _ in range(sample_count):
             os.write(first_master, sample)
             time.sleep(0.005)
 
         deadline = time.monotonic() + 2.0
-        while len(messages) < 10 and time.monotonic() < deadline:
+        while len(messages) < sample_count and time.monotonic() < deadline:
             time.sleep(0.01)
-        assert len(messages) >= 10
+        assert len(messages) == sample_count
         first_message = messages[-1]
         assert first_message.header.frame_id == "damiao_test_link"
         assert first_message.header.stamp.sec > 0
