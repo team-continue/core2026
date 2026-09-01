@@ -42,7 +42,7 @@ private:
   std::chrono::steady_clock::time_point last_cmd_vel_time_;
 
   double ACCELERATION = 2;  // m/s^2
-  double ROTATION_ACCELERATION = 1 * M_PI;
+  double ROTATION_ACCELERATION = 1.0;
   double AUTO_ROTATION_VELOCITY = 0.3 * M_PI;
   double HIGH_ROTATION_VELOCITY = 1.0 * M_PI;
   double CMD_VEL_TIMEOUT_SEC = 0.2;

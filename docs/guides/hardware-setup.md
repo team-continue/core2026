@@ -44,9 +44,7 @@ ros2 launch core_hardware core_hardware.launch.py
 ### ボディコントローラ
 
 ```bash
-DM_IMU_PORT=/dev/serial/by-id/DM_IMU_L1_DEVICE_ID  # 実機で確認した名前へ置換
-ros2 launch core_body_controller body_controller.launch.py \
-  imu_port:="$DM_IMU_PORT"
+ros2 launch core_body_controller body_controller.launch.py
 ```
 
 ## 動作確認
@@ -96,8 +94,9 @@ ls -l /dev/serial/by-id/
 ls -l /dev/ttyACM*
 ```
 
-既定値の`/dev/ttyACM0`でも動作します。ただし複数のUSB仮想シリアル機器があると、接続順によって
-`ttyACM0`の対象が変わります。本番機では確認後の`/dev/serial/by-id/...`を`imu_port`へ指定してください。
+既定値は本番機の
+`/dev/serial/by-id/usb-DM-IMU_DM-IMU_USB_CDC_2025021200-if00`です。別のIMUを使う場合は
+`imu_port:=/dev/serial/by-id/...`で上書きしてください。
 
 デバイスを一般ユーザーで開けない場合は、ユーザーを`dialout`グループへ追加して再ログインします。
 
@@ -117,9 +116,7 @@ ROSドライバは起動のたびに加速度・角速度・Euler出力と200 Hz
 ### 単体確認
 
 ```bash
-DM_IMU_PORT=/dev/serial/by-id/DM_IMU_L1_DEVICE_ID  # 実機で確認した名前へ置換
-ros2 launch core_damiao_imu damiao_imu.launch.py \
-  imu_port:="$DM_IMU_PORT"
+ros2 launch core_damiao_imu damiao_imu.launch.py
 ros2 topic hz /imu
 ros2 topic echo /imu --once
 ```

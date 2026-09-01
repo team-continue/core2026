@@ -39,9 +39,7 @@ ros2 launch core_launch navigation.launch.py
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/core_ws/install/setup.bash
-DM_IMU_PORT=/dev/serial/by-id/DM_IMU_L1_DEVICE_ID  # 実機で確認した名前へ置換
-ros2 launch core_launch navigation.launch.py environment:=real \
-  imu_port:="$DM_IMU_PORT"
+ros2 launch core_launch navigation.launch.py environment:=real
 ```
 
 初期ヨー角（ロボットの向き）を指定する場合:
@@ -161,7 +159,7 @@ RViz2 の **2D Goal Pose** ボタン（上部ツールバー）をクリック�
 | `use_smoother` | `true` | cmd_vel平滑化を有効にするか |
 | `use_localization` | `false` | グローバル局在化を有効にするか。PCD地図は `map_name` に対応する `pcd_maps/<map_name>.pcd` が自動で使用される |
 | `use_damiao_imu` | `true` | 実機モードでDM-IMU-L1ドライバを起動するか。simでは常に無効 |
-| `imu_port` | `/dev/ttyACM0` | DM-IMU-L1のシリアルデバイス。本番は`/dev/serial/by-id/...`を推奨 |
+| `imu_port` | `/dev/serial/by-id/usb-DM-IMU_DM-IMU_USB_CDC_2025021200-if00` | 本番機のDM-IMU-L1シリアルデバイス |
 | `imu_baudrate` | `921600` | DM-IMU-L1のbaud rate |
 | `imu_frame_id` | `damiao_imu_link` | `/imu`のframe ID |
 | `imu_output_rate_hz` | `200` | IMU出力周期 [Hz] |
@@ -212,8 +210,8 @@ SSH経由やデスクトップショートカットからの起動で発生し�
 
 - `ls -l /dev/serial/by-id/ /dev/ttyACM*`で実デバイスを確認
 - `dialout`グループ所属を`groups`で確認
-- `/dev/ttyACM0`は使用可能ですが、他のACMデバイスとの接続順で番号が変わるため、本番は
-  `imu_port:=/dev/serial/by-id/...`を使用
+- 既定のby-idデバイスが存在するか確認
+- 別のIMUを使う場合は`imu_port:=/dev/serial/by-id/...`で上書き
 
 ### ロボットの動きがガタガタ
 

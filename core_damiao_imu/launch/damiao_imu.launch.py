@@ -8,7 +8,13 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
-            DeclareLaunchArgument("imu_port", default_value="/dev/ttyACM0"),
+            DeclareLaunchArgument(
+                "imu_port",
+                default_value=(
+                    "/dev/serial/by-id/"
+                    "usb-DM-IMU_DM-IMU_USB_CDC_2025021200-if00"
+                ),
+            ),
             DeclareLaunchArgument("imu_baudrate", default_value="921600"),
             DeclareLaunchArgument(
                 "imu_frame_id", default_value="damiao_imu_link"

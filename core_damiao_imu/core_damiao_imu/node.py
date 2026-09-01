@@ -19,6 +19,9 @@ from core_damiao_imu.protocol import RID_EULER
 
 
 Vector3 = Tuple[float, float, float]
+DEFAULT_PORT = (
+    "/dev/serial/by-id/usb-DM-IMU_DM-IMU_USB_CDC_2025021200-if00"
+)
 
 
 class DamiaoImuNode(Node):
@@ -26,7 +29,7 @@ class DamiaoImuNode(Node):
 
     def __init__(self) -> None:
         super().__init__("damiao_imu_node")
-        self._port = self.declare_parameter("port", "/dev/ttyACM0").value
+        self._port = self.declare_parameter("port", DEFAULT_PORT).value
         self._baudrate = int(self.declare_parameter("baudrate", 921600).value)
         self._frame_id = self.declare_parameter(
             "frame_id", "damiao_imu_link"
