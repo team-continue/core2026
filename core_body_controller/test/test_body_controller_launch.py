@@ -133,6 +133,7 @@ class TestBodyControllerNodes(unittest.TestCase):
             self._record_body_omega,
             10,
         )
+        self._wait_for_command_subscribers()
 
     def tearDown(self):
         self.stop = True
@@ -143,6 +144,33 @@ class TestBodyControllerNodes(unittest.TestCase):
     def _spin(self):
         while not self.stop:
             self.executor.spin_once(timeout_sec=0.05)
+
+    def _wait_for_command_subscribers(self, timeout=5.0):
+        publishers = {
+            "body_cmd": self.body_cmd_pub,
+            "body_joint": self.body_joint_pub,
+            "body_hazard": self.body_hazard_pub,
+            "body_rotation": self.body_rotation_pub,
+            "target_cmd": self.target_cmd_pub,
+            "target_imu": self.target_imu_pub,
+            "target_body_omega": self.target_body_omega_pub,
+            "target_rotation": self.target_rotation_pub,
+            "target_hazard": self.target_hazard_pub,
+        }
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if all(
+                publisher.get_subscription_count() > 0
+                for publisher in publishers.values()
+            ):
+                return
+            time.sleep(0.01)
+        missing = [
+            name
+            for name, publisher in publishers.items()
+            if publisher.get_subscription_count() == 0
+        ]
+        self.fail(f"timed out waiting for subscribers: {', '.join(missing)}")
 
     def _record_can(self, source, msg):
         with self.lock:
