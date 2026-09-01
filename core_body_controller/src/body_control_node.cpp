@@ -150,6 +150,7 @@ void BodyControlNode::emergency_stop()
   cmd_vel_.angular.x = 0;
   cmd_vel_.angular.y = 0;
   cmd_vel_.angular.z = 0;
+  rotation_mode_ = 0;
 }
 
 std::vector<float> BodyControlNode::invert_kinematics_calc(

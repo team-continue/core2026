@@ -332,8 +332,15 @@ class TestBodyControllerNodes(unittest.TestCase):
         )
         self._wait_for_body_omega(lambda value: abs(value) < 1e-6)
 
-        self._publish_repeatedly(self.body_rotation_pub, Int32(data=0))
         self._publish_repeatedly(self.body_hazard_pub, false_msg)
+        self._clear_can("body")
+        self._clear_body_omega()
+        self._wait_for_can_count(
+            "body",
+            lambda msg: self._body_values(msg) is not None
+            and all(abs(value) < 1e-6 for value in self._body_values(msg)),
+        )
+        self._wait_for_body_omega(lambda value: abs(value) < 1e-6)
 
         self._publish_repeatedly(self.target_hazard_pub, false_msg)
         self._publish_repeatedly(self.target_cmd_pub, zero_twist)
