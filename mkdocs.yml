@@ -59,13 +59,13 @@ plugins:
 
 nav:
   - ホーム: index.md
+  - 機体コンセプト: robot-concept.md
   - はじめに:
     - クイックスタート: getting-started/quick-start.md
     - Docker環境: getting-started/docker.md
     - Unityシミュレータ: getting-started/unity-sim.md
   - アーキテクチャ:
     - システム概要: architecture/overview.md
-    - TFフレームと座標系: architecture/tf-tree.md
     - トピック・メッセージ一覧: architecture/topics.md
   - メカ:
     - mechanics/index.md
@@ -164,11 +164,6 @@ nav:
         - packages/core_test/index.md
       - ROS-TCP-Endpoint:
         - packages/ros_tcp_endpoint/index.md
-  - ガイド:
-    - ナビゲーション起動・実機テスト: guides/navigation.md
-    - パラメータチューニング: guides/tuning.md
-    - PCD地図構築: guides/pcd-mapping.md
-    - ハードウェアセットアップ: guides/hardware-setup.md
   - 開発:
     - 開発ワークフロー: contributing/workflow.md
     - コードスタイル: contributing/code-style.md

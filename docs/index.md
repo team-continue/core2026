@@ -1,120 +1,82 @@
-# core2026
+# core2026 ドキュメント
 
-CoRE2026用のメインROS2リポジトリです。ナビゲーション、経路計画、モーション制御、ハードウェアインターフェースを統合的に管理します。
+CoRE2026の機体コンセプト、メカ、回路、制御システム、および開発手順をまとめたドキュメントです。
 
-## パッケージ一覧
+## 機体コンセプト
 
-役割ごとに層で分けています。各パッケージの概要ページには、構成図とノード間のデータフローを掲載しています。
+[2026年度 機体コンセプト](robot-concept.md)では、機体全体で目指す姿と、メカ・回路・制御に共通する設計方針を説明します。
 
-### 意思決定
+## はじめに
 
-| パッケージ | 概要 |
-|-----------|------|
-| [core_behavior_system](packages/core_behavior_system/index.md) | 自律行動の状態機械・ウェイポイント巡回・自動射撃判断 |
+環境構築からシステムの起動までを案内します。
 
-### 認識・自己位置推定
+| ページ | 内容 |
+|-------|------|
+| [クイックスタート](getting-started/quick-start.md) | ROS 2ワークスペースのビルドと基本的な起動方法 |
+| [Docker環境](getting-started/docker.md) | Docker Composeを利用した開発環境 |
+| [Unityシミュレータ](getting-started/unity-sim.md) | ROS-TCP-Endpointを介したUnityとの接続方法 |
 
-| パッケージ | 概要 |
-|-----------|------|
-| [core_localization](packages/core_localization/index.md) | NDT/ICPによるPCDマップベースのグローバル局在化 |
-| [core_costmap_builder](packages/core_costmap_builder/index.md) | LiDAR点群からローカルコストマップ生成 |
-| [core_enemy_detection](packages/core_enemy_detection/index.md) | カメラ画像からの敵ダメージパネル検出・ターゲット選択 |
-| [core_camera](packages/core_camera/index.md) | USBカメラ3台の起動設定（usb_camのランチ集約） |
+## メカ
 
-### 経路計画・制御
+[メカ構成](mechanics/index.md)を入口として、ソフトウェアが前提とする機体寸法や可動範囲を説明します。
 
-| パッケージ | 概要 |
-|-----------|------|
-| [core_path_planner](packages/core_path_planner/index.md) | A*グローバル経路計画 |
-| [core_mppi](packages/core_mppi/index.md) | MPPIローカルコントローラ |
-| [core_path_follower](packages/core_path_follower/index.md) | 経路追従コントローラ（PID/Pure Pursuit） |
-| [core_cmd_vel_smoother](packages/core_cmd_vel_smoother/index.md) | cmd_vel EMA平滑化フィルタ |
-| [core_body_controller](packages/core_body_controller/index.md) | 車体モータ制御（オムニホイール逆運動学） |
-| [core_damiao_imu](packages/core_damiao_imu/index.md) | DM-IMU-L1 USBドライバ・姿勢配信 |
+| ページ | 内容 |
+|-------|------|
+| [駆動系・旋回機構](mechanics/drivetrain.md) | 4輪オムニ、無限回転機構、逆運動学、加減速制限 |
+| [砲塔・装填・発射機構](mechanics/turret.md) | 左右砲塔の可動範囲、マガジン、発射機構 |
 
-### 射撃・機構
+## 回路
 
-| パッケージ | 概要 |
-|-----------|------|
-| [core_shooter](packages/core_shooter/index.md) | デュアルタレット射撃・照準・マガジン管理 |
+[回路構成](circuit/index.md)を入口として、制御PC、マイコン、モーター間の接続とID割り当てを説明します。
 
-### ハードウェア・安全
+| ページ | 内容 |
+|-------|------|
+| [基板とピン配置](circuit/boards.md) | Teensy 4.1のピン割り当てとファームウェアのビルド |
+| [CANバスとモーターID](circuit/buses.md) | CANバス、モーターID、EtherCAT PDO、死活監視 |
 
-| パッケージ | 概要 |
-|-----------|------|
-| [core_hardware](packages/core_hardware/index.md) | EtherCAT/USBハードウェアインターフェース |
-| [core_mode](packages/core_mode/index.md) | 緊急停止・システムモード管理 |
-| [core_ros_player_controller](packages/core_ros_player_controller/index.md) | ワイヤレスコントローラ入力パーサー |
+## 制御
 
-### UI・可視化
+ROS 2上のノード構成、トピック、座標系、および各パッケージの仕様を説明します。
 
-| パッケージ | 概要 |
-|-----------|------|
-| [core_qt_gui](packages/core_qt_gui/index.md) | 操縦者向けHUD（パッケージ名は `gui_qt`） |
-| [core_status_gui](packages/core_status_gui/index.md) | 行動状態・緊急状態の大画面ステータス表示 |
-| [core_tools](packages/core_tools/index.md) | デバッグ・診断ツール（motor_tool GUI） |
+### アーキテクチャ
 
-### 基盤
+| ページ | 内容 |
+|-------|------|
+| [システム概要](architecture/overview.md) | 機体全体のノード構成、データフロー、現在の起動構成 |
+| [トピック・メッセージ一覧](architecture/topics.md) | Publisher、Subscriber、型、QoS、リマップ |
 
-| パッケージ | 概要 |
-|-----------|------|
-| [core_launch](packages/core_launch/index.md) | ランチファイル・ヘルパーノード（odom_bridge, map_server） |
-| [core_msgs](packages/core_msgs/index.md) | カスタムメッセージ定義（CAN, Path, PoseWithWeight） |
-| [core_test](packages/core_test/index.md) | 共有GTestインフラ |
-| [ROS-TCP-Endpoint](packages/ros_tcp_endpoint/index.md) | Unity-ROS2ブリッジ |
+### パッケージ一覧
 
-## クイックスタート
+`docs/packages/` にあるパッケージドキュメントを、システム上の役割に沿って分類しています。
 
-```bash
-# ビルド
-cd ~/core_ws
-colcon build --symlink-install
+| レイヤー | パッケージ |
+|---------|-----------|
+| Launch | [core_launch](packages/core_launch/index.md) |
+| Sensing | [core_damiao_imu](packages/core_damiao_imu/index.md)、[core_camera](packages/core_camera/index.md) |
+| Localization | [core_localization](packages/core_localization/index.md) |
+| Perception | [core_enemy_detection](packages/core_enemy_detection/index.md) |
+| Planning | [core_costmap_builder](packages/core_costmap_builder/index.md)、[core_path_planner](packages/core_path_planner/index.md)、[core_mppi](packages/core_mppi/index.md)、[core_path_follower](packages/core_path_follower/index.md)、[core_cmd_vel_smoother](packages/core_cmd_vel_smoother/index.md) |
+| Behavior | [core_behavior_system](packages/core_behavior_system/index.md) |
+| Mecha | [core_shooter](packages/core_shooter/index.md) |
+| Control | [core_body_controller](packages/core_body_controller/index.md) |
+| System | [core_mode](packages/core_mode/index.md) |
+| UI | [core_qt_gui](packages/core_qt_gui/index.md)、[core_status_gui](packages/core_status_gui/index.md)、[core_ros_player_controller](packages/core_ros_player_controller/index.md) |
+| Hardware | [core_hardware](packages/core_hardware/index.md) |
+| Common | [core_msgs](packages/core_msgs/index.md)、[core_tools](packages/core_tools/index.md)、[core_test](packages/core_test/index.md)、[ROS-TCP-Endpoint](packages/ros_tcp_endpoint/index.md) |
 
-# ナビゲーション起動（シミュレータモード）
-ros2 launch core_launch navigation.launch.py
-```
+## 開発
 
-詳しい起動方法は[クイックスタート](getting-started/quick-start.md)を参照してください。
+リポジトリへ変更を加える際のルールと、ドキュメントの記述方法を説明します。
 
-## アーキテクチャ
+| ページ | 内容 |
+|-------|------|
+| [開発ワークフロー](contributing/workflow.md) | ブランチ規則、ビルド、テスト、Pull Request |
+| [コードスタイル](contributing/code-style.md) | C++とPythonのフォーマット規則 |
+| [ノードドキュメントの書き方](contributing/node-documentation.md) | パッケージ・ノード文書の構成と追加方法 |
 
-システム全体の構成は[アーキテクチャ概要](architecture/overview.md)を参照してください。
 
-```mermaid
-graph TB
-    subgraph Sense["認識"]
-        Camera["core_camera"] -->|"raw_image"| EnemyDet["enemy_detection"]
-        Lidar["Livox LiDAR"] -->|"/livox/lidar"| CostmapBuilder["costmap_builder"]
-        Lidar -->|"/cloud_registered"| Localization["localization"]
-        Unity["Unity Sim"] -->|"/sim_odom"| OdomBridge["odom_bridge"]
-    end
+!!! warning "免責事項"
 
-    subgraph Decide["意思決定"]
-        Behavior["behavior_system"]
-    end
-
-    subgraph Navigate["経路計画・制御"]
-        PathPlanner["path_planner"] -->|"/planned_path"| MPPI["core_mppi"]
-        MPPI -->|"/cmd_vel_raw"| Smoother["cmd_vel_smoother"]
-        Smoother -->|"/cmd_vel"| BodyController["body_controller"]
-    end
-
-    subgraph Shoot["射撃"]
-        Shooter["core_shooter"]
-    end
-
-    EnemyDet -->|"damage_panel_pose"| Behavior
-    Behavior -->|"/goal_pose"| PathPlanner
-    Behavior -->|"/left/shoot_fullauto"| Shooter
-    MapServer["map_server"] -->|"/map"| PathPlanner
-    MapServer -->|"/costmap/global"| MPPI
-    OdomBridge -->|"/start_pose"| PathPlanner
-    OdomBridge -->|"/odom"| MPPI
-    Localization -->|"TF: map→odom"| PathPlanner
-    CostmapBuilder -->|"/costmap/local"| MPPI
-    BodyController -->|"/can/tx"| Hardware["core_hardware"]
-    Shooter -->|"/can/tx"| Hardware
-    Hardware -->|"/joint_states"| Shooter
-    Emergency["core_mode"] -.->|"hazard_status"| BodyController
-    Emergency -.->|"hazard_status"| Shooter
-```
+    - 本ドキュメントは、私たちが作成した機体を紹介することを目的としたものです。本ドキュメントを読むことで同じように機体を扱える、あるいは同様の機体を作成できることを保証するものではありません。
+    - 本ドキュメントおよび関連するコードの利用によって生じたいかなる結果についても、責任を負いかねます。
+    - 本ドキュメントの一部の作成にはAIを使用しています。

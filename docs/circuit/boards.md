@@ -97,4 +97,3 @@ pio run
 
 - [CANバスとモータID](buses.md) — CAN2 / CAN3の構成とID割り当て
 - [EtherCATとPDO](ethercat.md) — AX58100、PDO、EEPROM書き込み、通信テスト
-- [ハードウェアセットアップ](../guides/hardware-setup.md) — 実機の配線・起動手順

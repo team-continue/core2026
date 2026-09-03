@@ -87,8 +87,6 @@ graph LR
 | `points_timeout_sec` | `0.2` | 点群停止判定時間 [s] |
 | `tf_timeout_ms` | `50` | TFルックアップタイムアウト [ms] |
 
-チューニングのポイントは[パラメータチューニングガイド](../../guides/tuning.md#ローカルコストマップ)を参照してください。
-
 ## Assumptions / Known limits
 
 - `min_z_m` / `max_z_m` の高さ帯にある点のみを障害物として扱います。この帯より低い段差やスロープ、高い位置の張り出しは検出されません。

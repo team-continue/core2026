@@ -77,5 +77,3 @@ ros2 launch core_costmap_builder costmap_build.launch.py
 ```
 
 設定ファイル: `config/costmap_build_node.yaml`
-
-チューニングのポイントは[パラメータチューニングガイド](../../guides/tuning.md#ローカルコストマップ)を参照してください。

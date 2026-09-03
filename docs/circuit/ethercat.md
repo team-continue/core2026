@@ -216,4 +216,3 @@ sudo ./build/ecat_zero_check enp2s0
 - [基板とピン配置](boards.md)
 - [CANバスとモータID](buses.md)
 - [core_hardware パッケージ](../packages/core_hardware/index.md)
-- [ハードウェアセットアップ](../guides/hardware-setup.md)

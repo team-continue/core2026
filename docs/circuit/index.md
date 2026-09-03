@@ -76,5 +76,4 @@ CAN2にはupper TeensyとRoboStride 05 2台が接続されます。Feetechサー
 
 - [メカ構成](../mechanics/index.md) — 寸法と可動範囲
 - [core_hardware パッケージ](../packages/core_hardware/index.md) — ROS 2ノードの詳細
-- [ハードウェアセットアップ](../guides/hardware-setup.md) — 実機の配線・起動手順
 - [トピック・メッセージ一覧](../architecture/topics.md) — `/can/tx` と `core_msgs/CANArray` の定義

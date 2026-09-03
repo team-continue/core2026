@@ -63,9 +63,9 @@ flowchart TD
 
 フィットネススコアによるリジェクトと指数平滑の2段構えで、誤ったマッチング結果がTFに反映されるのを防いでいます。
 
-## 関連ガイド
+## PCD地図
 
-PCD地図の構築・配置方法やフィールドごとの地図選択については[PCD地図構築ガイド](../../guides/pcd-mapping.md)を参照してください。
+走行するフィールドのPCD地図を`pcd_maps/`に配置し、起動時に`global_map_path`で指定します。
 
 ## 起動
 
@@ -84,4 +84,4 @@ ros2 launch core_localization localization.launch.py \
   global_map_path:=/path/to/field.pcd
 ```
 
-設定ファイル: `config/localization_params.yaml`、PCD地図: `pcd_maps/`
+設定ファイル: `config/localization_params.yaml`

@@ -17,28 +17,51 @@ source install/setup.bash
 
 ## 起動方法
 
-すべての起動は `navigation.launch.py` に集約されています。`environment` と `odom_source` の組み合わせで動作モードが決まります。
+実機システムは、`core_launch` が提供する3つの統合launchファイルを使用します。
+3つのターミナルを開き、ハードウェア、制御システム、GUIの順に起動してください。
+
+### 0. EtherCATデーモンの準備
+
+EtherCAT構成では、ROSノードを起動する前に`core_hardware_daemon`をsystemdサービスとしてインストールします。
+次の操作は、初回セットアップ時と`core_hardware`のビルド成果物を更新したときに実行してください。
 
 ```bash
-# シミュレータモード（デフォルト）
-ros2 launch core_launch navigation.launch.py
-
-# 実機モード
-ros2 launch core_launch navigation.launch.py environment:=real
+cd ~/core_ws
+sudo ./src/core2026/core_hardware/scripts/install_core_hardware_daemon_service.sh
+sudo systemctl enable --now core_hardware_daemon
+sudo systemctl status core_hardware_daemon
 ```
 
-> 各モードの詳細、実機テスト手順、リモート RViz2 の使い方は[ナビゲーション起動ガイド](../guides/navigation.md)を参照してください。
+インストールスクリプトでは、EtherCAT用ネットワークインターフェースとして`enp2s0`を使用します。
+実機のインターフェース名が異なる場合は、スクリプト内の`IF_NAME`を環境に合わせて変更してください。
 
-全Launch引数の一覧は[ナビゲーション起動ガイド](../guides/navigation.md#launch引数一覧)を参照してください。
+### 1. ハードウェア
 
-## 個別ノードの起動
+```bash
+source ~/core_ws/install/setup.bash
+ros2 launch core_launch core_2026_hardware.xml
+```
 
-| コンポーネント | コマンド |
-|---------------|---------|
-| ボディコントローラ単体 | `ros2 launch core_body_controller body_controller.launch.py` |
-| ハードウェアインターフェース単体 | `ros2 launch core_hardware core_hardware.launch.py` |
-| ROS-TCP-Endpoint（Unity 接続、sim モードで自動起動） | `ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=0.0.0.0` |
+EtherCATデーモンとUNIXドメインソケットで通信するROSハードウェアインターフェースを起動します。
 
-## ゴール設定
+### 2. 制御システム
 
-RViz2 の **2D Goal Pose** ボタンでゴールを設定すると、`/goal_pose` にパブリッシュされ、自動的に経路計画・追従が開始されます。
+別のターミナルで実行します。
+
+```bash
+source ~/core_ws/install/setup.bash
+ros2 launch core_launch core2026_system.xml
+```
+
+車体制御、射撃、敵検出、カメラ、モード管理、操縦入力、行動システムを起動します。
+
+### 3. GUI
+
+さらに別のターミナルで実行します。
+
+```bash
+source ~/core_ws/install/setup.bash
+ros2 launch core_launch core2026_gui.xml
+```
+
+操縦者向けQt HUDと、機体状態を表示するステータスGUIを起動します。

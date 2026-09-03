@@ -96,8 +96,6 @@ graph LR
 | `mppi.unknown_cost` | `0.5` | 未知セルのコスト |
 | `mppi.heading_lookahead` | `3` | ヘディング目標に使うパス先読みステップ数 |
 
-コスト重みのチューニング手順は[パラメータチューニングガイド](../../guides/tuning.md#mppi-コントローラ)を参照してください。
-
 ## Assumptions / Known limits
 
 - メカナム（全方向移動）の運動モデルを前提としています。差動二輪の車体には `max_vy` を0にしても適合しません。

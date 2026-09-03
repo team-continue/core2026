@@ -89,10 +89,8 @@ graph TD
 | DM-IMU-L1 | 回転上部車体へ+X前方・+Z上向きで固定（`/imu`） | `core_damiao_imu` / `body_controller.launch.py` |
 
 !!! note "LiDAR取り付け高さの記述が2箇所で異なります"
-    `costmap_build.launch.py` のデバッグ用静的TFは z=+0.6 m / pitch=π で定義されており、`navigation.launch.py`（z=+0.5 m / roll=π）と一致しません。詳細は [TFフレームと座標系](../architecture/tf-tree.md) を参照してください。
+    `costmap_build.launch.py` のデバッグ用静的TFは z=+0.6 m / pitch=π で定義されており、`navigation.launch.py`（z=+0.5 m / roll=π）と一致しません。
 
 ## 関連ページ
 
 - [回路構成](../circuit/index.md) — モータID割り当てと通信経路
-- [TFフレームと座標系](../architecture/tf-tree.md) — 座標系の定義
-- [ハードウェアセットアップ](../guides/hardware-setup.md) — 実機の配線・起動手順

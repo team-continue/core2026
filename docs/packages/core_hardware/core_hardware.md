@@ -57,6 +57,6 @@ AX58100との接続、PDOレイアウト、wireless / colorの多重化、デー
 ## Assumptions / Known limits
 
 - `core_hardware_daemon` が起動しており、指定した `socket_path` で待ち受けていることが前提です。デーモンが落ちるとモータ指令は一切届きません。
-- EtherCATスレーブ（Teensy41）のEEPROMが正しく書き込まれている必要があります。PDOとEEPROMの詳細は[EtherCATとPDO](../../circuit/ethercat.md)、実機導入手順は[ハードウェアセットアップガイド](../../guides/hardware-setup.md)を参照してください。
+- EtherCATスレーブ（Teensy41）のEEPROMが正しく書き込まれている必要があります。PDOとEEPROMの詳細は[EtherCATとPDO](../../circuit/ethercat.md)を参照してください。
 - `can/tx` に届いた指令の妥当性検証（速度上限や可動範囲）は行いません。安全確認は各制御ノードの責務です。
 - 通信周期はEtherCATサイクルに従います。ROS側のトピック発行レートを上げても実効的な制御周期は変わりません。
