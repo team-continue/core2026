@@ -75,6 +75,7 @@ nav:
     - circuit/index.md
     - 基板とピン配置: circuit/boards.md
     - CANバスとモータID: circuit/buses.md
+    - EtherCATとPDO: circuit/ethercat.md
   - ソフトウェア:
     - Launch:
       - core_launch:

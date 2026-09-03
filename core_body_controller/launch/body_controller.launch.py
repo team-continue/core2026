@@ -14,7 +14,7 @@ def generate_launch_description() -> LaunchDescription:
     )
     rotation_acceleration_arg = DeclareLaunchArgument(
         "rotation_acceleration",
-        default_value="3.141592653589793",
+        default_value="1.0",
         description="Angular acceleration limit [rad/s^2]",
     )
     auto_rotation_velocity_arg = DeclareLaunchArgument(
@@ -59,7 +59,10 @@ def generate_launch_description() -> LaunchDescription:
     )
     imu_port_arg = DeclareLaunchArgument(
         "imu_port",
-        default_value="/dev/ttyACM0",
+        default_value=(
+            "/dev/serial/by-id/"
+            "usb-DM-IMU_DM-IMU_USB_CDC_2025021200-if00"
+        ),
         description="DM-IMU-L1 USB serial device",
     )
     imu_baudrate_arg = DeclareLaunchArgument(

@@ -6,17 +6,21 @@ ROS2と実機ハードウェアの境界を担うパッケージです。上位�
 
 | ノード | 役割 |
 |-------|------|
-| [`core_hardware`](core_hardware.md) | EtherCAT（SOEM）経由のハードウェアインターフェース。実機の標準構成 |
+| [`core_hardware`](core_hardware.md) | デーモン経由でEtherCAT実機へ接続するROS 2インターフェース。実機の標準構成 |
 | [`core_hardware_usb`](core_hardware_usb.md) | USBシリアル経由のハードウェアインターフェース。EtherCATを使わない簡易構成 |
 
 `core_hardware_daemon` は権限分離のためのデーモンプロセスで、ROSノードではありません。EtherCAT通信に必要な権限を持つ側で実行され、`core_hardware` とはUNIXドメインソケットで通信します。
 
+AX58100との接続、SOEMマスタ、IPC、PDO、オブジェクト辞書の詳細は[EtherCATとPDO](../../circuit/ethercat.md)を参照してください。
+
 ## データフロー
 
 ```
-上位ノード ──/can/tx──▶ core_hardware ──EtherCAT──▶ Teensy41スレーブ ──▶ モータESC
-                              ▲                            │
-                              └──/can/rx, /joint_states ────┘
+上位ノード ──/can/tx──▶ core_hardware ──IPC──▶ core_hardware_daemon
+                              ▲                         │
+                              │                      EtherCAT
+                              │                         ▼
+                              └──/can/rx──────── Teensy41スレーブ ──▶ モータ・ESC
 ```
 
 CAN指令を発行するのは [core_body_controller](../core_body_controller/index.md) と [core_shooter](../core_shooter/index.md) の各ノードで、それらが同一の `/can/tx` トピックに集約されます。逆方向のフィードバック（`/joint_states`）は各制御ノードと [core_mode](../core_mode/index.md) の `diagnostic` が参照します。
@@ -25,7 +29,7 @@ CAN指令を発行するのは [core_body_controller](../core_body_controller/in
 
 | 構成 | ノード | 用途 |
 |------|-------|------|
-| EtherCAT | `core_hardware` | 実機の標準構成。多数のモータを低遅延で制御 |
+| EtherCAT | `core_hardware` + `core_hardware_daemon` | 実機の標準構成。多数のモータを低遅延で制御 |
 | USB | `core_hardware_usb` | 単体テストや簡易構成。EtherCAT環境が不要 |
 
 ## 起動
