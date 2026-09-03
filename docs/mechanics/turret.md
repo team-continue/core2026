@@ -73,7 +73,7 @@ curious handは中段でディスクを2つのサーボモータで押さえる�
 
 `core_shooter/launch/shooter.launch.py` で左右それぞれに設定される可動範囲です。
 
-| 項目 | 左砲塔 | 右砲塔 |>>>>>>>>。。。>>>>>>>>>>>ます
+| 項目 | 左砲塔 | 右砲塔 |
 |------|-------|-------|
 | Pitch モータID | 11（Feetech） | 7（Feetech） |
 | Yaw モータID | 5（RoboStride 05） | 6（RoboStride 05） |
