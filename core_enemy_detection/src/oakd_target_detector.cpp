@@ -22,7 +22,7 @@ void oakdTargetDetector::changeTarget(const std_msgs::msg::UInt8::SharedPtr msg)
 }
 
 void oakdTargetDetector::detectEnemy(const core_msgs::msg::DetectedPanelInfoArray::ConstSharedPtr panelInfoMsg){
-    int num = panelInfoMsg->num;
+    // int num = panelInfoMsg->num;
     detectedPanels = panelInfoMsg->array;
     rawImage = cv_bridge::toCvShare(panelInfoMsg->image, panelInfoMsg, "bgr8")->image;
     
@@ -49,7 +49,7 @@ void oakdTargetDetector::detectEnemy(const core_msgs::msg::DetectedPanelInfoArra
     // パネルの色の検出物の重点の上下に赤or青の検出物があるか探索
     // あれば、その重点はダメージパネルの座標として認識
     detectDamagePanel();
-    std::cout << "damage panel num: " << damagePanels.size() << std::endl;
+    // std::cout << "damage panel num: " << damagePanels.size() << std::endl;
     
     auto dpMsg = core_msgs::msg::DamagePanelInfoArray();
     dpMsg.array = damagePanels;
@@ -70,8 +70,8 @@ void oakdTargetDetector::extractHsvRange(){
         cv::inRange(hsvImage, red_range_lower2, red_range_upper2, mask2);
         cv::bitwise_or(mask1, mask2, ledMaskImage);
 
-        publishImage("red1", mask1, "mono8");
-        publishImage("red2", mask2, "mono8");
+        // publishImage("red1", mask1, "mono8");
+        // publishImage("red2", mask2, "mono8");
         
     }else if(mode == 81 || mode == 17){
         cv::inRange(hsvImage, blue_range_lower, blue_range_upper, ledMaskImage);
@@ -87,8 +87,8 @@ void oakdTargetDetector::applyMorphology(){
 
     cv::morphologyEx(ledMaskImage, dst, cv::MORPH_CLOSE, kernel_for_led);
     cv::morphologyEx(dst, ledLabelMap.image, cv::MORPH_OPEN, kernel_for_led);
-    std::cout << kernel_for_led.size() << std::endl;
-    publishImage("noise_removed", ledLabelMap.image, "mono8");
+    // std::cout << kernel_for_led.size() << std::endl;
+    // publishImage("noise_removed", ledLabelMap.image, "mono8");
 }
 
 void oakdTargetDetector::detectDamagePanel(){
@@ -96,8 +96,8 @@ void oakdTargetDetector::detectDamagePanel(){
     damagePanels.shrink_to_fit();
 
     const cv::Mat& ledCenters = ledLabelMap.centroids;
-    std::cout << "detected panel num: " << detectedPanels.size() << std::endl;
-    std::cout << "led num: " << ledLabelMap.num - 1 << std::endl;
+    // std::cout << "detected panel num: " << detectedPanels.size() << std::endl;
+    // std::cout << "led num: " << ledLabelMap.num - 1 << std::endl;
     for(auto itr = detectedPanels.begin(); itr != detectedPanels.end(); itr++){
         int count = 0;
         float minX = itr->min_x * rawImage.size().width;
@@ -105,7 +105,7 @@ void oakdTargetDetector::detectDamagePanel(){
         float minY = itr->min_y * rawImage.size().height;
         float maxY = itr->max_y * rawImage.size().height;
 
-        std::cout << "minX: " << minX << ", maxX: " << maxX << ", minY: " << minY << ", maxY: " << maxY << std::endl;
+        // std::cout << "minX: " << minX << ", maxX: " << maxX << ", minY: " << minY << ", maxY: " << maxY << std::endl;
 
         for(int i = 1; i < ledLabelMap.num; i++){
             auto ledRow = ledCenters.ptr<double>(i);
@@ -123,8 +123,8 @@ void oakdTargetDetector::detectDamagePanel(){
             dp.width = (int)(maxX - minX);
             dp.height = (int)(maxY - minY);
             dp.area = (int)(dp.width * dp.height);
-            dp.x = (double)(minX + maxX) / 2.d;
-            dp.y = (double)(minY + maxY) / 2.d;
+            dp.x = (double)(minX + maxX) / 2.f;
+            dp.y = (double)(minY + maxY) / 2.f;
             damagePanels.push_back(dp);
         }
     }
