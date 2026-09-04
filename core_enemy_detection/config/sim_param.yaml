@@ -44,12 +44,12 @@
     - 125
     red_range_upper1:
     - 10
-    - 255
-    - 255
+    - 254
+    - 254
     red_range_upper2:
-    - 180
-    - 255
-    - 255
+    - 179
+    - 254
+    - 254
     white_range_lower:
     - 0
     - 100
@@ -107,12 +107,12 @@
     - 125
     red_range_upper1:
     - 10
-    - 255
-    - 255
+    - 254
+    - 254
     red_range_upper2:
     - 179
-    - 255
-    - 255
+    - 254
+    - 254
     white_range_lower:
     - 0
     - 100
