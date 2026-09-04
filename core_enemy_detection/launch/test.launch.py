@@ -1,8 +1,13 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-
+from ament_index_python.packages import get_package_share_directory
+import os
 
 def generate_launch_description():
+
+    # パラメータ YAML のフルパス
+    pkg_dir = get_package_share_directory('core_enemy_detection')
+    param_file = os.path.join(pkg_dir, 'config', 'sim_param2.yaml')
 
     # =========================================================
     # OAK-D 系
@@ -29,9 +34,11 @@ def generate_launch_description():
         executable='oakd_target_detector',
         namespace='oakd',
         name='oakd_target_detector',
+        parameters=[param_file],
         output='screen',
         remappings=[
             ('detected_panel_info', '/oakd/detected_panel_info'),
+            ('color', 'color'),
             ('damage_panels_infomation', '/oakd/damage_panels_infomation'),
         ],
     )
@@ -44,7 +51,7 @@ def generate_launch_description():
         output='screen',
         remappings=[
             ('damage_panels_infomation', '/oakd/damage_panels_infomation'),
-            ('target_pose', '/oakd/target_pose'),
+            ('damage_panel_pose', '/right/target_pose'),
         ],
     )
 
@@ -61,8 +68,10 @@ def generate_launch_description():
         executable='target_detector',
         namespace='normal',
         name='target_detector',
+        parameters=[param_file],
         output='screen',
         remappings=[
+            ('raw_image', '/turret_camera_right/color/image'),
             ('target_pose', '/normal/detected_target'),
         ],
     )
@@ -75,7 +84,7 @@ def generate_launch_description():
         output='screen',
         remappings=[
             ('target_pose', '/normal/detected_target'),
-            ('selected_target', '/normal/selected_target'),
+            ('damage_panel_pose', '/left/target_pose'),
         ],
     )
 
