@@ -1,5 +1,7 @@
 #include "path_planner/path_planner_node.hpp"
 
+#include <chrono>
+
 namespace path_planner
 {
 
@@ -24,6 +26,13 @@ PathPlannerNode::PathPlannerNode(const rclcpp::NodeOptions & options)
   allow_unknown_ = declare_parameter<bool>("allow_unknown", true);
   use_diagonal_ = declare_parameter<bool>("use_diagonal", true);
   cost_weight_ = declare_parameter<double>("cost_weight", 0.0);
+  search_window_margin_ =
+    declare_parameter<int>("search_window_margin", -1);
+  replan_rate_hz_ = declare_parameter<double>("replan_rate_hz", 5.0);
+  replan_position_tolerance_ =
+    declare_parameter<double>("replan_position_tolerance", 0.0);
+  replan_yaw_tolerance_ =
+    declare_parameter<double>("replan_yaw_tolerance", 0.0);
 
   global_map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
     global_map_topic_, rclcpp::QoS(1).transient_local().reliable(),
@@ -54,7 +63,16 @@ PathPlannerNode::PathPlannerNode(const rclcpp::NodeOptions & options)
 
   planner_.setSettings(
     PathPlanner::Settings{occupied_threshold_,
-      allow_unknown_, use_diagonal_, cost_weight_});
+      allow_unknown_, use_diagonal_, cost_weight_, search_window_margin_});
+
+  if (replan_rate_hz_ <= 0.0) {
+    RCLCPP_WARN(
+      get_logger(), "replan_rate_hz must be positive; falling back to 5.0");
+    replan_rate_hz_ = 5.0;
+  }
+  replan_timer_ = create_wall_timer(
+    std::chrono::duration<double>(1.0 / replan_rate_hz_),
+    std::bind(&PathPlannerNode::onReplanTimer, this));
 
   RCLCPP_INFO(get_logger(), "Path Planner Node initialized");
 }
@@ -69,7 +87,7 @@ void PathPlannerNode::onGlobalMapReceived(
       get_logger(), "Global map received: %ux%u, res=%.3f",
       msg->info.width, msg->info.height, msg->info.resolution);
   }
-  // tryPlan();
+  plan_pending_ = true;
 }
 
 void PathPlannerNode::onLocalCostmapReceived(
@@ -77,15 +95,24 @@ void PathPlannerNode::onLocalCostmapReceived(
 {
   planner_.setLocalCostmap(*msg);
   RCLCPP_DEBUG(get_logger(), "Local costmap received");
-  tryPlan();
+  plan_pending_ = true;
 }
 
 void PathPlannerNode::onStartPoseReceived(
   const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
+  if (startPoseChanged(*msg)) {
+    plan_pending_ = true;
+  }
   start_pose_ = *msg;
   RCLCPP_DEBUG(get_logger(), "Start pose received");
-  tryPlan();
+
+  // Keep downstream consumers fed between replans: re-transform the last
+  // path with the fresh pose (matters in local-frame mode, where the path
+  // is expressed relative to the robot pose at publish time).
+  if (!last_path_cells_.empty() && global_map_.has_value()) {
+    publishPath(last_path_cells_);
+  }
 }
 
 void PathPlannerNode::onGoalPoseReceived(
@@ -93,7 +120,42 @@ void PathPlannerNode::onGoalPoseReceived(
 {
   goal_pose_ = *msg;
   RCLCPP_INFO(get_logger(), "Goal pose received");
-  // tryPlan();
+  plan_pending_ = true;
+}
+
+void PathPlannerNode::onReplanTimer()
+{
+  if (!plan_pending_) {
+    return;
+  }
+  if (!global_map_.has_value() || !start_pose_.has_value() ||
+    !goal_pose_.has_value())
+  {
+    // Keep the request pending until all inputs are available.
+    return;
+  }
+  plan_pending_ = false;
+  tryPlan();
+}
+
+bool PathPlannerNode::startPoseChanged(
+  const geometry_msgs::msg::PoseStamped & pose) const
+{
+  if (!last_planned_start_.has_value()) {
+    return true;
+  }
+  const auto & last = last_planned_start_->pose;
+  const double dx = pose.pose.position.x - last.position.x;
+  const double dy = pose.pose.position.y - last.position.y;
+  if (std::hypot(dx, dy) > replan_position_tolerance_) {
+    return true;
+  }
+  const double yaw_delta = std::abs(
+    std::remainder(
+      getYawFromQuaternion(pose.pose.orientation) -
+      getYawFromQuaternion(last.orientation),
+      2.0 * M_PI));
+  return yaw_delta > replan_yaw_tolerance_;
 }
 
 void PathPlannerNode::tryPlan()
@@ -140,7 +202,11 @@ void PathPlannerNode::tryPlan()
         result.path.size(),
         start_pose_->pose.position.x, start_pose_->pose.position.y,
         goal_pose_->pose.position.x, goal_pose_->pose.position.y);
-      publishPath(result.path);
+      // Record the planned-from pose only on success so failed plans are
+      // retried as soon as any input event arrives.
+      last_planned_start_ = start_pose_;
+      last_path_cells_ = result.path;
+      publishPath(last_path_cells_);
       break;
   }
 }
@@ -157,6 +223,11 @@ void PathPlannerNode::publishPath(
   const auto & map = *global_map_;
   const auto & robot_pose = start_pose_->pose;
 
+  // Hoist the global->local rotation out of the per-pose loop.
+  const double yaw = getYawFromQuaternion(robot_pose.orientation);
+  const double cos_yaw = std::cos(-yaw);
+  const double sin_yaw = std::sin(-yaw);
+
   for (const auto & cell : path_cells) {
     double global_x = 0.0;
     double global_y = 0.0;
@@ -169,11 +240,10 @@ void PathPlannerNode::publishPath(
       pose.pose.position.x = global_x;
       pose.pose.position.y = global_y;
     } else {
-      double local_x = 0.0;
-      double local_y = 0.0;
-      transformToLocal(global_x, global_y, robot_pose, local_x, local_y);
-      pose.pose.position.x = local_x;
-      pose.pose.position.y = local_y;
+      const double dx = global_x - robot_pose.position.x;
+      const double dy = global_y - robot_pose.position.y;
+      pose.pose.position.x = dx * cos_yaw - dy * sin_yaw;
+      pose.pose.position.y = dx * sin_yaw + dy * cos_yaw;
     }
 
     pose.pose.position.z = 0.0;
@@ -182,25 +252,6 @@ void PathPlannerNode::publishPath(
   }
 
   path_pub_->publish(path_msg);
-}
-
-void PathPlannerNode::transformToLocal(
-  double global_x, double global_y,
-  const geometry_msgs::msg::Pose & robot_pose, double & local_x,
-  double & local_y) const
-{
-  // Translate to robot origin
-  const double dx = global_x - robot_pose.position.x;
-  const double dy = global_y - robot_pose.position.y;
-
-  // Get robot yaw and rotate by negative yaw
-  const double yaw = getYawFromQuaternion(robot_pose.orientation);
-  const double cos_yaw = std::cos(-yaw);
-  const double sin_yaw = std::sin(-yaw);
-
-  // Apply rotation to get local coordinates
-  local_x = dx * cos_yaw - dy * sin_yaw;
-  local_y = dx * sin_yaw + dy * cos_yaw;
 }
 
 double PathPlannerNode::getYawFromQuaternion(
