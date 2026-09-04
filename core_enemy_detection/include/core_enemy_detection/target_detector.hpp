@@ -20,14 +20,6 @@ using namespace std::placeholders;
 namespace core_enemy_detection
 {
 
-typedef struct labelImage{
-    int num = 0;
-    cv::Mat image;
-    cv::Mat labelMap;
-    cv::Mat status;
-    cv::Mat centroids;
-}labeledImage;
-
 // typedef struct damagePanelInfo{
 //     int num;
 //     cv::Mat status;
