@@ -14,7 +14,7 @@ oakdPanelLocalizer::oakdPanelLocalizer() : Node("oakd_panel_localizer")
     // -----------------------------
     // NN Archive読み込み
     // -----------------------------
-    dai::NNArchive model("/home/hauki/camera_ws/src/model260828/oak_model/best_20260829_165056/output/rvc2_yolo/best.rvc2.tar.xz" );
+    dai::NNArchive model("core_enemy_detection/config/best.rvc2.tar.xz" );
 
     // -----------------------------ll
     // DetectionNetwork作成
