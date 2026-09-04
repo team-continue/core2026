@@ -14,7 +14,9 @@ oakdPanelLocalizer::oakdPanelLocalizer() : Node("oakd_panel_localizer")
     // -----------------------------
     // NN Archive読み込み
     // -----------------------------
-    dai::NNArchive model("core_enemy_detection/config/best.rvc2.tar.xz" );
+    const auto package_share = ament_index_cpp::get_package_share_directory("core_enemy_detection");
+    const auto model_path = std::filesystem::path(package_share) / "config" / "best.rvc2.tar.xz";
+    dai::NNArchive model(model_path.string());
 
     // -----------------------------ll
     // DetectionNetwork作成
