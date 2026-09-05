@@ -32,6 +32,7 @@ AutoMode 時の座標送信:
 - `mouse_y_sensitivity` (double, default: `1.0`)
 - `mouse_x_inverse` (bool, default: `false`)
 - `mouse_y_inverse` (bool, default: `false`)
+- `cmd_vel_xy_scale` (double, default: `0.25`): W/Sの`linear.x`とA/Dの`linear.y`に出力する最大軸速度 [m/s]
 - `manual_mode_target_side` (string, default: `right`)
 
 デフォルトのパラメータは以下にあります:

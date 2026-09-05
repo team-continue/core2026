@@ -84,7 +84,7 @@ Shootは`manual_mode_target_side`で指定した側にだけ発行します。
 | `mouse_y_sensitivity` | double | `1.0` | 垂直マウス感度 |
 | `mouse_x_inverse` | bool | `false` | 水平入力の反転 |
 | `mouse_y_inverse` | bool | `false` | 垂直入力の反転 |
-| `cmd_vel_xy_scale` | double | `1.0` | XY速度のスケール |
+| `cmd_vel_xy_scale` | double | `0.25` | W/Sの`linear.x`とA/Dの`linear.y`に出力する最大軸速度 [m/s] |
 | `manual_mode_target_side` | string | `right` | `/manual_mode`とShootの対象側（`left`または`right`） |
 
 ## Assumptions / Known limits

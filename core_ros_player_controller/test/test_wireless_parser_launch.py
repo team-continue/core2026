@@ -94,6 +94,12 @@ class TestWirelessParserNode(unittest.TestCase):
         msg.data = data
         self.pub.publish(msg)
 
+    def _publish_movement_and_wait_for_cmd_vel(self, movement):
+        self.events["cmd_vel"].clear()
+        self._publish([0, 0, 0, movement, 0, 0, 0])
+        self.assertTrue(self.events["cmd_vel"].wait(2.0), "missing /cmd_vel")
+        return self.values["cmd_vel"]
+
     def test_new_7byte_mapping(self):
         # EStop, Roller, Reload, Shoot, ADS, RightTurretAuto;
         # mouse x=-127, y=+127; W+A and InfiniteRotate=R2.
@@ -101,8 +107,8 @@ class TestWirelessParserNode(unittest.TestCase):
         for name in ("cmd_vel", "rotation", "ads", "manual_mode", "manual_pitch", "roller", "shoot", "estop"):
             self.assertTrue(self.events[name].wait(2.0), f"missing /{name}")
 
-        self.assertAlmostEqual(self.values["cmd_vel"].linear.x, 0.5)
-        self.assertAlmostEqual(self.values["cmd_vel"].linear.y, 0.5)
+        self.assertAlmostEqual(self.values["cmd_vel"].linear.x, 0.25)
+        self.assertAlmostEqual(self.values["cmd_vel"].linear.y, 0.25)
         self.assertAlmostEqual(self.values["cmd_vel"].angular.z, 2.0)
         self.assertEqual(self.values["rotation"].data, 2)
         self.assertTrue(self.values["ads"].data)
@@ -111,6 +117,21 @@ class TestWirelessParserNode(unittest.TestCase):
         self.assertTrue(self.values["roller"].data)
         self.assertTrue(self.values["shoot"].data)
         self.assertTrue(self.values["estop"].data)
+
+    def test_wasd_velocity_scale_and_opposing_keys(self):
+        for movement, expected_x, expected_y in (
+            (0b0001, 0.25, 0.0),   # W
+            (0b0010, 0.0, 0.25),   # A
+            (0b0100, -0.25, 0.0),  # S
+            (0b1000, 0.0, -0.25),  # D
+            (0b0101, 0.0, 0.0),    # W + S
+            (0b1010, 0.0, 0.0),    # A + D
+        ):
+            with self.subTest(movement=movement):
+                cmd_vel = self._publish_movement_and_wait_for_cmd_vel(movement)
+                self.assertAlmostEqual(cmd_vel.linear.x, expected_x)
+                self.assertAlmostEqual(cmd_vel.linear.y, expected_y)
+                self.assertAlmostEqual(cmd_vel.angular.z, 0.0)
 
     def test_reload_is_published_on_rising_edge(self):
         self._publish([0, 0, 0, 0, 0, 0, 0])
