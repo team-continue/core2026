@@ -67,12 +67,12 @@ attack_shoot_manager:
     right_shoot_fullauto_topic: "/right/shoot_fullauto"
     left_turret_auto_topic: "/left/turret_auto"
     right_turret_auto_topic: "/right/turret_auto"
-    image_width: 640.0
-    image_height: 480.0
+    image_width: 320.0
+    image_height: 320.0
     image_center_x: 0.5
     image_center_y: 0.5
-    center_tolerance_x_px: 300.0
-    center_tolerance_y_px: 300.0
+    center_tolerance_x_px: 50.0
+    center_tolerance_y_px: 50.0
     detected_z_threshold: 0.5
     stale_timeout_sec: 0.2
     publish_rate_hz: 20.0

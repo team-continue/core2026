@@ -42,8 +42,8 @@ void targetSelector::publishTargetPoint(){
     if(flag){
         auto dpPointMsg = geometry_msgs::msg::PointStamped();
         dpPointMsg.header.stamp = timeStamp;
-        dpPointMsg.point.x = target.x - imageSize[0] / 2;
-        dpPointMsg.point.y = -(target.y - imageSize[1] / 2);
+        dpPointMsg.point.x = target.x - 320.f / 2;
+        dpPointMsg.point.y = -(target.y - 320.f / 2);
         dpPointMsg.point.z = 0.0;
         targetPointPub->publish(dpPointMsg);
         return;

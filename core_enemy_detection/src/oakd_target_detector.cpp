@@ -55,8 +55,8 @@ void oakdTargetDetector::detectEnemy(const core_msgs::msg::DetectedPanelInfoArra
     dpMsg.array = damagePanels;
     dpInfoPub->publish(dpMsg);
 
-    publishImage("raw_image", rawImage, "bgr8");
-    publishResultImage();
+    // publishImage("raw_image", rawImage, "bgr8");
+    // publishResultImage();
 
     
     return;

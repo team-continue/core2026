@@ -5,4 +5,4 @@
     mouse_x_inverse: true
     mouse_y_inverse: true
     cmd_vel_xy_scale: 0.25
-    manual_mode_target_side: right
+    manual_mode_target_side: left

@@ -38,7 +38,7 @@ def generate_launch_description():
         output='screen',
         remappings=[
             ('detected_panel_info', '/oakd/detected_panel_info'),
-            ('color', 'color'),
+            ('color', '/color2'),
             ('damage_panels_infomation', '/oakd/damage_panels_infomation'),
         ],
     )
@@ -71,7 +71,8 @@ def generate_launch_description():
         parameters=[param_file],
         output='screen',
         remappings=[
-            ('raw_image', '/turret_camera_right/color/image'),
+            ('raw_image', '/turret_camera_left/color/image'),
+            ('color', '/color2'),
             ('target_pose', '/normal/detected_target'),
         ],
     )

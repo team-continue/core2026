@@ -128,7 +128,7 @@ echo "[5/6] Building depthai-core..."
 cmake \
     --build "${DEPTHAI_SRC}/build" \
     --target install \
-    --parallel "$(nproc)"
+    --parallel 1
 
 
 # ============================================================

@@ -48,12 +48,12 @@ def generate_launch_description():
             '/turret_camera_tps/color/camera_info',
         ),
         _cam(
-            'camera_right',
-            '/dev/camera_right',
+            'camera_left',
+            '/dev/video0',
             640,
             480,
             30.0,
-            '/turret_camera_right/color/image',
-            '/turret_camera_right/color/camera_info',
+            '/turret_camera_left/color/image',
+            '/turret_camera_left/color/camera_info',
         ),
     ])
