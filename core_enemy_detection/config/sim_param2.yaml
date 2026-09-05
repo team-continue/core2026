@@ -1,4 +1,4 @@
-/right/target_detector:
+/oakd/target_detector:
   ros__parameters:
     blue_range_lower:
     - 105
@@ -6,27 +6,13 @@
     - 125
     blue_range_upper:
     - 135
-    - 255
-    - 255
-    image_size:
-    - 1280
-    - 720
+    - 254
+    - 254
     led_kernel_matrix_size:
-    - 3
-    - 3
+    - 1
+    - 1
     mage:
       mode: unchanged
-    panel_kernel_matrix_size:
-    - 9
-    - 9
-    panel_lab_range_lower:
-    - 0
-    - 130
-    - 95
-    panel_lab_range_upper:
-    - 100
-    - 175
-    - 150
     qos_overrides:
       /parameter_events:
         publisher:
@@ -36,7 +22,7 @@
           reliability: reliable
     red_range_lower1:
     - 0
-    - 100
+    - 125
     - 125
     red_range_lower2:
     - 175
@@ -50,18 +36,10 @@
     - 179
     - 254
     - 254
-    white_range_lower:
-    - 0
-    - 100
-    - 125
-    white_range_upper:
-    - 179
-    - 255
-    - 255
     use_sim_time: false
     debug_mode: true
 
-/left/target_detector:
+/normal/target_detector:
   ros__parameters:
     blue_range_lower:
     - 105

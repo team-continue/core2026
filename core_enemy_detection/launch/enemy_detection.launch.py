@@ -46,6 +46,7 @@ def generate_launch_description():
             parameters=[param_file],
             remappings=[
                 ('raw_image', input_topic),
+                ('color', '/color')
             ]
         ),
 

@@ -17,9 +17,17 @@ namespace core_enemy_detection{
         // {"panel_hsv_range_upper", std::vector<int>({100, 170, 95})},
         {"panel_lab_range_lower", std::vector<int>({60, 110, 110})},
         {"panel_lab_range_upper", std::vector<int>({75, 140, 140})},
-        {"led_kernel_matrix_size", std::vector<int>({5, 5})},
+        {"led_kernel_matrix_size", std::vector<int>({1, 1})},
         {"panel_kernel_matrix_size", std::vector<int>({20, 20})},
         {"white_range_lower", std::vector<int>({0, 0, 0})},
         {"white_range_upper", std::vector<int>({255, 255, 255})}
     };
+
+    typedef struct labelImage{
+        int num = 0;
+        cv::Mat image;
+        cv::Mat labelMap;
+        cv::Mat status;
+        cv::Mat centroids;
+    }labeledImage;
 }

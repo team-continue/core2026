@@ -15,6 +15,7 @@ endif()
 
 find_package(ament_cmake_auto REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 ament_auto_find_build_dependencies()
 
@@ -28,9 +29,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CANArray.msg"
   "msg/DamagePanelInfo.msg"
   "msg/DamagePanelInfoArray.msg"
+  "msg/DetectedPanelInfo.msg"
+  "msg/DetectedPanelInfoArray.msg"
   "msg/PoseWithWeight.msg"
   "msg/Path.msg"
-  DEPENDENCIES std_msgs geometry_msgs
+  DEPENDENCIES std_msgs geometry_msgs sensor_msgs
 )
 ament_export_dependencies(rosidl_default_runtime)
 ament_export_dependencies(std_msgs)
