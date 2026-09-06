@@ -146,10 +146,13 @@ def generate_launch_description():
                 "control.pitch_correct_tolerance": 0.01,
                 "image_center_x": 0.4,
                 "image_center_y": 0.4,
-                "image_tolerance_x": 5.0,
-                "image_tolerance_y": 5.0,
-                "yaw_image_gain": 0.0005,
-                "pitch_image_gain": 0.008,
+                # 従来方式(target_detector)の 1280x720 座標系を前提とした値。
+                # 1px あたり yaw 約0.00136rad / pitch 約0.00203rad として、
+                # 1ステップで誤差の約30%を詰めるゲインにしてある（実機で要調整）
+                "image_tolerance_x": 20.0,
+                "image_tolerance_y": 20.0,
+                "yaw_image_gain": 0.0004,
+                "pitch_image_gain": 0.0006,
             }
         ],
         remappings=[
@@ -188,10 +191,12 @@ def generate_launch_description():
                 "control.pitch_correct_tolerance": 0.01,
                 "image_center_x": 0.55,
                 "image_center_y": 0.5,
-                "image_tolerance_x": 5.0,
-                "image_tolerance_y": 5.0,
-                "yaw_image_gain": 0.0007,
-                "pitch_image_gain": 0.01,
+                # 注意: 右砲塔は現状 OAK-D(YOLO 320x320) 系から target_pose を受けるため、
+                # この 1280x720 前提の値はそのままでは整合しない。左砲塔と揃えた暫定値
+                "image_tolerance_x": 20.0,
+                "image_tolerance_y": 20.0,
+                "yaw_image_gain": 0.0004,
+                "pitch_image_gain": 0.0006,
             }
         ],
         remappings=[

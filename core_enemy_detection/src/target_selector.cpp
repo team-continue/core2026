@@ -42,8 +42,9 @@ void targetSelector::publishTargetPoint(){
     if(flag){
         auto dpPointMsg = geometry_msgs::msg::PointStamped();
         dpPointMsg.header.stamp = timeStamp;
-        dpPointMsg.point.x = target.x - 320.f / 2;
-        dpPointMsg.point.y = -(target.y - 320.f / 2);
+        // target.x/y は image_size にリサイズ後の画像座標。画像中心を原点にして渡す
+        dpPointMsg.point.x = target.x - imageSize[0] / 2.0;
+        dpPointMsg.point.y = -(target.y - imageSize[1] / 2.0);
         dpPointMsg.point.z = 0.0;
         targetPointPub->publish(dpPointMsg);
         return;
@@ -63,7 +64,16 @@ rcl_interfaces::msg::SetParametersResult targetSelector::changeParameter(const s
     result.successful = true;
 
     for(const auto &param : parameters){
-        declareIntArray(imageSize, param.as_integer_array());
+        if(param.get_name() != "image_size")
+            continue;
+
+        const auto value = param.as_integer_array();
+        if(value.size() != 2 || value[0] <= 0 || value[1] <= 0){
+            result.successful = false;
+            result.reason = "image_size must be [width, height] with positive values";
+            return result;
+        }
+        declareIntArray(imageSize, value);
     }
     
     return result;

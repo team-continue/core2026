@@ -22,7 +22,7 @@ private:
     rclcpp::Subscription<core_msgs::msg::DamagePanelInfoArray>::SharedPtr dpInfoSub;
     rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr targetPointPub;
 
-    bool flag;
+    bool flag = false;
     std::vector<int> imageSize;
     void selectTarget(const core_msgs::msg::DamagePanelInfoArray);
     void declareIntArray(std::vector<int>&, std::vector<int64_t>);

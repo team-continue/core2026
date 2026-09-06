@@ -123,3 +123,17 @@
     - 255
     use_sim_time: false
     debug_mode: true
+
+# target_selector は damage_panel_pose を画像中心原点のピクセル座標で出すため、
+# 対応する target_detector の image_size と必ず同じ値にすること
+/left/target_selector:
+  ros__parameters:
+    image_size:
+    - 1280
+    - 720
+
+/right/target_selector:
+  ros__parameters:
+    image_size:
+    - 1280
+    - 720

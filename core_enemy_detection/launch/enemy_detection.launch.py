@@ -57,6 +57,7 @@ def generate_launch_description():
             name=['target_selector'],
             namespace=turret_name,
             output='screen',
+            parameters=[param_file],
             remappings=[
                 ('damage_panel_pose', output_topic),
             ]
