@@ -815,15 +815,43 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#主要トピック" class="md-nav__link">
+  <a href="#名前空間とトピック名の決まり" class="md-nav__link">
     <span class="md-ellipsis">
       
-        主要トピック
+        名前空間とトピック名の決まり
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="主要トピック">
+    <nav class="md-nav" aria-label="名前空間とトピック名の決まり">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#名前空間を付けないトピック" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        名前空間を付けないトピック
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#トピック一覧" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        トピック一覧
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="トピック一覧">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -893,6 +921,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#ハードウェアcore_hardware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ハードウェア（core_hardware）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#局在化localization" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -927,6 +966,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#未接続トピック" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        未接続トピック
+      
+    </span>
+  </a>
   
 </li>
       
@@ -4830,15 +4880,43 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#主要トピック" class="md-nav__link">
+  <a href="#名前空間とトピック名の決まり" class="md-nav__link">
     <span class="md-ellipsis">
       
-        主要トピック
+        名前空間とトピック名の決まり
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="主要トピック">
+    <nav class="md-nav" aria-label="名前空間とトピック名の決まり">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#名前空間を付けないトピック" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        名前空間を付けないトピック
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#トピック一覧" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        トピック一覧
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="トピック一覧">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -4908,6 +4986,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#ハードウェアcore_hardware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ハードウェア（core_hardware）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#局在化localization" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4942,6 +5031,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#未接続トピック" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        未接続トピック
+      
+    </span>
+  </a>
   
 </li>
       
@@ -5028,7 +5128,64 @@
 
 <h1 id="トピックメッセージ一覧">トピック・メッセージ一覧<a class="headerlink" href="#トピックメッセージ一覧" title="Permanent link">&para;</a></h1>
 <p><strong>このページは各トピックのインタフェース仕様（型・Publisher / Subscriber・QoS・リマップ）を扱います。</strong> ノード構成とデータの流れ、起動構成は<a href="../overview/">システム概要</a>を参照してください。</p>
-<h2 id="主要トピック">主要トピック<a class="headerlink" href="#主要トピック" title="Permanent link">&para;</a></h2>
+<h2 id="名前空間とトピック名の決まり">名前空間とトピック名の決まり<a class="headerlink" href="#名前空間とトピック名の決まり" title="Permanent link">&para;</a></h2>
+<p>ノードは<a href="../overview/#名前空間">システム概要</a>の名前空間ツリーに配置され、トピック名も原則としてその配下に置かれます。名前空間は各パッケージのlaunchファイルの <code>PushRosNamespace</code> で与えられるため、<strong>トピック名の正はlaunchファイル</strong>です。C++ソース内のトピック名（<code>declare_parameter</code> のデフォルト値やハードコードされた絶対名）は、launchを経由せず <code>ros2 run</code> した場合のフォールバックとして残っています。</p>
+<p>トピックがどの名前空間に属するかは以下の規則で決まります。</p>
+<table>
+<thead>
+<tr>
+<th>ケース</th>
+<th>置き場所</th>
+<th>例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Publisherが1つ</td>
+<td>発行元の名前空間</td>
+<td><code>/ui/manual_mode</code>（wireless_parser）</td>
+</tr>
+<tr>
+<td>Publisherが複数・Subscriberが1つ（指令系）</td>
+<td>受け手の名前空間</td>
+<td><code>/hardware/can/tx</code>, <code>/control/cmd_vel</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="名前空間を付けないトピック">名前空間を付けないトピック<a class="headerlink" href="#名前空間を付けないトピック" title="Permanent link">&para;</a></h3>
+<p>外部システム（Unityシミュレータ、外部ドライバ）との境界にあるトピックと、ROS標準トピックは名前空間を付けずグローバルのままです。</p>
+<table>
+<thead>
+<tr>
+<th>トピック</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/imu</code></td>
+<td>実機は <code>core_damiao_imu</code>、simはUnityが発行するため名前は共通である必要がある</td>
+</tr>
+<tr>
+<td><code>/turret_camera_{left,right,tps}/color/image</code></td>
+<td>同上（実機は <code>usb_cam</code>、simはUnity）</td>
+</tr>
+<tr>
+<td><code>/livox/lidar</code></td>
+<td>外部パッケージ <code>livox_ros_driver2</code> のトピック</td>
+</tr>
+<tr>
+<td><code>/joint_states</code>, <code>/tf</code>, <code>/tf_static</code>, <code>/initialpose</code></td>
+<td>ROS標準トピック</td>
+</tr>
+<tr>
+<td><code>/sim_odom</code>, <code>/Odometry</code>, <code>/cloud_registered</code></td>
+<td>Unity / FAST-LIO 由来</td>
+</tr>
+</tbody>
+</table>
+<h2 id="トピック一覧">トピック一覧<a class="headerlink" href="#トピック一覧" title="Permanent link">&para;</a></h2>
+<p>launch経由で起動したときに実際に流れる名前で記載します。<code>{side}</code> は <code>left</code> / <code>right</code> を表します。</p>
 <h3 id="ナビゲーションパイプライン">ナビゲーションパイプライン<a class="headerlink" href="#ナビゲーションパイプライン" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -5056,21 +5213,21 @@
 <td>reliable(10)</td>
 </tr>
 <tr>
-<td><code>/odom</code></td>
+<td><code>/localization/odom</code></td>
 <td><code>nav_msgs/Odometry</code></td>
 <td>odom_bridge</td>
 <td>mppi, path_follower</td>
 <td>reliable(10)</td>
 </tr>
 <tr>
-<td><code>/start_pose</code></td>
+<td><code>/localization/start_pose</code></td>
 <td><code>geometry_msgs/PoseStamped</code></td>
 <td>odom_bridge</td>
 <td>path_planner</td>
 <td>reliable(10)</td>
 </tr>
 <tr>
-<td><code>/goal_pose</code></td>
+<td><code>/behavior/goal_pose</code></td>
 <td><code>geometry_msgs/PoseStamped</code></td>
 <td>RViz2 / behavior system</td>
 <td>path_planner, mppi</td>
@@ -5084,35 +5241,35 @@
 <td>transient_local(1)</td>
 </tr>
 <tr>
-<td><code>/costmap/global</code></td>
+<td><code>/map/costmap/global</code></td>
 <td><code>nav_msgs/OccupancyGrid</code></td>
 <td>map_server</td>
 <td>mppi</td>
 <td>transient_local(1)</td>
 </tr>
 <tr>
-<td><code>/costmap/local</code></td>
+<td><code>/planning/costmap/local</code></td>
 <td><code>nav_msgs/OccupancyGrid</code></td>
 <td>costmap_builder</td>
 <td>mppi</td>
 <td>reliable</td>
 </tr>
 <tr>
-<td><code>/planned_path</code></td>
+<td><code>/planning/planned_path</code></td>
 <td><code>nav_msgs/Path</code></td>
 <td>path_planner</td>
 <td>mppi, path_follower</td>
 <td>reliable</td>
 </tr>
 <tr>
-<td><code>/cmd_vel_raw</code></td>
+<td><code>/planning/cmd_vel_raw</code></td>
 <td><code>geometry_msgs/Twist</code></td>
 <td>mppi</td>
 <td>cmd_vel_smoother</td>
 <td>reliable(10)</td>
 </tr>
 <tr>
-<td><code>/cmd_vel</code></td>
+<td><code>/control/cmd_vel</code></td>
 <td><code>geometry_msgs/Twist</code></td>
 <td>cmd_vel_smoother, path_follower, wireless_parser</td>
 <td>body_controller</td>
@@ -5121,8 +5278,8 @@
 </tbody>
 </table>
 <div class="admonition note">
-<p class="admonition-title"><code>/cmd_vel</code> には複数のPublisherが存在します</p>
-<p><code>core_path_follower</code> の <code>cmd_vel_topic</code> はデフォルトで <code>/cmd_vel</code>（<code>cmd_vel_smoother</code> を経由しない）、<code>wireless_parser</code> も手動操縦時に <code>/cmd_vel</code> を発行します。MPPIを使う場合のみ <code>/cmd_vel_raw</code> → <code>cmd_vel_smoother</code> → <code>/cmd_vel</code> の経路になります。</p>
+<p class="admonition-title"><code>/control/cmd_vel</code> には複数のPublisherが存在します</p>
+<p><code>core_path_follower</code> の <code>cmd_vel_topic</code> はデフォルトで <code>/control/cmd_vel</code>（<code>cmd_vel_smoother</code> を経由しない）、<code>wireless_parser</code> も手動操縦時に <code>/control/cmd_vel</code> を発行します。MPPIを使う場合のみ <code>/planning/cmd_vel_raw</code> → <code>cmd_vel_smoother</code> → <code>/control/cmd_vel</code> の経路になります。</p>
 </div>
 <h3 id="センサ">センサ<a class="headerlink" href="#センサ" title="Permanent link">&para;</a></h3>
 <table>
@@ -5154,10 +5311,22 @@
 <td>(デバッグ)</td>
 </tr>
 <tr>
+<td><code>/livox/imu</code></td>
+<td><code>sensor_msgs/Imu</code></td>
+<td>Livox Mid-360</td>
+<td>FAST-LIO（無効中）</td>
+</tr>
+<tr>
 <td><code>/imu</code></td>
 <td><code>sensor_msgs/Imu</code></td>
 <td>core_damiao_imu（実機）/ Unity（sim）</td>
-<td>target_angle_node, hardware_ui_converter_node</td>
+<td>imu_filter_madgwick, target_angle_node, hardware_ui_converter_node</td>
+</tr>
+<tr>
+<td><code>/sensing/filtered_imu</code></td>
+<td><code>sensor_msgs/Imu</code></td>
+<td>imu_filter_madgwick</td>
+<td>（現在Subscriberなし）</td>
 </tr>
 </tbody>
 </table>
@@ -5173,7 +5342,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>/can/tx</code></td>
+<td><code>/hardware/can/tx</code></td>
 <td><code>core_msgs/CANArray</code></td>
 <td>body_controller, shooter_controller, magazine_manager, aim_bot</td>
 <td>core_hardware</td>
@@ -5181,11 +5350,11 @@
 <tr>
 <td><code>/system/emergency/hazard_status</code></td>
 <td><code>std_msgs/Bool</code></td>
-<td>emergency_handler, wireless_parser</td>
+<td>emergency_handler</td>
 <td>body_controller, target_angle_node</td>
 </tr>
 <tr>
-<td><code>/body_omega</code></td>
+<td><code>/control/body_omega</code></td>
 <td><code>std_msgs/Float64</code></td>
 <td>body_controller</td>
 <td>target_angle_node</td>
@@ -5197,21 +5366,33 @@
 <td>body_controller, diagnostic</td>
 </tr>
 <tr>
-<td><code>/rotation</code></td>
+<td><code>/control/rotation</code></td>
 <td><code>std_msgs/Int32</code></td>
 <td>wireless_parser, behavior_system</td>
 <td>body_controller, target_angle_node</td>
 </tr>
 <tr>
-<td><code>/goal_reached</code></td>
+<td><code>/behavior/goal_reached</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>mppi, path_follower</td>
 <td>behavior_system</td>
 </tr>
+<tr>
+<td><code>/control/target_omega</code></td>
+<td><code>std_msgs/Float64</code></td>
+<td>target_angle_node</td>
+<td>(デバッグ)</td>
+</tr>
+<tr>
+<td><code>/control/yaw_target_angle</code></td>
+<td><code>std_msgs/Float64</code></td>
+<td>(外部)</td>
+<td>target_angle_node</td>
+</tr>
 </tbody>
 </table>
 <h3 id="敵検出">敵検出<a class="headerlink" href="#敵検出" title="Permanent link">&para;</a></h3>
-<p><code>target_detector</code> / <code>target_selector</code> は砲塔ごと（<code>left</code> / <code>right</code> 名前空間）に1組ずつ起動します。以下はノード内部でのトピック名です。</p>
+<p><code>target_detector</code> / <code>target_selector</code> は砲塔ごと（<code>/perception/enemy_detection/left</code> / <code>/perception/enemy_detection/right</code> 名前空間）に1組ずつ起動します。以下はノード内部でのトピック名です。</p>
 <table>
 <thead>
 <tr>
@@ -5242,17 +5423,28 @@
 <td><code>geometry_msgs/PointStamped</code></td>
 <td>target_selector</td>
 <td>aim_bot, enemy_detection_coordinator</td>
-<td><code>/{side}/target_pose</code></td>
+<td><code>/perception/enemy_detection/{side}/target_pose</code></td>
 </tr>
 <tr>
 <td><code>target_image_position</code></td>
 <td><code>geometry_msgs/PointStamped</code></td>
 <td>（上記）</td>
 <td>aim_bot</td>
-<td><code>/{side}/target_pose</code></td>
+<td><code>/perception/enemy_detection/{side}/target_pose</code></td>
+</tr>
+<tr>
+<td><code>color</code></td>
+<td><code>std_msgs/UInt8</code></td>
+<td>core_hardware</td>
+<td>target_detector, oakd_target_detector</td>
+<td><code>/hardware/color</code></td>
 </tr>
 </tbody>
 </table>
+<div class="admonition note">
+<p class="admonition-title"><code>/enemy_poses</code> はPublisher未実装</p>
+<p><code>gui_qt</code> は敵位置オーバーレイ用に <code>~/input/enemy_poses</code>（<code>hud.launch.py</code> で <code>/enemy_poses</code> にリマップ）を購読していますが、これを発行するノードはリポジトリ内に存在しません。発行元を実装する際に名前空間（<code>/perception</code> 配下）を決めてください。</p>
+</div>
 <p>カメラのトピックは以下の通りです。</p>
 <table>
 <thead>
@@ -5297,86 +5489,163 @@
 </thead>
 <tbody>
 <tr>
-<td><code>/right/shoot_fullauto</code></td>
+<td><code>/mecha/shooter/right/shoot_fullauto</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>wireless_parser</td>
 <td>shooter_cmd_gate</td>
 </tr>
 <tr>
-<td><code>/{side}/shoot_fullauto</code></td>
+<td><code>/mecha/shooter/{side}/shoot_fullauto</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>attack_shoot_manager</td>
 <td>shooter_cmd_gate</td>
 </tr>
 <tr>
-<td><code>/shoot_motor</code></td>
+<td><code>/ui/shoot_motor_state</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>wireless_parser</td>
 <td>shooter_cmd_gate</td>
 </tr>
 <tr>
-<td><code>/manual_mode</code></td>
+<td><code>/ui/manual_mode</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>wireless_parser</td>
-<td>shooter_cmd_gate</td>
+<td>shooter_cmd_gate, behavior_system</td>
 </tr>
 <tr>
-<td><code>/manual_pitch</code></td>
+<td><code>/ui/manual_pitch</code></td>
 <td><code>std_msgs/Float32</code></td>
 <td>wireless_parser</td>
 <td>shooter_cmd_gate</td>
 </tr>
 <tr>
-<td><code>/{side}/shoot_cmd</code></td>
+<td><code>/mecha/shooter/{side}/shoot_cmd</code></td>
 <td><code>std_msgs/Int32</code></td>
 <td>shooter_cmd_gate</td>
 <td>shooter_controller</td>
 </tr>
 <tr>
-<td><code>/{side}/shoot_motor</code></td>
+<td><code>/mecha/shooter/{side}/shoot_motor</code></td>
 <td><code>std_msgs/Float32</code></td>
 <td>shooter_cmd_gate</td>
 <td>shooter_controller</td>
 </tr>
 <tr>
-<td><code>/{side}/manual_mode</code></td>
+<td><code>/mecha/shooter/{side}/manual_mode</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>shooter_cmd_gate</td>
 <td>aim_bot</td>
 </tr>
 <tr>
-<td><code>/{side}/manual_pitch_angle</code></td>
+<td><code>/mecha/shooter/{side}/manual_pitch_angle</code></td>
 <td><code>std_msgs/Float32</code></td>
 <td>shooter_cmd_gate</td>
 <td>aim_bot</td>
 </tr>
 <tr>
-<td><code>/{side}/shoot_status</code></td>
+<td><code>/mecha/shooter/{side}/shoot_status</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>shooter_controller</td>
 <td>magazine_manager</td>
 </tr>
 <tr>
-<td><code>/{side}/regrip_active</code></td>
+<td><code>/mecha/shooter/{side}/regrip_active</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>magazine_manager</td>
 <td>shooter_controller</td>
 </tr>
 <tr>
-<td><code>/{side}/remaining_disk</code></td>
+<td><code>/mecha/shooter/{side}/remaining_disk</code></td>
 <td><code>std_msgs/Int8</code></td>
 <td>magazine_manager</td>
 <td>GUI</td>
 </tr>
 <tr>
-<td><code>/reloading</code></td>
+<td><code>/mecha/shooter/{side}/shoot_once</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>デバッグGUI</td>
+<td>shooter_cmd_gate</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/shoot_burst</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>デバッグGUI</td>
+<td>shooter_cmd_gate</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/reloading</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>デバッグGUI</td>
+<td>magazine_manager</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/reloading_increment</code></td>
+<td><code>std_msgs/Int8</code></td>
+<td>デバッグGUI</td>
+<td>magazine_manager</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/disk_hold_state</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>デバッグGUI</td>
+<td>magazine_manager</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/distance</code></td>
+<td><code>std_msgs/Int32</code></td>
+<td>距離センサ（CAN経由）</td>
+<td>magazine_manager</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/jam</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>ジャムセンサ</td>
+<td>shooter_controller</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/jam_state</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>shooter_controller</td>
+<td>(診断)</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/loading_motor_error_state</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>shooter_controller</td>
+<td>(診断)</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/shoot_motor_error_state</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>shooter_controller</td>
+<td>(診断)</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/test_yaw_angle</code></td>
+<td><code>std_msgs/Float32</code></td>
+<td>デバッグGUI</td>
+<td>aim_bot</td>
+</tr>
+<tr>
+<td><code>/mecha/shooter/{side}/test_pitch_angle</code></td>
+<td><code>std_msgs/Float32</code></td>
+<td>デバッグGUI</td>
+<td>aim_bot</td>
+</tr>
+<tr>
+<td><code>/ui/reloading</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>wireless_parser</td>
-<td>（要リマップ）magazine_manager</td>
+<td>（Subscriberなし）</td>
 </tr>
 </tbody>
 </table>
+<div class="admonition warning">
+<p class="admonition-title">リロードは左右個別のトピック</p>
+<p><code>magazine_manager</code> は左右それぞれ自身の名前空間で <code>reloading</code> を購読するため、実体は <code>/mecha/shooter/left/reloading</code> と <code>/mecha/shooter/right/reloading</code> の2本です。一方 <code>wireless_parser</code> のリロード出力は <code>/ui/reloading</code> 1本しかなく、どちらにも接続されていません（この未接続は名前空間移行前からの既存の状態です）。操縦者のリロードボタンを機能させるには、左右どちらに割り当てるか、あるいは左右別トピックを発行するかを決めた上で配線する必要があります。</p>
+</div>
 <h3 id="コントローラ入力">コントローラ入力<a class="headerlink" href="#コントローラ入力" title="Permanent link">&para;</a></h3>
+<p>操縦者入力（<code>wireless_parser_node</code> の出力）は <code>/ui</code> 名前空間に集約されています。</p>
 <table>
 <thead>
 <tr>
@@ -5388,16 +5657,129 @@
 </thead>
 <tbody>
 <tr>
-<td><code>/wireless</code></td>
+<td><code>/hardware/wireless</code></td>
 <td><code>std_msgs/UInt8MultiArray</code></td>
-<td>受信機</td>
+<td>core_hardware（受信機）</td>
 <td>wireless_parser, diagnostic</td>
 </tr>
 <tr>
-<td><code>/rotation_flag</code></td>
+<td><code>/ui/ads</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>wireless_parser</td>
-<td>body_controller</td>
+<td>gui_qt</td>
+</tr>
+<tr>
+<td><code>/ui/test_mode</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>wireless_parser</td>
+<td>shooter_controller, aim_bot</td>
+</tr>
+<tr>
+<td><code>/ui/{side}/turret_auto</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>wireless_parser</td>
+<td>attack_shoot_manager</td>
+</tr>
+<tr>
+<td><code>/ui/auto_point_select</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>（Publisherなし）</td>
+<td>behavior_system</td>
+</tr>
+<tr>
+<td><code>/ui/selected_pose</code></td>
+<td><code>geometry_msgs/PoseStamped</code></td>
+<td>（Publisherなし）</td>
+<td>behavior_system</td>
+</tr>
+<tr>
+<td><code>/ui/yaw_degree</code></td>
+<td><code>std_msgs/Float32</code></td>
+<td>hardware_ui_converter_node</td>
+<td>gui_qt</td>
+</tr>
+<tr>
+<td><code>/ui/speed_mps</code></td>
+<td><code>std_msgs/Float32</code></td>
+<td>hardware_ui_converter_node</td>
+<td>gui_qt</td>
+</tr>
+<tr>
+<td><code>/ui/qe_degree</code></td>
+<td><code>std_msgs/Float32</code></td>
+<td>hardware_ui_converter_node</td>
+<td>gui_qt</td>
+</tr>
+<tr>
+<td><code>/ui/gui_debug/log</code></td>
+<td><code>std_msgs/String</code></td>
+<td>(外部)</td>
+<td>gui_qt</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition warning">
+<p class="admonition-title">自動目標選択の入力は現在Publisherがいない</p>
+<p><code>wireless_parser</code> はかつて <code>/auto_point_select</code> と <code>/selected_pose</code> を発行していましたが、<code>a0136f0 操作系のプロトコル変更を反映</code> で削除されました。<code>wireless_parser_node.launch.py</code> には両トピックのリマップ引数（<code>auto_point_select</code> / <code>selected_pose</code>）が残っていますが、対応するPublisherが無いため現状は効果がありません。<code>behavior_system</code> の <code>AUTO_SELECTED</code> 系の状態遷移は、これらを発行する手段を用意するまで到達しません。</p>
+</div>
+<h3 id="ハードウェアcore_hardware">ハードウェア（core_hardware）<a class="headerlink" href="#ハードウェアcore_hardware" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>トピック</th>
+<th>型</th>
+<th>Publisher</th>
+<th>Subscriber</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/hardware/can/tx</code></td>
+<td><code>core_msgs/CANArray</code></td>
+<td>body_control_node, target_angle_node, shooter_controller, magazine_manager, aim_bot</td>
+<td>core_hardware</td>
+</tr>
+<tr>
+<td><code>/hardware/can/rx</code></td>
+<td><code>core_msgs/CANArray</code></td>
+<td>core_hardware</td>
+<td>motor_tool（デバッグ）</td>
+</tr>
+<tr>
+<td><code>/hardware/wireless</code></td>
+<td><code>std_msgs/UInt8MultiArray</code></td>
+<td>core_hardware（受信機）</td>
+<td>wireless_parser, diagnostic</td>
+</tr>
+<tr>
+<td><code>/hardware/destroy</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>core_hardware</td>
+<td>emergency_handler, gui_qt</td>
+</tr>
+<tr>
+<td><code>/hardware/hp</code></td>
+<td><code>std_msgs/UInt8</code></td>
+<td>core_hardware</td>
+<td>gui_qt</td>
+</tr>
+<tr>
+<td><code>/hardware/color</code></td>
+<td><code>std_msgs/UInt8</code></td>
+<td>core_hardware</td>
+<td>target_detector</td>
+</tr>
+<tr>
+<td><code>/hardware/hardware_emergency</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>core_hardware</td>
+<td>emergency_handler（<code>emergency_switch</code> からリマップ）</td>
+</tr>
+<tr>
+<td><code>/hardware/led/{upper,bottom,bottom2}</code></td>
+<td><code>std_msgs/UInt8</code></td>
+<td>（Publisherなし）</td>
+<td>core_hardware</td>
 </tr>
 </tbody>
 </table>
@@ -5458,7 +5840,7 @@
 <tr>
 <td><code>/system/emergency/hazard_status</code></td>
 <td><code>std_msgs/Bool</code></td>
-<td>emergency_handler, <strong>wireless_parser</strong></td>
+<td>emergency_handler</td>
 <td>body_controller, shooter_controller, magazine_manager, aim_bot, gui_qt, status_display_gui</td>
 </tr>
 <tr>
@@ -5474,28 +5856,40 @@
 <td>gui_qt, status_display_gui</td>
 </tr>
 <tr>
-<td><code>/emergency</code></td>
+<td><code>/hardware/hardware_emergency</code></td>
 <td><code>std_msgs/Bool</code></td>
-<td>ハードウェアスイッチ</td>
+<td>core_hardware（非常停止スイッチ）</td>
 <td>emergency_handler</td>
 </tr>
 <tr>
-<td><code>/software_emergency</code></td>
+<td><code>/system/emergency/software_emergency</code></td>
 <td><code>std_msgs/Bool</code></td>
-<td>(外部)</td>
+<td>wireless_parser</td>
 <td>emergency_handler</td>
 </tr>
 <tr>
-<td><code>/destroy</code></td>
+<td><code>/hardware/destroy</code></td>
 <td><code>std_msgs/Bool</code></td>
-<td>(外部)</td>
+<td>core_hardware</td>
 <td>emergency_handler, gui_qt</td>
+</tr>
+<tr>
+<td><code>/system/emergency/microcontroller_emergency</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>diagnostic</td>
+<td>emergency_handler</td>
+</tr>
+<tr>
+<td><code>/system/emergency/receiver_emergency</code></td>
+<td><code>std_msgs/Bool</code></td>
+<td>diagnostic</td>
+<td>emergency_handler</td>
 </tr>
 </tbody>
 </table>
 <div class="admonition warning">
-<p class="admonition-title"><code>/system/emergency/hazard_status</code> は2箇所から発行されます</p>
-<p><code>emergency_handler</code>（<code>core_mode</code>）に加えて <code>wireless_parser</code>（<code>core_ros_player_controller</code>）も同トピックを直接発行します。片方が <code>false</code> を出し続けると非常停止が解除されうるため、変更時は両方を確認してください。</p>
+<p class="admonition-title">ハザード状態の発行元が2系統ある</p>
+<p><code>wireless_parser</code>（<code>core_ros_player_controller</code>）はソース上 <code>/system/emergency/hazard_status</code> を直接発行しますが、<code>wireless_parser_node.launch.py</code> の <code>hazard_status</code> 引数（既定 <code>/system/emergency/software_emergency</code>）でリマップされ、<code>emergency_handler</code> が集約する形になっています。launchを経由せず <code>ros2 run</code> した場合は <code>/system/emergency/hazard_status</code> を直接発行してしまうため、非常停止が解除されうる点に注意してください。</p>
 </div>
 <p><code>emergency_handler</code> と <code>diagnostic</code> は <code>mode.launch.py</code> で <code>/system/emergency</code> 名前空間に配置され、入力は以下にリマップされます。</p>
 <table>
@@ -5508,15 +5902,15 @@
 <tbody>
 <tr>
 <td><code>emergency_switch</code></td>
-<td><code>/emergency</code></td>
+<td><code>/hardware/hardware_emergency</code></td>
 </tr>
 <tr>
 <td><code>destroy</code></td>
-<td><code>/destroy</code></td>
+<td><code>/hardware/destroy</code></td>
 </tr>
 <tr>
 <td><code>software_emergency</code></td>
-<td><code>/software_emergency</code></td>
+<td>（リマップなし → <code>/system/emergency/software_emergency</code>）</td>
 </tr>
 <tr>
 <td><code>microcontroller_monitor</code></td>
@@ -5524,7 +5918,7 @@
 </tr>
 <tr>
 <td><code>receive_module_monitor</code></td>
-<td><code>/wireless</code></td>
+<td><code>/hardware/wireless</code></td>
 </tr>
 </tbody>
 </table>
@@ -5540,49 +5934,55 @@
 </thead>
 <tbody>
 <tr>
-<td><code>/selected_pose</code></td>
+<td><code>/ui/selected_pose</code></td>
 <td><code>geometry_msgs/PoseStamped</code></td>
-<td>waypoint_selector</td>
+<td>（Publisherなし）</td>
 <td>behavior_system</td>
 </tr>
 <tr>
-<td><code>/goal_pose</code></td>
+<td><code>/behavior/goal_pose</code></td>
 <td><code>geometry_msgs/PoseStamped</code></td>
 <td>behavior_system</td>
 <td>path_planner</td>
 </tr>
 <tr>
-<td><code>/goal_reached</code></td>
+<td><code>/behavior/goal_reached</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>mppi, path_follower</td>
 <td>behavior_system</td>
 </tr>
 <tr>
-<td><code>/enemy_detected</code></td>
+<td><code>/behavior/enemy_detected</code></td>
 <td><code>std_msgs/Bool</code></td>
 <td>enemy_detection_coordinator</td>
 <td>behavior_system, attack_shoot_manager</td>
 </tr>
 <tr>
-<td><code>/behavior_system/state</code></td>
+<td><code>/behavior/state</code></td>
 <td><code>std_msgs/Int32</code></td>
 <td>behavior_system</td>
 <td>(外部)</td>
 </tr>
 <tr>
-<td><code>/behavior_system/state_name</code></td>
+<td><code>/behavior/state_name</code></td>
 <td><code>std_msgs/String</code></td>
 <td>behavior_system</td>
 <td>status_display_gui</td>
 </tr>
 <tr>
-<td><code>/waypoint_selector/pause</code></td>
+<td><code>/behavior/waypoint_selector/goal_pose</code></td>
+<td><code>geometry_msgs/PoseStamped</code></td>
+<td>waypoint_selector</td>
+<td>behavior_system</td>
+</tr>
+<tr>
+<td><code>/behavior/waypoint_selector/pause</code></td>
 <td><code>std_msgs/Bool</code></td>
-<td>(外部)</td>
+<td>behavior_system</td>
 <td>waypoint_selector</td>
 </tr>
 <tr>
-<td><code>waypoints</code></td>
+<td><code>/behavior/waypoints</code></td>
 <td><code>visualization_msgs/Marker</code></td>
 <td>waypoint_selector</td>
 <td>RViz2</td>
@@ -5591,7 +5991,69 @@
 <td><code>/led/upper</code></td>
 <td><code>std_msgs/UInt8</code></td>
 <td>behavior_system</td>
-<td>(外部)</td>
+<td>（未接続）</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition warning">
+<p class="admonition-title"><code>behavior_system</code> のLED出力は未接続</p>
+<p><code>behavior_system_manager.cpp</code> は <code>/led/upper</code> を<strong>絶対名</strong>で発行するため <code>PushRosNamespace</code> の影響を受けません。一方 <code>core_hardware</code> は相対名 <code>led/upper</code>（= <code>/hardware/led/upper</code>）を購読しており、両者は繋がっていません。<code>behavior_system_node</code> を起動する際は launch で <code>("/led/upper", "/hardware/led/upper")</code> のリマップを追加してください（現在 <code>behavior_system.launch.py</code> は <code>attack_shoot_manager</code> しか起動しないため、このノードは未起動です）。</p>
+</div>
+<h2 id="未接続トピック">未接続トピック<a class="headerlink" href="#未接続トピック" title="Permanent link">&para;</a></h2>
+<p>Publisher と Subscriber のどちらかが存在しないトピックの一覧です。<strong>いずれも名前空間の導入が原因ではなく、それ以前から繋がっていませんでした。</strong></p>
+<table>
+<thead>
+<tr>
+<th>トピック</th>
+<th>状態</th>
+<th>対応</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/led/upper</code></td>
+<td><code>behavior_system</code> が絶対名で発行。<code>core_hardware</code> は <code>/hardware/led/upper</code> を購読</td>
+<td>未対応。当該ノードは未起動のため実害なし。起動時は <code>("/led/upper", "/hardware/led/upper")</code> のリマップが必要</td>
+</tr>
+<tr>
+<td><code>/ui/reloading</code></td>
+<td><code>wireless_parser</code> が発行。Subscriberなし</td>
+<td>未対応。<code>magazine_manager</code> は左右個別に <code>/mecha/shooter/{side}/reloading</code> を購読するため 1対2 となり、割り当ての判断が必要</td>
+</tr>
+<tr>
+<td><code>/ui/auto_point_select</code></td>
+<td>Publisherなし。<code>behavior_system</code> が購読</td>
+<td>未対応。<code>a0136f0 操作系のプロトコル変更を反映</code> で <code>wireless_parser</code> から削除済み</td>
+</tr>
+<tr>
+<td><code>/ui/selected_pose</code></td>
+<td>同上</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>/enemy_poses</code></td>
+<td>Publisherなし。<code>gui_qt</code> が購読</td>
+<td>未対応。発行元の実装時に <code>/perception</code> 配下の名前を決める</td>
+</tr>
+<tr>
+<td><code>/hardware/led/{upper,bottom,bottom2}</code></td>
+<td>Publisherなし。<code>core_hardware</code> が購読</td>
+<td>上記 <code>/led/upper</code> の対向</td>
+</tr>
+<tr>
+<td><code>/sensing/filtered_imu</code></td>
+<td><code>imu_filter_madgwick</code> が発行。Subscriberなし</td>
+<td><code>target_angle_node</code> は生の <code>/imu</code> を購読している</td>
+</tr>
+<tr>
+<td><code>/emergency</code></td>
+<td>Publisherなし（旧構成）</td>
+<td><strong>修正済み。</strong> <code>emergency_handler</code> の <code>emergency_switch</code> を <code>/hardware/hardware_emergency</code> にリマップ</td>
+</tr>
+<tr>
+<td><code>/color2</code></td>
+<td>Publisherなし（旧構成）</td>
+<td><strong>修正済み。</strong> <code>test.launch.py</code> の参照を <code>/hardware/color</code> に統一</td>
 </tr>
 </tbody>
 </table>
