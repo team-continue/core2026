@@ -46,6 +46,37 @@ CI環境では、rosdepの実行後、colcon buildの前にこのインストー
 使用するDepthAI SDKのrevisionはスクリプト内で固定されています。
 また、提案しているCIキャッシュキーには、このインストーラスクリプトのハッシュ値を含めます。
 
+## CIのビルド時間
+
+`CI=true`（GitHub Actions）の場合、インストーラーはデバイス用ファームウェアと
+Visualizerのフロントエンドリソースを省略します。
+
+このSDKはコンパイル確認用であり、OAK-D実機を動作させるためのものではありません。
+
+ハードウェアテスト用にファームウェアを含めたい場合は、
+
+DEPTHAI_CI_BUILD=0
+
+を設定してください。
+
+インストーラーは、インストールが正常に完了したあと、
+スクリプトのハッシュ値とビルドモードを記録します。
+
+同じSDK環境が復元された場合は、セットアップとビルドをスキップします。
+
+GitHub Actionsでは、以下の情報を含むキャッシュキーを使用して、
+DepthAI SDKのインストールディレクトリをキャッシュしてください。
+
+- インストーラースクリプトのハッシュ値
+- OS
+- CPUアーキテクチャ
+- ROSディストリビューション
+
+ローカルビルドでは、デバイス用ファームウェアを含む構成を維持します。
+
+CI用ビルドからローカル用ビルドへ切り替えた場合は、
+以前のインストール状態を示すstampは無効になります。
+
 ******************************************************************
 
 Install the pinned DepthAI 3.9.0 SDK before building this ROS package:
@@ -67,3 +98,13 @@ It does not change USB permissions or udev rules. Existing hardware setup remain
 CI must run the installer after rosdep and before colcon build. Changing a local
 path alone does not install the SDK on GitHub runners. The SDK revision is pinned
 in the script; the proposed CI cache key includes the installer hash.
+
+## CI build time
+
+When `CI=true` (GitHub Actions), the installer omits device firmware and the
+Visualizer frontend resources. This SDK is for compilation checks, not hardware
+execution. Set `DEPTHAI_CI_BUILD=0` to keep firmware for hardware tests.
+The installer records its script hash and mode after successful installation and
+skips setup/build when the same SDK is restored. Keep the installation directory
+in an Actions cache keyed by installer hash, OS, architecture and ROS distribution.
+Local builds retain firmware; switching from CI mode invalidates the stamp.
