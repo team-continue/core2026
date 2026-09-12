@@ -25,7 +25,9 @@
 | `/joint_states`, `/tf`, `/tf_static`, `/initialpose` | ROS標準トピック |
 | `/sim_odom`, `/Odometry`, `/cloud_registered` | Unity / FAST-LIO 由来 |
 
-## 主要トピック
+## トピック一覧
+
+launch経由で起動したときに実際に流れる名前で記載します。`{side}` は `left` / `right` を表します。
 
 ### ナビゲーションパイプライン
 
@@ -53,7 +55,9 @@
 | `/livox/lidar` | `sensor_msgs/PointCloud2` | Livox Mid-360 | costmap_builder |
 | `/livox/lidar/no_self` | `sensor_msgs/PointCloud2` | costmap_builder | (デバッグ) |
 | `/lidar/points_filtered` | `sensor_msgs/PointCloud2` | costmap_builder | (デバッグ) |
-| `/imu` | `sensor_msgs/Imu` | core_damiao_imu（実機）/ Unity（sim） | target_angle_node, hardware_ui_converter_node |
+| `/livox/imu` | `sensor_msgs/Imu` | Livox Mid-360 | FAST-LIO（無効中） |
+| `/imu` | `sensor_msgs/Imu` | core_damiao_imu（実機）/ Unity（sim） | imu_filter_madgwick, target_angle_node, hardware_ui_converter_node |
+| `/sensing/filtered_imu` | `sensor_msgs/Imu` | imu_filter_madgwick | （現在Subscriberなし） |
 
 ### 車体制御
 
@@ -65,6 +69,8 @@
 | `/joint_states` | `sensor_msgs/JointState` | core_hardware | body_controller, diagnostic |
 | `/control/rotation` | `std_msgs/Int32` | wireless_parser, behavior_system | body_controller, target_angle_node |
 | `/behavior/goal_reached` | `std_msgs/Bool` | mppi, path_follower | behavior_system |
+| `/control/target_omega` | `std_msgs/Float64` | target_angle_node | (デバッグ) |
+| `/control/yaw_target_angle` | `std_msgs/Float64` | (外部) | target_angle_node |
 
 ### 敵検出
 
@@ -107,7 +113,18 @@
 | `/mecha/shooter/{side}/shoot_status` | `std_msgs/Bool` | shooter_controller | magazine_manager |
 | `/mecha/shooter/{side}/regrip_active` | `std_msgs/Bool` | magazine_manager | shooter_controller |
 | `/mecha/shooter/{side}/remaining_disk` | `std_msgs/Int8` | magazine_manager | GUI |
-| `/mecha/shooter/{side}/reloading` | `std_msgs/Bool` | （デバッグGUI等） | magazine_manager |
+| `/mecha/shooter/{side}/shoot_once` | `std_msgs/Bool` | デバッグGUI | shooter_cmd_gate |
+| `/mecha/shooter/{side}/shoot_burst` | `std_msgs/Bool` | デバッグGUI | shooter_cmd_gate |
+| `/mecha/shooter/{side}/reloading` | `std_msgs/Bool` | デバッグGUI | magazine_manager |
+| `/mecha/shooter/{side}/reloading_increment` | `std_msgs/Int8` | デバッグGUI | magazine_manager |
+| `/mecha/shooter/{side}/disk_hold_state` | `std_msgs/Bool` | デバッグGUI | magazine_manager |
+| `/mecha/shooter/{side}/distance` | `std_msgs/Int32` | 距離センサ（CAN経由） | magazine_manager |
+| `/mecha/shooter/{side}/jam` | `std_msgs/Bool` | ジャムセンサ | shooter_controller |
+| `/mecha/shooter/{side}/jam_state` | `std_msgs/Bool` | shooter_controller | (診断) |
+| `/mecha/shooter/{side}/loading_motor_error_state` | `std_msgs/Bool` | shooter_controller | (診断) |
+| `/mecha/shooter/{side}/shoot_motor_error_state` | `std_msgs/Bool` | shooter_controller | (診断) |
+| `/mecha/shooter/{side}/test_yaw_angle` | `std_msgs/Float32` | デバッグGUI | aim_bot |
+| `/mecha/shooter/{side}/test_pitch_angle` | `std_msgs/Float32` | デバッグGUI | aim_bot |
 | `/ui/reloading` | `std_msgs/Bool` | wireless_parser | （Subscriberなし） |
 
 !!! warning "リロードは左右個別のトピック"
@@ -125,6 +142,10 @@
 | `/ui/{side}/turret_auto` | `std_msgs/Bool` | wireless_parser | attack_shoot_manager |
 | `/ui/auto_point_select` | `std_msgs/Bool` | （Publisherなし） | behavior_system |
 | `/ui/selected_pose` | `geometry_msgs/PoseStamped` | （Publisherなし） | behavior_system |
+| `/ui/yaw_degree` | `std_msgs/Float32` | hardware_ui_converter_node | gui_qt |
+| `/ui/speed_mps` | `std_msgs/Float32` | hardware_ui_converter_node | gui_qt |
+| `/ui/qe_degree` | `std_msgs/Float32` | hardware_ui_converter_node | gui_qt |
+| `/ui/gui_debug/log` | `std_msgs/String` | (外部) | gui_qt |
 
 !!! warning "自動目標選択の入力は現在Publisherがいない"
     `wireless_parser` はかつて `/auto_point_select` と `/selected_pose` を発行していましたが、`a0136f0 操作系のプロトコル変更を反映` で削除されました。`wireless_parser_node.launch.py` には両トピックのリマップ引数（`auto_point_select` / `selected_pose`）が残っていますが、対応するPublisherが無いため現状は効果がありません。`behavior_system` の `AUTO_SELECTED` 系の状態遷移は、これらを発行する手段を用意するまで到達しません。
@@ -133,7 +154,10 @@
 
 | トピック | 型 | Publisher | Subscriber |
 |---------|------|-----------|------------|
-| `/hardware/can/rx` | `core_msgs/CANArray` | core_hardware | (デバッグ) |
+| `/hardware/can/tx` | `core_msgs/CANArray` | body_control_node, target_angle_node, shooter_controller, magazine_manager, aim_bot | core_hardware |
+| `/hardware/can/rx` | `core_msgs/CANArray` | core_hardware | motor_tool（デバッグ） |
+| `/hardware/wireless` | `std_msgs/UInt8MultiArray` | core_hardware（受信機） | wireless_parser, diagnostic |
+| `/hardware/destroy` | `std_msgs/Bool` | core_hardware | emergency_handler, gui_qt |
 | `/hardware/hp` | `std_msgs/UInt8` | core_hardware | gui_qt |
 | `/hardware/color` | `std_msgs/UInt8` | core_hardware | target_detector |
 | `/hardware/hardware_emergency` | `std_msgs/Bool` | core_hardware | emergency_handler（`emergency_switch` からリマップ） |
@@ -159,6 +183,8 @@
 | `/hardware/hardware_emergency` | `std_msgs/Bool` | core_hardware（非常停止スイッチ） | emergency_handler |
 | `/system/emergency/software_emergency` | `std_msgs/Bool` | wireless_parser | emergency_handler |
 | `/hardware/destroy` | `std_msgs/Bool` | core_hardware | emergency_handler, gui_qt |
+| `/system/emergency/microcontroller_emergency` | `std_msgs/Bool` | diagnostic | emergency_handler |
+| `/system/emergency/receiver_emergency` | `std_msgs/Bool` | diagnostic | emergency_handler |
 
 !!! warning "ハザード状態の発行元が2系統ある"
     `wireless_parser`（`core_ros_player_controller`）はソース上 `/system/emergency/hazard_status` を直接発行しますが、`wireless_parser_node.launch.py` の `hazard_status` 引数（既定 `/system/emergency/software_emergency`）でリマップされ、`emergency_handler` が集約する形になっています。launchを経由せず `ros2 run` した場合は `/system/emergency/hazard_status` を直接発行してしまうため、非常停止が解除されうる点に注意してください。
@@ -190,6 +216,22 @@
 
 !!! warning "`behavior_system` のLED出力は未接続"
     `behavior_system_manager.cpp` は `/led/upper` を**絶対名**で発行するため `PushRosNamespace` の影響を受けません。一方 `core_hardware` は相対名 `led/upper`（= `/hardware/led/upper`）を購読しており、両者は繋がっていません。`behavior_system_node` を起動する際は launch で `("/led/upper", "/hardware/led/upper")` のリマップを追加してください（現在 `behavior_system.launch.py` は `attack_shoot_manager` しか起動しないため、このノードは未起動です）。
+
+## 未接続トピック
+
+Publisher と Subscriber のどちらかが存在しないトピックの一覧です。**いずれも名前空間の導入が原因ではなく、それ以前から繋がっていませんでした。**
+
+| トピック | 状態 | 対応 |
+|---|---|---|
+| `/led/upper` | `behavior_system` が絶対名で発行。`core_hardware` は `/hardware/led/upper` を購読 | 未対応。当該ノードは未起動のため実害なし。起動時は `("/led/upper", "/hardware/led/upper")` のリマップが必要 |
+| `/ui/reloading` | `wireless_parser` が発行。Subscriberなし | 未対応。`magazine_manager` は左右個別に `/mecha/shooter/{side}/reloading` を購読するため 1対2 となり、割り当ての判断が必要 |
+| `/ui/auto_point_select` | Publisherなし。`behavior_system` が購読 | 未対応。`a0136f0 操作系のプロトコル変更を反映` で `wireless_parser` から削除済み |
+| `/ui/selected_pose` | 同上 | 同上 |
+| `/enemy_poses` | Publisherなし。`gui_qt` が購読 | 未対応。発行元の実装時に `/perception` 配下の名前を決める |
+| `/hardware/led/{upper,bottom,bottom2}` | Publisherなし。`core_hardware` が購読 | 上記 `/led/upper` の対向 |
+| `/sensing/filtered_imu` | `imu_filter_madgwick` が発行。Subscriberなし | `target_angle_node` は生の `/imu` を購読している |
+| `/emergency` | Publisherなし（旧構成） | **修正済み。** `emergency_handler` の `emergency_switch` を `/hardware/hardware_emergency` にリマップ |
+| `/color2` | Publisherなし（旧構成） | **修正済み。** `test.launch.py` の参照を `/hardware/color` に統一 |
 
 ## カスタムメッセージ（core_msgs）
 

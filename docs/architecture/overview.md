@@ -50,6 +50,49 @@
 /hardware            core_hardware
 ```
 
+### ノード一覧（名前空間別）
+
+「状態」列の **無効** はlaunchファイル内でコメントアウトされ現在起動しないノードです。名前空間対応は済んでいるため、コメントを外せばそのまま下記の配置に入ります。
+
+| 名前空間 | ノード | パッケージ | 状態 |
+|---|---|---|---|
+| `/sensing` | `livox_lidar_publisher` | livox_ros_driver2 | 実機のみ |
+| `/sensing` | `damiao_imu_node` | core_damiao_imu | |
+| `/sensing` | `imu_filter_madgwick` | imu_filter_madgwick | |
+| `/sensing/camera/camera_{left,right,tps}` | `usb_cam` × 3 | usb_cam | |
+| `/localization` | `localization_node` | core_localization | `use_localization:=true` 時 |
+| `/localization` | `fastlio_mapping` | fast_lio | **無効** |
+| `/localization` | `odom_bridge_node` | core_launch | **無効** |
+| `/map` | `map_server_node` | core_launch | **無効** |
+| `/perception/enemy_detection/{left,right}` | `target_detector` | core_enemy_detection | |
+| `/perception/enemy_detection/{left,right}` | `target_selector` | core_enemy_detection | |
+| `/planning` | `costmap_build_node` | core_costmap_builder | |
+| `/planning` | `core_path_planner_node` | core_path_planner | |
+| `/planning` | `core_mppi_node` | core_mppi | path_follower と排他 |
+| `/planning` | `core_path_follower` | core_path_follower | mppi と排他 |
+| `/planning` | `cmd_vel_smoother_node` | core_cmd_vel_smoother | **無効** |
+| `/behavior` | `attack_shoot_manager` | core_behavior_system | |
+| `/behavior` | `behavior_system` | core_behavior_system | **無効** |
+| `/behavior` | `waypoint_selector` | core_behavior_system | **無効** |
+| `/behavior` | `enemy_detection_coordinator` | core_behavior_system | **無効** |
+| `/mecha/shooter` | `shooter_cmd_gate` | core_shooter | |
+| `/mecha/shooter/{left,right}` | `shooter_controller` | core_shooter | |
+| `/mecha/shooter/{left,right}` | `magazine_manager` | core_shooter | |
+| `/mecha/shooter/{left,right}` | `aim_bot` | core_shooter | |
+| `/control` | `body_control_node` | core_body_controller | |
+| `/control` | `target_angle_node` | core_body_controller | |
+| `/system/emergency` | `emergency_handler` | core_mode | |
+| `/system/emergency` | `diagnostic` | core_mode | |
+| `/ui` | `wireless_parser_node` | core_ros_player_controller | |
+| `/ui` | `gui_qt_node` | core_qt_gui | |
+| `/ui` | `hardware_ui_converter_node` | core_qt_gui | |
+| `/ui` | `status_display_gui` | core_status_gui | |
+| `/hardware` | `core_hardware` | core_hardware | |
+| `/hardware` | `core_hardware_usb` | core_hardware | **無効**（socket版と排他） |
+
+!!! note "砲塔ノードは左右で同名です"
+    `shooter_controller` / `magazine_manager` / `aim_bot` は左右で同じノード名を使い、区別は名前空間（`/mecha/shooter/left` と `/mecha/shooter/right`）だけで行います。`target_detector` / `target_selector` も同様です。
+
 トピック名も原則としてこのツリーの配下に置かれます。トピックがどの名前空間に属するかの規則、および名前空間を付けない外部境界トピック（`/imu`, `/turret_camera_*`, `/livox/lidar`, `/joint_states` など）の一覧は[トピック・メッセージ一覧](topics.md#名前空間とトピック名の決まり)を参照してください。
 
 !!! note "パラメータYAMLのノード名キー"
