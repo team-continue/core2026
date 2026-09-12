@@ -1,13 +1,29 @@
 #include "rclcpp/rclcpp.hpp"
 #include <chrono>
-#include <math.h>
+#include <cmath>
 #include <stdexcept>
+#include <string>
+#include <vector>
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/int32.hpp"
 #include "std_msgs/msg/float32.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "core_msgs/msg/can.hpp"
 #include "core_msgs/msg/can_array.hpp"
+
+#include "core_shooter/can_command.hpp"
+#include "core_shooter/parameter_utils.hpp"
+#include "core_shooter/test_mode_gate.hpp"
+
+namespace
+{
+/// 装填モータは 1 発ごとに半回転（π rad）進める。
+constexpr double kLoadingAnglePerShot = M_PI;
+/// 目標角の 95% 到達で発射完了とみなす（残り 5% = 0.05π）。
+constexpr double kShootCompletionMarginRad = M_PI * 0.05;
+/// joint_states のうち、シャーシに対する砲塔角が入るインデックス。
+constexpr size_t kTurretAngleJointIndex = 4;
+}  // namespace
 
 
 class ShooterController : public rclcpp::Node
@@ -19,11 +35,8 @@ public:
     //========================================
     // shoot id parameters
     //========================================
-    this->declare_parameter<int>("shoot_motor_id", 100);
-    this->declare_parameter<int>("loading_motor_id", 100);
-
-    this->get_parameter("shoot_motor_id", shoot_motor_id_);
-    this->get_parameter("loading_motor_id", loading_motor_id_);
+    shoot_motor_id_ = core_shooter::declareAndGet<int>(*this, "shoot_motor_id", 100);
+    loading_motor_id_ = core_shooter::declareAndGet<int>(*this, "loading_motor_id", 100);
     if (shoot_motor_id_ < 0 || loading_motor_id_ < 0) {
       RCLCPP_FATAL(
         this->get_logger(), "Invalid motor ids: shoot_motor_id=%d, loading_motor_id=%d",
@@ -38,21 +51,14 @@ public:
     //========================================
     // shoot parameters
     //========================================
-    this->declare_parameter<int>("burst_count", 3);
-    this->declare_parameter<int>("shoot_interval_ms", 500);
-    this->declare_parameter<int>("burst_interval_ms", 500);
-    this->declare_parameter<int>("fullauto_interval_ms", 500);
-    this->declare_parameter<double>("shoot_motor_rotation_cmd_activation_delay_sec", 2.0);
-    this->declare_parameter<bool>("enable_test_mode", false);
-
-    this->get_parameter("burst_count", burst_count_);
-    this->get_parameter("shoot_interval_ms", shoot_interval_ms_);
-    this->get_parameter("burst_interval_ms", burst_interval_ms_);
-    this->get_parameter("fullauto_interval_ms", fullauto_interval_ms_);
-    this->get_parameter(
-      "shoot_motor_rotation_cmd_activation_delay_sec",
-      shoot_motor_rotation_cmd_activation_delay_sec_);
-    this->get_parameter("enable_test_mode", enable_test_mode_);
+    burst_count_ = core_shooter::declareAndGet<int>(*this, "burst_count", 3);
+    shoot_interval_ms_ = core_shooter::declareAndGet<int>(*this, "shoot_interval_ms", 500);
+    burst_interval_ms_ = core_shooter::declareAndGet<int>(*this, "burst_interval_ms", 500);
+    fullauto_interval_ms_ = core_shooter::declareAndGet<int>(*this, "fullauto_interval_ms", 500);
+    shoot_motor_rotation_cmd_activation_delay_sec_ = core_shooter::declareAndGet<double>(
+      *this, "shoot_motor_rotation_cmd_activation_delay_sec", 2.0);
+    enable_test_mode_ = core_shooter::declareAndGet<bool>(*this, "enable_test_mode", false);
+    test_mode_.setDefault(enable_test_mode_);
     if (
       burst_count_ <= 0 || shoot_interval_ms_ < 0 || burst_interval_ms_ < 0 ||
       fullauto_interval_ms_ < 0 ||
@@ -75,10 +81,8 @@ public:
     //========================================
     // panel limit parameters
     //========================================
-    this->declare_parameter<std::vector<double>>("limit_rad", std::vector<double>(4, 0.0));
-    this->declare_parameter<bool>("enable_panel_synchronizer", true);
-
-    this->get_parameter("limit_rad", limit_rad_);
+    limit_rad_ =
+      core_shooter::declareAndGet<std::vector<double>>(*this, "limit_rad", std::vector<double>(4, 0.0));
     if (limit_rad_.size() != 4) {
       RCLCPP_FATAL(
         this->get_logger(), "Invalid limit_rad size=%zu (expected 4)", limit_rad_.size());
@@ -88,19 +92,18 @@ public:
       this->get_logger(), "limit_rad: %f, %f, %f, %f", limit_rad_[0], limit_rad_[1], limit_rad_[2],
       limit_rad_[3]);
 
-    this->get_parameter("enable_panel_synchronizer", enable_panel_synchronizer_);
+    enable_panel_synchronizer_ =
+      core_shooter::declareAndGet<bool>(*this, "enable_panel_synchronizer", true);
     RCLCPP_INFO(
       this->get_logger(), "enable_panel_synchronizer: %d", enable_panel_synchronizer_);
 
     //========================================
     // loading motor parameters
     //========================================
-    this->declare_parameter<double>("loading_motor_speed", 3.0);
-    this->declare_parameter<std::vector<double>>(
-      "loading_motor_initial_angle", std::vector<double>(3, 0.0));
-
-    this->get_parameter("loading_motor_speed", loading_motor_speed_);
-    this->get_parameter("loading_motor_initial_angle", loading_motor_initial_angle_);
+    loading_motor_speed_ =
+      static_cast<float>(core_shooter::declareAndGet<double>(*this, "loading_motor_speed", 3.0));
+    loading_motor_initial_angle_ = core_shooter::declareAndGet<std::vector<double>>(
+      *this, "loading_motor_initial_angle", std::vector<double>(3, 0.0));
     if (loading_motor_initial_angle_.size() != 3) {
       RCLCPP_FATAL(
         this->get_logger(), "Invalid loading_motor_initial_angle size=%zu (expected 3)",
@@ -116,9 +119,8 @@ public:
     //========================================
     // shoot motor parameters
     //========================================
-    this->declare_parameter<std::vector<double>>("target_speed", std::vector<double>(3, 0.0));
-
-    this->get_parameter("target_speed", shoot_motor_target_speed_);
+    shoot_motor_target_speed_ = core_shooter::declareAndGet<std::vector<double>>(
+      *this, "target_speed", std::vector<double>(3, 0.0));
     if (shoot_motor_target_speed_.size() != 3) {
       RCLCPP_FATAL(
         this->get_logger(), "Invalid target_speed size=%zu (expected 3)",
@@ -133,11 +135,10 @@ public:
     //========================================
     // jam parameters
     //========================================
-    this->declare_parameter<bool>("enable_jam_detection", true);
-    this->declare_parameter<double>("jam_detect_time_sec", 0.1);
-
-    this->get_parameter("enable_jam_detection", enable_jam_detection_);
-    this->get_parameter("jam_detect_time_sec", jam_detect_time_sec_);
+    enable_jam_detection_ =
+      core_shooter::declareAndGet<bool>(*this, "enable_jam_detection", true);
+    jam_detect_time_sec_ =
+      core_shooter::declareAndGet<double>(*this, "jam_detect_time_sec", 0.1);
     if (jam_detect_time_sec_ < 0.0) {
       RCLCPP_FATAL(
         this->get_logger(), "Invalid jam_detect_time_sec=%f (must be >= 0)",
@@ -152,9 +153,7 @@ public:
     //========================================
     // debug parameters
     //========================================
-    this->declare_parameter<double>("set_initial_rad", 0.0);
-
-    this->get_parameter("set_initial_rad", set_initial_rad_);
+    set_initial_rad_ = core_shooter::declareAndGet<double>(*this, "set_initial_rad", 0.0);
 
     RCLCPP_INFO(this->get_logger(), "set_initial_rad_: %f", set_initial_rad_);
 
@@ -221,7 +220,7 @@ private:
     const size_t position_size = msg->position.size();
     if (loading_motor_id_ < 0 ||
       static_cast<size_t>(loading_motor_id_) >= position_size ||
-      position_size <= 4)
+      position_size <= kTurretAngleJointIndex)
     {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(),
@@ -232,7 +231,7 @@ private:
     }
 
     loading_motor_rad_ = msg->position[loading_motor_id_];
-    turret_angle_from_chassis_ = msg->position[4];
+    turret_angle_from_chassis_ = msg->position[kTurretAngleJointIndex];
   }
 
   void jamSensorCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -243,12 +242,12 @@ private:
     if (jam_photo_reflector_raw_) {
       // true が初めて来た瞬間を記録
       if (!jam_tracking_) {
-        start_time_ = now;
+        jam_start_time_ = now;
         jam_tracking_ = true;
       }
 
       // true が続いている場合、100ms 経過したかチェック
-      auto elapsed = now - start_time_;
+      auto elapsed = now - jam_start_time_;
       if (elapsed > rclcpp::Duration::from_seconds(jam_detect_time_sec_)) {
         is_jam_detected_ = true;
       }
@@ -275,15 +274,11 @@ private:
 
   void testModeCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    const bool previous_effective = isTestModeEnabled();
-    test_mode_topic_value_ = msg->data;
-    has_test_mode_topic_value_ = true;
-    const bool next_effective = isTestModeEnabled();
-    if (next_effective != previous_effective) {
+    if (test_mode_.update(msg->data)) {
       RCLCPP_INFO(
         this->get_logger(),
         "Test mode %s in shooter_controller (source=topic, param fallback=%s)",
-        next_effective ? "ON" : "OFF", enable_test_mode_ ? "true" : "false");
+        test_mode_.enabled() ? "ON" : "OFF", test_mode_.defaultValue() ? "true" : "false");
     }
   }
 
@@ -308,7 +303,7 @@ private:
   void shootMotorCallback(const std_msgs::msg::Float32::SharedPtr msg)
   {
     float commanded_speed = 0.0f;
-    switch (state) {
+    switch (state_) {
       case EMERGENCY:
         commanded_speed = 0.0f;
         break;
@@ -346,25 +341,25 @@ private:
     updateShootMotorRotationCommandFlag();
     jamStatePublish(is_jam_detected_);
 
-    switch (state) {
+    switch (state_) {
       case INIT:
         {
           // shoot指令
           RCLCPP_INFO(get_logger(), "Initilize, %f", loading_motor_rad_);
 
           init_sync_in_progress_ = true;
-          setAngle(loading_motor_id_, getShootMotorRotationCount() * M_PI);
+          setAngle(loading_motor_id_, getShootMotorRotationCount() * kLoadingAnglePerShot);
           last_shoot_time_ = this->now();
 
           shoot_completed_ = false;
-          state = SHOOT;
+          state_ = SHOOT;
           RCLCPP_INFO(get_logger(), "change SHOOT (Initilize)");
           break;
         }
       case CMD_WAIT:
         {
           if (hazard_state_) {
-            state = EMERGENCY;
+            state_ = EMERGENCY;
             resetShootMotorRotationCommandState();
             RCLCPP_INFO(get_logger(), "Set EMERGENCY in CMD_WAIT");
             break;
@@ -377,17 +372,21 @@ private:
           bool result = shootDecision();
           if (result) {
             // shoot指令
-            shoot_cnt++;
-            RCLCPP_INFO(get_logger(), "internal cnt = %d, %f", shoot_cnt, M_PI + shoot_cnt * M_PI);
+            shoot_count_++;
+            RCLCPP_INFO(
+              get_logger(), "internal cnt = %d, %f", shoot_count_,
+              kLoadingAnglePerShot + shoot_count_ * kLoadingAnglePerShot);
 
             init_sync_in_progress_ = false;
-            setAngle(loading_motor_id_, getShootMotorRotationCount() * M_PI + M_PI);
+            setAngle(
+              loading_motor_id_,
+              getShootMotorRotationCount() * kLoadingAnglePerShot + kLoadingAnglePerShot);
             last_shoot_time_ = this->now();
 
             shoot_completed_ = false;
             shootStatePublish(shoot_completed_);
 
-            state = SHOOT;
+            state_ = SHOOT;
             RCLCPP_INFO(get_logger(), "change SHOOT");
           }
           RCLCPP_INFO(this->get_logger(), "Remaining number of repeats: %d", shoot_repeat_count_);
@@ -395,7 +394,7 @@ private:
         }
       case SHOOT:
         if (hazard_state_) {
-          state = EMERGENCY;
+          state_ = EMERGENCY;
           resetShootMotorRotationCommandState();
           setAngle(loading_motor_id_, loading_motor_rad_);
 
@@ -403,12 +402,12 @@ private:
           break;
         }
 
-        // target_angleの95%を超えたら遷移
+        // target_angle_ の95%を超えたら遷移
         RCLCPP_INFO_THROTTLE(
           get_logger(),
-          *this->get_clock(), 1000, "target: %f, current: %f", target_angle, loading_motor_rad_);
+          *this->get_clock(), 1000, "target: %f, current: %f", target_angle_, loading_motor_rad_);
 
-        if (target_angle - (M_PI * 0.05) < loading_motor_rad_) {
+        if (target_angle_ - kShootCompletionMarginRad < loading_motor_rad_) {
           shoot_completed_ = true;
 
           if (!init_sync_in_progress_) {
@@ -421,7 +420,7 @@ private:
             shoot_repeat_count_--;
           }
           init_sync_in_progress_ = false;
-          state = CMD_WAIT;
+          state_ = CMD_WAIT;
           RCLCPP_INFO(get_logger(), "change CMD_WAIT");
         }
         break;
@@ -434,8 +433,8 @@ private:
         setSpeed(shoot_motor_id_, 0.0f);
 
         if (!hazard_state_) {
-          // state = CMD_WAIT;
-          state = INIT;
+          // state_ = CMD_WAIT;
+          state_ = INIT;
           RCLCPP_INFO(get_logger(), "Clear emergency, change CMD_WAIT");
         }
         break;
@@ -467,11 +466,13 @@ private:
     }
   }
 
-  float getShootMotorRotationCount()
+  float getShootMotorRotationCount() const
   {
-    float rotate = (loading_motor_rad_ - std::fmod(loading_motor_rad_, M_PI)) / M_PI;
+    const double remainder = std::fmod(loading_motor_rad_, kLoadingAnglePerShot);
+    float rotate =
+      static_cast<float>((loading_motor_rad_ - remainder) / kLoadingAnglePerShot);
 
-    if (std::fmod(loading_motor_rad_, M_PI) > M_PI_2) {
+    if (remainder > kLoadingAnglePerShot / 2.0) {
       rotate += 1;
     }
     return rotate;
@@ -549,7 +550,7 @@ private:
 
   bool isTestModeEnabled() const
   {
-    return has_test_mode_topic_value_ ? test_mode_topic_value_ : enable_test_mode_;
+    return test_mode_.enabled();
   }
 
   void updateShootMotorRotationCommandFlag()
@@ -578,7 +579,7 @@ private:
   void setAngle(int motor, float angle)
   {
     motorPublish(motor, angle);
-    target_angle = angle;
+    target_angle_ = angle;
   }
 
   // 発射モータのスピードを設定
@@ -590,12 +591,7 @@ private:
   // モータの速度をCANで送信
   void motorPublish(int id, float data)
   {
-    auto can_array = core_msgs::msg::CANArray();
-    auto can = core_msgs::msg::CAN();
-    can.id = id;
-    can.data.push_back(data);
-    can_array.array.push_back(can);
-    can_pub_->publish(can_array);
+    core_shooter::publishMotorCommand(can_pub_, id, data);
   }
 
   //========================================
@@ -660,8 +656,6 @@ private:
   rclcpp::TimerBase::SharedPtr timer_;
 
   rclcpp::Time last_shoot_time_ = now();
-  rclcpp::Clock system_clock(rcl_clock_type_t RCL_SYSTEM_TIME);
-  // rclcpp::Clock system_clock(RCL_SYSTEM_TIME);
 
   //========================================
   // subscription valids
@@ -672,8 +666,7 @@ private:
   bool jam_photo_reflector_raw_ = false;
 
   bool hazard_state_ = true;
-  bool test_mode_topic_value_ = false;
-  bool has_test_mode_topic_value_ = false;
+  core_shooter::TestModeGate test_mode_;
   bool regrip_active_ = false;
   bool shoot_motor_rotation_cmd_requested_ = false;
   bool shoot_motor_rotation_cmd_active_ = false;
@@ -682,7 +675,6 @@ private:
   //========================================
   // parameter valids
   //========================================
-  std::string shoot_cmd_topic_;
   int shoot_motor_id_;
   int loading_motor_id_;
 
@@ -697,8 +689,6 @@ private:
   float loading_motor_speed_;
   std::vector<double> loading_motor_initial_angle_;
 
-  bool shoot_completed_disable_;
-  bool shoot_ready_state_disable_;
   double set_initial_rad_;
 
   std::vector<double> shoot_motor_target_speed_;
@@ -724,12 +714,12 @@ private:
     SHOOT,
     EMERGENCY
   };
-  STATE state = CMD_WAIT;
-  int shoot_cnt = 0;
+  STATE state_ = CMD_WAIT;
+  int shoot_count_ = 0;
 
-  float target_angle = M_PI;
+  float target_angle_ = M_PI;
 
-  rclcpp::Time start_time_;
+  rclcpp::Time jam_start_time_;
   bool jam_tracking_ = false;
   bool is_jam_detected_ = false;
 

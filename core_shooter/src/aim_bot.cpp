@@ -14,7 +14,16 @@
 #include "core_msgs/msg/can.hpp"
 #include "core_msgs/msg/can_array.hpp"
 
+#include "core_shooter/can_command.hpp"
+#include "core_shooter/parameter_utils.hpp"
+#include "core_shooter/test_mode_gate.hpp"
+
 using namespace std::chrono_literals;
+
+namespace
+{
+constexpr double kDegToRad = M_PI / 180.0;
+}  // namespace
 
 class AimBot : public rclcpp::Node
 {
@@ -23,113 +32,83 @@ public:
   : Node("aim_bot")
   {
     // ----------------------------
-    // パラメータ宣言
+    // パラメータ宣言と取得
     // ----------------------------
-    this->declare_parameter<double>("rate", 30.0);
-    this->declare_parameter<int>("pitch_motor_id", 10);
-    this->declare_parameter<int>("yaw_motor_id", 7);
-    this->declare_parameter<double>("pitch_offset", 0.0);
-    this->declare_parameter<double>("yaw_min_angle", -3.14159265359);
-    this->declare_parameter<double>("yaw_max_angle", 3.14159265359);
-    this->declare_parameter<double>("pitch_min_angle", -3.14159265359);
-    this->declare_parameter<double>("pitch_max_angle", 3.14159265359);
-    this->declare_parameter<double>("image_center_x", 0.5);
-    this->declare_parameter<double>("image_center_y", 0.5);
-    this->declare_parameter<double>("image_width", 1280.0);
-    this->declare_parameter<double>("image_height", 720.0);
-    this->declare_parameter<double>("horizontal_fov_deg", 100.0);
-    this->declare_parameter<bool>("use_fov_image_tracking", true);
-    this->declare_parameter<double>("image_tolerance_x", 8.0);
-    this->declare_parameter<double>("image_tolerance_y", 8.0);
-    this->declare_parameter<double>("target_lead_time_sec", 0.0);
-    this->declare_parameter<double>("target_velocity_min_dt_sec", 0.01);
-    this->declare_parameter<double>("target_velocity_max_px_per_sec", 1500.0);
-    this->declare_parameter<double>("target_velocity_ema_alpha", 0.25);
-    this->declare_parameter<double>("max_yaw_rate", 0.5);
-    this->declare_parameter<double>("max_pitch_rate", 0.5);
-    this->declare_parameter<double>("yaw_image_gain", 0.5);
-    this->declare_parameter<double>("pitch_image_gain", 0.5);
-    this->declare_parameter<double>("yaw_direction", 1.0);
-    this->declare_parameter<double>("pitch_direction", 1.0);
-    this->declare_parameter<double>("target_timeout_sec", 0.2);
-    this->declare_parameter<double>("target_lost_return_to_startup_delay_sec", 2.0);
-    this->declare_parameter<bool>("enable_test_mode", false);
-    this->declare_parameter<double>("test_yaw_gain", 0.05);
-    this->declare_parameter<double>("test_pitch_gain", 0.05);
-    this->declare_parameter<double>("manual_mode_yaw_fixed_angle", 0.0);
-    this->declare_parameter<double>("manual_mode_pitch_initial_angle", 0.0);
-    this->declare_parameter<double>("startup_release_yaw_angle", 0.0);
-    this->declare_parameter<double>("startup_release_pitch_angle", 0.0);
-    this->declare_parameter<bool>("enable_zone_angle_limit", false);
-    this->declare_parameter<bool>("zone.yaw_reversed", false);
-    this->declare_parameter<double>("zone.yaw_zone1_start", -3.14159265359);
-    this->declare_parameter<double>("zone.yaw_boundary", -1.57079632679);
-    this->declare_parameter<double>("zone.yaw_zone2_end", 1.57079632679);
-    this->declare_parameter<double>("zone.yaw_zone3_end", 3.14159265359);
-    this->declare_parameter<double>("zone.pitch_lower_limit", -3.14159265359);
-    this->declare_parameter<double>("zone.pitch_zone2_upper", 0.52359877559);
-    this->declare_parameter<double>("zone.pitch_zone2_lower", -3.14159265359);
-    this->declare_parameter<double>("zone.pitch_zone2_upper_limit", 3.14159265359);
-    this->declare_parameter<double>("zone.pitch_zone3_lower", -0.52359877559);
-    this->declare_parameter<double>("zone.pitch_zone3_upper", 3.14159265359);
-    this->declare_parameter<double>("zone.pitch_zone1_upper", 3.14159265359);
-    this->declare_parameter<double>("control.hysteresis_rad", 0.017453292519943295);
-    this->declare_parameter<double>("control.pitch_correct_tolerance", 0.01);
-
-    // ----------------------------
-    // パラメータ取得
-    // ----------------------------
-    this->get_parameter("rate", rate_);
-    this->get_parameter("pitch_offset", pitch_offset_);
-    this->get_parameter("yaw_min_angle", yaw_min_angle_);
-    this->get_parameter("yaw_max_angle", yaw_max_angle_);
-    this->get_parameter("pitch_min_angle", pitch_min_angle_);
-    this->get_parameter("pitch_max_angle", pitch_max_angle_);
-    this->get_parameter("image_center_x", image_center_x_);
-    this->get_parameter("image_center_y", image_center_y_);
-    this->get_parameter("image_width", image_width_);
-    this->get_parameter("image_height", image_height_);
-    this->get_parameter("horizontal_fov_deg", horizontal_fov_deg_);
-    this->get_parameter("use_fov_image_tracking", use_fov_image_tracking_);
-    this->get_parameter("image_tolerance_x", image_tolerance_x_);
-    this->get_parameter("image_tolerance_y", image_tolerance_y_);
-    this->get_parameter("target_lead_time_sec", target_lead_time_sec_);
-    this->get_parameter("target_velocity_min_dt_sec", target_velocity_min_dt_sec_);
-    this->get_parameter("target_velocity_max_px_per_sec", target_velocity_max_px_per_sec_);
-    this->get_parameter("target_velocity_ema_alpha", target_velocity_ema_alpha_);
-    this->get_parameter("max_yaw_rate", max_yaw_rate_);
-    this->get_parameter("max_pitch_rate", max_pitch_rate_);
-    this->get_parameter("yaw_image_gain", yaw_image_gain_);
-    this->get_parameter("pitch_image_gain", pitch_image_gain_);
-    this->get_parameter("yaw_direction", yaw_direction_);
-    this->get_parameter("pitch_direction", pitch_direction_);
-    this->get_parameter("target_timeout_sec", target_timeout_sec_);
-    this->get_parameter(
-      "target_lost_return_to_startup_delay_sec", target_lost_return_to_startup_delay_sec_);
-    this->get_parameter("enable_test_mode", enable_test_mode_);
-    this->get_parameter("test_yaw_gain", test_yaw_gain_);
-    this->get_parameter("test_pitch_gain", test_pitch_gain_);
-    this->get_parameter("manual_mode_yaw_fixed_angle", manual_mode_yaw_fixed_angle_);
-    this->get_parameter("manual_mode_pitch_initial_angle", manual_mode_pitch_initial_angle_);
-    this->get_parameter("startup_release_yaw_angle", startup_release_yaw_angle_);
-    this->get_parameter("startup_release_pitch_angle", startup_release_pitch_angle_);
-    this->get_parameter("pitch_motor_id", pitch_motor_id_);
-    this->get_parameter("yaw_motor_id", yaw_motor_id_);
-    this->get_parameter("enable_zone_angle_limit", enable_zone_angle_limit_);
-    this->get_parameter("zone.yaw_reversed", zone_yaw_reversed_);
-    this->get_parameter("zone.yaw_zone1_start", zone_yaw_zone1_start_);
-    this->get_parameter("zone.yaw_boundary", zone_yaw_boundary_);
-    this->get_parameter("zone.yaw_zone2_end", zone_yaw_zone2_end_);
-    this->get_parameter("zone.yaw_zone3_end", zone_yaw_zone3_end_);
-    this->get_parameter("zone.pitch_lower_limit", zone_pitch_lower_limit_);
-    this->get_parameter("zone.pitch_zone2_upper", zone_pitch_zone2_upper_);
-    this->get_parameter("zone.pitch_zone2_lower", zone_pitch_zone2_lower_);
-    this->get_parameter("zone.pitch_zone2_upper_limit", zone_pitch_zone2_upper_limit_);
-    this->get_parameter("zone.pitch_zone3_lower", zone_pitch_zone3_lower_);
-    this->get_parameter("zone.pitch_zone3_upper", zone_pitch_zone3_upper_);
-    this->get_parameter("zone.pitch_zone1_upper", zone_pitch_zone1_upper_);
-    this->get_parameter("control.hysteresis_rad", control_hysteresis_rad_);
-    this->get_parameter("control.pitch_correct_tolerance", control_pitch_correct_tolerance_);
+    rate_ = core_shooter::declareAndGet<double>(*this, "rate", 30.0);
+    pitch_motor_id_ = core_shooter::declareAndGet<int>(*this, "pitch_motor_id", 10);
+    yaw_motor_id_ = core_shooter::declareAndGet<int>(*this, "yaw_motor_id", 7);
+    pitch_offset_ = core_shooter::declareAndGet<double>(*this, "pitch_offset", 0.0);
+    yaw_min_angle_ = core_shooter::declareAndGet<double>(*this, "yaw_min_angle", -3.14159265359);
+    yaw_max_angle_ = core_shooter::declareAndGet<double>(*this, "yaw_max_angle", 3.14159265359);
+    pitch_min_angle_ = core_shooter::declareAndGet<double>(
+      *this, "pitch_min_angle", -3.14159265359);
+    pitch_max_angle_ = core_shooter::declareAndGet<double>(*this, "pitch_max_angle", 3.14159265359);
+    image_center_x_ = core_shooter::declareAndGet<double>(*this, "image_center_x", 0.5);
+    image_center_y_ = core_shooter::declareAndGet<double>(*this, "image_center_y", 0.5);
+    image_width_ = core_shooter::declareAndGet<double>(*this, "image_width", 1280.0);
+    image_height_ = core_shooter::declareAndGet<double>(*this, "image_height", 720.0);
+    horizontal_fov_deg_ = core_shooter::declareAndGet<double>(*this, "horizontal_fov_deg", 100.0);
+    use_fov_image_tracking_ = core_shooter::declareAndGet<bool>(
+      *this, "use_fov_image_tracking", true);
+    image_tolerance_x_ = core_shooter::declareAndGet<double>(*this, "image_tolerance_x", 8.0);
+    image_tolerance_y_ = core_shooter::declareAndGet<double>(*this, "image_tolerance_y", 8.0);
+    target_lead_time_sec_ = core_shooter::declareAndGet<double>(*this, "target_lead_time_sec", 0.0);
+    target_velocity_min_dt_sec_ = core_shooter::declareAndGet<double>(
+      *this, "target_velocity_min_dt_sec", 0.01);
+    target_velocity_max_px_per_sec_ = core_shooter::declareAndGet<double>(
+      *this, "target_velocity_max_px_per_sec", 1500.0);
+    target_velocity_ema_alpha_ = core_shooter::declareAndGet<double>(
+      *this, "target_velocity_ema_alpha", 0.25);
+    max_yaw_rate_ = core_shooter::declareAndGet<double>(*this, "max_yaw_rate", 0.5);
+    max_pitch_rate_ = core_shooter::declareAndGet<double>(*this, "max_pitch_rate", 0.5);
+    yaw_image_gain_ = core_shooter::declareAndGet<double>(*this, "yaw_image_gain", 0.5);
+    pitch_image_gain_ = core_shooter::declareAndGet<double>(*this, "pitch_image_gain", 0.5);
+    yaw_direction_ = core_shooter::declareAndGet<double>(*this, "yaw_direction", 1.0);
+    pitch_direction_ = core_shooter::declareAndGet<double>(*this, "pitch_direction", 1.0);
+    target_timeout_sec_ = core_shooter::declareAndGet<double>(*this, "target_timeout_sec", 0.2);
+    target_lost_return_to_startup_delay_sec_ = core_shooter::declareAndGet<double>(
+      *this, "target_lost_return_to_startup_delay_sec", 2.0);
+    enable_test_mode_ = core_shooter::declareAndGet<bool>(*this, "enable_test_mode", false);
+    test_yaw_gain_ = core_shooter::declareAndGet<double>(*this, "test_yaw_gain", 0.05);
+    test_pitch_gain_ = core_shooter::declareAndGet<double>(*this, "test_pitch_gain", 0.05);
+    manual_mode_yaw_fixed_angle_ = core_shooter::declareAndGet<double>(
+      *this, "manual_mode_yaw_fixed_angle", 0.0);
+    manual_mode_pitch_initial_angle_ = core_shooter::declareAndGet<double>(
+      *this, "manual_mode_pitch_initial_angle", 0.0);
+    startup_release_yaw_angle_ = core_shooter::declareAndGet<double>(
+      *this, "startup_release_yaw_angle", 0.0);
+    startup_release_pitch_angle_ = core_shooter::declareAndGet<double>(
+      *this, "startup_release_pitch_angle", 0.0);
+    enable_zone_angle_limit_ = core_shooter::declareAndGet<bool>(
+      *this, "enable_zone_angle_limit", false);
+    zone_yaw_reversed_ = core_shooter::declareAndGet<bool>(*this, "zone.yaw_reversed", false);
+    zone_yaw_zone1_start_ = core_shooter::declareAndGet<double>(
+      *this, "zone.yaw_zone1_start", -3.14159265359);
+    zone_yaw_boundary_ = core_shooter::declareAndGet<double>(
+      *this, "zone.yaw_boundary", -1.57079632679);
+    zone_yaw_zone2_end_ = core_shooter::declareAndGet<double>(
+      *this, "zone.yaw_zone2_end", 1.57079632679);
+    zone_yaw_zone3_end_ = core_shooter::declareAndGet<double>(
+      *this, "zone.yaw_zone3_end", 3.14159265359);
+    zone_pitch_lower_limit_ = core_shooter::declareAndGet<double>(
+      *this, "zone.pitch_lower_limit", -3.14159265359);
+    zone_pitch_zone2_upper_ = core_shooter::declareAndGet<double>(
+      *this, "zone.pitch_zone2_upper", 0.52359877559);
+    zone_pitch_zone2_lower_ = core_shooter::declareAndGet<double>(
+      *this, "zone.pitch_zone2_lower", -3.14159265359);
+    zone_pitch_zone2_upper_limit_ = core_shooter::declareAndGet<double>(
+      *this, "zone.pitch_zone2_upper_limit", 3.14159265359);
+    zone_pitch_zone3_lower_ = core_shooter::declareAndGet<double>(
+      *this, "zone.pitch_zone3_lower", -0.52359877559);
+    zone_pitch_zone3_upper_ = core_shooter::declareAndGet<double>(
+      *this, "zone.pitch_zone3_upper", 3.14159265359);
+    zone_pitch_zone1_upper_ = core_shooter::declareAndGet<double>(
+      *this, "zone.pitch_zone1_upper", 3.14159265359);
+    control_hysteresis_rad_ = core_shooter::declareAndGet<double>(
+      *this, "control.hysteresis_rad", 0.017453292519943295);
+    control_pitch_correct_tolerance_ = core_shooter::declareAndGet<double>(
+      *this, "control.pitch_correct_tolerance", 0.01);
+    test_mode_.setDefault(enable_test_mode_);
     const auto & parameter_overrides =
       this->get_node_parameters_interface()->get_parameter_overrides();
     zone_pitch_zone1_upper_overridden_ =
@@ -337,14 +316,10 @@ private:
 
   void testModeCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    const bool prev_effective = isTestModeEnabled();
-    test_mode_topic_value_ = msg->data;
-    has_test_mode_topic_value_ = true;
-    const bool next_effective = isTestModeEnabled();
-    if (next_effective != prev_effective) {
+    if (test_mode_.update(msg->data)) {
       RCLCPP_INFO(
         this->get_logger(), "Test mode %s (source=topic, param fallback=%s)",
-        next_effective ? "ON" : "OFF", enable_test_mode_ ? "true" : "false");
+        test_mode_.enabled() ? "ON" : "OFF", test_mode_.defaultValue() ? "true" : "false");
     }
   }
 
@@ -628,7 +603,6 @@ private:
           double pitch_target = pitch_base;
 
           if (use_fov_image_tracking_) {
-            constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
             const double horizontal_fov_rad = horizontal_fov_deg_ * kDegToRad;
             const double vertical_fov_rad = horizontal_fov_rad * (image_height_ / image_width_);
             const double half_hfov_rad = 0.5 * horizontal_fov_rad;
@@ -961,12 +935,12 @@ private:
     return true;
   }
 
-  bool latchCommandTargetFromJointState(double pitch_bias = 0.0)
+  bool latchCommandTargetFromJointState()
   {
     if (!has_joint_state_) {
       return false;
     }
-    setCommandTarget(yaw_angle_, pitch_angle_ + pitch_bias);
+    setCommandTarget(yaw_angle_, pitch_angle_);
     return true;
   }
 
@@ -1016,16 +990,6 @@ private:
            clampYaw(manual_mode_yaw_fixed_angle_);
   }
 
-  void holdCurrentAngle(const char * warn_message)
-  {
-    if (!has_joint_state_) {
-      publishCommandHold(warn_message);
-      return;
-    }
-    setCommandTargetRaw(yaw_angle_, pitch_angle_);
-    publishCommandTarget();
-  }
-
   void publishCommandHold(const char * warn_message)
   {
     if (!has_command_target_) {
@@ -1046,7 +1010,7 @@ private:
 
   bool isTestModeEnabled() const
   {
-    return has_test_mode_topic_value_ ? test_mode_topic_value_ : enable_test_mode_;
+    return test_mode_.enabled();
   }
 
   double getImageTargetCenterX() const
@@ -1155,12 +1119,7 @@ private:
 
   void motorPublish(int id, float data)
   {
-    auto can_array = core_msgs::msg::CANArray();
-    auto can = core_msgs::msg::CAN();
-    can.id = id;
-    can.data.push_back(data);
-    can_array.array.push_back(can);
-    can_pub_->publish(can_array);
+    core_shooter::publishMotorCommand(can_pub_, id, data);
   }
 
   // ===== 内部変数 =====
@@ -1184,8 +1143,7 @@ private:
   double test_pitch_target_ = 0.0;
   bool has_test_yaw_target_ = false;
   bool has_test_pitch_target_ = false;
-  bool test_mode_topic_value_ = false;
-  bool has_test_mode_topic_value_ = false;
+  core_shooter::TestModeGate test_mode_;
   bool manual_mode_active_ = false;
   bool manual_mode_init_pending_ = false;
   bool manual_mode_return_active_ = false;
