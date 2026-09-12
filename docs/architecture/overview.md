@@ -4,9 +4,243 @@
 
 ## 全体構成図
 
-![システム全体構成図](../assets/system-overview.png){ loading=lazy }
+機体全体のノード構成とデータの流れです。ROS2上のノードを役割ごとの層に分け、マイコン（micro controller）以下のハードウェアと、操縦側（Maneuver）までを含めて示しています。グループ名の後ろが対応する名前空間、破線枠のノードは現在launchで無効化中です。
 
-機体全体のノード構成とデータの流れです。ROS2上のノードを役割ごとの層に分け、マイコン（micro controller）以下のハードウェアと、操縦側（Maneuver）までを含めて示しています。
+```mermaid
+graph LR
+  subgraph ROBOT["Robot"]
+    subgraph ROS2["ROS2"]
+
+      subgraph SENSING["Sensing　/sensing"]
+        LIDAR["livox_lidar_publisher"]
+        IMU["damiao_imu_node"]
+        IMUF["imu_filter_madgwick"]
+        subgraph CAM["Camera　/sensing/camera/*"]
+          CL["camera_left"]
+          CR["camera_right"]
+          CT["camera_tps"]
+        end
+      end
+
+      subgraph LOC["Localization　/localization"]
+        FL["fastlio_mapping"]
+        OB["odom_bridge_node"]
+        LN["localization_node"]
+      end
+
+      subgraph MAP["Map　/map"]
+        MS["map_server_node"]
+      end
+
+      subgraph PERC["Perception　/perception/enemy_detection"]
+        subgraph PL["left"]
+          TDL["target_detector"] -->|"/perception/enemy_detection/left/damage_panels_infomation"| TSL["target_selector"]
+        end
+        subgraph PR["right"]
+          TDR["target_detector"] -->|"/perception/enemy_detection/right/damage_panels_infomation"| TSR["target_selector"]
+        end
+      end
+
+      subgraph BEH["Behavior　/behavior"]
+        EDC["enemy_detection_coordinator"]
+        WS["waypoint_selector"]
+        BS["behavior_system"]
+        ASM["attack_shoot_manager"]
+      end
+
+      subgraph PLAN["Planning　/planning"]
+        CB["costmap_build_node"]
+        PP["core_path_planner_node"]
+        MP["core_mppi_node"]
+        PF["core_path_follower"]
+        SM["cmd_vel_smoother_node"]
+      end
+
+      subgraph MECHA["Mecha / Shooter　/mecha/shooter"]
+        GATE["shooter_cmd_gate"]
+        subgraph ML["left"]
+          ABL["aim_bot"]
+          SCL["shooter_controller"]
+        MML["magazine_manager"]
+        end
+        subgraph MR["right"]
+          ABR["aim_bot"]
+          SCR["shooter_controller"]
+        MMR["magazine_manager"]
+        end
+      end
+
+      subgraph CTRL["Control　/control"]
+        BC["body_control_node"]
+        TA["target_angle_node"]
+      end
+
+      subgraph UINS["UI　/ui"]
+        WP["wireless_parser_node"]
+        HUC["hardware_ui_converter_node"]
+        GQ["gui_qt_node"]
+        SDG["status_display_gui"]
+      end
+
+      subgraph SYS["System　/system/emergency"]
+        DG["diagnostic"]
+        EH["emergency_handler"]
+      end
+
+      subgraph HWNS["Hardware　/hardware"]
+        HW["core_hardware"]
+      end
+
+    end
+
+    subgraph MCU["micro controller"]
+      LED["LED"]
+      MOT["motor"]
+      SEN["sensor"]
+      REF["referee_system"]
+      CMOD["control_module"]
+    end
+  end
+
+  subgraph MAN["Maneuver"]
+    DISP["display"]
+    PCTL["player_controller"]
+  end
+
+  %% ── Sensing ──
+  LIDAR -->|"/livox/lidar"| CB
+  LIDAR -.->|"/livox/lidar"| FL
+  IMU -->|"/imu"| IMUF
+  IMU -->|"/imu"| TA
+  CL -->|"/turret_camera_left/color/image"| TDL
+  CR -->|"/turret_camera_right/color/image"| TDR
+  CT -->|"/turret_camera_tps/color/image"| GQ
+  CR -->|"/turret_camera_right/color/image"| GQ
+
+  %% ── Localization / Map ──
+  FL -.->|"/Odometry"| OB
+  FL -.->|"/cloud_registered"| LN
+  OB -.->|"/localization/odom"| MP
+  OB -.->|"/localization/odom"| PF
+  OB -.->|"/localization/start_pose"| PP
+  MS -.->|"/map"| PP
+  MS -.->|"/map/costmap/global"| MP
+
+  %% ── Perception ──
+  HW -->|"/hardware/color"| TDL
+  HW -->|"/hardware/color"| TDR
+  TSL -->|"/perception/enemy_detection/left/target_pose"| ABL
+  TSR -->|"/perception/enemy_detection/right/target_pose"| ABR
+  TSL -->|"/perception/enemy_detection/left/target_pose"| EDC
+  TSR -->|"/perception/enemy_detection/right/target_pose"| EDC
+  TSL -->|"/perception/enemy_detection/left/target_pose"| ASM
+  TSR -->|"/perception/enemy_detection/right/target_pose"| ASM
+
+  %% ── Behavior ──
+  EDC -.->|"/behavior/enemy_detected"| BS
+  EDC -->|"/behavior/enemy_detected"| ASM
+  WS -.->|"/behavior/waypoint_selector/goal_pose"| BS
+  BS -.->|"/behavior/goal_pose"| PP
+  BS -.->|"/control/rotation"| BC
+  ASM -->|"/mecha/shooter/left/shoot_fullauto<br>/mecha/shooter/right/shoot_fullauto"| GATE
+
+  %% ── Planning ──
+  CB -->|"/planning/costmap/local"| PP
+  CB -->|"/planning/costmap/local"| MP
+  PP -->|"/planning/planned_path"| MP
+  PP -->|"/planning/planned_path"| PF
+  MP -.->|"/planning/cmd_vel_raw"| SM
+  SM -.->|"/control/cmd_vel"| BC
+  PF -->|"/control/cmd_vel"| BC
+  MP -->|"/behavior/goal_reached"| BS
+  PF -->|"/behavior/goal_reached"| BS
+
+  %% ── Mecha ──
+  GATE -->|"/mecha/shooter/left/shoot_cmd<br>/mecha/shooter/left/shoot_motor"| SCL
+  GATE -->|"/mecha/shooter/right/shoot_cmd<br>/mecha/shooter/right/shoot_motor"| SCR
+  GATE -->|"/mecha/shooter/left/manual_mode<br>/mecha/shooter/left/manual_pitch_angle"| ABL
+  GATE -->|"/mecha/shooter/right/manual_mode<br>/mecha/shooter/right/manual_pitch_angle"| ABR
+  SCL -->|"/mecha/shooter/left/shoot_status"| MML
+  MML -->|"/mecha/shooter/left/regrip_active"| SCL
+  SCR -->|"/mecha/shooter/right/shoot_status"| MMR
+  MMR -->|"/mecha/shooter/right/regrip_active"| SCR
+  ABL -->|"/hardware/can/tx"| HW
+  SCL -->|"/hardware/can/tx"| HW
+  MML -->|"/hardware/can/tx"| HW
+  ABR -->|"/hardware/can/tx"| HW
+  SCR -->|"/hardware/can/tx"| HW
+  MMR -->|"/hardware/can/tx"| HW
+
+  %% ── Control ──
+  BC -->|"/control/body_omega"| TA
+  BC -->|"/hardware/can/tx"| HW
+  TA -->|"/hardware/can/tx"| HW
+  HW -->|"/joint_states"| BC
+
+  %% ── UI ──
+  HW -->|"/hardware/wireless"| WP
+  HW -->|"/hardware/hp"| GQ
+  HW -->|"/hardware/destroy"| GQ
+  WP -->|"/control/cmd_vel<br>/control/rotation"| BC
+  WP -->|"/ui/manual_mode<br>/ui/manual_pitch<br>/ui/shoot_motor_state"| GATE
+  WP -->|"/ui/left/turret_auto<br>/ui/right/turret_auto"| ASM
+  WP -->|"/ui/ads"| GQ
+  HUC -->|"/ui/yaw_degree<br>/ui/speed_mps<br>/ui/qe_degree"| GQ
+
+  %% ── System ──
+  HW -->|"/hardware/hardware_emergency<br>/hardware/destroy"| EH
+  HW -->|"/joint_states<br>/hardware/wireless"| DG
+  DG -->|"/system/emergency/microcontroller_emergency<br>/system/emergency/receiver_emergency"| EH
+  WP -->|"/system/emergency/software_emergency"| EH
+  EH -->|"/system/emergency/hazard_status"| BC
+  EH -->|"/system/emergency/hazard_status"| SCL
+  EH -->|"/system/emergency/hazard_status"| SCR
+  EH -->|"/system/emergency/hazard_status<br>/system/emergency/hazard_label"| GQ
+  EH -->|"/system/emergency/hazard_label"| SDG
+
+  %% ── 機体外（ROSトピックではない） ──
+  HW <-->|"EtherCAT"| MCU
+  PCTL -.->|"無線"| CMOD
+  GQ -.->|"映像出力"| DISP
+
+  classDef sensing fill:#ede7f6,stroke:#7e57c2,color:#1b1f26
+  classDef loc     fill:#e3f2fd,stroke:#42a5f5,color:#1b1f26
+  classDef map     fill:#eceff1,stroke:#90a4ae,color:#1b1f26
+  classDef perc    fill:#e8f5e9,stroke:#66bb6a,color:#1b1f26
+  classDef plan    fill:#fff8e1,stroke:#ffb300,color:#1b1f26
+  classDef beh     fill:#cfd8dc,stroke:#546e7a,color:#1b1f26
+  classDef mecha   fill:#fff3e0,stroke:#fb8c00,color:#1b1f26
+  classDef ctrl    fill:#ffe0b2,stroke:#ef6c00,color:#1b1f26
+  classDef sys     fill:#ffcdd2,stroke:#e57373,color:#1b1f26
+  classDef ui      fill:#b3e5fc,stroke:#29b6f6,color:#1b1f26
+  classDef hw      fill:#b2dfdb,stroke:#26a69a,color:#1b1f26
+  classDef mcu     fill:#cfd8dc,stroke:#546e7a,color:#1b1f26
+  classDef ext     fill:#ffffff,stroke:#90a4ae,color:#1b1f26
+  classDef shell   fill:none,stroke:#9e9e9e
+
+  class SENSING,CAM sensing
+  class LOC loc
+  class MAP map
+  class PERC,PL,PR perc
+  class PLAN plan
+  class BEH beh
+  class MECHA,ML,MR mecha
+  class CTRL ctrl
+  class SYS sys
+  class UINS ui
+  class HWNS hw
+  class MCU,LED,MOT,SEN,REF,CMOD mcu
+  class MAN,DISP,PCTL ext
+  class ROBOT,ROS2 shell
+
+  style FL stroke-dasharray: 5 4
+  style OB stroke-dasharray: 5 4
+  style MS stroke-dasharray: 5 4
+  style SM stroke-dasharray: 5 4
+  style BS stroke-dasharray: 5 4
+  style WS stroke-dasharray: 5 4
+  style EDC stroke-dasharray: 5 4
+```
 
 | 層 | 名前空間 | 含まれるもの |
 |----|---------|-------------|
