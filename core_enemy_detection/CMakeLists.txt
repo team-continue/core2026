@@ -24,8 +24,16 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(ament_cmake_auto REQUIRED)
 # Manual
 find_package(OpenCV REQUIRED)
-list(APPEND CMAKE_PREFIX_PATH "$ENV{HOME}/camera_ws/depthai_install")
-find_package(depthai CONFIG REQUIRED)
+# Use the package-local SDK, including when an old depthai_DIR is cached.
+set(DEPTHAI_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/depthai_install")
+set(depthai_DIR "${DEPTHAI_INSTALL_DIR}/lib/cmake/depthai" CACHE PATH
+    "Package-local DepthAI configuration" FORCE)
+if(NOT EXISTS "${depthai_DIR}/depthaiConfig.cmake")
+  message(FATAL_ERROR
+    "DepthAI SDK is missing. Run: bash ${CMAKE_CURRENT_SOURCE_DIR}/scripts/depthAI_install.sh")
+endif()
+list(INSERT CMAKE_PREFIX_PATH 0 "${DEPTHAI_INSTALL_DIR}")
+find_package(depthai 3 CONFIG REQUIRED PATHS "${depthai_DIR}" NO_DEFAULT_PATH)
 
 ament_auto_find_build_dependencies()
 
@@ -34,6 +42,21 @@ ament_auto_add_executable(oakd_panel_localizer
     src/oakd_panel_localizer_main.cpp
     src/oakd_panel_localizer.cpp
 )
+
+# ROS Humble also exposes DepthAI 2 headers. Prefer the selected SDK headers.
+target_include_directories(oakd_panel_localizer SYSTEM BEFORE PRIVATE
+    $<TARGET_PROPERTY:depthai::core,INTERFACE_INCLUDE_DIRECTORIES>
+)
+# The SDK is outside the ROS install prefix; retain its runtime library path.
+set_target_properties(oakd_panel_localizer PROPERTIES
+    INSTALL_RPATH "$<TARGET_FILE_DIR:depthai::core>"
+)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # DT_RPATH takes precedence over ROS's LD_LIBRARY_PATH (DepthAI 2 has
+  # the same library name). Apply this only to the DepthAI executable.
+  set_property(TARGET oakd_panel_localizer APPEND_STRING PROPERTY
+      LINK_FLAGS " -Wl,--disable-new-dtags")
+endif()
 
 ament_auto_add_executable(oakd_target_detector
     src/oakd_target_detector_main.cpp
