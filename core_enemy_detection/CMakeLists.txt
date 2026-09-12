@@ -75,7 +75,6 @@ ament_auto_add_executable(target_selector
 
 ament_target_dependencies(oakd_panel_localizer
     OpenCV
-    depthai
 )
 
 ament_target_dependencies(oakd_target_detector
