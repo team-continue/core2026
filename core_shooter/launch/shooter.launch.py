@@ -22,6 +22,16 @@ def _params_file():
     )
 
 
+# 曲射弾道の実測テーブル。左右で弾道が異なるので砲塔ごとに用意し、
+# aim_bot へ絶対パスで渡す。
+def _ballistics_file(side):
+    return os.path.join(
+        get_package_share_directory("core_shooter"),
+        "config",
+        f"ballistics_{side}.yaml",
+    )
+
+
 def _shooter_cmd_gate(params):
     return Node(
         package="core_shooter",
@@ -81,7 +91,10 @@ def _aim_bot(params, side):
         executable="aim_bot",
         name="aim_bot",
         output="screen",
-        parameters=[params],
+        parameters=[
+            params,
+            {"point3d.ballistic.table_path": _ballistics_file(side)},
+        ],
         remappings=[
             HAZARD_REMAP,
             CAN_REMAP,
@@ -90,6 +103,17 @@ def _aim_bot(params, side):
                 "target_image_position",
                 f"/perception/enemy_detection/{side}/target_pose",
             ),
+            # target_input_mode="point3d" のときに購読する砲塔座標系の3次元ターゲット。
+            # image モードと同じ target_pose トピックで届く（中身の解釈だけが違う）。
+            # 購読は排他なので、同じトピックを二重に受けることはない。
+            (
+                "target_point_3d",
+                f"/perception/enemy_detection/{side}/target_pose",
+            ),
+            # 自動射撃の有効/無効と、その引き金。
+            # shoot_fullauto は shooter_cmd_gate が shoot_cmd へ変換する。
+            ("turret_auto", f"/ui/{side}/turret_auto"),
+            ("shoot_fullauto", f"/mecha/shooter/{side}/shoot_fullauto"),
         ],
     )
 
