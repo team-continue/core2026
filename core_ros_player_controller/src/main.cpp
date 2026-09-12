@@ -60,7 +60,7 @@ public:
     mouse_y_sensitivity_ = declare_parameter<double>("mouse_y_sensitivity", 1.0);
     mouse_x_inverse_ = declare_parameter<bool>("mouse_x_inverse", false);
     mouse_y_inverse_ = declare_parameter<bool>("mouse_y_inverse", false);
-    cmd_vel_xy_scale_ = declare_parameter<double>("cmd_vel_xy_scale", 1.0);
+    cmd_vel_xy_scale_ = declare_parameter<double>("cmd_vel_xy_scale", 0.25);
     manual_mode_target_side_ = declare_parameter<std::string>(
       "manual_mode_target_side", "right");
     if (manual_mode_target_side_ != "left" && manual_mode_target_side_ != "right") {
@@ -182,7 +182,7 @@ private:
   double mouse_y_sensitivity_{1.0};
   bool mouse_x_inverse_{false};
   bool mouse_y_inverse_{false};
-  double cmd_vel_xy_scale_{1.0};
+  double cmd_vel_xy_scale_{0.25};
   std::string manual_mode_target_side_{"right"};
   bool previous_reload_{false};
 };

@@ -10,8 +10,8 @@
   <include file="$(find-pkg-share core_shooter)/launch/shooter.launch.py"/>
 
   <!-- Enemy Detection & Camera-->
-  <include file="$(find-pkg-share core_enemy_detection)/launch/detection.launch.py"/>
-  <include file="$(find-pkg-share core_camera)/launch/camera.launch.py"/>
+  <include file="$(find-pkg-share core_enemy_detection)/launch/test.launch.py"/>
+  <include file="$(find-pkg-share core_camera)/launch/camera2.launch.py"/>
   <executable cmd="v4l2" output="screen"/>
 
   <!-- Utility -->

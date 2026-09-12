@@ -18,8 +18,12 @@
   <depend>image_transport</depend>
   <depend>backward_ros</depend>
   <depend>core_msgs</depend>
+  <depend>depthai</depend>
+  <depend>ament_index_cpp</depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  
+  
 
   <export>
     <build_type>ament_cmake</build_type>

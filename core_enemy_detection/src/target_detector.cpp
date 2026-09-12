@@ -33,7 +33,6 @@ void targetDetector::changeTarget(const std_msgs::msg::UInt8::SharedPtr msg){
  */
 void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr imgMsg){
     resetDamagePanelInfo();
-    operate = true;
 
     // subscribeされたイメージ取得
     rawImage = cv_bridge::toCvShare(imgMsg, "bgr8")->image;
@@ -208,7 +207,6 @@ void targetDetector::resetDamagePanelInfo(){
 }
 
 void targetDetector::extractHsvRange(){
-    mode = 17;
     if(mode == 67 || mode == 51){
         // hsv画像に対する検出
         cv::Mat mask1, mask2;
@@ -304,7 +302,7 @@ bool targetDetector::detectDamagePanel(){
     // }
 
     const cv::Mat& ledCenters = ledLabelMap.centroids;
-    const cv::Mat& ledStatus = ledLabelMap.status;
+    // const cv::Mat& ledStatus = ledLabelMap.status;
     const cv::Mat& whiteCenters = whiteLabelMap.centroids;
     const cv::Mat& whiteStatus = whiteLabelMap.status;
     bool flag = false;
@@ -345,7 +343,7 @@ bool targetDetector::detectDamagePanel(){
         int baseLedLeft = dpLabelMap[i].status.at<int>(0, 0);
         int baseLedTop = dpLabelMap[i].status.at<int>(0, 1);
         int baseLedWidth = dpLabelMap[i].status.at<int>(0, 2);
-        int baseLedHeight = dpLabelMap[i].status.at<int>(0, 3);
+        // int baseLedHeight = dpLabelMap[i].status.at<int>(0, 3);
         double baseLedPointX = dpLabelMap[i].centroids.at<double>(0, 0);
         double baseLedPointY = dpLabelMap[i].centroids.at<double>(0, 1);
 
