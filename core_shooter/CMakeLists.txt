@@ -18,26 +18,21 @@ find_package(backward_ros REQUIRED)
 
 ament_auto_find_build_dependencies()
 
-# ament_auto_add_library(${PROJECT_NAME}
-#   SHARED
-#   include
-# )
-
-ament_auto_add_executable(shooter_cmd_gate
-  src/shooter_cmd_gate.cpp
+set(CORE_SHOOTER_NODES
+  shooter_cmd_gate
+  shooter_controller
+  magazine_manager
+  aim_bot
 )
 
-ament_auto_add_executable(shooter_controller
-  src/shooter_controller.cpp
-)
-
-ament_auto_add_executable(magazine_manager
-  src/magazine_manager.cpp
-)
-
-ament_auto_add_executable(aim_bot
-  src/aim_bot.cpp
-)
+foreach(node ${CORE_SHOOTER_NODES})
+  ament_auto_add_executable(${node}
+    src/${node}.cpp
+  )
+  target_include_directories(${node} PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+endforeach()
 
 install(
   PROGRAMS

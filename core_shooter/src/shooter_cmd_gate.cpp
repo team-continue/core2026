@@ -1,10 +1,20 @@
+#include <stdexcept>
+#include <string>
+
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float32.hpp"
 #include "std_msgs/msg/int32.hpp"
-#include <string>
-#include <stdexcept>
 
+#include "core_shooter/parameter_utils.hpp"
+
+namespace
+{
+/// shoot_cmd の特殊値。正の値は「その回数だけ発射」を意味する。
+constexpr int kShootCmdStop = 0;
+constexpr int kShootCmdFullauto = -1;
+constexpr int kShootCmdOnce = 1;
+}  // namespace
 
 class ShooterCmdGate : public rclcpp::Node
 {
@@ -15,12 +25,12 @@ public:
     //========================================
     // parameters
     //========================================
-    this->declare_parameter<int>("burst_count", 3);
-    this->declare_parameter<double>("shoot_motor_on_command", 2000.0);
-    this->declare_parameter<std::string>("manual_mode_target_side", "right");
-    this->get_parameter("burst_count", burst_count_);
-    this->get_parameter("shoot_motor_on_command", shoot_motor_on_command_);
-    this->get_parameter("manual_mode_target_side", manual_mode_target_side_);
+    burst_count_ = core_shooter::declareAndGet<int>(*this, "burst_count", 3);
+    shoot_motor_on_command_ =
+      core_shooter::declareAndGet<double>(*this, "shoot_motor_on_command", 2000.0);
+    manual_mode_target_side_ =
+      core_shooter::declareAndGet<std::string>(*this, "manual_mode_target_side", "right");
+
     if (burst_count_ <= 0) {
       RCLCPP_FATAL(
         this->get_logger(), "Invalid parameter burst_count=%d (must be > 0)", burst_count_);
@@ -42,27 +52,14 @@ public:
     }
 
     //========================================
-    // subscribers ui
+    // 左右系統（トピック名は従来のフラット名のまま。launch で各 namespace へ remap する）
     //========================================
-    left_once_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "left/shoot_once", 1,
-      std::bind(&ShooterCmdGate::leftOnceCallback, this, std::placeholders::_1));
-    left_burst_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "left/shoot_burst", 1,
-      std::bind(&ShooterCmdGate::leftBurstCallback, this, std::placeholders::_1));
-    left_fullauto_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "left/shoot_fullauto", 1,
-      std::bind(&ShooterCmdGate::leftFullautoCallback, this, std::placeholders::_1));
+    setupSide(left_, "left", "Left");
+    setupSide(right_, "right", "Right");
 
-    right_once_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "right/shoot_once", 1,
-      std::bind(&ShooterCmdGate::rightOnceCallback, this, std::placeholders::_1));
-    right_burst_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "right/shoot_burst", 1,
-      std::bind(&ShooterCmdGate::rightBurstCallback, this, std::placeholders::_1));
-    right_fullauto_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "right/shoot_fullauto", 1,
-      std::bind(&ShooterCmdGate::rightFullautoCallback, this, std::placeholders::_1));
+    //========================================
+    // subscribers ui (左右共通入力)
+    //========================================
     manual_mode_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "manual_mode", 1,
       std::bind(&ShooterCmdGate::manualModeCallback, this, std::placeholders::_1));
@@ -73,147 +70,139 @@ public:
       "shoot_motor_state", 1,
       std::bind(&ShooterCmdGate::shootMotorStateCallback, this, std::placeholders::_1));
 
-    //========================================
-    // publishers
-    //========================================
-    left_cmd_pub_ = this->create_publisher<std_msgs::msg::Int32>(
-      "left_shoot_cmd", 10);
-    right_cmd_pub_ = this->create_publisher<std_msgs::msg::Int32>(
-      "right_shoot_cmd", 10);
-    left_manual_mode_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-      "left_manual_mode", 10);
-    right_manual_mode_pub_ = this->create_publisher<std_msgs::msg::Bool>(
-      "right_manual_mode", 10);
-    left_manual_pitch_pub_ = this->create_publisher<std_msgs::msg::Float32>(
-      "left_manual_pitch_angle", 10);
-    right_manual_pitch_pub_ = this->create_publisher<std_msgs::msg::Float32>(
-      "right_manual_pitch_angle", 10);
-    left_shoot_motor_pub_ = this->create_publisher<std_msgs::msg::Float32>(
-      "/left/shoot_motor", 10);
-    right_shoot_motor_pub_ = this->create_publisher<std_msgs::msg::Float32>(
-      "/right/shoot_motor", 10);
-
     RCLCPP_INFO(
       this->get_logger(),
       "ShooterCmdGate manual route: /manual_mode -> /%s/manual_mode, /manual_pitch -> /%s/manual_pitch_angle",
       manual_mode_target_side_.c_str(), manual_mode_target_side_.c_str());
-
   }
 
-  void leftOnceCallback(const std_msgs::msg::Bool::SharedPtr msg)
+private:
+  /// 片側系統の入出力をまとめて保持する。
+  struct SideChannel
   {
-    if (msg->data) {
-      publishLeftCmd(1);
-      RCLCPP_INFO(this->get_logger(), "On trigger: Left Once");
-    }
-  }
+    std::string name;          // "left" / "right"
+    std::string display_name;  // ログ表示用 "Left" / "Right"
 
-  void leftBurstCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr once_sub;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr burst_sub;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr fullauto_sub;
+
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr cmd_pub;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr manual_mode_pub;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr manual_pitch_pub;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr shoot_motor_pub;
+
+    bool fullauto_enabled = false;
+    bool fullauto_input_prev = false;
+  };
+
+  void setupSide(SideChannel & side, const std::string & name, const std::string & display_name)
   {
-    if (msg->data) {
-      publishLeftCmd(burst_count_);
-      RCLCPP_INFO(this->get_logger(), "On trigger: Left Burst (%d)", burst_count_);
-    }
+    side.name = name;
+    side.display_name = display_name;
+
+    //========================================
+    // subscribers ui
+    //========================================
+    side.once_sub = this->create_subscription<std_msgs::msg::Bool>(
+      name + "/shoot_once", 1,
+      [this, &side](const std_msgs::msg::Bool::SharedPtr msg) {
+        if (msg->data) {
+          publishCmd(side, kShootCmdOnce);
+          RCLCPP_INFO(this->get_logger(), "On trigger: %s Once", side.display_name.c_str());
+        }
+      });
+    side.burst_sub = this->create_subscription<std_msgs::msg::Bool>(
+      name + "/shoot_burst", 1,
+      [this, &side](const std_msgs::msg::Bool::SharedPtr msg) {
+        if (msg->data) {
+          publishCmd(side, burst_count_);
+          RCLCPP_INFO(
+            this->get_logger(), "On trigger: %s Burst (%d)", side.display_name.c_str(),
+            burst_count_);
+        }
+      });
+    side.fullauto_sub = this->create_subscription<std_msgs::msg::Bool>(
+      name + "/shoot_fullauto", 1,
+      [this, &side](const std_msgs::msg::Bool::SharedPtr msg) {
+        processFullautoInput(side, msg->data);
+      });
+
+    //========================================
+    // publishers
+    //========================================
+    side.cmd_pub = this->create_publisher<std_msgs::msg::Int32>(name + "_shoot_cmd", 10);
+    side.manual_mode_pub = this->create_publisher<std_msgs::msg::Bool>(name + "_manual_mode", 10);
+    side.manual_pitch_pub =
+      this->create_publisher<std_msgs::msg::Float32>(name + "_manual_pitch_angle", 10);
+    side.shoot_motor_pub =
+      this->create_publisher<std_msgs::msg::Float32>("/" + name + "/shoot_motor", 10);
   }
 
-  void leftFullautoCallback(const std_msgs::msg::Bool::SharedPtr msg)
-  {
-    processFullautoInput(msg->data, left_fullauto_input_prev_, left_fullauto_enabled_, true);
-  }
-
-  void rightOnceCallback(const std_msgs::msg::Bool::SharedPtr msg)
-  {
-    if (msg->data) {
-      publishRightCmd(1);
-      RCLCPP_INFO(this->get_logger(), "On trigger: Right Once");
-    }
-  }
-
-  void rightBurstCallback(const std_msgs::msg::Bool::SharedPtr msg)
-  {
-    if (msg->data) {
-      publishRightCmd(burst_count_);
-      RCLCPP_INFO(this->get_logger(), "On trigger: Right Burst (%d)", burst_count_);
-    }
-  }
-
-  void rightFullautoCallback(const std_msgs::msg::Bool::SharedPtr msg)
-  {
-    processFullautoInput(msg->data, right_fullauto_input_prev_, right_fullauto_enabled_, false);
-  }
-
+  //========================================
+  // ui callbacks
+  //========================================
   void manualModeCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    const bool selected_value = msg->data;
-    const bool left_value = (manual_mode_target_side_ == "left") ? selected_value : false;
-    const bool right_value = (manual_mode_target_side_ == "right") ? selected_value : false;
-
-    std_msgs::msg::Bool left_msg;
-    left_msg.data = left_value;
-    left_manual_mode_pub_->publish(left_msg);
-
-    std_msgs::msg::Bool right_msg;
-    right_msg.data = right_value;
-    right_manual_mode_pub_->publish(right_msg);
+    // 選択されていない側は明示的に false を publish して片側だけ有効化する。
+    publishBool(left_.manual_mode_pub, isManualTarget(left_) && msg->data);
+    publishBool(right_.manual_mode_pub, isManualTarget(right_) && msg->data);
   }
 
   void manualPitchCallback(const std_msgs::msg::Float32::SharedPtr msg)
   {
-    if (manual_mode_target_side_ == "right") {
-      right_manual_pitch_pub_->publish(*msg);
-    } else {
-      left_manual_pitch_pub_->publish(*msg);
-    }
+    SideChannel & target = isManualTarget(right_) ? right_ : left_;
+    target.manual_pitch_pub->publish(*msg);
   }
 
   void shootMotorStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     const float command = msg->data ? static_cast<float>(shoot_motor_on_command_) : 0.0F;
-    publishShootMotor(left_shoot_motor_pub_, command);
-    publishShootMotor(right_shoot_motor_pub_, command);
+    publishFloat(left_.shoot_motor_pub, command);
+    publishFloat(right_.shoot_motor_pub, command);
   }
 
-  void processFullautoInput(
-    bool input, bool & prev_input, bool & enabled, bool is_left)
+  /// フルオートは入力レベルではなく立上り/立下りで開始・停止コマンドを生成する。
+  void processFullautoInput(SideChannel & side, bool input)
   {
-    const bool rising = input && !prev_input;
-    const bool falling = !input && prev_input;
-    prev_input = input;
+    const bool rising = input && !side.fullauto_input_prev;
+    const bool falling = !input && side.fullauto_input_prev;
+    side.fullauto_input_prev = input;
 
-    if (rising && !enabled) {
-      enabled = true;
-      if (is_left) {
-        publishLeftCmd(-1);
-        RCLCPP_INFO(this->get_logger(), "On trigger: Left Fullauto");
-      } else {
-        publishRightCmd(-1);
-        RCLCPP_INFO(this->get_logger(), "On trigger: Right Fullauto");
-      }
-    } else if (falling && enabled) {
-      enabled = false;
-      if (is_left) {
-        publishLeftCmd(0);
-      } else {
-        publishRightCmd(0);
-      }
+    if (rising && !side.fullauto_enabled) {
+      side.fullauto_enabled = true;
+      publishCmd(side, kShootCmdFullauto);
+      RCLCPP_INFO(this->get_logger(), "On trigger: %s Fullauto", side.display_name.c_str());
+    } else if (falling && side.fullauto_enabled) {
+      side.fullauto_enabled = false;
+      publishCmd(side, kShootCmdStop);
     }
   }
 
-  void publishLeftCmd(int repeat_count)
+  bool isManualTarget(const SideChannel & side) const
+  {
+    return manual_mode_target_side_ == side.name;
+  }
+
+  //========================================
+  // publish helpers
+  //========================================
+  void publishCmd(const SideChannel & side, int repeat_count)
   {
     std_msgs::msg::Int32 msg;
     msg.data = repeat_count;
-    left_cmd_pub_->publish(msg);
+    side.cmd_pub->publish(msg);
   }
 
-  void publishRightCmd(int repeat_count)
+  static void publishBool(
+    const rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr & pub, bool value)
   {
-    std_msgs::msg::Int32 msg;
-    msg.data = repeat_count;
-    right_cmd_pub_->publish(msg);
+    std_msgs::msg::Bool msg;
+    msg.data = value;
+    pub->publish(msg);
   }
 
-  void publishShootMotor(
+  static void publishFloat(
     const rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr & pub, float value)
   {
     std_msgs::msg::Float32 msg;
@@ -222,37 +211,21 @@ public:
   }
 
   //========================================
-  // Subscription valids
+  // 左右共通入力
   //========================================
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr left_once_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr left_burst_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr left_fullauto_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr right_once_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr right_burst_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr right_fullauto_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr manual_mode_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr manual_pitch_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_motor_state_sub_;
 
   //========================================
-  // publisher valids
+  // 左右系統
   //========================================
-  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr left_cmd_pub_;
-  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr right_cmd_pub_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr left_manual_mode_pub_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr right_manual_mode_pub_;
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr left_manual_pitch_pub_;
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr right_manual_pitch_pub_;
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr left_shoot_motor_pub_;
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr right_shoot_motor_pub_;
+  SideChannel left_;
+  SideChannel right_;
 
   //========================================
-  // valids
+  // parameters
   //========================================
-  bool left_fullauto_enabled_ = false;
-  bool right_fullauto_enabled_ = false;
-  bool left_fullauto_input_prev_ = false;
-  bool right_fullauto_input_prev_ = false;
   int burst_count_ = 3;
   double shoot_motor_on_command_ = 2000.0;
   std::string manual_mode_target_side_ = "right";
