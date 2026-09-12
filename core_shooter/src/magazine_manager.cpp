@@ -9,11 +9,23 @@
 #include "core_msgs/msg/can.hpp"
 #include "core_msgs/msg/can_array.hpp"
 
+#include <algorithm>
 #include <deque>
 #include <cmath>
 #include <vector>
 
+#include "core_shooter/can_command.hpp"
+#include "core_shooter/parameter_utils.hpp"
+
 using namespace std::chrono_literals;
+
+namespace
+{
+/// この枚数以下ではホールドしない（弾が薄くなり押さえが効かないため）。
+constexpr int kMinHoldDisks = 10;
+/// std_msgs/Int8 で表現できる最大値。
+constexpr int kInt8Max = 127;
+}  // namespace
 
 class MagazineManager : public rclcpp::Node
 {
@@ -24,17 +36,12 @@ public:
     //========================================
     // parameters
     //========================================
-    this->declare_parameter<int>("max_disks", 27);
-    this->declare_parameter<double>("disk_thickness", 1.0);
-    this->declare_parameter<double>("sensor_height", 100.0);
-    this->declare_parameter<int>("window_size", 3);
+    max_disks_ = core_shooter::declareAndGet<int>(*this, "max_disks", 27);
+    disk_thickness_ = core_shooter::declareAndGet<double>(*this, "disk_thickness", 1.0);
+    sensor_height_ = core_shooter::declareAndGet<double>(*this, "sensor_height", 100.0);
+    window_size_ = core_shooter::declareAndGet<int>(*this, "window_size", 3);
 
-    this->get_parameter("max_disks", max_disks_);
-    this->get_parameter("disk_thickness", disk_thickness_);
-    this->get_parameter("sensor_height", sensor_height_);
-    this->get_parameter("window_size", window_size_);
-
-    if (max_disks_ < 0 || max_disks_ > 127) {
+    if (max_disks_ < 0 || max_disks_ > kInt8Max) {
       RCLCPP_FATAL(
         this->get_logger(),
         "Invalid max_disks=%d (must be in [0, 127])",
@@ -67,17 +74,14 @@ public:
     //========================================
     // disk hold motor parameters
     //========================================
-    this->declare_parameter<int>("disk_hold_right_motor_id", 100);
-    this->declare_parameter<int>("disk_hold_left_motor_id", 101);
-    this->declare_parameter<std::vector<double>>(
-      "disk_hold_motor_left_angle", std::vector<double>{0.0, 1.0});
-    this->declare_parameter<std::vector<double>>(
-      "disk_hold_motor_right_angle", std::vector<double>{0.0, 1.0});
-
-    this->get_parameter("disk_hold_right_motor_id", disk_hold_right_motor_id_);
-    this->get_parameter("disk_hold_left_motor_id", disk_hold_left_motor_id_);
-    this->get_parameter("disk_hold_motor_left_angle", disk_hold_motor_left_angle_);
-    this->get_parameter("disk_hold_motor_right_angle", disk_hold_motor_right_angle_);
+    disk_hold_right_motor_id_ =
+      core_shooter::declareAndGet<int>(*this, "disk_hold_right_motor_id", 100);
+    disk_hold_left_motor_id_ =
+      core_shooter::declareAndGet<int>(*this, "disk_hold_left_motor_id", 101);
+    disk_hold_motor_left_angle_ = core_shooter::declareAndGet<std::vector<double>>(
+      *this, "disk_hold_motor_left_angle", std::vector<double>{0.0, 1.0});
+    disk_hold_motor_right_angle_ = core_shooter::declareAndGet<std::vector<double>>(
+      *this, "disk_hold_motor_right_angle", std::vector<double>{0.0, 1.0});
     if (disk_hold_motor_left_angle_.size() != 2 || disk_hold_motor_right_angle_.size() != 2) {
       RCLCPP_FATAL(
         this->get_logger(),
@@ -89,13 +93,9 @@ public:
     //========================================
     // regrip parameters
     //========================================
-    this->declare_parameter<bool>("regrip_enabled", true);
-    this->declare_parameter<int>("regrip_release_ms", 200);
-    this->declare_parameter<int>("regrip_trigger_shots", 6);
-
-    this->get_parameter("regrip_enabled", regrip_enabled_);
-    this->get_parameter("regrip_release_ms", regrip_release_ms_);
-    this->get_parameter("regrip_trigger_shots", regrip_trigger_shots_);
+    regrip_enabled_ = core_shooter::declareAndGet<bool>(*this, "regrip_enabled", true);
+    regrip_release_ms_ = core_shooter::declareAndGet<int>(*this, "regrip_release_ms", 200);
+    regrip_trigger_shots_ = core_shooter::declareAndGet<int>(*this, "regrip_trigger_shots", 6);
     if (regrip_release_ms_ < 0) {
       RCLCPP_FATAL(
         this->get_logger(), "Invalid regrip_release_ms=%d (must be >= 0)", regrip_release_ms_);
@@ -112,8 +112,8 @@ public:
     //========================================
     // disk hold parameters (redundant check)
     //========================================
-    this->declare_parameter<double>("hold_disable_height_margin_mm", 0.5);
-    this->get_parameter("hold_disable_height_margin_mm", hold_disable_height_margin_mm_);
+    hold_disable_height_margin_mm_ =
+      core_shooter::declareAndGet<double>(*this, "hold_disable_height_margin_mm", 0.5);
     if (hold_disable_height_margin_mm_ < 0.0) {
       RCLCPP_FATAL(
         this->get_logger(),
@@ -167,7 +167,7 @@ public:
     //========================================
     // timer callback
     //========================================
-    timer_ = this->create_wall_timer(10ms, std::bind(&MagazineManager::on_timer, this));
+    timer_ = this->create_wall_timer(10ms, std::bind(&MagazineManager::timerCallback, this));
   }
 
 private:
@@ -198,12 +198,12 @@ private:
 
     if (rising) {
       // 押さえ中はセンサが歪むので、通常はカウントで減算
-      remainingDiskEstimator(-1);
+      decrementRemainingDisk();
 
-      // 10枚超の間だけ、hold中の射撃回数を数える
+      // 保持可能枚数を超えている間だけ、hold中の射撃回数を数える
       if (
         state_ == State::HOLDING && hold_on_ && !hazard_active_ &&
-        remaining_disks_ > 10)
+        remaining_disks_ > kMinHoldDisks)
       {
         ++hold_shots_since_grip_;
         RCLCPP_INFO(this->get_logger(), "hold_shots_since_grip: %d", hold_shots_since_grip_);
@@ -255,7 +255,7 @@ private:
 
     // 移動平均フィルタ
     buffer_.push_back(val);
-    if (buffer_.size() > (size_t)window_size_) {
+    if (buffer_.size() > static_cast<size_t>(window_size_)) {
       buffer_.pop_front();
     }
 
@@ -273,45 +273,41 @@ private:
 
   //========================================
   // remaining disk estimator
-  //   data = -1 : decrement by shot
-  //   data =  0 : sync from sensor (ONLY when regrip/open)
   //========================================
-  bool remainingDiskEstimator(int data)
+  /// 射撃 1 発ぶんとして残弾を 1 枚減らす。
+  void decrementRemainingDisk()
   {
-    // 1枚減らす
-    if (data == -1) {
-      if (remaining_disks_ > 0) {
-        remaining_disks_--;
-      }
-      remainingDisksPublish(remaining_disks_);
-      return true;
+    if (remaining_disks_ > 0) {
+      remaining_disks_--;
+    }
+    remainingDisksPublish(remaining_disks_);
+  }
+
+  /// 距離センサの移動平均から残弾を推定して同期する。
+  /// 押さえ中はセンサ値が歪むため、regrip で開いている間だけ呼ぶこと。
+  bool syncRemainingDiskFromSensor()
+  {
+    if (disk_thickness_ <= 0.0) {
+      RCLCPP_ERROR(this->get_logger(), "disk_thickness must be > 0 for estimation");
+      return false;
     }
 
-    // センサ同期（リグリップで開いている時だけ呼ぶ）
-    if (data == 0) {
-      if (disk_thickness_ <= 0.0) {
-        RCLCPP_ERROR(this->get_logger(), "disk_thickness must be > 0 for estimation");
-        return false;
-      }
-      estimated_stack_height_mm_ = sensor_height_ - distance_;
-
-      if (estimated_stack_height_mm_ <= 0.0) {
-        RCLCPP_INFO(this->get_logger(), "disk sensor height error");
-        return false;
-      }
-
-      int estimated = std::round(estimated_stack_height_mm_ / disk_thickness_);
-      remaining_disks_ = clampRemainingDisks(estimated, "sensor estimate");
-
-      // 冗長チェック用に保持（最後に「見えた」値）
-      last_sensor_estimated_disks_ = remaining_disks_;
-      last_sensor_height_mm_ = estimated_stack_height_mm_;
-
-      remainingDisksPublish(remaining_disks_);
-      return true;
+    const double estimated_stack_height_mm = sensor_height_ - distance_;
+    if (estimated_stack_height_mm <= 0.0) {
+      RCLCPP_INFO(this->get_logger(), "disk sensor height error");
+      return false;
     }
 
-    return false;
+    const int estimated =
+      static_cast<int>(std::round(estimated_stack_height_mm / disk_thickness_));
+    remaining_disks_ = clampRemainingDisks(estimated, "sensor estimate");
+
+    // 冗長チェック用に保持（最後に「見えた」値）
+    last_sensor_estimated_disks_ = remaining_disks_;
+    last_sensor_height_mm_ = estimated_stack_height_mm;
+
+    remainingDisksPublish(remaining_disks_);
+    return true;
   }
 
   bool isDistanceMeasurementValid(double distance_mm)
@@ -358,13 +354,7 @@ private:
   void remainingDisksPublish(int data)
   {
     std_msgs::msg::Int8 message;
-    if (data < 0) {
-      message.data = 0;
-    } else if (data > 127) {
-      message.data = 127;
-    } else {
-      message.data = (int8_t)data;
-    }
+    message.data = static_cast<int8_t>(std::clamp(data, 0, kInt8Max));
     remaining_disk_pub_->publish(message);
   }
 
@@ -380,10 +370,10 @@ private:
   //========================================
   void holdStateCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    // ボタン指示（hazard / <=10枚 は on_timer で優先上書き）
+    // ボタン指示（hazard / <=10枚 は timerCallback で優先上書き）
     hold_request_on_ = msg->data;
 
-    // ボタン押下時は即release側へ寄せる（最終決定は on_timer）
+    // ボタン押下時は即release側へ寄せる（最終決定は timerCallback）
     if (hold_request_on_) {
       hold_on_ = false;
       hold_shots_since_grip_ = 0;
@@ -393,7 +383,7 @@ private:
     }
   }
 
-  // hazard：hold出力を強制releaseし、通常復帰後は on_timer の優先順に戻す
+  // hazard：hold出力を強制releaseし、通常復帰後は timerCallback の優先順に戻す
   void hazardStatusCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
     const bool prev = hazard_active_;
@@ -403,7 +393,7 @@ private:
       hold_on_ = false;
       state_ = State::IDLE_RELEASED;
       hold_shots_since_grip_ = 0;
-      publish_hold_command(false);
+      publishHoldCommand(false);
       RCLCPP_ERROR(this->get_logger(), "HAZARD ACTIVE -> force RELEASE + reset");
       return;
     }
@@ -413,7 +403,7 @@ private:
       hold_on_ = false;
       state_ = State::IDLE_RELEASED;
       hold_shots_since_grip_ = 0;
-      on_timer();  // hazard解除を即時反映（条件を満たせばgrip）
+      timerCallback();  // hazard解除を即時反映（条件を満たせばgrip）
       RCLCPP_WARN(this->get_logger(), "HAZARD CLEARED -> resume normal hold logic");
     }
   }
@@ -425,7 +415,7 @@ private:
   {
     if (
       !regrip_enabled_ || state_ != State::HOLDING ||
-      hold_shots_since_grip_ < regrip_trigger_shots_ || remaining_disks_ <= 10)
+      hold_shots_since_grip_ < regrip_trigger_shots_ || remaining_disks_ <= kMinHoldDisks)
     {
       return;
     }
@@ -441,7 +431,7 @@ private:
     regrip_release_until_ =
       this->now() + rclcpp::Duration(0, static_cast<int64_t>(regrip_release_ms_) * 1000 * 1000);
 
-    publish_hold_command(false);
+    publishHoldCommand(false);
     publishRegripActive(true);
 
     RCLCPP_WARN(
@@ -450,36 +440,39 @@ private:
       regrip_trigger_shots_, remaining_disks_, regrip_release_ms_);
   }
 
-  void on_timer()
+  /// hold を強制解除し、ホールド状態をリセットする。
+  void forceRelease()
+  {
+    hold_on_ = false;
+    state_ = State::IDLE_RELEASED;
+    hold_shots_since_grip_ = 0;
+    publishHoldCommand(false);
+    publishRegripActive(false);
+  }
+
+  void timerCallback()
   {
     // ============================================================
     // PRIORITY 1: HAZARDなら必ずrelease(false)
     // ============================================================
     if (hazard_active_) {
-      hold_on_ = false;
-      state_ = State::IDLE_RELEASED;
-      hold_shots_since_grip_ = 0;
-      publish_hold_command(false);
-      publishRegripActive(false);
+      forceRelease();
       return;
     }
 
     // ============================================================
-    // PRIORITY 2: 10枚以下なら必ずrelease(false)（冗長判定含む）
+    // PRIORITY 2: 保持可能枚数以下なら必ずrelease(false)（冗長判定含む）
     // ============================================================
-    const bool cannot_hold_by_count = (remaining_disks_ <= 10);
+    const bool cannot_hold_by_count = (remaining_disks_ <= kMinHoldDisks);
     const bool cannot_hold_by_last_sensor =
-      (last_sensor_estimated_disks_ >= 0 && last_sensor_estimated_disks_ <= 10);
+      (last_sensor_estimated_disks_ >= 0 && last_sensor_estimated_disks_ <= kMinHoldDisks);
     const bool cannot_hold_by_last_height =
       (last_sensor_height_mm_ >= 0.0 &&
-      last_sensor_height_mm_ <= (disk_thickness_ * 10.0 + hold_disable_height_margin_mm_));
+      last_sensor_height_mm_ <=
+      (disk_thickness_ * kMinHoldDisks + hold_disable_height_margin_mm_));
 
     if (cannot_hold_by_count || cannot_hold_by_last_sensor || cannot_hold_by_last_height) {
-      hold_on_ = false;
-      state_ = State::IDLE_RELEASED;
-      hold_shots_since_grip_ = 0;
-      publish_hold_command(false);
-      publishRegripActive(false);
+      forceRelease();
       return;
     }
 
@@ -487,16 +480,12 @@ private:
     // PRIORITY 3: ボタン押下時はrelease
     // ============================================================
     if (hold_request_on_) {
-      hold_on_ = false;
-      state_ = State::IDLE_RELEASED;
-      hold_shots_since_grip_ = 0;
-      publish_hold_command(false);
-      publishRegripActive(false);
+      forceRelease();
       return;
     }
 
     // ============================================================
-    // NORMAL: ボタン未押下 かつ 11枚以上
+    // NORMAL: ボタン未押下 かつ 保持可能枚数超え
     // ============================================================
     if (state_ == State::IDLE_RELEASED) {
       state_ = State::HOLDING;
@@ -506,24 +495,27 @@ private:
     // (D) 状態に応じて0/1指令（0: release, 1: grip）
     switch (state_) {
       case State::IDLE_RELEASED:
+        // 直前で HOLDING へ遷移させているため通常は到達しない（列挙の網羅用）。
         hold_on_ = false;
-        publish_hold_command(false);
+        publishHoldCommand(false);
         break;
 
       case State::HOLDING:
         hold_on_ = true;
-        publish_hold_command(true);
+        publishHoldCommand(true);
         break;
 
       case State::REGRIP_RELEASING:
         // 開放中
         hold_on_ = false;
-        publish_hold_command(false);
+        publishHoldCommand(false);
 
         // ★REGRIP中はセンサが見える想定
         // 移動平均の窓が揃ってから同期（安定化）
-        if (!regrip_sensor_sync_completed_ && (int)buffer_.size() >= window_size_) {
-          regrip_sensor_sync_completed_ = remainingDiskEstimator(0);
+        if (!regrip_sensor_sync_completed_ &&
+          static_cast<int>(buffer_.size()) >= window_size_)
+        {
+          regrip_sensor_sync_completed_ = syncRemainingDiskFromSensor();
         }
 
         if (this->now() >= regrip_release_until_) {
@@ -553,7 +545,7 @@ private:
   //========================================
   // publish
   //========================================
-  void publish_hold_command(bool hold)
+  void publishHoldCommand(bool hold)
   {
     constexpr size_t CLOSE_INDEX = 0;
     constexpr size_t OPEN_INDEX = 1;
@@ -567,12 +559,7 @@ private:
 
   void motorPublish(int id, float data)
   {
-    auto can_array = core_msgs::msg::CANArray();
-    auto can = core_msgs::msg::CAN();
-    can.id = id;
-    can.data.push_back(data);
-    can_array.array.push_back(can);
-    can_pub_->publish(can_array);
+    core_shooter::publishMotorCommand(can_pub_, id, data);
   }
 
 private:
@@ -639,7 +626,6 @@ private:
 
   // redundant sensor check (valid ONLY when synced during regrip)
   double hold_disable_height_margin_mm_ = 0.5;
-  double estimated_stack_height_mm_ = 0.0;
 
   int last_sensor_estimated_disks_ = -1;  // -1: 未取得
   double last_sensor_height_mm_ = -1.0;

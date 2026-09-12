@@ -1,37 +1,34 @@
-from launch import LaunchDescription
-from launch_ros.actions import Node, PushRosNamespace
-from launch.actions import GroupAction
 import os
 
 from ament_index_python.packages import get_package_share_directory
-'''
-# モータ番号
-0-3: 足回りDamiao×4
-4: 無限回転Yaw Robostride 06
-5-6: 砲台Yaw Robostride05×2
-7-14: Feetech
-15-16: ESC
-17: 非常停止
-'''
+from launch import LaunchDescription
+from launch.actions import GroupAction
+from launch_ros.actions import Node, PushRosNamespace
+
+# ノード固有のパラメータはすべて config/shooter.params.yaml で管理する。
+# 左右差分は同ファイル内の /**/<side>/<node> セクションで指定するため、
+# ここではトピックの remap のみを行う。
+
+HAZARD_REMAP = ("hazard_status", "/system/emergency/hazard_status")
+CAN_REMAP = ("/can/tx", "/hardware/can/tx")
+TEST_MODE_REMAP = ("/test_mode", "/ui/test_mode")
 
 
-def generate_launch_description():
-    # パラメータファイルのパスを取得
-    shooter_params = os.path.join(
+def _params_file():
+    return os.path.join(
         get_package_share_directory("core_shooter"),
         "config",
-        "shooter.params.yaml"
+        "shooter.params.yaml",
     )
-    hazard_remaps = ("hazard_status", "/system/emergency/hazard_status")
-    can_remaps = ("/can/tx", "/hardware/can/tx")
-    test_mode_remaps = ("/test_mode", "/ui/test_mode")
 
-    shooter_cmd_gate_node = Node(
+
+def _shooter_cmd_gate(params):
+    return Node(
         package="core_shooter",
         executable="shooter_cmd_gate",
         name="shooter_cmd_gate",
         output="screen",
-        parameters=[shooter_params],
+        parameters=[params],
         remappings=[
             ("manual_mode", "/ui/manual_mode"),
             ("manual_pitch", "/ui/manual_pitch"),
@@ -44,204 +41,79 @@ def generate_launch_description():
             ("right_shoot_cmd", "right/shoot_cmd"),
             ("/left/shoot_motor", "/mecha/shooter/left/shoot_motor"),
             ("/right/shoot_motor", "/mecha/shooter/right/shoot_motor"),
-        ]
+        ],
     )
 
-    left_shooter_controller_node = Node(
+
+def _shooter_controller(params):
+    return Node(
         package="core_shooter",
         executable="shooter_controller",
         name="shooter_controller",
         output="screen",
-        parameters=[
-            shooter_params,
-            {
-                "shoot_motor_id": 15,
-                "loading_motor_id": 12,
-            }
-        ],
+        parameters=[params],
         remappings=[
-            hazard_remaps,
-            can_remaps,
-            test_mode_remaps,
-        ]
+            HAZARD_REMAP,
+            CAN_REMAP,
+            TEST_MODE_REMAP,
+        ],
     )
 
-    right_shooter_controller_node = Node(
-        package="core_shooter",
-        executable="shooter_controller",
-        name="shooter_controller",
-        output="screen",
-        parameters=[
-            shooter_params,
-            {
-                "shoot_motor_id": 16,
-                "loading_motor_id": 8,
-            }
-        ],
-        remappings=[
-            hazard_remaps,
-            can_remaps,
-            test_mode_remaps,
-        ]
-    )
 
-    left_magazine_manager_node = Node(
+def _magazine_manager(params):
+    return Node(
         package="core_shooter",
         executable="magazine_manager",
         name="magazine_manager",
         output="screen",
-        parameters=[
-            shooter_params,
-            {
-                "disk_hold_left_motor_id": 14,
-                "disk_hold_right_motor_id": 13,
-                "disk_hold_motor_left_angle": [0.35, 0.0],
-                "disk_hold_motor_right_angle": [-0.35, 0.0],
-            }
-        ],
+        parameters=[params],
         remappings=[
             ("disk_distance_sensor", "distance"),
-            hazard_remaps,
-            can_remaps,
-        ]
-    )
-
-    right_magazine_manager_node = Node(
-        package="core_shooter",
-        executable="magazine_manager",
-        name="magazine_manager",
-        output="screen",
-        parameters=[
-            shooter_params,
-            {
-                "disk_hold_left_motor_id": 10,
-                "disk_hold_right_motor_id": 9,
-                "disk_hold_motor_left_angle": [-0.35, 0.0],
-                "disk_hold_motor_right_angle": [0.35, 0.0],
-            }
+            HAZARD_REMAP,
+            CAN_REMAP,
         ],
-        remappings=[
-            ("disk_distance_sensor", "distance"),
-            hazard_remaps,
-            can_remaps,
-        ]
     )
 
-    left_aim_bot_node = Node(
+
+def _aim_bot(params, side):
+    return Node(
         package="core_shooter",
         executable="aim_bot",
         name="aim_bot",
         output="screen",
-        parameters=[
-            shooter_params,
-            {
-                "pitch_motor_id": 7,
-                "yaw_motor_id": 5,
-                # "yaw_min_angle": -3.14159265359,
-                # "yaw_max_angle": 3.14159265359,
-                "pitch_min_angle": -2.0,
-                "pitch_max_angle": 3.14, #3.14,
-                "zone.yaw_reversed": True,
-                "zone.yaw_zone1_start": -0.58,
-                "zone.yaw_boundary": -0.25,
-                "zone.yaw_zone2_end": 0.15,
-                "zone.yaw_zone3_end": 2.2,
-                "zone.pitch_lower_limit": -2.0,
-                "zone.pitch_zone2_upper": 3.14, #3.14,
-                "zone.pitch_zone2_lower": -2.0,
-                "zone.pitch_zone2_upper_limit": 3.14, #3.14,
-                "zone.pitch_zone3_lower": -2.0,
-                "zone.pitch_zone3_upper": 1.0,
-                "zone.pitch_zone1_upper": 3.14, #3.14,
-                "control.hysteresis_rad": 0.05,
-                "control.pitch_correct_tolerance": 0.01,
-                "image_center_x": 0.4,
-                "image_center_y": 0.4,
-                "image_tolerance_x": 5.0,
-                "image_tolerance_y": 5.0,
-                "yaw_image_gain": 0.0005,
-                "pitch_image_gain": 0.008,
-            }
-        ],
+        parameters=[params],
         remappings=[
-            hazard_remaps,
-            can_remaps,
-            test_mode_remaps,
+            HAZARD_REMAP,
+            CAN_REMAP,
+            TEST_MODE_REMAP,
             (
                 "target_image_position",
-                "/perception/enemy_detection/left/target_pose",
+                f"/perception/enemy_detection/{side}/target_pose",
             ),
-        ]
+        ],
     )
 
-    right_aim_bot_node = Node(
-        package="core_shooter",
-        executable="aim_bot",
-        name="aim_bot",
-        output="screen",
-        parameters=[
-            shooter_params,
-            {
-                "pitch_motor_id": 11,
-                "yaw_motor_id": 6,
-                # "yaw_min_angle": -3.14159265359,
-                # "yaw_max_angle": 3.14159265359,
-                "pitch_min_angle": -1.8,
-                "pitch_max_angle": 3.14, #3.14,
-                "zone.yaw_reversed": False,
-                "zone.yaw_zone1_start": -0.48,
-                "zone.yaw_boundary": -0.15,
-                "zone.yaw_zone2_end": 0.25,
-                "zone.yaw_zone3_end": 2.2,
-                "zone.pitch_lower_limit": -1.8,
-                "zone.pitch_zone2_upper": 3.14, #3.14,
-                "zone.pitch_zone2_lower": -1.8,
-                "zone.pitch_zone2_upper_limit": 3.14, #3.14,
-                "zone.pitch_zone3_lower": -1.8,
-                "zone.pitch_zone3_upper": 0.0,
-                "zone.pitch_zone1_upper": 3.14, #3.14,
-                "control.hysteresis_rad": 0.05,
-                "control.pitch_correct_tolerance": 0.01,
-                "image_center_x": 0.55,
-                "image_center_y": 0.5,
-                "image_tolerance_x": 5.0,
-                "image_tolerance_y": 5.0,
-                "yaw_image_gain": 0.0007,
-                "pitch_image_gain": 0.01,
-            }
-        ],
-        remappings=[
-            hazard_remaps,
-            can_remaps,
-            test_mode_remaps,
-            (
-                "target_image_position",
-                "/perception/enemy_detection/right/target_pose",
-            ),
-            # ("manual_pitch_angle", "test_pitch_angle"),
-        ]
-    )
+
+def _side_group(params, side):
+    return GroupAction([
+        PushRosNamespace(side),
+        _shooter_controller(params),
+        _magazine_manager(params),
+        _aim_bot(params, side),
+    ])
+
+
+def generate_launch_description():
+    params = _params_file()
 
     return LaunchDescription([
         GroupAction([
             PushRosNamespace("mecha"),
             GroupAction([
                 PushRosNamespace("shooter"),
-                shooter_cmd_gate_node,
-
-                GroupAction([
-                    PushRosNamespace("left"),
-                    left_shooter_controller_node,
-                    left_magazine_manager_node,
-                    left_aim_bot_node,
-                ]),
-
-                GroupAction([
-                    PushRosNamespace("right"),
-                    right_shooter_controller_node,
-                    right_magazine_manager_node,
-                    right_aim_bot_node,
-                ]),
+                _shooter_cmd_gate(params),
+                _side_group(params, "left"),
+                _side_group(params, "right"),
             ]),
         ]),
     ])
