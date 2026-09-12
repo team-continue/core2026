@@ -1,4 +1,4 @@
-localization_node:
+/**/localization_node:
   ros__parameters:
     # ── PCD Map ──────────────────────────────────────────
     global_map_path: ""            # Path to pre-built PCD file (required)

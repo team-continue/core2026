@@ -4,9 +4,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def generate_launch_description():
@@ -24,14 +24,17 @@ def generate_launch_description():
             default_value=default_config,
             description='Path to localization parameter YAML',
         ),
-        Node(
-            package='core_localization',
-            executable='localization_node',
-            name='localization_node',
-            output='screen',
-            parameters=[
-                LaunchConfiguration('config_file'),
-                {'global_map_path': LaunchConfiguration('pcd_map_path')},
-            ],
-        ),
+        GroupAction([
+            PushRosNamespace('localization'),
+            Node(
+                package='core_localization',
+                executable='localization_node',
+                name='localization_node',
+                output='screen',
+                parameters=[
+                    LaunchConfiguration('config_file'),
+                    {'global_map_path': LaunchConfiguration('pcd_map_path')},
+                ],
+            ),
+        ]),
     ])

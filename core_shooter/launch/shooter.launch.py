@@ -23,6 +23,8 @@ def generate_launch_description():
         "shooter.params.yaml"
     )
     hazard_remaps = ("hazard_status", "/system/emergency/hazard_status")
+    can_remaps = ("/can/tx", "/hardware/can/tx")
+    test_mode_remaps = ("/test_mode", "/ui/test_mode")
 
     shooter_cmd_gate_node = Node(
         package="core_shooter",
@@ -31,21 +33,24 @@ def generate_launch_description():
         output="screen",
         parameters=[shooter_params],
         remappings=[
-            ("manual_mode", "/manual_mode"),
-            ("manual_pitch", "/manual_pitch"),
-            ("left_manual_mode", "/left/manual_mode"),
-            ("left_manual_pitch_angle", "/left/manual_pitch_angle"),
-            ("right_manual_mode", "/right/manual_mode"),
-            ("right_manual_pitch_angle", "/right/manual_pitch_angle"),
-            ("left_shoot_cmd", "/left/shoot_cmd"),
-            ("right_shoot_cmd", "/right/shoot_cmd"),
+            ("manual_mode", "/ui/manual_mode"),
+            ("manual_pitch", "/ui/manual_pitch"),
+            ("shoot_motor_state", "/ui/shoot_motor_state"),
+            ("left_manual_mode", "left/manual_mode"),
+            ("left_manual_pitch_angle", "left/manual_pitch_angle"),
+            ("right_manual_mode", "right/manual_mode"),
+            ("right_manual_pitch_angle", "right/manual_pitch_angle"),
+            ("left_shoot_cmd", "left/shoot_cmd"),
+            ("right_shoot_cmd", "right/shoot_cmd"),
+            ("/left/shoot_motor", "/mecha/shooter/left/shoot_motor"),
+            ("/right/shoot_motor", "/mecha/shooter/right/shoot_motor"),
         ]
     )
 
     left_shooter_controller_node = Node(
         package="core_shooter",
         executable="shooter_controller",
-        name="left_shooter_controller",
+        name="shooter_controller",
         output="screen",
         parameters=[
             shooter_params,
@@ -55,14 +60,16 @@ def generate_launch_description():
             }
         ],
         remappings=[
-            hazard_remaps
+            hazard_remaps,
+            can_remaps,
+            test_mode_remaps,
         ]
     )
 
     right_shooter_controller_node = Node(
         package="core_shooter",
         executable="shooter_controller",
-        name="right_shooter_controller",
+        name="shooter_controller",
         output="screen",
         parameters=[
             shooter_params,
@@ -72,14 +79,16 @@ def generate_launch_description():
             }
         ],
         remappings=[
-            hazard_remaps
+            hazard_remaps,
+            can_remaps,
+            test_mode_remaps,
         ]
     )
 
     left_magazine_manager_node = Node(
         package="core_shooter",
         executable="magazine_manager",
-        name="left_magazine_manager",
+        name="magazine_manager",
         output="screen",
         parameters=[
             shooter_params,
@@ -93,13 +102,14 @@ def generate_launch_description():
         remappings=[
             ("disk_distance_sensor", "distance"),
             hazard_remaps,
+            can_remaps,
         ]
     )
 
     right_magazine_manager_node = Node(
         package="core_shooter",
         executable="magazine_manager",
-        name="right_magazine_manager",
+        name="magazine_manager",
         output="screen",
         parameters=[
             shooter_params,
@@ -113,13 +123,14 @@ def generate_launch_description():
         remappings=[
             ("disk_distance_sensor", "distance"),
             hazard_remaps,
+            can_remaps,
         ]
     )
 
     left_aim_bot_node = Node(
         package="core_shooter",
         executable="aim_bot",
-        name="left_aim_bot",
+        name="aim_bot",
         output="screen",
         parameters=[
             shooter_params,
@@ -154,14 +165,19 @@ def generate_launch_description():
         ],
         remappings=[
             hazard_remaps,
-            ("target_image_position", "/left/target_pose"),
+            can_remaps,
+            test_mode_remaps,
+            (
+                "target_image_position",
+                "/perception/enemy_detection/left/target_pose",
+            ),
         ]
     )
 
     right_aim_bot_node = Node(
         package="core_shooter",
         executable="aim_bot",
-        name="right_aim_bot",
+        name="aim_bot",
         output="screen",
         parameters=[
             shooter_params,
@@ -196,25 +212,36 @@ def generate_launch_description():
         ],
         remappings=[
             hazard_remaps,
-            ("target_image_position", "/right/target_pose"),
+            can_remaps,
+            test_mode_remaps,
+            (
+                "target_image_position",
+                "/perception/enemy_detection/right/target_pose",
+            ),
             # ("manual_pitch_angle", "test_pitch_angle"),
         ]
     )
 
     return LaunchDescription([
-        shooter_cmd_gate_node,
-
         GroupAction([
-            PushRosNamespace("left"),
-            left_shooter_controller_node,
-            left_magazine_manager_node,
-            left_aim_bot_node,
-        ]),
+            PushRosNamespace("mecha"),
+            GroupAction([
+                PushRosNamespace("shooter"),
+                shooter_cmd_gate_node,
 
-        GroupAction([
-            PushRosNamespace("right"),
-            right_shooter_controller_node,
-            right_magazine_manager_node,
-            right_aim_bot_node,
+                GroupAction([
+                    PushRosNamespace("left"),
+                    left_shooter_controller_node,
+                    left_magazine_manager_node,
+                    left_aim_bot_node,
+                ]),
+
+                GroupAction([
+                    PushRosNamespace("right"),
+                    right_shooter_controller_node,
+                    right_magazine_manager_node,
+                    right_aim_bot_node,
+                ]),
+            ]),
         ]),
     ])

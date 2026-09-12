@@ -44,8 +44,8 @@ class Worker(QObject):
         try:
             rclpy.init()
             self.__node = Node("motor_tool")
-            self.__robomas_tx_pub = self.__node.create_publisher(CANArray, "can/tx", 10)
-            self.__robomas_rx_sub = self.__node.create_subscription(CANArray, "can/rx", self.__robomas_rx_cb, 10)
+            self.__robomas_tx_pub = self.__node.create_publisher(CANArray, "/hardware/can/tx", 10)
+            self.__robomas_rx_sub = self.__node.create_subscription(CANArray, "/hardware/can/rx", self.__robomas_rx_cb, 10)
             rclpy.spin(self.__node)
         except Exception:
             self.finished.emit()
@@ -116,7 +116,7 @@ class MainWindow(QMainWindow):
         self.mode_status_label = ui.mode_status_label
         self.tx_status_label = ui.tx_status_label
 
-        # Target(/can/tx)は編集可能にする
+        # Target(/hardware/can/tx)は編集可能にする
         for edit in self.tx_box_by_mode.values():
             edit.setReadOnly(False)
             edit.setValidator(QDoubleValidator(edit))
@@ -138,7 +138,7 @@ class MainWindow(QMainWindow):
         ui.vel_ref_slider.valueChanged.connect(self.vel_ref_slider_cb)
         ui.curr_ref_slider.valueChanged.connect(self.curr_ref_slider_cb)
 
-        # Target(/can/tx) 即時更新
+        # Target(/hardware/can/tx) 即時更新
         ui.pos_ref_box.textEdited.connect(self.pos_ref_text_edited_cb)
         ui.vel_ref_box.textEdited.connect(self.vel_ref_text_edited_cb)
         ui.curr_ref_box.textEdited.connect(self.curr_ref_text_edited_cb)

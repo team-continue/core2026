@@ -21,9 +21,8 @@ def generate_launch_description():
         output="screen",
         parameters=[mode_params],
         remappings=[
-            ("emergency_switch", "/emergency"),
-            ("destroy", "/destroy"),
-            ("software_emergency", "/software_emergency")
+            ("emergency_switch", "/hardware/hardware_emergency"),
+            ("destroy", "/hardware/destroy"),
         ]
     )
 
@@ -35,7 +34,7 @@ def generate_launch_description():
         parameters=[mode_params],
         remappings=[
             ("microcontroller_monitor", "/joint_states"),
-            ("receive_module_monitor", "/wireless"),
+            ("receive_module_monitor", "/hardware/wireless"),
         ]
     )
 

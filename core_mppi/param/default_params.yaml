@@ -1,10 +1,10 @@
-core_mppi_node:
+/**/core_mppi_node:
   ros__parameters:
-    path_topic: "/planned_path"
-    odom_topic: "/odom"
-    local_costmap_topic: "/costmap/local"
-    global_costmap_topic: "/costmap/global"
-    cmd_vel_topic: "/cmd_vel"
+    path_topic: "planned_path"
+    odom_topic: "/localization/odom"
+    local_costmap_topic: "costmap/local"
+    global_costmap_topic: "/map/costmap/global"
+    cmd_vel_topic: "cmd_vel_raw"
     control_rate: 20.0
 
     mppi.samples: 160

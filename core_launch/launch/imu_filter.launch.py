@@ -1,7 +1,7 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -36,7 +36,7 @@ def generate_launch_description() -> LaunchDescription:
             }
         ],
         remappings=[
-            ("imu/data_raw", "imu"),
+            ("imu/data_raw", "/imu"),
             ("imu/data", "filtered_imu"),
         ],
     )
@@ -46,6 +46,9 @@ def generate_launch_description() -> LaunchDescription:
             use_mag_arg,
             publish_tf_arg,
             world_frame_arg,
-            imu_filter_node,
+            GroupAction([
+                PushRosNamespace("sensing"),
+                imu_filter_node,
+            ]),
         ]
     )

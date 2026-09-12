@@ -1,8 +1,8 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 from launch_ros.parameter_descriptions import ParameterValue
 
 
@@ -107,6 +107,11 @@ def generate_launch_description() -> LaunchDescription:
         executable="body_control_node",
         name="body_control_node",
         output="screen",
+        remappings=[
+            ("can/tx", "/hardware/can/tx"),
+            ("joint_states", "/joint_states"),
+            ("/rotation", "/control/rotation"),
+        ],
         parameters=[
             {
                 "acceleration": LaunchConfiguration("acceleration"),
@@ -123,7 +128,11 @@ def generate_launch_description() -> LaunchDescription:
         executable="target_angle_node",
         name="target_angle_node",
         output="screen",
-        remappings=[("imu", "/imu")],
+        remappings=[
+            ("imu", "/imu"),
+            ("can/tx", "/hardware/can/tx"),
+            ("/rotation", "/control/rotation"),
+        ],
         parameters=[
             {
                 "yaw_rotation_velocity": LaunchConfiguration("yaw_rotation_velocity"),
@@ -155,8 +164,14 @@ def generate_launch_description() -> LaunchDescription:
             imu_baudrate_arg,
             imu_frame_id_arg,
             imu_output_rate_arg,
-            damiao_imu,
-            body_control,
-            target_angle,
+            GroupAction([
+                PushRosNamespace("sensing"),
+                damiao_imu,
+            ]),
+            GroupAction([
+                PushRosNamespace("control"),
+                body_control,
+                target_angle,
+            ]),
         ]
     )

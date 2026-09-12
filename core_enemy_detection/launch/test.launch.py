@@ -10,82 +10,76 @@ def generate_launch_description():
     param_file = os.path.join(pkg_dir, 'config', 'sim_param2.yaml')
 
     # =========================================================
-    # OAK-D 系
+    # OAK-D 系（right 砲塔向け）
     # oakd_panel_localizer
     #       ↓ detected_panel_info
     # oakd_target_detector
     #       ↓ damage_panels_infomation
     # target_selector
     # =========================================================
+    RIGHT_NS = 'perception/enemy_detection/right'
 
     oakd_panel_localizer = Node(
         package='core_enemy_detection',
         executable='oakd_panel_localizer',
-        namespace='oakd',
+        namespace=RIGHT_NS,
         name='oakd_panel_localizer',
         output='screen',
-        remappings=[
-            ('detected_panel_info', '/oakd/detected_panel_info'),
-        ],
     )
 
     oakd_target_detector = Node(
         package='core_enemy_detection',
         executable='oakd_target_detector',
-        namespace='oakd',
+        namespace=RIGHT_NS,
         name='oakd_target_detector',
         parameters=[param_file],
         output='screen',
         remappings=[
-            ('detected_panel_info', '/oakd/detected_panel_info'),
-            ('color', '/color2'),
-            ('damage_panels_infomation', '/oakd/damage_panels_infomation'),
+            ('color', '/hardware/color'),
         ],
     )
 
     oakd_target_selector = Node(
         package='core_enemy_detection',
         executable='target_selector',
-        namespace='oakd',
+        namespace=RIGHT_NS,
         name='oakd_target_selector',
         output='screen',
         remappings=[
-            ('damage_panels_infomation', '/oakd/damage_panels_infomation'),
-            ('damage_panel_pose', '/right/target_pose'),
+            ('damage_panel_pose', 'target_pose'),
         ],
     )
 
 
     # =========================================================
-    # 従来の target_detector 系
+    # 従来の target_detector 系（left 砲塔向け）
     # target_detector
     #       ↓
     # target_selector
     # =========================================================
+    LEFT_NS = 'perception/enemy_detection/left'
 
     target_detector = Node(
         package='core_enemy_detection',
         executable='target_detector',
-        namespace='normal',
+        namespace=LEFT_NS,
         name='target_detector',
         parameters=[param_file],
         output='screen',
         remappings=[
             ('raw_image', '/turret_camera_left/color/image'),
-            ('color', '/color2'),
-            ('target_pose', '/normal/detected_target'),
+            ('color', '/hardware/color'),
         ],
     )
 
     target_selector = Node(
         package='core_enemy_detection',
         executable='target_selector',
-        namespace='normal',
+        namespace=LEFT_NS,
         name='target_selector',
         output='screen',
         remappings=[
-            ('target_pose', '/normal/detected_target'),
-            ('damage_panel_pose', '/left/target_pose'),
+            ('damage_panel_pose', 'target_pose'),
         ],
     )
 

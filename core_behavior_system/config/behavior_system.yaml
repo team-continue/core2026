@@ -1,4 +1,4 @@
-waypoint_selector:
+/**/waypoint_selector:
   ros__parameters:
     update_rate_hz: 20
     mode: "navigate"
@@ -14,9 +14,9 @@ waypoint_selector:
     current_x: 0.0
     current_y: 0.0
     current_yaw: 0.0
-    odom_topic: "/odom"
-    goal_pose_topic: "/waypoint_selector/goal_pose"
-    pause_topic: "/waypoint_selector/pause"
+    odom_topic: "/localization/odom"
+    goal_pose_topic: "waypoint_selector/goal_pose"
+    pause_topic: "waypoint_selector/pause"
     arrival_radius: 0.5
     # Flat list: [x1, y1, x2, y2, ...]
     waypoints: [
@@ -34,39 +34,39 @@ waypoint_selector:
       -4.0, -6.0,
     ]
 
-behavior_system:
+/**/behavior_system:
   ros__parameters:
-    manual_mode_topic: "/manual_mode"
-    auto_point_select_topic: "/auto_point_select"
-    selected_pose_topic: "/selected_pose"
-    enemy_detected_topic: "/enemy_detected"
-    goal_reached_topic: "/goal_reached"
-    waypoint_goal_topic: "/waypoint_selector/goal_pose"
-    goal_pose_topic: "/goal_pose"
-    rotation_topic: "/rotation"
-    state_topic: "/behavior_system/state"
-    state_name_topic: "/behavior_system/state_name"
-    pause_topic: "/waypoint_selector/pause"
-    odom_topic: "/odom"
+    manual_mode_topic: "/ui/manual_mode"
+    auto_point_select_topic: "/ui/auto_point_select"
+    selected_pose_topic: "/ui/selected_pose"
+    enemy_detected_topic: "enemy_detected"
+    goal_reached_topic: "goal_reached"
+    waypoint_goal_topic: "waypoint_selector/goal_pose"
+    goal_pose_topic: "goal_pose"
+    rotation_topic: "/control/rotation"
+    state_topic: "state"
+    state_name_topic: "state_name"
+    pause_topic: "waypoint_selector/pause"
+    odom_topic: "/localization/odom"
     publish_rate_hz: 10.0
     pose_equal_eps: 0.001
 
-enemy_detection_coordinator:
+/**/enemy_detection_coordinator:
   ros__parameters:
-    left_target_topic: "/left/target_pose"
-    right_target_topic: "/right/target_pose"
-    enemy_detected_topic: "/enemy_detected"
+    left_target_topic: "/perception/enemy_detection/left/target_pose"
+    right_target_topic: "/perception/enemy_detection/right/target_pose"
+    enemy_detected_topic: "enemy_detected"
     stale_timeout_sec: 0.5
     detected_z_threshold: 0.5
 
-attack_shoot_manager:
+/**/attack_shoot_manager:
   ros__parameters:
-    left_target_topic: "/left/target_pose"
-    right_target_topic: "/right/target_pose"
-    left_shoot_fullauto_topic: "/left/shoot_fullauto"
-    right_shoot_fullauto_topic: "/right/shoot_fullauto"
-    left_turret_auto_topic: "/left/turret_auto"
-    right_turret_auto_topic: "/right/turret_auto"
+    left_target_topic: "/perception/enemy_detection/left/target_pose"
+    right_target_topic: "/perception/enemy_detection/right/target_pose"
+    left_shoot_fullauto_topic: "/mecha/shooter/left/shoot_fullauto"
+    right_shoot_fullauto_topic: "/mecha/shooter/right/shoot_fullauto"
+    left_turret_auto_topic: "/ui/left/turret_auto"
+    right_turret_auto_topic: "/ui/right/turret_auto"
     image_width: 320.0
     image_height: 320.0
     image_center_x: 0.5
