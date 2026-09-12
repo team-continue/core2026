@@ -168,3 +168,8 @@ nav:
     - 開発ワークフロー: contributing/workflow.md
     - コードスタイル: contributing/code-style.md
     - ノードドキュメントの書き方: contributing/node-documentation.md
+
+extra:
+  version:
+    provider: mike
+    default: latest

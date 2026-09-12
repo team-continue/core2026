@@ -1,16 +1,20 @@
-name: Deploy docs
+name: Deploy docs (tag)
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - 'requirements-docs.txt'
+    tags:
+      - '*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'デプロイ対象のタグ名'
+        required: true
 
 permissions:
   contents: write
+
+env:
+  TARGET_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   deploy:
@@ -19,6 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
 
       - uses: actions/setup-python@v5
         with:
@@ -34,9 +39,8 @@ jobs:
       - name: Fetch gh-pages
         run: git fetch origin gh-pages --depth=1 || true
 
-      # latest = main の最新。既定バージョンとしてルートからリダイレクトする
-      - name: Deploy latest
+      # タグ名をそのままバージョン名としてデプロイする（既定バージョンは変更しない）
+      - name: Deploy ${{ env.TARGET_TAG }}
         run: |
-          mike deploy --update-aliases latest
-          mike set-default latest
+          mike deploy "$TARGET_TAG"
           git push origin gh-pages
