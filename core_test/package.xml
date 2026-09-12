@@ -10,6 +10,8 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_gtest</buildtool_depend>
 
+  <test_depend>core_shooter</test_depend>
+  <test_depend>yaml_cpp_vendor</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_clang_format</test_depend>
 
