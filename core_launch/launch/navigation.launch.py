@@ -11,12 +11,13 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    GroupAction,
     IncludeLaunchDescription,
     OpaqueFunction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 from launch_ros.substitutions import FindPackageShare
 
 # ── Map presets ──────────────────────────────────────────────────────
@@ -85,42 +86,57 @@ def _launch_nodes(context):
 
     # ── 2. Livox driver (real only) ──────────────────────────────────
     if is_real:
-        actions.append(Node(
-            package='livox_ros_driver2',
-            executable='livox_ros_driver2_node',
-            name='livox_lidar_publisher',
-            output='screen',
-            parameters=[{
-                'xfer_format': 0,  # PointCloud2 (MID-360)
-                'multi_topic': 0,
-                'data_src': 0,
-                'publish_freq': 10.0,
-                'output_data_type': 0,
-                'frame_id': 'livox_frame',
-                'lvx_file_path': '/home/livox/livox_test.lvx',
-                'user_config_path': livox_user_config,
-                'cmdline_input_bd_code': 'livox0000000001',
-            }],
-        ))
+        actions.append(GroupAction([
+            PushRosNamespace('sensing'),
+            Node(
+                package='livox_ros_driver2',
+                executable='livox_ros_driver2_node',
+                name='livox_lidar_publisher',
+                output='screen',
+                remappings=[
+                    ('livox/lidar', '/livox/lidar'),
+                    ('livox/imu', '/livox/imu'),
+                ],
+                parameters=[{
+                    'xfer_format': 0,  # PointCloud2 (MID-360)
+                    'multi_topic': 0,
+                    'data_src': 0,
+                    'publish_freq': 10.0,
+                    'output_data_type': 0,
+                    'frame_id': 'livox_frame',
+                    'lvx_file_path': '/home/livox/livox_test.lvx',
+                    'user_config_path': livox_user_config,
+                    'cmdline_input_bd_code': 'livox0000000001',
+                }],
+            ),
+        ]))
+
+    # ── 無効化中のノードについて ─────────────────────────────────────
+    # 以下のコメントアウト済みブロックは名前空間対応済みの形で記述してあります。
+    # そのままコメントを外せば docs/architecture/topics.md のトピック一覧と
+    # 一致した名前空間（localization / map / planning）で起動します。
 
     # ── 3. FAST-LIO (when use_fastlio) ──────────────────────────────
     # if use_fastlio:
-    #     actions.append(Node(
-    #         package='fast_lio',
-    #         executable='fastlio_mapping',
-    #         name='fastlio_mapping',
-    #         output='screen',
-    #         parameters=[
-    #             PathJoinSubstitution([
-    #                 FindPackageShare('fast_lio'), 'config', 'mid360.yaml',
-    #             ]),
-    #             {
-    #                 'common.lid_topic': '/livox/lidar',
-    #                 'common.imu_topic': imu_topic,
-    #                 'preprocess.lidar_type': lidar_type,
-    #             },
-    #         ],
-    #     ))
+    #     actions.append(GroupAction([
+    #         PushRosNamespace('localization'),
+    #         Node(
+    #             package='fast_lio',
+    #             executable='fastlio_mapping',
+    #             name='fastlio_mapping',
+    #             output='screen',
+    #             parameters=[
+    #                 PathJoinSubstitution([
+    #                     FindPackageShare('fast_lio'), 'config', 'mid360.yaml',
+    #                 ]),
+    #                 {
+    #                     'common.lid_topic': '/livox/lidar',
+    #                     'common.imu_topic': imu_topic,
+    #                     'preprocess.lidar_type': lidar_type,
+    #                 },
+    #             ],
+    #         ),
+    #     ]))
 
     # ── 4. Static TF / Localization ──────────────────────────────────
     if use_localization:
@@ -139,20 +155,23 @@ def _launch_nodes(context):
                 f"Place the PCD file at core_localization/pcd_maps/{map_name}.pcd "
                 f"and rebuild.")
 
-        actions.append(Node(
-            package='core_localization',
-            executable='localization_node',
-            name='localization_node',
-            output='screen',
-            parameters=[
-                localization_config,
-                {
-                    'global_map_path': resolved_pcd_path,
-                    'initial_pose_x': preset['init_x'],
-                    'initial_pose_y': preset['init_y'],
-                },
-            ],
-        ))
+        actions.append(GroupAction([
+            PushRosNamespace('localization'),
+            Node(
+                package='core_localization',
+                executable='localization_node',
+                name='localization_node',
+                output='screen',
+                parameters=[
+                    localization_config,
+                    {
+                        'global_map_path': resolved_pcd_path,
+                        'initial_pose_x': preset['init_x'],
+                        'initial_pose_y': preset['init_y'],
+                    },
+                ],
+            ),
+        ]))
     else:
         # Static identity map→odom (no global localization)
         actions.append(Node(
@@ -180,84 +199,118 @@ def _launch_nodes(context):
     ))
 
     # ── 5. Map server ───────────────────────────────────────────────
-    # actions.append(Node(
-    #     package='core_launch',
-    #     executable='map_server_node.py',
-    #     name='map_server_node',
-    #     output='screen',
-    #     parameters=[{
-    #         'image_path': map_image_path,
-    #         'resolution': preset['resolution'],
-    #         'origin_x': preset['origin_x'],
-    #         'origin_y': preset['origin_y'],
-    #         'inflation_radius_m': 0.40,
-    #         'decay_margin_m': 0.20,
-    #     }],
-    # ))
+    # ソース内はいずれも絶対名なので PushRosNamespace では移動しない。
+    # /map はグローバル据え置き、グローバルコストマップのみリマップする。
+    # actions.append(GroupAction([
+    #     PushRosNamespace('map'),
+    #     Node(
+    #         package='core_launch',
+    #         executable='map_server_node.py',
+    #         name='map_server_node',
+    #         output='screen',
+    #         remappings=[
+    #             ('/costmap/global', '/map/costmap/global'),
+    #         ],
+    #         parameters=[{
+    #             'image_path': map_image_path,
+    #             'resolution': preset['resolution'],
+    #             'origin_x': preset['origin_x'],
+    #             'origin_y': preset['origin_y'],
+    #             'inflation_radius_m': 0.40,
+    #             'decay_margin_m': 0.20,
+    #         }],
+    #     ),
+    # ]))
 
     # ── 6. Odom bridge ──────────────────────────────────────────────
-    # actions.append(Node(
-    #     package='core_launch',
-    #     executable='odom_bridge_node.py',
-    #     name='odom_bridge_node',
-    #     output='screen',
-    #     parameters=[{
-    #         'odom_source': effective_odom_source,
-    #         'init_x': preset['init_x'],
-    #         'init_y': preset['init_y'],
-    #         'init_yaw': float(init_yaw),
-    #     }],
-    # ))
+    # 入力（/sim_odom, /Odometry）は外部境界なのでグローバル据え置き。
+    # actions.append(GroupAction([
+    #     PushRosNamespace('localization'),
+    #     Node(
+    #         package='core_launch',
+    #         executable='odom_bridge_node.py',
+    #         name='odom_bridge_node',
+    #         output='screen',
+    #         remappings=[
+    #             ('/odom', '/localization/odom'),
+    #             ('/start_pose', '/localization/start_pose'),
+    #         ],
+    #         parameters=[{
+    #             'odom_source': effective_odom_source,
+    #             'init_x': preset['init_x'],
+    #             'init_y': preset['init_y'],
+    #             'init_yaw': float(init_yaw),
+    #         }],
+    #     ),
+    # ]))
 
     # ── 7. Path planner ─────────────────────────────────────────────
-    # actions.append(Node(
-    #     package='core_path_planner',
-    #     executable='path_planner_node',
-    #     name='core_path_planner_node',
-    #     output='screen',
-    #     parameters=[{
-    #         'local_costmap_topic': '/costmap/local',
-    #         'publish_in_global_frame': True,
-    #         'global_frame_id': 'odom',
-    #         'cost_weight': 2.0,
-    #     }],
-    # ))
+    # actions.append(GroupAction([
+    #     PushRosNamespace('planning'),
+    #     Node(
+    #         package='core_path_planner',
+    #         executable='path_planner_node',
+    #         name='core_path_planner_node',
+    #         output='screen',
+    #         parameters=[{
+    #             'goal_topic': '/behavior/goal_pose',
+    #             'start_topic': '/localization/start_pose',
+    #             'path_topic': 'planned_path',
+    #             'local_costmap_topic': 'costmap/local',
+    #             'global_map_topic': '/map',
+    #             'publish_in_global_frame': True,
+    #             'global_frame_id': 'odom',
+    #             'cost_weight': 2.0,
+    #         }],
+    #     ),
+    # ]))
 
     # ── 8. MPPI controller ──────────────────────────────────────────
     # use_smoother = context.launch_configurations.get('use_smoother', 'true')
-    # mppi_cmd_vel_topic = '/cmd_vel_raw' if use_smoother.lower() == 'true' else '/cmd_vel'
+    # mppi_cmd_vel_topic = (
+    #     'cmd_vel_raw' if use_smoother.lower() == 'true' else '/control/cmd_vel')
 
-    # actions.append(Node(
-    #     package='core_mppi',
-    #     executable='core_mppi_node',
-    #     name='core_mppi_node',
-    #     output='screen',
-    #     parameters=[mppi_params, {'cmd_vel_topic': mppi_cmd_vel_topic}],
-    # ))
+    # actions.append(GroupAction([
+    #     PushRosNamespace('planning'),
+    #     Node(
+    #         package='core_mppi',
+    #         executable='core_mppi_node',
+    #         name='core_mppi_node',
+    #         output='screen',
+    #         remappings=[('/goal_reached', '/behavior/goal_reached')],
+    #         parameters=[mppi_params, {'cmd_vel_topic': mppi_cmd_vel_topic}],
+    #     ),
+    # ]))
 
     # ── 9. cmd_vel smoother ──────────────────────────────────────────
     # if use_smoother.lower() == 'true':
-    #     actions.append(Node(
-    #         package='core_cmd_vel_smoother',
-    #         executable='cmd_vel_smoother_node',
-    #         name='cmd_vel_smoother_node',
-    #         output='screen',
-    #         parameters=[{
-    #             'alpha': 1.0,
-    #             'input_topic': '/cmd_vel_raw',
-    #             'output_topic': '/cmd_vel',
-    #             'timeout_sec': 0.2,
-    #         }],
-    #     ))
+    #     actions.append(GroupAction([
+    #         PushRosNamespace('planning'),
+    #         Node(
+    #             package='core_cmd_vel_smoother',
+    #             executable='cmd_vel_smoother_node',
+    #             name='cmd_vel_smoother_node',
+    #             output='screen',
+    #             parameters=[{
+    #                 'alpha': 1.0,
+    #                 'input_topic': 'cmd_vel_raw',
+    #                 'output_topic': '/control/cmd_vel',
+    #                 'timeout_sec': 0.2,
+    #             }],
+    #         ),
+    #     ]))
 
     # ── 10. Costmap builder ─────────────────────────────────────────
-    # actions.append(Node(
-    #     package='core_costmap_builder',
-    #     executable='costmap_build_node',
-    #     name='costmap_build_node',
-    #     output='screen',
-    #     parameters=[costmap_params],
-    # ))
+    # actions.append(GroupAction([
+    #     PushRosNamespace('planning'),
+    #     Node(
+    #         package='core_costmap_builder',
+    #         executable='costmap_build_node',
+    #         name='costmap_build_node',
+    #         output='screen',
+    #         parameters=[costmap_params],
+    #     ),
+    # ]))
 
     # ── 11. Body controller ─────────────────────────────────────────
     actions.append(IncludeLaunchDescription(

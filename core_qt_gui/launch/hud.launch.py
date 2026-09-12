@@ -2,10 +2,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import EmitEvent, RegisterEventHandler
+from launch.actions import EmitEvent, GroupAction, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
 from launch.events.process import ShutdownProcess
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def generate_launch_description():
@@ -22,18 +22,18 @@ def generate_launch_description():
         output="screen",
         parameters=params,
         remappings=[
-            ("~/input/log", "/gui_debug/log"),
-            ("~/input/hp", "/hp"),
-            ("~/input/destroy", "/destroy"),
+            ("~/input/log", "gui_debug/log"),
+            ("~/input/hp", "/hardware/hp"),
+            ("~/input/destroy", "/hardware/destroy"),
             ("~/input/compass", "/ui/yaw_degree"),
             ("~/input/speed", "/ui/speed_mps"),
             ("~/input/qe", "/ui/qe_degree"),
-            ("~/input/ammo", "/right/remaining_disk"),
+            ("~/input/ammo", "/mecha/shooter/right/remaining_disk"),
             # ("~/input/camera", "/turret_camera_tps/color/image/compressed"),
             # ("~/input/camera_sub", "/turret_camera_left/color/image/compressed"),
             ("~/input/camera_raw", "/turret_camera_tps/color/image"),
             ("~/input/camera_sub_raw", "/turret_camera_right/color/image"),
-            ("~/input/ads", "/ads"),
+            ("~/input/ads", "ads"),
             ("~/input/hazard", "/system/emergency/hazard_status"),
             ("~/input/hazard_label", "/system/emergency/hazard_label"),
             ("~/input/enemy_poses", "/enemy_poses"),
@@ -57,6 +57,7 @@ def generate_launch_description():
         output="screen",
         remappings=[
             ("~/input/imu", "/imu"),
+            ("/cmd_vel", "/control/cmd_vel"),
             ("~/output/yaw_degree", "/ui/yaw_degree"),
             ("~/output/qe_degree", "/ui/qe_degree"),
             ("~/output/speed_mps", "/ui/speed_mps"),
@@ -78,8 +79,11 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            gui_qt_node,
-            hardware_node,
+            GroupAction([
+                PushRosNamespace("ui"),
+                gui_qt_node,
+                hardware_node,
+            ]),
             stop_hardware_on_gui_exit,
         ]
     )

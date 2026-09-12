@@ -1,7 +1,8 @@
 import os
 
 from launch import LaunchDescription
-from launch_ros.actions import Node
+from launch.actions import GroupAction
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def generate_launch_description():
@@ -46,5 +47,8 @@ def generate_launch_description():
     return LaunchDescription([
         debug_odom_to_base,
         debug_base_to_livox,
-        costmap_build,
+        GroupAction([
+            PushRosNamespace("planning"),
+            costmap_build,
+        ]),
     ])

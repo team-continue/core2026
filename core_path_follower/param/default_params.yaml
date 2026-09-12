@@ -1,9 +1,9 @@
-core_path_follower:
+/**/core_path_follower:
   ros__parameters:
     # Topic names (match path_planner output)
-    path_topic: "/planned_path"
-    odom_topic: "/odom"
-    cmd_vel_topic: "/cmd_vel"
+    path_topic: "planned_path"
+    odom_topic: "/localization/odom"
+    cmd_vel_topic: "/control/cmd_vel"
     # Coordinate frame mode:
     #   true  = path is in robot-local frame (from core_path_planner, chassis_link)
     #   false = path is in world/map frame (requires odom for localisation)

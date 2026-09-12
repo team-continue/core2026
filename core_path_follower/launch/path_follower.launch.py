@@ -16,7 +16,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch_ros.actions import Node
+from launch.actions import GroupAction
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def generate_launch_description():
@@ -29,6 +30,12 @@ def generate_launch_description():
         name='core_path_follower',
         output='screen',
         parameters=[param_file],
+        remappings=[("/goal_reached", "/behavior/goal_reached")],
     )
 
-    return LaunchDescription([path_follower_node])
+    return LaunchDescription([
+        GroupAction([
+            PushRosNamespace('planning'),
+            path_follower_node,
+        ]),
+    ])

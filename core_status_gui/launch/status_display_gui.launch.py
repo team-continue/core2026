@@ -1,13 +1,13 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def generate_launch_description():
     behavior_topic_arg = DeclareLaunchArgument(
         "behavior_topic",
-        default_value="/behavior_system/state_name",
+        default_value="/behavior/state_name",
         description="Behavior state topic to display",
     )
     hazard_status_topic_arg = DeclareLaunchArgument(
@@ -67,5 +67,8 @@ def generate_launch_description():
         fullscreen_arg,
         screen_index_arg,
         window_title_arg,
-        node,
+        GroupAction([
+            PushRosNamespace("ui"),
+            node,
+        ]),
     ])

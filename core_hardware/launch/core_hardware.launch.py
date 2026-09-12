@@ -1,7 +1,7 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def generate_launch_description():
@@ -20,14 +20,19 @@ def generate_launch_description():
             ('wireless', LaunchConfiguration('wireless_topic')),
         ],
     )
-    core_hardware_usb = Node(
-        package='core_hardware',
-        executable='core_hardware_usb',
-        output='screen',
-        parameters=[{'port': '/dev/teensy'}],
-    )
+    # USB(Teensy)直結版。socket版と排他なので通常は無効。
+    # 使う場合はこの定義と下の GroupAction 内の行を同時に有効化する。
+    # core_hardware_usb = Node(
+    #     package='core_hardware',
+    #     executable='core_hardware_usb',
+    #     output='screen',
+    #     parameters=[{'port': '/dev/teensy'}],
+    # )
     return LaunchDescription([
         wireless_topic_arg,
-        core_hardware_bridge,
-        # core_hardware_usb,
+        GroupAction([
+            PushRosNamespace('hardware'),
+            core_hardware_bridge,
+            # core_hardware_usb,
+        ]),
     ])

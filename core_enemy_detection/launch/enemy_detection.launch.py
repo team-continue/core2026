@@ -41,12 +41,12 @@ def generate_launch_description():
             package='core_enemy_detection',
             executable='target_detector',
             name=['target_detector'],
-            namespace=turret_name,
+            namespace=['perception/enemy_detection/', turret_name],
             output='screen',
             parameters=[param_file],
             remappings=[
                 ('raw_image', input_topic),
-                ('color', '/color')
+                ('color', '/hardware/color')
             ]
         ),
 
@@ -55,7 +55,7 @@ def generate_launch_description():
             package='core_enemy_detection',
             executable='target_selector',
             name=['target_selector'],
-            namespace=turret_name,
+            namespace=['perception/enemy_detection/', turret_name],
             output='screen',
             remappings=[
                 ('damage_panel_pose', output_topic),

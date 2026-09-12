@@ -14,7 +14,7 @@ def _cam(
     return Node(
         package='usb_cam',
         executable='usb_cam_node_exe',
-        namespace=name,
+        namespace=f'sensing/camera/{name}',
         name='usb_cam',
         output='screen',
         parameters=[{

@@ -2,9 +2,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def generate_launch_description():
@@ -16,82 +16,82 @@ def generate_launch_description():
 
     wireless_arg = DeclareLaunchArgument(
         "wireless",
-        default_value="/wireless",
+        default_value="/hardware/wireless",
         description="Input topic to remap node subscription target /wireless",
     )
     rotation_arg = DeclareLaunchArgument(
         "rotation",
-        default_value="/rotation",
+        default_value="/control/rotation",
         description="Output topic to remap /rotation",
     )
     ads_arg = DeclareLaunchArgument(
         "ads",
-        default_value="/ads",
+        default_value="/ui/ads",
         description="Output topic to remap /ads",
     )
     left_turret_auto_arg = DeclareLaunchArgument(
         "left_turret_auto",
-        default_value="/left/turret_auto",
+        default_value="/ui/left/turret_auto",
         description="Output topic to remap /left/turret_auto",
     )
     right_turret_auto_arg = DeclareLaunchArgument(
         "right_turret_auto",
-        default_value="/right/turret_auto",
+        default_value="/ui/right/turret_auto",
         description="Output topic to remap /right/turret_auto",
     )
     cmd_vel_arg = DeclareLaunchArgument(
         "cmd_vel",
-        default_value="/cmd_vel",
+        default_value="/control/cmd_vel",
         description="Output topic to remap /cmd_vel",
     )
     manual_mode_arg = DeclareLaunchArgument(
         "manual_mode",
-        default_value="/manual_mode",
+        default_value="/ui/manual_mode",
         description="Output topic to remap /manual_mode",
     )
     manual_pitch_arg = DeclareLaunchArgument(
         "manual_pitch",
-        default_value="/manual_pitch",
+        default_value="/ui/manual_pitch",
         description="Output topic to remap /manual_pitch",
     )
     shoot_motor_arg = DeclareLaunchArgument(
         "shoot_motor",
-        default_value="/shoot_motor_state",
-        description="Output topic to remap /shoot_motor (default: /shoot_motor_state)",
+        default_value="/ui/shoot_motor_state",
+        description="Output topic to remap /shoot_motor",
     )
     left_shoot_fullauto_arg = DeclareLaunchArgument(
         "left_shoot_fullauto",
-        default_value="/left/shoot_fullauto",
+        default_value="/mecha/shooter/left/shoot_fullauto",
         description="Output topic to remap /left/shoot_fullauto",
     )
     right_shoot_fullauto_arg = DeclareLaunchArgument(
         "right_shoot_fullauto",
-        default_value="/right/shoot_fullauto",
+        default_value="/mecha/shooter/right/shoot_fullauto",
         description="Output topic to remap /right/shoot_fullauto",
     )
     reloading_arg = DeclareLaunchArgument(
         "reloading",
-        default_value="/reloading",
+        default_value="/ui/reloading",
         description="Output topic to remap /reloading",
     )
     auto_point_select_arg = DeclareLaunchArgument(
         "auto_point_select",
-        default_value="/auto_point_select",
+        default_value="/ui/auto_point_select",
         description="Output topic to remap /auto_point_select",
     )
     selected_pose_arg = DeclareLaunchArgument(
         "selected_pose",
-        default_value="/selected_pose",
+        default_value="/ui/selected_pose",
         description="Output topic to remap /selected_pose",
     )
     hazard_status_arg = DeclareLaunchArgument(
         "hazard_status",
-        default_value="/software_emergency",
-        description="Output topic to remap /software_emergency"
+        default_value="/system/emergency/software_emergency",
+        description="Output topic to remap /system/emergency/hazard_status"
     )
     test_mode_arg = DeclareLaunchArgument(
         "test_mode",
-        default_value="/test_mode",
+        default_value="/ui/test_mode",
         description="Output topic to remap /test_mode",
     )
     params_file_arg = DeclareLaunchArgument(
@@ -144,5 +144,8 @@ def generate_launch_description():
         hazard_status_arg,
         test_mode_arg,
         params_file_arg,
-        node,
+        GroupAction([
+            PushRosNamespace("ui"),
+            node,
+        ]),
     ])

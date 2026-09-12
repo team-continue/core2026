@@ -1,4 +1,4 @@
-/oakd/target_detector:
+/perception/enemy_detection/right/target_detector:
   ros__parameters:
     blue_range_lower:
     - 105
@@ -39,7 +39,7 @@
     use_sim_time: false
     debug_mode: true
 
-/normal/target_detector:
+/perception/enemy_detection/left/target_detector:
   ros__parameters:
     blue_range_lower:
     - 105

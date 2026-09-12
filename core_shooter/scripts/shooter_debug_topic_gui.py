@@ -29,64 +29,94 @@ class DebugTopicPublisher(Node):
         )
 
         self.bool_publishers = {
-            "/test_mode": self.create_publisher(Bool, "/test_mode", 10),
-            "/manual_mode": self.create_publisher(Bool, "/manual_mode", 10),
-            "/shoot_motor_state": self.create_publisher(Bool, "/shoot_motor_state", 10),
+            "/ui/test_mode": self.create_publisher(Bool, "/ui/test_mode", 10),
+            "/ui/manual_mode": self.create_publisher(Bool, "/ui/manual_mode", 10),
+            "/ui/shoot_motor_state": self.create_publisher(Bool, "/ui/shoot_motor_state", 10),
             "/system/emergency/hazard_status": self.create_publisher(
                 Bool, "/system/emergency/hazard_status", self.hazard_qos
             ),
-            "/left/reloading": self.create_publisher(Bool, "/left/reloading", 10),
-            "/right/reloading": self.create_publisher(Bool, "/right/reloading", 10),
-            "/left/shoot_once": self.create_publisher(Bool, "/left/shoot_once", 10),
-            "/left/shoot_burst": self.create_publisher(Bool, "/left/shoot_burst", 10),
-            "/left/shoot_fullauto": self.create_publisher(Bool, "/left/shoot_fullauto", 10),
-            "/right/shoot_once": self.create_publisher(Bool, "/right/shoot_once", 10),
-            "/right/shoot_burst": self.create_publisher(Bool, "/right/shoot_burst", 10),
-            "/right/shoot_fullauto": self.create_publisher(Bool, "/right/shoot_fullauto", 10),
-            "/left/disk_hold_state": self.create_publisher(Bool, "/left/disk_hold_state", 10),
-            "/right/disk_hold_state": self.create_publisher(Bool, "/right/disk_hold_state", 10),
+            "/mecha/shooter/left/reloading": self.create_publisher(
+                Bool, "/mecha/shooter/left/reloading", 10
+            ),
+            "/mecha/shooter/right/reloading": self.create_publisher(
+                Bool, "/mecha/shooter/right/reloading", 10
+            ),
+            "/mecha/shooter/left/shoot_once": self.create_publisher(
+                Bool, "/mecha/shooter/left/shoot_once", 10
+            ),
+            "/mecha/shooter/left/shoot_burst": self.create_publisher(
+                Bool, "/mecha/shooter/left/shoot_burst", 10
+            ),
+            "/mecha/shooter/left/shoot_fullauto": self.create_publisher(
+                Bool, "/mecha/shooter/left/shoot_fullauto", 10
+            ),
+            "/mecha/shooter/right/shoot_once": self.create_publisher(
+                Bool, "/mecha/shooter/right/shoot_once", 10
+            ),
+            "/mecha/shooter/right/shoot_burst": self.create_publisher(
+                Bool, "/mecha/shooter/right/shoot_burst", 10
+            ),
+            "/mecha/shooter/right/shoot_fullauto": self.create_publisher(
+                Bool, "/mecha/shooter/right/shoot_fullauto", 10
+            ),
+            "/mecha/shooter/left/disk_hold_state": self.create_publisher(
+                Bool, "/mecha/shooter/left/disk_hold_state", 10
+            ),
+            "/mecha/shooter/right/disk_hold_state": self.create_publisher(
+                Bool, "/mecha/shooter/right/disk_hold_state", 10
+            ),
         }
         self.float_publishers = {
-            "/left/test_yaw_angle": self.create_publisher(Float32, "/left/test_yaw_angle", 10),
-            "/left/test_pitch_angle": self.create_publisher(Float32, "/left/test_pitch_angle", 10),
-            "/right/test_yaw_angle": self.create_publisher(Float32, "/right/test_yaw_angle", 10),
-            "/right/test_pitch_angle": self.create_publisher(
-                Float32, "/right/test_pitch_angle", 10
+            "/mecha/shooter/left/test_yaw_angle": self.create_publisher(
+                Float32, "/mecha/shooter/left/test_yaw_angle", 10
             ),
-            "/manual_pitch": self.create_publisher(Float32, "/manual_pitch", 10),
-            "/left/shoot_motor": self.create_publisher(Float32, "/left/shoot_motor", 10),
-            "/right/shoot_motor": self.create_publisher(Float32, "/right/shoot_motor", 10),
+            "/mecha/shooter/left/test_pitch_angle": self.create_publisher(
+                Float32, "/mecha/shooter/left/test_pitch_angle", 10
+            ),
+            "/mecha/shooter/right/test_yaw_angle": self.create_publisher(
+                Float32, "/mecha/shooter/right/test_yaw_angle", 10
+            ),
+            "/mecha/shooter/right/test_pitch_angle": self.create_publisher(
+                Float32, "/mecha/shooter/right/test_pitch_angle", 10
+            ),
+            "/ui/manual_pitch": self.create_publisher(Float32, "/ui/manual_pitch", 10),
+            "/mecha/shooter/left/shoot_motor": self.create_publisher(
+                Float32, "/mecha/shooter/left/shoot_motor", 10
+            ),
+            "/mecha/shooter/right/shoot_motor": self.create_publisher(
+                Float32, "/mecha/shooter/right/shoot_motor", 10
+            ),
         }
         self.int8_publishers = {
-            "/left/reloading_increment": self.create_publisher(
-                Int8, "/left/reloading_increment", 10
+            "/mecha/shooter/left/reloading_increment": self.create_publisher(
+                Int8, "/mecha/shooter/left/reloading_increment", 10
             ),
-            "/right/reloading_increment": self.create_publisher(
-                Int8, "/right/reloading_increment", 10
+            "/mecha/shooter/right/reloading_increment": self.create_publisher(
+                Int8, "/mecha/shooter/right/reloading_increment", 10
             ),
         }
         self.point_publishers = {
-            "/left/target_pose": self.create_publisher(
-                PointStamped, "/left/target_pose", 10
+            "/perception/enemy_detection/left/target_pose": self.create_publisher(
+                PointStamped, "/perception/enemy_detection/left/target_pose", 10
             ),
-            "/right/target_pose": self.create_publisher(
-                PointStamped, "/right/target_pose", 10
+            "/perception/enemy_detection/right/target_pose": self.create_publisher(
+                PointStamped, "/perception/enemy_detection/right/target_pose", 10
             ),
         }
-        self.can_tx_pub = self.create_publisher(CANArray, "/can/tx", 10)
-        self._add_monitor_subscription("/left/remaining_disk", Int8)
-        self._add_monitor_subscription("/right/remaining_disk", Int8)
-        self._add_monitor_subscription("/left/shoot_status", Bool)
-        self._add_monitor_subscription("/right/shoot_status", Bool)
-        self._add_monitor_subscription("/left/shoot_cmd", Int32)
-        self._add_monitor_subscription("/right/shoot_cmd", Int32)
-        self._add_monitor_subscription("/left/distance", Int32)
-        self._add_monitor_subscription("/right/distance", Int32)
+        self.can_tx_pub = self.create_publisher(CANArray, "/hardware/can/tx", 10)
+        self._add_monitor_subscription("/mecha/shooter/left/remaining_disk", Int8)
+        self._add_monitor_subscription("/mecha/shooter/right/remaining_disk", Int8)
+        self._add_monitor_subscription("/mecha/shooter/left/shoot_status", Bool)
+        self._add_monitor_subscription("/mecha/shooter/right/shoot_status", Bool)
+        self._add_monitor_subscription("/mecha/shooter/left/shoot_cmd", Int32)
+        self._add_monitor_subscription("/mecha/shooter/right/shoot_cmd", Int32)
+        self._add_monitor_subscription("/mecha/shooter/left/distance", Int32)
+        self._add_monitor_subscription("/mecha/shooter/right/distance", Int32)
         self.joint_states_sub = self.create_subscription(
             JointState, "/joint_states", self._joint_states_callback, self.monitor_qos
         )
         self.can_tx_monitor_sub = self.create_subscription(
-            CANArray, "/can/tx", self._can_tx_callback, self.monitor_qos
+            CANArray, "/hardware/can/tx", self._can_tx_callback, self.monitor_qos
         )
 
     def publish_bool(self, topic: str, value: bool) -> None:
@@ -114,7 +144,7 @@ class DebugTopicPublisher(Node):
         can.data.append(float(data))
         can_array.array.append(can)
         self.can_tx_pub.publish(can_array)
-        self.get_logger().info(f"publish /can/tx: id={can.id}, data=[{float(data):.4f}]")
+        self.get_logger().info(f"publish /hardware/can/tx: id={can.id}, data=[{float(data):.4f}]")
 
     def publish_point_stamped(self, topic: str, x: float, y: float, z: float = 0.0) -> None:
         msg = PointStamped()
@@ -210,14 +240,14 @@ class DebugGui:
 
         self.status_var = tk.StringVar(value="Ready")
         self.monitor_vars = {
-            "/left/remaining_disk": tk.StringVar(value="--"),
-            "/right/remaining_disk": tk.StringVar(value="--"),
-            "/left/shoot_status": tk.StringVar(value="--"),
-            "/right/shoot_status": tk.StringVar(value="--"),
-            "/left/shoot_cmd": tk.StringVar(value="--"),
-            "/right/shoot_cmd": tk.StringVar(value="--"),
-            "/left/distance": tk.StringVar(value="--"),
-            "/right/distance": tk.StringVar(value="--"),
+            "/mecha/shooter/left/remaining_disk": tk.StringVar(value="--"),
+            "/mecha/shooter/right/remaining_disk": tk.StringVar(value="--"),
+            "/mecha/shooter/left/shoot_status": tk.StringVar(value="--"),
+            "/mecha/shooter/right/shoot_status": tk.StringVar(value="--"),
+            "/mecha/shooter/left/shoot_cmd": tk.StringVar(value="--"),
+            "/mecha/shooter/right/shoot_cmd": tk.StringVar(value="--"),
+            "/mecha/shooter/left/distance": tk.StringVar(value="--"),
+            "/mecha/shooter/right/distance": tk.StringVar(value="--"),
         }
         self.joint_states_meta_var = tk.StringVar(value="name=0 pos=0 vel=0 eff=0")
         self.joint_state_pos_vars = {i: tk.StringVar(value="--") for i in range(17)}
@@ -245,7 +275,9 @@ class DebugGui:
         self.target_pad_coord_var = tk.StringVar(
             value="x=0.0, y=0.0 (center origin, +x right, +y up)"
         )
-        self.target_pad_topic_var = tk.StringVar(value="/left/target_pose")
+        self.target_pad_topic_var = tk.StringVar(
+            value="/perception/enemy_detection/left/target_pose"
+        )
         self.target_pad_display_w = 640
         self.target_pad_display_h = 360
         self.target_pad_canvas = None
@@ -369,9 +401,9 @@ class DebugGui:
 
         toggle_rows = [
             ("/system/emergency/hazard_status", self.hazard_status_var),
-            ("/test_mode", self.test_mode_var),
-            ("/manual_mode", self.manual_mode_var),
-            ("/shoot_motor_state", self.shoot_motor_state_var),
+            ("/ui/test_mode", self.test_mode_var),
+            ("/ui/manual_mode", self.manual_mode_var),
+            ("/ui/shoot_motor_state", self.shoot_motor_state_var),
         ]
         for row, (topic, var) in enumerate(toggle_rows, start=1):
             ttk.Label(mode_frame, text=topic).grid(
@@ -400,23 +432,23 @@ class DebugGui:
         ttk.Button(
             left_frame,
             text="Shoot Once",
-            command=lambda: self._pulse_bool("/left/shoot_once"),
+            command=lambda: self._pulse_bool("/mecha/shooter/left/shoot_once"),
         ).pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
             left_frame,
             text="Reload",
-            command=lambda: self._pulse_bool("/left/reloading"),
+            command=lambda: self._pulse_bool("/mecha/shooter/left/reloading"),
         ).pack(fill=tk.X)
 
         ttk.Button(
             right_frame,
             text="Shoot Once",
-            command=lambda: self._pulse_bool("/right/shoot_once"),
+            command=lambda: self._pulse_bool("/mecha/shooter/right/shoot_once"),
         ).pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
             right_frame,
             text="Reload",
-            command=lambda: self._pulse_bool("/right/reloading"),
+            command=lambda: self._pulse_bool("/mecha/shooter/right/reloading"),
         ).pack(fill=tk.X)
 
         manual_frame = ttk.LabelFrame(left_column, text="Manual Pitch", padding=10)
@@ -424,7 +456,7 @@ class DebugGui:
         self._build_angle_row(
             manual_frame,
             row=0,
-            topic="/manual_pitch",
+            topic="/ui/manual_pitch",
             label="manual_pitch",
             slider_var=self.manual_pitch_var,
             entry_var=self.manual_pitch_entry_var,
@@ -451,10 +483,25 @@ class DebugGui:
         ttk.Label(frame, text="Type").grid(row=0, column=3, sticky=tk.W)
 
         rows = [
-            ("remaining_disk", "/left/remaining_disk", "/right/remaining_disk", "Int8"),
-            ("shoot_status", "/left/shoot_status", "/right/shoot_status", "Bool"),
-            ("shoot_cmd", "/left/shoot_cmd", "/right/shoot_cmd", "Int32"),
-            ("distance", "/left/distance", "/right/distance", "Int32"),
+            (
+                "remaining_disk",
+                "/mecha/shooter/left/remaining_disk",
+                "/mecha/shooter/right/remaining_disk",
+                "Int8",
+            ),
+            (
+                "shoot_status",
+                "/mecha/shooter/left/shoot_status",
+                "/mecha/shooter/right/shoot_status",
+                "Bool",
+            ),
+            (
+                "shoot_cmd",
+                "/mecha/shooter/left/shoot_cmd",
+                "/mecha/shooter/right/shoot_cmd",
+                "Int32",
+            ),
+            ("distance", "/mecha/shooter/left/distance", "/mecha/shooter/right/distance", "Int32"),
         ]
         for row_index, (label, left_topic, right_topic, type_name) in enumerate(rows, start=1):
             ttk.Label(frame, text=label).grid(
@@ -492,7 +539,7 @@ class DebugGui:
 
         joint_wrap = ttk.LabelFrame(detail_panel, text="/joint_states", padding=8)
         joint_wrap.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 8))
-        can_tx_wrap = ttk.LabelFrame(detail_panel, text="/can/tx", padding=8)
+        can_tx_wrap = ttk.LabelFrame(detail_panel, text="/hardware/can/tx", padding=8)
         can_tx_wrap.grid(row=0, column=1, sticky=tk.NSEW)
 
         joint_panel = ttk.Frame(joint_wrap)
@@ -614,9 +661,9 @@ class DebugGui:
     def _update_target_pad_topic_label(self) -> None:
         side = self.target_pad_side_var.get()
         if side == "right":
-            self.target_pad_topic_var.set("/right/target_pose")
+            self.target_pad_topic_var.set("/perception/enemy_detection/right/target_pose")
             return
-        self.target_pad_topic_var.set("/left/target_pose")
+        self.target_pad_topic_var.set("/perception/enemy_detection/left/target_pose")
 
     def _on_target_pad_press_or_drag(self, event) -> None:
         if self.target_pad_canvas is None:
@@ -648,9 +695,9 @@ class DebugGui:
         self._draw_target_pad_marker(x_canvas, y_canvas)
 
         topic = (
-            "/right/target_pose"
+            "/perception/enemy_detection/right/target_pose"
             if self.target_pad_side_var.get() == "right"
-            else "/left/target_pose"
+            else "/perception/enemy_detection/left/target_pose"
         )
         self.target_pad_coord_var.set(
             f"x={logical_x:.1f}, y={logical_y:.1f} (center origin, +x right, +y up)"
@@ -724,7 +771,7 @@ class DebugGui:
         self._build_angle_row(
             left_frame,
             row=0,
-            topic="/left/test_yaw_angle",
+            topic="/mecha/shooter/left/test_yaw_angle",
             label="Yaw [rad]",
             slider_var=self.left_yaw_var,
             entry_var=self.left_yaw_entry_var,
@@ -736,7 +783,7 @@ class DebugGui:
         self._build_angle_row(
             left_frame,
             row=1,
-            topic="/left/test_pitch_angle",
+            topic="/mecha/shooter/left/test_pitch_angle",
             label="Pitch [rad]",
             slider_var=self.left_pitch_var,
             entry_var=self.left_pitch_entry_var,
@@ -749,9 +796,9 @@ class DebugGui:
             left_frame,
             text="Publish Left Angles",
             command=lambda: self._publish_angle_pair(
-                "/left/test_yaw_angle",
+                "/mecha/shooter/left/test_yaw_angle",
                 self.left_yaw_entry_var,
-                "/left/test_pitch_angle",
+                "/mecha/shooter/left/test_pitch_angle",
                 self.left_pitch_entry_var,
             ),
         ).grid(row=2, column=0, columnspan=5, sticky=tk.EW, padx=8, pady=(8, 8))
@@ -759,7 +806,7 @@ class DebugGui:
         self._build_angle_row(
             right_frame,
             row=0,
-            topic="/right/test_yaw_angle",
+            topic="/mecha/shooter/right/test_yaw_angle",
             label="Yaw [rad]",
             slider_var=self.right_yaw_var,
             entry_var=self.right_yaw_entry_var,
@@ -771,7 +818,7 @@ class DebugGui:
         self._build_angle_row(
             right_frame,
             row=1,
-            topic="/right/test_pitch_angle",
+            topic="/mecha/shooter/right/test_pitch_angle",
             label="Pitch [rad]",
             slider_var=self.right_pitch_var,
             entry_var=self.right_pitch_entry_var,
@@ -784,9 +831,9 @@ class DebugGui:
             right_frame,
             text="Publish Right Angles",
             command=lambda: self._publish_angle_pair(
-                "/right/test_yaw_angle",
+                "/mecha/shooter/right/test_yaw_angle",
                 self.right_yaw_entry_var,
-                "/right/test_pitch_angle",
+                "/mecha/shooter/right/test_pitch_angle",
                 self.right_pitch_entry_var,
             ),
         ).grid(row=2, column=0, columnspan=5, sticky=tk.EW, padx=8, pady=(8, 8))
@@ -799,7 +846,9 @@ class DebugGui:
         frame = ttk.LabelFrame(parent, text="CAN TX (Single CAN in CANArray)", padding=10)
         frame.pack(fill=tk.X, pady=(0, 10))
 
-        ttk.Label(frame, text="/can/tx").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+        ttk.Label(frame, text="/hardware/can/tx").grid(
+            row=0, column=0, sticky=tk.W, padx=(0, 8), pady=4
+        )
         ttk.Label(frame, text="id").grid(row=0, column=1, sticky=tk.E, padx=(0, 4), pady=4)
         ttk.Entry(frame, textvariable=self.can_tx_id_entry_var, width=8).grid(
             row=0, column=2, sticky=tk.W, padx=(0, 8), pady=4
@@ -893,10 +942,10 @@ class DebugGui:
         frame.pack(fill=tk.X, pady=(0, 10))
 
         rows = [
-            ("/test_mode", self.test_mode_var, "bool"),
-            ("/manual_mode", self.manual_mode_var, "bool"),
-            ("/left/disk_hold_state", self.left_disk_hold_state_var, "bool"),
-            ("/right/disk_hold_state", self.right_disk_hold_state_var, "bool"),
+            ("/ui/test_mode", self.test_mode_var, "bool"),
+            ("/ui/manual_mode", self.manual_mode_var, "bool"),
+            ("/mecha/shooter/left/disk_hold_state", self.left_disk_hold_state_var, "bool"),
+            ("/mecha/shooter/right/disk_hold_state", self.right_disk_hold_state_var, "bool"),
             ("/system/emergency/hazard_status", self.hazard_status_var, "bool"),
         ]
         for row, (topic, var, value_kind) in enumerate(rows):
@@ -927,8 +976,8 @@ class DebugGui:
         )
 
         int8_rows = [
-            ("/left/reloading_increment", self.left_reloading_entry_var),
-            ("/right/reloading_increment", self.right_reloading_entry_var),
+            ("/mecha/shooter/left/reloading_increment", self.left_reloading_entry_var),
+            ("/mecha/shooter/right/reloading_increment", self.right_reloading_entry_var),
         ]
         for idx, (topic, entry_var) in enumerate(int8_rows, start=1):
             row = reloading_row_base + idx
@@ -964,20 +1013,20 @@ class DebugGui:
 
         self._build_shooter_side(
             left_frame,
-            once_topic="/left/shoot_once",
-            burst_topic="/left/shoot_burst",
-            fullauto_topic="/left/shoot_fullauto",
-            shoot_motor_topic="/left/shoot_motor",
+            once_topic="/mecha/shooter/left/shoot_once",
+            burst_topic="/mecha/shooter/left/shoot_burst",
+            fullauto_topic="/mecha/shooter/left/shoot_fullauto",
+            shoot_motor_topic="/mecha/shooter/left/shoot_motor",
             shoot_motor_slider_var=self.left_shoot_motor_var,
             shoot_motor_entry_var=self.left_shoot_motor_entry_var,
             fullauto_var=self.left_fullauto_var,
         )
         self._build_shooter_side(
             right_frame,
-            once_topic="/right/shoot_once",
-            burst_topic="/right/shoot_burst",
-            fullauto_topic="/right/shoot_fullauto",
-            shoot_motor_topic="/right/shoot_motor",
+            once_topic="/mecha/shooter/right/shoot_once",
+            burst_topic="/mecha/shooter/right/shoot_burst",
+            fullauto_topic="/mecha/shooter/right/shoot_fullauto",
+            shoot_motor_topic="/mecha/shooter/right/shoot_motor",
             shoot_motor_slider_var=self.right_shoot_motor_var,
             shoot_motor_entry_var=self.right_shoot_motor_entry_var,
             fullauto_var=self.right_fullauto_var,
@@ -1057,15 +1106,15 @@ class DebugGui:
             self._set_status(f"Invalid float for {topic}: {entry_var.get()!r}")
             return
         if topic in (
-            "/manual_pitch",
-            "/left/test_yaw_angle",
-            "/left/test_pitch_angle",
-            "/right/test_yaw_angle",
-            "/right/test_pitch_angle",
+            "/ui/manual_pitch",
+            "/mecha/shooter/left/test_yaw_angle",
+            "/mecha/shooter/left/test_pitch_angle",
+            "/mecha/shooter/right/test_yaw_angle",
+            "/mecha/shooter/right/test_pitch_angle",
         ):
             value = max(-1.0, min(1.0, value))
             entry_var.set(f"{value:.4f}")
-        if topic in ("/left/shoot_motor", "/right/shoot_motor"):
+        if topic in ("/mecha/shooter/left/shoot_motor", "/mecha/shooter/right/shoot_motor"):
             value = max(0.0, min(1.0, value))
             entry_var.set(f"{value:.4f}")
         self.node.publish_float(topic, value)
@@ -1115,10 +1164,10 @@ class DebugGui:
         except ValueError:
             self._set_status(f"Invalid float for {topic}: {entry_var.get()!r}")
             return
-        if topic in ("/manual_pitch",):
+        if topic in ("/ui/manual_pitch",):
             value = max(-1.0, min(1.0, value))
             entry_var.set(f"{value:.4f}")
-        if topic in ("/left/shoot_motor", "/right/shoot_motor"):
+        if topic in ("/mecha/shooter/left/shoot_motor", "/mecha/shooter/right/shoot_motor"):
             value = max(0.0, min(1.0, value))
             entry_var.set(f"{value:.4f}")
         slider_var.set(value)
@@ -1143,16 +1192,20 @@ class DebugGui:
         self._publish_bool(topic, checked)
 
     def _publish_all_states(self) -> None:
-        self._publish_bool("/test_mode", self.test_mode_var.get())
-        self._publish_bool("/manual_mode", self.manual_mode_var.get())
-        self.node.publish_bool("/left/disk_hold_state", self.left_disk_hold_state_var.get())
-        self.node.publish_bool("/right/disk_hold_state", self.right_disk_hold_state_var.get())
+        self._publish_bool("/ui/test_mode", self.test_mode_var.get())
+        self._publish_bool("/ui/manual_mode", self.manual_mode_var.get())
+        self.node.publish_bool(
+            "/mecha/shooter/left/disk_hold_state", self.left_disk_hold_state_var.get()
+        )
+        self.node.publish_bool(
+            "/mecha/shooter/right/disk_hold_state", self.right_disk_hold_state_var.get()
+        )
         self._publish_bool("/system/emergency/hazard_status", self.hazard_status_var.get())
         self._publish_int8_from_entry(
-            "/left/reloading_increment", self.left_reloading_entry_var
+            "/mecha/shooter/left/reloading_increment", self.left_reloading_entry_var
         )
         self._publish_int8_from_entry(
-            "/right/reloading_increment", self.right_reloading_entry_var
+            "/mecha/shooter/right/reloading_increment", self.right_reloading_entry_var
         )
 
     def _pulse_bool(self, topic: str) -> None:
@@ -1282,9 +1335,9 @@ def main() -> None:
     def on_close() -> None:
         try:
             if gui.left_fullauto_var.get():
-                node.publish_bool("/left/shoot_fullauto", False)
+                node.publish_bool("/mecha/shooter/left/shoot_fullauto", False)
             if gui.right_fullauto_var.get():
-                node.publish_bool("/right/shoot_fullauto", False)
+                node.publish_bool("/mecha/shooter/right/shoot_fullauto", False)
         except Exception:
             pass
         root.destroy()

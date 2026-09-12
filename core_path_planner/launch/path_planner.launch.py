@@ -1,5 +1,6 @@
 from launch import LaunchDescription
-from launch_ros.actions import Node
+from launch.actions import GroupAction
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def generate_launch_description():
@@ -8,6 +9,20 @@ def generate_launch_description():
         executable="path_planner_node",
         name="core_path_planner_node",
         output="screen",
+        parameters=[
+            {
+                "goal_topic": "/behavior/goal_pose",
+                "start_topic": "/localization/start_pose",
+                "path_topic": "planned_path",
+                "local_costmap_topic": "costmap/local",
+                "global_map_topic": "/map",
+            }
+        ],
     )
 
-    return LaunchDescription([path_planner_node])
+    return LaunchDescription([
+        GroupAction([
+            PushRosNamespace("planning"),
+            path_planner_node,
+        ]),
+    ])

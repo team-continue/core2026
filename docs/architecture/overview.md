@@ -8,20 +8,52 @@
 
 機体全体のノード構成とデータの流れです。ROS2上のノードを役割ごとの層に分け、マイコン（micro controller）以下のハードウェアと、操縦側（Maneuver）までを含めて示しています。
 
-| 層 | 含まれるもの |
-|----|-------------|
-| Sensing（LiDAR） | lidar → lidar_filter（Livox Mid-360の点群） |
-| Sensing（IMU） | DM-IMU-L1 → core_damiao_imu（`/imu`） |
-| Sensing（Camera） | camera_l, camera_r（左右砲塔）, camera_tps（TPS視点） |
-| Localization | fastlio_mapping, odom_bridge |
-| Perception（EnemyDetection） | target_detector, target_selector（left / right の2系統） |
-| Planning | costmap_build, path_planner, mppi, cmd_vel_smoother |
-| Behavior | enemy_detection_coordinator, waypoint_selector, attack_shoot_manager, behavior_system |
-| Mecha（Shooter） | shooter_cmd_gate, aim_bot / shooter_controller / magazine_manager（left / right） |
-| Control | body_controller, target_angle |
-| System | emergency_handler, diagnostic |
-| UI | gui_qt, hardware_ui_converter, status_display_gui, wireless_parser |
-| Hardware | hardware（EtherCAT経由でマイコンへ） |
+| 層 | 名前空間 | 含まれるもの |
+|----|---------|-------------|
+| Sensing（LiDAR） | `/sensing` | lidar → lidar_filter（Livox Mid-360の点群） |
+| Sensing（IMU） | `/sensing` | DM-IMU-L1 → core_damiao_imu（`/imu`）→ imu_filter_madgwick |
+| Sensing（Camera） | `/sensing/camera/{camera_left,camera_right,camera_tps}` | camera_l, camera_r（左右砲塔）, camera_tps（TPS視点） |
+| Localization | `/localization` | fastlio_mapping, odom_bridge, localization_node |
+| Map | `/map` | map_server |
+| Perception（EnemyDetection） | `/perception/enemy_detection/{left,right}` | target_detector, target_selector（left / right の2系統） |
+| Planning | `/planning` | costmap_build, path_planner, mppi, cmd_vel_smoother, path_follower |
+| Behavior | `/behavior` | enemy_detection_coordinator, waypoint_selector, attack_shoot_manager, behavior_system |
+| Mecha（Shooter） | `/mecha/shooter` +`/{left,right}` | shooter_cmd_gate, aim_bot / shooter_controller / magazine_manager（left / right） |
+| Control | `/control` | body_controller, target_angle |
+| System | `/system/emergency` | emergency_handler, diagnostic |
+| UI | `/ui` | gui_qt, hardware_ui_converter, status_display_gui, wireless_parser |
+| Hardware | `/hardware` | hardware（EtherCAT経由でマイコンへ） |
+
+## 名前空間
+
+図のグループはそのままROS2の名前空間として実装されています。名前空間は各パッケージのlaunchファイルが `PushRosNamespace` で与えるため、**単体で `ros2 run` した場合は名前空間が付きません**。
+
+```
+/sensing
+├── livox_lidar_publisher, damiao_imu_node, imu_filter_madgwick
+└── /sensing/camera/{camera_left,camera_right,camera_tps}/usb_cam
+/localization        localization_node（+ 無効化中の fastlio_mapping, odom_bridge）
+/map                 無効化中の map_server_node
+/perception/enemy_detection/{left,right}
+                     target_detector, target_selector
+/planning            costmap_build_node, core_path_planner_node, core_mppi_node,
+                     core_path_follower, cmd_vel_smoother_node
+/behavior            behavior_system, waypoint_selector,
+                     enemy_detection_coordinator, attack_shoot_manager
+/mecha/shooter       shooter_cmd_gate
+└── /mecha/shooter/{left,right}
+                     shooter_controller, magazine_manager, aim_bot
+/control             body_control_node, target_angle_node
+/system/emergency    emergency_handler, diagnostic
+/ui                  gui_qt_node, hardware_ui_converter_node,
+                     status_display_gui, wireless_parser_node
+/hardware            core_hardware
+```
+
+トピック名も原則としてこのツリーの配下に置かれます。トピックがどの名前空間に属するかの規則、および名前空間を付けない外部境界トピック（`/imu`, `/turret_camera_*`, `/livox/lidar`, `/joint_states` など）の一覧は[トピック・メッセージ一覧](topics.md#名前空間とトピック名の決まり)を参照してください。
+
+!!! note "パラメータYAMLのノード名キー"
+    名前空間付きで起動するノードのパラメータファイルは、完全修飾ノード名で一致判定されます。そのため各YAMLのトップレベルキーは `/**/<node_name>:`（任意の名前空間に一致）または `/perception/enemy_detection/left/target_detector:` のような完全修飾名になっています。
 
 !!! note "図は設計上の全体像です"
     この図はパイプライン全体が接続された状態を示しています。現在の `navigation.launch.py` では Planning 層と Localization 層の一部が起動しない状態であるため、実際に動く構成は次節「起動構成の現状」を参照してください。各層の詳細なトピック接続は本ページ後半の個別の図に記載しています。
@@ -42,23 +74,23 @@
 |---------------|---------------|
 | `core_launch/navigation.launch.py` | ros_tcp_endpoint（sim）/ livox_ros_driver2・damiao_imu_node（実機）/ 静的TF / body_controller / RViz2 / localization_node（オプション） |
 | `core_launch/state_publisher.launch.py` | robot_state_publisher, joint_state_publisher（URDF: `core2025_attacker.urdf`） |
-| `core_launch/imu_filter.launch.py` | imu_filter_madgwick（`imu` → `filtered_imu`） |
-| `core_body_controller/body_controller.launch.py` | damiao_imu_node（既定）、body_control_node, target_angle_node |
-| `core_damiao_imu/damiao_imu.launch.py` | damiao_imu_node |
-| `core_path_planner/path_planner.launch.py` | path_planner_node |
-| `core_mppi/mppi.launch.py` | core_mppi_node |
-| `core_path_follower/path_follower.launch.py` | core_path_follower_node |
-| `core_costmap_builder/costmap_build.launch.py` | costmap_build_node（+ デバッグ用静的TF） |
-| `core_behavior_system/behavior_system.launch.py` | behavior_system, waypoint_selector, enemy_detection_coordinator, attack_shoot_manager |
-| `core_camera/camera.launch.py` | usb_cam × 3（left / right / tps） |
-| `core_enemy_detection/detection.launch.py` | target_detector, target_selector（left / right の2組） |
-| `core_shooter/shooter.launch.py` | shooter_cmd_gate, shooter_controller / magazine_manager / aim_bot（left・right 各1） |
+| `core_launch/imu_filter.launch.py` | imu_filter_madgwick（`/imu` → `/sensing/filtered_imu`）→ `/sensing` |
+| `core_body_controller/body_controller.launch.py` | damiao_imu_node（既定、`/sensing`）、body_control_node, target_angle_node（`/control`） |
+| `core_damiao_imu/damiao_imu.launch.py` | damiao_imu_node（`/sensing`） |
+| `core_path_planner/path_planner.launch.py` | path_planner_node（`/planning`） |
+| `core_mppi/mppi.launch.py` | core_mppi_node（`/planning`） |
+| `core_path_follower/path_follower.launch.py` | core_path_follower_node（`/planning`） |
+| `core_costmap_builder/costmap_build.launch.py` | costmap_build_node（`/planning`）+ デバッグ用静的TF |
+| `core_behavior_system/behavior_system.launch.py` | attack_shoot_manager（`/behavior`）のみ |
+| `core_camera/camera.launch.py` | usb_cam × 3（`/sensing/camera/camera_{left,right,tps}`） |
+| `core_enemy_detection/detection.launch.py` | target_detector, target_selector（`/perception/enemy_detection/{left,right}`） |
+| `core_shooter/shooter.launch.py` | shooter_cmd_gate（`/mecha/shooter`）, shooter_controller / magazine_manager / aim_bot（`/mecha/shooter/{left,right}`） |
 | `core_mode/mode.launch.py` | emergency_handler, diagnostic（`/system/emergency` 名前空間） |
-| `core_hardware/core_hardware.launch.py` | core_hardware |
-| `core_ros_player_controller/wireless_parser_node.launch.py` | wireless_parser_node |
-| `core_localization/localization.launch.py` | localization_node（単体テスト用） |
-| `core_qt_gui/hud.launch.py` | gui_qt, hardware_ui_converter_node |
-| `core_status_gui/status_display_gui.launch.py` | status_display_gui |
+| `core_hardware/core_hardware.launch.py` | core_hardware（`/hardware`） |
+| `core_ros_player_controller/wireless_parser_node.launch.py` | wireless_parser_node（`/ui`） |
+| `core_localization/localization.launch.py` | localization_node（`/localization`、単体テスト用） |
+| `core_qt_gui/hud.launch.py` | gui_qt, hardware_ui_converter_node（`/ui`） |
+| `core_status_gui/status_display_gui.launch.py` | status_display_gui（`/ui`） |
 
 ## ナビゲーションパイプライン
 
@@ -110,28 +142,28 @@ graph TB
     LiDAR -->|/livox/lidar| CostmapBuilder
     DMIMU -->|/imu| TargetAngle
 
-    WaypointSelector -->|/selected_pose| BehaviorSystem
-    BehaviorSystem -->|/goal_pose| PathPlanner
+    WaypointSelector -->|"/behavior/waypoint_selector/goal_pose"| BehaviorSystem
+    BehaviorSystem -->|/behavior/goal_pose| PathPlanner
 
-    OdomBridge -->|/start_pose| PathPlanner
-    OdomBridge -->|/odom| MPPI
-    OdomBridge -->|/odom| PathFollower
+    OdomBridge -->|/localization/start_pose| PathPlanner
+    OdomBridge -->|/localization/odom| MPPI
+    OdomBridge -->|/localization/odom| PathFollower
     OdomBridge -->|TF| RViz
     MapServer -->|/map| PathPlanner
-    MapServer -->|/costmap/global| MPPI
+    MapServer -->|/map/costmap/global| MPPI
 
-    PathPlanner -->|/planned_path| MPPI
-    PathPlanner -->|/planned_path| PathFollower
-    CostmapBuilder -->|/costmap/local| MPPI
+    PathPlanner -->|/planning/planned_path| MPPI
+    PathPlanner -->|/planning/planned_path| PathFollower
+    CostmapBuilder -->|/planning/costmap/local| MPPI
 
-    MPPI -->|/cmd_vel_raw| Smoother
-    Smoother -->|/cmd_vel| BodyController
-    PathFollower -->|/cmd_vel| BodyController
-    MPPI -->|/goal_reached| BehaviorSystem
-    PathFollower -->|/goal_reached| BehaviorSystem
-    BodyController -->|/body_omega| TargetAngle
-    BodyController -->|/can/tx| Hardware
-    TargetAngle -->|"/can/tx（ID=4）"| Hardware
+    MPPI -->|/planning/cmd_vel_raw| Smoother
+    Smoother -->|/control/cmd_vel| BodyController
+    PathFollower -->|/control/cmd_vel| BodyController
+    MPPI -->|/behavior/goal_reached| BehaviorSystem
+    PathFollower -->|/behavior/goal_reached| BehaviorSystem
+    BodyController -->|/control/body_omega| TargetAngle
+    BodyController -->|/hardware/can/tx| Hardware
+    TargetAngle -->|"/hardware/can/tx（ID=4）"| Hardware
 
     subgraph Localization["局在化（実機オプション）"]
         PCDMap["PCD地図"] --> LocalizationNode["localization_node"]
@@ -157,7 +189,7 @@ graph TB
 ```
 
 !!! note "経路追従ノードの使い分け"
-    `core_mppi_node` と `core_path_follower_node` はどちらも `/planned_path` と `/odom` を購読する**排他的な選択肢**で、同時には起動しません。速度指令の出力先が異なり `cmd_vel_smoother_node` を経由するかどうかが変わるため、切り替える際は[トピック・メッセージ一覧](topics.md#ナビゲーションパイプライン)で経路を確認してください。
+    `core_mppi_node` と `core_path_follower_node` はどちらも `/planning/planned_path` と `/localization/odom` を購読する**排他的な選択肢**で、同時には起動しません。速度指令の出力先が異なり `cmd_vel_smoother_node` を経由するかどうかが変わるため、切り替える際は[トピック・メッセージ一覧](topics.md#ナビゲーションパイプライン)で経路を確認してください。
 
 ## 敵検出・射撃パイプライン
 
@@ -170,11 +202,11 @@ graph LR
         CamRight["camera_right"]
     end
 
-    subgraph DetectLeft["left 名前空間"]
+    subgraph DetectLeft["/perception/enemy_detection/left"]
         DetL["target_detector"] -->|damage_panels_infomation| SelL["target_selector"]
     end
 
-    subgraph DetectRight["right 名前空間"]
+    subgraph DetectRight["/perception/enemy_detection/right"]
         DetR["target_detector"] -->|damage_panels_infomation| SelR["target_selector"]
     end
 
@@ -182,13 +214,13 @@ graph LR
     ShootManager["attack_shoot_manager"]
     Gate["shooter_cmd_gate"]
 
-    subgraph ShooterLeft["left 名前空間"]
+    subgraph ShooterLeft["/mecha/shooter/left"]
         AimL["aim_bot"]
         CtrlL["shooter_controller"]
         MagL["magazine_manager"]
     end
 
-    subgraph ShooterRight["right 名前空間"]
+    subgraph ShooterRight["/mecha/shooter/right"]
         AimR["aim_bot"]
         CtrlR["shooter_controller"]
         MagR["magazine_manager"]
@@ -199,26 +231,26 @@ graph LR
     CamLeft -->|/turret_camera_left/color/image| DetL
     CamRight -->|/turret_camera_right/color/image| DetR
 
-    SelL -->|/left/target_pose| AimL
-    SelR -->|/right/target_pose| AimR
-    SelL -->|/left/target_pose| Coordinator
-    SelR -->|/right/target_pose| Coordinator
+    SelL -->|/perception/enemy_detection/left/target_pose| AimL
+    SelR -->|/perception/enemy_detection/right/target_pose| AimR
+    SelL -->|/perception/enemy_detection/left/target_pose| Coordinator
+    SelR -->|/perception/enemy_detection/right/target_pose| Coordinator
 
-    Coordinator -->|/enemy_detected| ShootManager
-    ShootManager -->|"/{side}/shoot_fullauto"| Gate
+    Coordinator -->|/behavior/enemy_detected| ShootManager
+    ShootManager -->|"/mecha/shooter/{side}/shoot_fullauto"| Gate
 
-    Gate -->|"/{side}/shoot_cmd"| CtrlL
-    Gate -->|"/{side}/shoot_cmd"| CtrlR
-    Gate -->|"/{side}/manual_mode<br>/{side}/manual_pitch_angle"| AimL
-    Gate -->|"/{side}/manual_mode<br>/{side}/manual_pitch_angle"| AimR
+    Gate -->|"/mecha/shooter/{side}/shoot_cmd"| CtrlL
+    Gate -->|"/mecha/shooter/{side}/shoot_cmd"| CtrlR
+    Gate -->|"/mecha/shooter/{side}/manual_mode<br>/mecha/shooter/{side}/manual_pitch_angle"| AimL
+    Gate -->|"/mecha/shooter/{side}/manual_mode<br>/mecha/shooter/{side}/manual_pitch_angle"| AimR
 
     CtrlL <-->|"shoot_status / regrip_active"| MagL
     CtrlR <-->|"shoot_status / regrip_active"| MagR
 
-    AimL -->|/can/tx| Hardware
-    AimR -->|/can/tx| Hardware
-    CtrlL -->|/can/tx| Hardware
-    CtrlR -->|/can/tx| Hardware
+    AimL -->|/hardware/can/tx| Hardware
+    AimR -->|/hardware/can/tx| Hardware
+    CtrlL -->|/hardware/can/tx| Hardware
+    CtrlR -->|/hardware/can/tx| Hardware
 ```
 
 !!! info "図中のトピック名はリマップ後の名前です"
@@ -228,15 +260,15 @@ graph LR
 
 ```mermaid
 graph LR
-    subgraph SystemMode["/system/emergency 名前空間"]
+    subgraph SystemMode["/system/emergency"]
         Diagnostic["diagnostic"]
         EmergencyHandler["emergency_handler"]
         Diagnostic -->|"microcontroller_emergency<br>receiver_emergency"| EmergencyHandler
     end
 
-    HWSwitch["非常停止スイッチ"] -->|/emergency| EmergencyHandler
+    HWSwitch["非常停止スイッチ<br>(core_hardware)"] -->|"/hardware/hardware_emergency"| EmergencyHandler
     JointStates["/joint_states"] --> Diagnostic
-    Wireless["/wireless"] --> Diagnostic
+    Wireless["/hardware/wireless"] --> Diagnostic
 
     WirelessParser["wireless_parser_node"]
     BodyController["body_control_node"]
@@ -245,16 +277,16 @@ graph LR
     GUI["gui_qt / status_display_gui"]
 
     Wireless --> WirelessParser
-    WirelessParser -->|/cmd_vel| BodyController
+    WirelessParser -->|/control/cmd_vel| BodyController
     EmergencyHandler -->|"/system/emergency/hazard_status"| BodyController
     EmergencyHandler -->|"/system/emergency/hazard_status"| ShooterCtrl
     EmergencyHandler -->|"/system/emergency/hazard_status"| AimBot
     EmergencyHandler -->|"/system/emergency/hazard_label"| GUI
-    WirelessParser -.->|"/system/emergency/hazard_status"| BodyController
+    WirelessParser -.->|"/system/emergency/software_emergency"| EmergencyHandler
 ```
 
 !!! warning "hazard_status の発行元が2系統ある"
-    図の破線が示すとおり、`/system/emergency/hazard_status` は `emergency_handler` と `wireless_parser_node` の2箇所から発行されます。購読側の一覧と注意点は[トピック・メッセージ一覧](topics.md#システム管理)を参照してください。
+    図の破線が示すとおり、`emergency_handler` に加えて `wireless_parser_node` もハザード状態を発行します（launchで `/system/emergency/software_emergency` にリマップされ、`emergency_handler` 経由で `/system/emergency/hazard_status` になります）。購読側の一覧と注意点は[トピック・メッセージ一覧](topics.md#システム管理)を参照してください。
 
 ## ノード一覧
 
@@ -276,7 +308,7 @@ graph LR
 
 | ノード | パッケージ | 言語 | 役割 |
 |--------|-----------|------|------|
-| `behavior_system` | core_behavior_system | C++ | 状態遷移による行動管理、`/goal_pose` 発行 |
+| `behavior_system` | core_behavior_system | C++ | 状態遷移による行動管理、`/behavior/goal_pose` 発行 |
 | `waypoint_selector` | core_behavior_system | C++ | ウェイポイント選択・可視化 |
 | `enemy_detection_coordinator` | core_behavior_system | C++ | 左右砲塔の敵検出結果の統合 |
 | `attack_shoot_manager` | core_behavior_system | C++ | 自動射撃指令（`/{side}/shoot_fullauto`）の管理 |
@@ -296,12 +328,12 @@ graph LR
 
 | ノード | パッケージ | 言語 | 役割 |
 |--------|-----------|------|------|
-| `wireless_parser_node` | core_ros_player_controller | C++ | `/wireless` 7バイトを解析し、車体制御・射撃・非常停止・行動計画の各トピックへ展開 |
+| `wireless_parser_node` | core_ros_player_controller | C++ | `/hardware/wireless` 7バイトを解析し、車体制御・射撃・非常停止・行動計画の各トピックへ展開 |
 
 !!! note "`wireless_parser_node` は制御ノードではありません"
-    パッケージ名に controller とありますが制御則は持たず、操縦者入力（キーボード＋マウス）をトピックに変換するパーサです。出力先は車体制御（`/cmd_vel`, `/rotation`, `/ads`）、射撃（`/manual_mode`, `/manual_pitch`, `/shoot_motor`, `/right/shoot_fullauto`, `/reloading`）、非常停止（`/system/emergency/hazard_status`）、行動計画（`/auto_point_select`, `/selected_pose`）の4サブシステムに跨ります。
+    パッケージ名に controller とありますが制御則は持たず、操縦者入力（キーボード＋マウス）をトピックに変換するパーサです。出力先は車体制御（`/control/cmd_vel`, `/control/rotation`, `/ui/ads`）、射撃（`/ui/manual_mode`, `/ui/manual_pitch`, `/ui/shoot_motor_state`, `/mecha/shooter/{side}/shoot_fullauto`, `/ui/reloading`, `/ui/test_mode`）、非常停止（`/system/emergency/software_emergency`）の3サブシステムに跨ります。
 
-    `/wireless` の `values[3]` bit1（自動フラグ）で出力が切り替わり、自動モード時は `/selected_pose` と `/auto_point_select` のみ、手動モード時は残りを発行します。`/manual_mode` / `/test_mode` / `/system/emergency/hazard_status` はモードに関わらず常時発行されます。
+    7バイトパケットの `data[0]` が EStop / Roller / Reload / Shoot / ADS / LeftTurretAuto / RightTurretAuto のビットフラグ、`data[1]` `data[2]` がマウス移動量、`data[3]` が W / A / S / D と無限回転（bit4-5, 00=off / 01=R1 / 10=R2）です。パケットを受けるたびに全出力を発行しますが、`/ui/reloading` のみ Reload ビットの立ち上がりエッジで1回だけ発行します。`/ui/manual_mode` は `manual_mode_target_side` パラメータ（既定 `right`）で指定した側の TurretAuto ビットの否定、`/mecha/shooter/{side}/shoot_fullauto` も同じ側に振り分けられます。
 
 ### 敵検出・射撃
 
