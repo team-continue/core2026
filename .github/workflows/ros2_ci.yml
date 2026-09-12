@@ -49,10 +49,18 @@ jobs:
       - name: Install ament-clang-format
         run: apt-get install -y ros-${{ matrix.rosdistro }}-ament-clang-format clang-format
 
+      - name: Cache DepthAI SDK
+        uses: actions/cache@v4
+        with:
+          path: /ros2_ws/src/core2026/core_enemy_detection/third_party/depthai_install
+          key: depthai-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/core_enemy_detection/scripts/depthAI_install.sh') }}
+
+      - name: Install DepthAI
+        run: bash /ros2_ws/src/core2026/core_enemy_detection/scripts/depthAI_install.sh
+
       - name: Build tests
         run: |
           . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
-          bash /ros2_ws/src/core2026/core_enemy_detection/scripts/depthAI_install.sh &&
           cd /ros2_ws &&
           colcon build
 
