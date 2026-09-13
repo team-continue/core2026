@@ -26,7 +26,7 @@ flowchart LR
     Upper["Teensy 4.1 (upper)<br/>AX58100 EtherCATスレーブ<br/>各バスの制御"]
     CAN3(("CAN3<br/>1 Mbps"))
     CAN2(("CAN2<br/>1 Mbps"))
-    Damiao["Damiao × 4<br/>足回り"]
+    Damiao["Damiao DM-3519 × 4<br/>足回り"]
     RS06["RoboStride 06 × 1<br/>車体Yaw"]
     RS05["RoboStride 05 × 2<br/>砲台Yaw"]
     Bottom["Teensy 4.1 (bottom)<br/>競技装置I/F"]
@@ -58,7 +58,7 @@ flowchart LR
     style CAN2 fill:#e8f5e9,color:#333
 ```
 
-CAN3にはupper TeensyのCAN3コントローラ、Damiao 4台、RoboStride 06 1台、bottom Teensyが同じバスのノードとして接続されます。bottomはupperから独立したCAN3バスではありません。upperがモータ指令を送る一方、bottomへ50 ms周期で状態を問い合わせます。
+CAN3にはupper TeensyのCAN3コントローラ、Damiao DM-3519 4台、RoboStride 06 1台、bottom Teensyが同じバスのノードとして接続されます。bottomはupperから独立したCAN3バスではありません。upperがモータ指令を送る一方、bottomへ50 ms周期で状態を問い合わせます。
 
 CAN2にはupper TeensyとRoboStride 05 2台が接続されます。Feetechサーボ、無線受信機、競技装置はCANではなく、それぞれ専用のシリアル接続です。
 

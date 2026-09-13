@@ -7,12 +7,12 @@ upper TeensyはCAN2とCAN3の2系統を1 Mbpsで使用します。どちらもFl
 
 ## CAN3
 
-CAN3にはupper Teensy、Damiao 4台、RoboStride 06 1台、bottom Teensyが同一バス上に接続されます。
+CAN3にはupper Teensy、Damiao DM-3519 4台、RoboStride 06 1台、bottom Teensyが同一バス上に接続されます。
 
 | 項目 | 現在値 |
 |------|-------|
 | ボーレート | 1 Mbps |
-| Damiao台数 | 4 |
+| Damiao（DM-3519）台数 | 4 |
 | RoboStride台数 | 1 |
 | モータ送信間隔 | `CAN3_SEND_INTERVAL_US = 1000` µs |
 | bottom問い合わせ周期 | `BOTTOM_REQUEST_INTERVAL_MS = 50` ms |
@@ -27,10 +27,10 @@ CAN3モータは5台をラウンドロビンし、1 ms以上の間隔で1台ず�
 
 | 論理ID | デバイス | ファームウェアのID設定 | 用途 |
 |-------:|---------|-------------------------|------|
-| 0 | Damiao | `master_id=0x11`, `slave_id=0x01` | 足回りモータ0 |
-| 1 | Damiao | `master_id=0x12`, `slave_id=0x02` | 足回りモータ1 |
-| 2 | Damiao | `master_id=0x13`, `slave_id=0x03` | 足回りモータ2 |
-| 3 | Damiao | `master_id=0x14`, `slave_id=0x04` | 足回りモータ3 |
+| 0 | Damiao DM-3519 | `master_id=0x11`, `slave_id=0x01` | 足回りモータ0 |
+| 1 | Damiao DM-3519 | `master_id=0x12`, `slave_id=0x02` | 足回りモータ1 |
+| 2 | Damiao DM-3519 | `master_id=0x13`, `slave_id=0x03` | 足回りモータ2 |
+| 3 | Damiao DM-3519 | `master_id=0x14`, `slave_id=0x04` | 足回りモータ3 |
 | 4 | RoboStride 06 | `master_id=0x01`, `motor_id=0x01` | 車体無限回転Yaw |
 | — | bottom Teensy | 問い合わせ `0xff`、応答 `0x00`（標準ID） | 競技状態とLED |
 
@@ -84,15 +84,15 @@ CAN2は1台への送信後に返信を待ち、返信を受けたら次のモー
 
 | 論理ID | アクチュエータ | 物理接続 | デバイスID | 用途 |
 |-------:|--------------|---------|-----------|------|
-| 0–3 | Damiao × 4 | CAN3 | slave ID 1–4 | 足回りオムニホイール |
+| 0–3 | Damiao DM-3519 × 4 | CAN3 | slave ID 1–4 | 足回りオムニホイール |
 | 4 | RoboStride 06 | CAN3 | motor ID 1 | 車体無限回転Yaw |
 | 5 | RoboStride 05 | CAN2 | motor ID 1 | 左砲台Yaw |
 | 6 | RoboStride 05 | CAN2 | motor ID 2 | 右砲台Yaw |
-| 7 | Feetech STS | Serial7 | servo ID 1 | 右砲塔 Pitch |
+| 7 | Feetech STS | Serial7 | servo ID 1 | 左砲塔 Pitch |
 | 8 | Feetech STS | Serial7 | servo ID 2 | 右砲塔 装填 |
 | 9 | Feetech STS | Serial7 | servo ID 3 | 右砲塔 ディスク保持（右） |
 | 10 | Feetech STS | Serial7 | servo ID 4 | 右砲塔 ディスク保持（左） |
-| 11 | Feetech STS | Serial7 | servo ID 5 | 左砲塔 Pitch |
+| 11 | Feetech STS | Serial7 | servo ID 5 | 右砲塔 Pitch |
 | 12 | Feetech STS | Serial7 | servo ID 6 | 左砲塔 装填 |
 | 13 | Feetech STS | Serial7 | servo ID 7 | 左砲塔 ディスク保持（右） |
 | 14 | Feetech STS | Serial7 | servo ID 8 | 左砲塔 ディスク保持（左） |
