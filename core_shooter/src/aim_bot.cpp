@@ -21,6 +21,7 @@
 #include "core_shooter/can_command.hpp"
 #include "core_shooter/parameter_utils.hpp"
 #include "core_shooter/test_mode_gate.hpp"
+#include "core_shooter/turret_envelope.hpp"
 
 using namespace std::chrono_literals;
 
@@ -29,6 +30,8 @@ namespace
 constexpr double kDegToRad = M_PI / 180.0;
 
 using core_shooter::BallisticTable;
+using core_shooter::MotorLimits;
+using core_shooter::TurretEnvelope;
 using core_shooter::DirectionAngles;
 using core_shooter::Vector3;
 using core_shooter::isFinite;
@@ -160,57 +163,24 @@ public:
       *this, "startup_release_yaw_angle", 0.0);
     startup_release_pitch_angle_ = core_shooter::declareAndGet<double>(
       *this, "startup_release_pitch_angle", 0.0);
-    enable_zone_angle_limit_ = core_shooter::declareAndGet<bool>(
-      *this, "enable_zone_angle_limit", false);
-    zone_yaw_reversed_ = core_shooter::declareAndGet<bool>(*this, "zone.yaw_reversed", false);
-    zone_yaw_zone1_start_ = core_shooter::declareAndGet<double>(
-      *this, "zone.yaw_zone1_start", -3.14159265359);
-    zone_yaw_boundary_ = core_shooter::declareAndGet<double>(
-      *this, "zone.yaw_boundary", -1.57079632679);
-    zone_yaw_zone2_end_ = core_shooter::declareAndGet<double>(
-      *this, "zone.yaw_zone2_end", 1.57079632679);
-    zone_yaw_zone3_end_ = core_shooter::declareAndGet<double>(
-      *this, "zone.yaw_zone3_end", 3.14159265359);
-    zone_pitch_lower_limit_ = core_shooter::declareAndGet<double>(
-      *this, "zone.pitch_lower_limit", -3.14159265359);
-    zone_pitch_zone2_upper_ = core_shooter::declareAndGet<double>(
-      *this, "zone.pitch_zone2_upper", 0.52359877559);
-    zone_pitch_zone2_lower_ = core_shooter::declareAndGet<double>(
-      *this, "zone.pitch_zone2_lower", -3.14159265359);
-    zone_pitch_zone2_upper_limit_ = core_shooter::declareAndGet<double>(
-      *this, "zone.pitch_zone2_upper_limit", 3.14159265359);
-    zone_pitch_zone3_lower_ = core_shooter::declareAndGet<double>(
-      *this, "zone.pitch_zone3_lower", -0.52359877559);
-    zone_pitch_zone3_upper_ = core_shooter::declareAndGet<double>(
-      *this, "zone.pitch_zone3_upper", 3.14159265359);
-    zone_pitch_zone1_upper_ = core_shooter::declareAndGet<double>(
-      *this, "zone.pitch_zone1_upper", 3.14159265359);
-    control_hysteresis_rad_ = core_shooter::declareAndGet<double>(
-      *this, "control.hysteresis_rad", 0.017453292519943295);
-    control_pitch_correct_tolerance_ = core_shooter::declareAndGet<double>(
-      *this, "control.pitch_correct_tolerance", 0.01);
+    // 既定は無効。config で包絡線と合わせて有効化する。
+    // 単体起動やテストで包絡線なしに動かせるようにしておく。
+    enable_angle_limit_ = core_shooter::declareAndGet<bool>(
+      *this, "enable_angle_limit", false);
+    const std::string envelope_path = core_shooter::declareAndGet<std::string>(
+      *this, "envelope.table_path", "");
+    const double envelope_pitch_margin = core_shooter::declareAndGet<double>(
+      *this, "envelope.pitch_margin_rad", 0.01);
+
+    MotorLimits motor_limits;
+    motor_limits.yaw_min = yaw_min_angle_;
+    motor_limits.yaw_max = yaw_max_angle_;
+    motor_limits.pitch_min = pitch_min_angle_;
+    motor_limits.pitch_max = pitch_max_angle_;
+    envelope_.setMotorLimits(motor_limits);
+    envelope_.setPitchMargin(envelope_pitch_margin);
+
     test_mode_.setDefault(enable_test_mode_);
-    const auto & parameter_overrides =
-      this->get_node_parameters_interface()->get_parameter_overrides();
-    zone_pitch_zone1_upper_overridden_ =
-      parameter_overrides.find("zone.pitch_zone1_upper") != parameter_overrides.end();
-    zone_pitch_zone2_upper_overridden_ =
-      parameter_overrides.find("zone.pitch_zone2_upper") != parameter_overrides.end();
-    zone_pitch_zoneab_upper_ = zone_pitch_zone1_upper_overridden_ ?
-      zone_pitch_zone1_upper_ :
-      zone_pitch_zone2_upper_;
-    if (zone_pitch_zone1_upper_overridden_ && zone_pitch_zone2_upper_overridden_ &&
-      std::fabs(zone_pitch_zone1_upper_ - zone_pitch_zone2_upper_) > 1e-9)
-    {
-      RCLCPP_WARN(
-        get_logger(),
-        "Both zone.pitch_zone1_upper=%f and zone.pitch_zone2_upper=%f are set. Using zone.pitch_zone1_upper as the ZoneAB upper limit.",
-        zone_pitch_zone1_upper_, zone_pitch_zone2_upper_);
-    } else if (!zone_pitch_zone1_upper_overridden_ && zone_pitch_zone2_upper_overridden_) {
-      RCLCPP_WARN(
-        get_logger(),
-        "zone.pitch_zone2_upper is treated as the ZoneAB upper limit for compatibility. Prefer zone.pitch_zone1_upper.");
-    }
 
     const auto parsed_target_input_mode = parseTargetInputMode(target_input_mode_name);
     if (!parsed_target_input_mode) {
@@ -353,18 +323,30 @@ public:
     }
 
     {
-      std::string zone_config_error;
-      if (!validateZoneConfig(
-          zone_yaw_zone1_start_, zone_yaw_boundary_, zone_yaw_zone2_end_, zone_yaw_zone3_end_,
-          zone_pitch_lower_limit_, zone_pitch_zoneab_upper_, zone_pitch_zone2_lower_,
-          zone_pitch_zone2_upper_limit_, zone_pitch_zone3_lower_, zone_pitch_zone3_upper_,
-          control_hysteresis_rad_, zone_config_error))
-      {
+      if (envelope_pitch_margin < 0.0) {
         RCLCPP_FATAL(
           get_logger(),
-          "Invalid zone angle limit parameters: %s",
-          zone_config_error.c_str());
-        throw std::runtime_error("invalid aimbot zone angle limit parameters");
+          "Invalid envelope.pitch_margin_rad=%f (must be >= 0)", envelope_pitch_margin);
+        throw std::runtime_error("invalid aimbot envelope pitch margin");
+      }
+      if (enable_angle_limit_ && envelope_path.empty()) {
+        RCLCPP_FATAL(
+          get_logger(),
+          "enable_angle_limit is true but envelope.table_path is empty");
+        throw std::runtime_error("missing aimbot envelope table path");
+      }
+      if (!envelope_path.empty()) {
+        std::string envelope_error;
+        if (!TurretEnvelope::load(envelope_path, envelope_, envelope_error)) {
+          RCLCPP_FATAL(get_logger(), "Invalid turret envelope: %s", envelope_error.c_str());
+          throw std::runtime_error("invalid aimbot turret envelope");
+        }
+        envelope_.setMotorLimits(motor_limits);
+        envelope_.setPitchMargin(envelope_pitch_margin);
+        RCLCPP_INFO(
+          get_logger(),
+          "Loaded turret envelope from '%s': %zu points covering yaw %.3f..%.3frad",
+          envelope_path.c_str(), envelope_.size(), envelope_.yawMin(), envelope_.yawMax());
       }
     }
 
@@ -478,18 +460,35 @@ private:
     Test,
     AutoTrack
   };
-  enum class YawZone
+
+  /// ZoneAB のピッチ上限を決める。
+  ///
+  /// 旧名の zone.pitch_zone2_upper も互換のために受け付けるが、
+  /// 新しい zone.pitch_zone1_upper が明示されていればそちらを優先する。
+  double resolveZoneAbUpper()
   {
-    OutOfRange,
-    ZoneAB,
-    ZoneBC,
-    ZoneCD
-  };
-  enum class PitchCorrectionMode
-  {
-    None,
-    ToTargetPitch
-  };
+    const double zone1_upper = core_shooter::declareAndGet<double>(
+      *this, "zone.pitch_zone1_upper", 3.14159265359);
+    const double zone2_upper = core_shooter::declareAndGet<double>(
+      *this, "zone.pitch_zone2_upper", 0.52359877559);
+
+    const auto & overrides =
+      this->get_node_parameters_interface()->get_parameter_overrides();
+    const bool zone1_set = overrides.find("zone.pitch_zone1_upper") != overrides.end();
+    const bool zone2_set = overrides.find("zone.pitch_zone2_upper") != overrides.end();
+
+    if (zone1_set && zone2_set && std::fabs(zone1_upper - zone2_upper) > 1e-9) {
+      RCLCPP_WARN(
+        get_logger(),
+        "Both zone.pitch_zone1_upper=%f and zone.pitch_zone2_upper=%f are set. Using zone.pitch_zone1_upper as the ZoneAB upper limit.",
+        zone1_upper, zone2_upper);
+    } else if (!zone1_set && zone2_set) {
+      RCLCPP_WARN(
+        get_logger(),
+        "zone.pitch_zone2_upper is treated as the ZoneAB upper limit for compatibility. Prefer zone.pitch_zone1_upper.");
+    }
+    return zone1_set ? zone1_upper : zone2_upper;
+  }
 
   // ===== コールバック =====
   void hazardCallback(const std_msgs::msg::Bool::SharedPtr msg)
@@ -1072,215 +1071,45 @@ private:
     return std::clamp(angle, pitch_min_angle_, pitch_max_angle_);
   }
 
-  double toZoneYawFrame(double raw_yaw) const
+  /// 包絡線の定義域とモータ可動範囲の両方でヨーをクランプする。
+  double clampEnvelopeYaw(double raw_yaw) const
   {
-    return zone_yaw_reversed_ ? -raw_yaw : raw_yaw;
+    if (envelope_.empty()) {
+      return clampYaw(raw_yaw);
+    }
+    return clampYaw(std::clamp(raw_yaw, envelope_.yawMin(), envelope_.yawMax()));
   }
 
-  double fromZoneYawFrame(double zone_yaw) const
+  /// 砲塔の可動包絡線で指令角を制限する。
+  ///
+  /// 実測角が無い間は指令角で代用する。制限器は状態を持たないので、
+  /// 同じ入力なら常に同じ結果になる。
+  std::pair<double, double> applyAngleLimit(double yaw, double pitch)
   {
-    return zone_yaw_reversed_ ? -zone_yaw : zone_yaw;
-  }
-
-  double clampZoneYaw(double raw_yaw) const
-  {
-    const double zone_yaw =
-      std::clamp(toZoneYawFrame(clampYaw(raw_yaw)), zone_yaw_zone1_start_, zone_yaw_zone3_end_);
-    return clampYaw(fromZoneYawFrame(zone_yaw));
-  }
-
-  bool validateZoneConfig(
-    double yaw_zone1_start, double yaw_boundary, double yaw_zone2_end, double yaw_zone3_end,
-    double pitch_lower_limit, double pitch_zoneab_upper, double pitch_zonebc_lower,
-    double pitch_zonebc_upper,
-    double pitch_zonecd_lower, double pitch_zonecd_upper,
-    double hysteresis_rad, std::string & reason) const
-  {
-    if (!(yaw_zone1_start < yaw_boundary &&
-      yaw_boundary < yaw_zone2_end &&
-      yaw_zone2_end < yaw_zone3_end))
-    {
-      reason =
-        "zone.yaw_zone1_start < zone.yaw_boundary < zone.yaw_zone2_end < zone.yaw_zone3_end is required";
-      return false;
-    }
-    const bool pitch_ab_valid = pitch_lower_limit != pitch_zoneab_upper;
-    const bool pitch_zone2_pair_valid = pitch_zonebc_lower != pitch_zonebc_upper;
-    const bool pitch_zone3_pair_valid = pitch_zonecd_lower != pitch_zonecd_upper;
-    if (!pitch_ab_valid || !pitch_zone2_pair_valid || !pitch_zone3_pair_valid) {
-      reason = "zone pitch ranges are invalid";
-      return false;
-    }
-    if (hysteresis_rad < 0.0) {
-      reason = "control.hysteresis_rad must be >= 0";
-      return false;
-    }
-    if (control_pitch_correct_tolerance_ < 0.0) {
-      reason = "control.pitch_correct_tolerance must be >= 0";
-      return false;
-    }
-    const double zone1_width = yaw_boundary - yaw_zone1_start;
-    const double zone2_width = yaw_zone2_end - yaw_boundary;
-    const double zone3_width = yaw_zone3_end - yaw_zone2_end;
-    if (hysteresis_rad >= zone1_width || hysteresis_rad >= zone2_width ||
-      hysteresis_rad >= zone3_width)
-    {
-      reason = "control.hysteresis_rad is too large for configured yaw zones";
-      return false;
+    if (!enable_angle_limit_ || envelope_.empty()) {
+      return {clampYaw(yaw), clampPitch(pitch)};
     }
 
-    const auto has_pitch_overlap = [this](double a, double b) {
-        const double interval_min = std::min(a, b);
-        const double interval_max = std::max(a, b);
-        const double effective_min = std::max(pitch_min_angle_, interval_min);
-        const double effective_max = std::min(pitch_max_angle_, interval_max);
-        return effective_min <= effective_max;
-      };
-    if (!has_pitch_overlap(pitch_lower_limit, pitch_zoneab_upper) ||
-      !has_pitch_overlap(pitch_zonebc_lower, pitch_zonebc_upper) ||
-      !has_pitch_overlap(pitch_zonecd_lower, pitch_zonecd_upper))
-    {
-      reason = "zone pitch limits conflict with pitch_min_angle/pitch_max_angle";
-      return false;
-    }
-    return true;
-  }
+    const double measured_yaw = has_joint_state_ ?
+      yaw_angle_ :
+      (has_command_target_ ? command_yaw_angle_ : yaw);
+    const double measured_pitch = has_joint_state_ ?
+      pitch_angle_ :
+      (has_command_target_ ? command_pitch_angle_ : pitch);
 
-  YawZone classifyYawZone(double yaw)
-  {
-    if (yaw < zone_yaw_zone1_start_ || yaw > zone_yaw_zone3_end_) {
-      return YawZone::OutOfRange;
-    }
-
-    const double hysteresis_rad = control_hysteresis_rad_;
-    const YawZone reference_zone = has_last_yaw_zone_ ?
-      last_yaw_zone_ :
-      (yaw <= zone_yaw_boundary_ ? YawZone::ZoneAB :
-      (yaw <= zone_yaw_zone2_end_ ? YawZone::ZoneBC : YawZone::ZoneCD));
-
-    if (reference_zone == YawZone::ZoneAB) {
-      return yaw > (zone_yaw_boundary_ + hysteresis_rad) ? YawZone::ZoneBC : YawZone::ZoneAB;
-    }
-    if (reference_zone == YawZone::ZoneBC) {
-      if (yaw < (zone_yaw_boundary_ - hysteresis_rad)) {
-        return YawZone::ZoneAB;
-      }
-      if (yaw > (zone_yaw_zone2_end_ + hysteresis_rad)) {
-        return YawZone::ZoneCD;
-      }
-      return YawZone::ZoneBC;
-    }
-    return yaw < (zone_yaw_zone2_end_ - hysteresis_rad) ? YawZone::ZoneBC : YawZone::ZoneCD;
-  }
-
-  std::pair<double, double> getZonePitchLimits(YawZone zone) const
-  {
-    if (zone == YawZone::ZoneAB) {
-      return {zone_pitch_lower_limit_, zone_pitch_zoneab_upper_};
-    }
-    if (zone == YawZone::ZoneCD) {
-      return {zone_pitch_zone3_lower_, zone_pitch_zone3_upper_};
-    }
-    return {zone_pitch_zone2_lower_, zone_pitch_zone2_upper_limit_};
-  }
-
-  std::pair<double, double> applyZoneAngleLimit(double yaw, double pitch)
-  {
-    double limited_yaw = clampYaw(yaw);
-    double limited_pitch = clampPitch(pitch);
-
-    if (!enable_zone_angle_limit_) {
-      pitch_correction_mode_ = PitchCorrectionMode::None;
-      correction_target_zone_ = YawZone::OutOfRange;
-      return {limited_yaw, limited_pitch};
-    }
-
-    limited_yaw = clampZoneYaw(limited_yaw);
-    const double current_yaw = has_command_target_ ?
-      clampZoneYaw(command_yaw_angle_) :
-      limited_yaw;
-    const double current_zone_yaw = toZoneYawFrame(current_yaw);
-    const double target_zone_yaw = toZoneYawFrame(limited_yaw);
-    const double current_pitch = has_command_target_ ? command_pitch_angle_ : limited_pitch;
-    const double feedback_pitch = has_joint_state_ ? pitch_angle_ : current_pitch;
-    const YawZone current_zone = classifyYawZone(current_zone_yaw);
-    const YawZone target_zone = classifyYawZone(target_zone_yaw);
-    if (current_zone == YawZone::OutOfRange || target_zone == YawZone::OutOfRange) {
-      pitch_correction_mode_ = PitchCorrectionMode::None;
-      correction_target_zone_ = YawZone::OutOfRange;
-      return {limited_yaw, limited_pitch};
-    }
-
-    const auto [target_pitch_lower_raw, target_pitch_upper_raw] = getZonePitchLimits(target_zone);
-    const double target_pitch_min = std::min(target_pitch_lower_raw, target_pitch_upper_raw);
-    const double target_pitch_max = std::max(target_pitch_lower_raw, target_pitch_upper_raw);
-    if (pitch_correction_mode_ != PitchCorrectionMode::None &&
-      correction_target_zone_ != target_zone)
-    {
-      pitch_correction_mode_ = PitchCorrectionMode::None;
-      correction_target_zone_ = YawZone::OutOfRange;
-    }
-    if (pitch_correction_mode_ == PitchCorrectionMode::None && target_zone != current_zone) {
-      if (feedback_pitch < (target_pitch_min - control_pitch_correct_tolerance_)) {
-        pitch_correction_mode_ = PitchCorrectionMode::ToTargetPitch;
-        correction_hold_yaw_ = current_yaw;
-        correction_target_zone_ = target_zone;
-        correction_target_pitch_ = target_pitch_min;
-      } else if (feedback_pitch > (target_pitch_max + control_pitch_correct_tolerance_)) {
-        pitch_correction_mode_ = PitchCorrectionMode::ToTargetPitch;
-        correction_hold_yaw_ = current_yaw;
-        correction_target_zone_ = target_zone;
-        correction_target_pitch_ = target_pitch_max;
-      }
-    }
-    if (pitch_correction_mode_ == PitchCorrectionMode::ToTargetPitch) {
-      limited_yaw = clampZoneYaw(correction_hold_yaw_);
-      const auto [corr_pitch_lower_raw, corr_pitch_upper_raw] =
-        getZonePitchLimits(correction_target_zone_);
-      const double corr_pitch_min = std::min(corr_pitch_lower_raw, corr_pitch_upper_raw);
-      const double corr_pitch_max = std::max(corr_pitch_lower_raw, corr_pitch_upper_raw);
-      limited_pitch = std::clamp(
-        correction_target_pitch_,
-        std::max(pitch_min_angle_, corr_pitch_min),
-        std::min(pitch_max_angle_, corr_pitch_max));
-      if (std::fabs(feedback_pitch - correction_target_pitch_) <=
-        control_pitch_correct_tolerance_)
-      {
-        pitch_correction_mode_ = PitchCorrectionMode::None;
-        correction_target_zone_ = YawZone::OutOfRange;
-      }
-    }
-    if (pitch_correction_mode_ != PitchCorrectionMode::None) {
-      const YawZone hold_zone = classifyYawZone(toZoneYawFrame(limited_yaw));
-      has_last_yaw_zone_ = hold_zone != YawZone::OutOfRange;
-      if (has_last_yaw_zone_) {
-        last_yaw_zone_ = hold_zone;
-      }
-      return {limited_yaw, limited_pitch};
-    }
-
-    const YawZone zone = classifyYawZone(target_zone_yaw);
-    const auto [zone_pitch_lower, zone_pitch_upper] = getZonePitchLimits(zone);
-    const double pitch_lower =
-      std::max(pitch_min_angle_, std::min(zone_pitch_lower, zone_pitch_upper));
-    const double pitch_upper =
-      std::min(pitch_max_angle_, std::max(zone_pitch_lower, zone_pitch_upper));
-    if (pitch_lower > pitch_upper) {
+    const auto result = envelope_.apply(yaw, pitch, measured_yaw, measured_pitch);
+    if (result.recovering) {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 2000,
-        "zone pitch limits are invalid after merge with pitch caps. fallback to base clamp only.");
-      return {limited_yaw, clampPitch(pitch)};
+        "pitch %.3frad is outside the envelope at yaw %.3frad: holding yaw until pitch recovers",
+        measured_pitch, measured_yaw);
     }
-
-    limited_pitch = std::clamp(limited_pitch, pitch_lower, pitch_upper);
-    has_last_yaw_zone_ = true;
-    last_yaw_zone_ = zone;
-    return {limited_yaw, limited_pitch};
+    return {result.yaw, result.pitch};
   }
 
   void setCommandTarget(double yaw, double pitch)
   {
-    const auto [limited_yaw, limited_pitch] = applyZoneAngleLimit(yaw, pitch);
+    const auto [limited_yaw, limited_pitch] = applyAngleLimit(yaw, pitch);
     command_yaw_angle_ = limited_yaw;
     command_pitch_angle_ = limited_pitch;
     has_command_target_ = true;
@@ -1288,11 +1117,9 @@ private:
 
   void setManualModeCommandTarget(double yaw, double pitch)
   {
-    command_yaw_angle_ = enable_zone_angle_limit_ ? clampZoneYaw(yaw) : clampYaw(yaw);
+    command_yaw_angle_ = enable_angle_limit_ ? clampEnvelopeYaw(yaw) : clampYaw(yaw);
     command_pitch_angle_ = clampPitch(pitch);
     has_command_target_ = true;
-    pitch_correction_mode_ = PitchCorrectionMode::None;
-    correction_target_zone_ = YawZone::OutOfRange;
   }
 
   void setCommandTargetRaw(double yaw, double pitch)
@@ -1411,7 +1238,7 @@ private:
 
   double getManualModeFixedYawTarget() const
   {
-    return enable_zone_angle_limit_ ? clampZoneYaw(manual_mode_yaw_fixed_angle_) :
+    return enable_angle_limit_ ? clampEnvelopeYaw(manual_mode_yaw_fixed_angle_) :
            clampYaw(manual_mode_yaw_fixed_angle_);
   }
 
@@ -1758,30 +1585,8 @@ private:
   double manual_mode_pitch_initial_angle_ = 0.0;
   double startup_release_yaw_angle_ = 0.0;
   double startup_release_pitch_angle_ = 0.0;
-  bool enable_zone_angle_limit_ = false;
-  bool zone_yaw_reversed_ = false;
-  double zone_yaw_zone1_start_ = -3.14159265359;
-  double zone_yaw_boundary_ = -1.57079632679;
-  double zone_yaw_zone2_end_ = 1.57079632679;
-  double zone_yaw_zone3_end_ = 3.14159265359;
-  double zone_pitch_lower_limit_ = -3.14159265359;
-  double zone_pitch_zone2_upper_ = 0.52359877559;
-  double zone_pitch_zone2_lower_ = -3.14159265359;
-  double zone_pitch_zone2_upper_limit_ = 3.14159265359;
-  double zone_pitch_zone3_lower_ = -0.52359877559;
-  double zone_pitch_zone3_upper_ = 3.14159265359;
-  double zone_pitch_zone1_upper_ = 3.14159265359;
-  double zone_pitch_zoneab_upper_ = 0.52359877559;
-  double control_hysteresis_rad_ = 0.017453292519943295;
-  double control_pitch_correct_tolerance_ = 0.01;
-  bool zone_pitch_zone1_upper_overridden_ = false;
-  bool zone_pitch_zone2_upper_overridden_ = false;
-  bool has_last_yaw_zone_ = false;
-  YawZone last_yaw_zone_ = YawZone::ZoneAB;
-  PitchCorrectionMode pitch_correction_mode_ = PitchCorrectionMode::None;
-  double correction_hold_yaw_ = 0.0;
-  YawZone correction_target_zone_ = YawZone::OutOfRange;
-  double correction_target_pitch_ = 0.0;
+  bool enable_angle_limit_ = false;
+  TurretEnvelope envelope_;
   int pitch_motor_id_;
   int yaw_motor_id_;
   // ROS通信

@@ -161,9 +161,15 @@
     yaw_min_angle: -3.14159265359
     yaw_max_angle: 3.14159265359
 
-    # zone-based angle limiter（現在のモータ出力指令に対して適用）
-    enable_zone_angle_limit: true # trueで zone.* 制限を有効化
-    # zone.* / control.* の具体値は左右で個別設定
+    # 砲塔の可動包絡線（ヨー角ごとの許容ピッチ範囲）による角度制限
+    #   包絡線は config/turret_envelope_{left,right}.yaml に置き、
+    #   launch が砲塔ごとの絶対パスを envelope.table_path として渡す。
+    #   同じ包絡線を順引き（ヨー→ピッチ範囲）と逆引き（ピッチ→ヨー範囲）に使い、
+    #   「今のピッチでは入れない領域へヨーが進む」ことを防ぐ。
+    enable_angle_limit: true # falseでモータ可動範囲のみ適用
+    envelope:
+      # table_path は launch が砲塔ごとの絶対パスを渡すので、ここでは指定しない。
+      pitch_margin_rad: 0.01 # 逆引きの余裕[rad]。境界上での取りこぼしを防ぐ
 
     # fixed angle offset [rad]
     pitch_offset: 0.0
@@ -237,24 +243,6 @@
         y_m: 0.0
         z_m: 0.0
 
-    zone:
-      yaw_reversed: true # true のとき zone 判定用 yaw を符号反転
-      yaw_zone1_start: -0.58 # a [rad]
-      yaw_boundary: -0.25 # b [rad]
-      yaw_zone2_end: 0.15 # c [rad]
-      yaw_zone3_end: 2.2 # d [rad]
-      pitch_lower_limit: -2.0 # ZoneAB lower [rad]
-      pitch_zone1_upper: 3.14 # ZoneAB upper [rad]（優先して使用）
-      pitch_zone2_upper: 3.14 # ZoneAB upper [rad]（互換エイリアス。新規設定では pitch_zone1_upper を推奨）
-      pitch_zone2_lower: -2.0 # ZoneBC lower [rad]
-      pitch_zone2_upper_limit: 3.14 # ZoneBC upper [rad]
-      pitch_zone3_lower: -2.0 # ZoneCD lower [rad]
-      pitch_zone3_upper: 1.0 # ZoneCD upper [rad]
-
-    control:
-      hysteresis_rad: 0.05 # ゾーン切替ヒステリシス [rad]
-      pitch_correct_tolerance: 0.01 # 補正完了判定 [rad]
-
 /**/right/aim_bot:
   ros__parameters:
     pitch_motor_id: 11
@@ -283,20 +271,3 @@
         y_m: 0.0
         z_m: 0.0
 
-    zone:
-      yaw_reversed: false # true のとき zone 判定用 yaw を符号反転
-      yaw_zone1_start: -0.48 # a [rad]
-      yaw_boundary: -0.15 # b [rad]
-      yaw_zone2_end: 0.25 # c [rad]
-      yaw_zone3_end: 2.2 # d [rad]
-      pitch_lower_limit: -1.8 # ZoneAB lower [rad]
-      pitch_zone1_upper: 3.14 # ZoneAB upper [rad]（優先して使用）
-      pitch_zone2_upper: 3.14 # ZoneAB upper [rad]（互換エイリアス。新規設定では pitch_zone1_upper を推奨）
-      pitch_zone2_lower: -1.8 # ZoneBC lower [rad]
-      pitch_zone2_upper_limit: 3.14 # ZoneBC upper [rad]
-      pitch_zone3_lower: -1.8 # ZoneCD lower [rad]
-      pitch_zone3_upper: 0.0 # ZoneCD upper [rad]
-
-    control:
-      hysteresis_rad: 0.05 # ゾーン切替ヒステリシス [rad]
-      pitch_correct_tolerance: 0.01 # 補正完了判定 [rad]

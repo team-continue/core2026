@@ -93,7 +93,10 @@ def _aim_bot(params, side):
         output="screen",
         parameters=[
             params,
-            {"point3d.ballistic.table_path": _ballistics_file(side)},
+            {
+                "point3d.ballistic.table_path": _ballistics_file(side),
+                "envelope.table_path": _envelope_file(side),
+            },
         ],
         remappings=[
             HAZARD_REMAP,
@@ -115,6 +118,16 @@ def _aim_bot(params, side):
             ("turret_auto", f"/ui/{side}/turret_auto"),
             ("shoot_fullauto", f"/mecha/shooter/{side}/shoot_fullauto"),
         ],
+    )
+
+
+# 砲塔の可動包絡線。左右で機構制約が異なるので砲塔ごとに用意し、
+# aim_bot へ絶対パスで渡す。
+def _envelope_file(side):
+    return os.path.join(
+        get_package_share_directory("core_shooter"),
+        "config",
+        f"turret_envelope_{side}.yaml",
     )
 
 
