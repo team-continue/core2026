@@ -4901,7 +4901,7 @@
 <p><code>/can/tx</code>、<code>motor_ref[]</code>、<code>ecat_PacketCallBack()</code> が使う <strong>論理ID</strong> と、CANフレーム内でモータを識別する <strong>CANプロトコルID</strong> は異なります。たとえば論理ID 0のDamiaoは、ファームウェア上では <code>master_id=0x11</code>、<code>slave_id=0x01</code> です。</p>
 </div>
 <h2 id="can3">CAN3<a class="headerlink" href="#can3" title="Permanent link">&para;</a></h2>
-<p>CAN3にはupper Teensy、Damiao 4台、RoboStride 06 1台、bottom Teensyが同一バス上に接続されます。</p>
+<p>CAN3にはupper Teensy、Damiao DM-3519 4台、RoboStride 06 1台、bottom Teensyが同一バス上に接続されます。</p>
 <table>
 <thead>
 <tr>
@@ -4915,7 +4915,7 @@
 <td>1 Mbps</td>
 </tr>
 <tr>
-<td>Damiao台数</td>
+<td>Damiao（DM-3519）台数</td>
 <td>4</td>
 </tr>
 <tr>
@@ -4962,25 +4962,25 @@
 <tbody>
 <tr>
 <td style="text-align: right;">0</td>
-<td>Damiao</td>
+<td>Damiao DM-3519</td>
 <td><code>master_id=0x11</code>, <code>slave_id=0x01</code></td>
 <td>足回りモータ0</td>
 </tr>
 <tr>
 <td style="text-align: right;">1</td>
-<td>Damiao</td>
+<td>Damiao DM-3519</td>
 <td><code>master_id=0x12</code>, <code>slave_id=0x02</code></td>
 <td>足回りモータ1</td>
 </tr>
 <tr>
 <td style="text-align: right;">2</td>
-<td>Damiao</td>
+<td>Damiao DM-3519</td>
 <td><code>master_id=0x13</code>, <code>slave_id=0x03</code></td>
 <td>足回りモータ2</td>
 </tr>
 <tr>
 <td style="text-align: right;">3</td>
-<td>Damiao</td>
+<td>Damiao DM-3519</td>
 <td><code>master_id=0x14</code>, <code>slave_id=0x04</code></td>
 <td>足回りモータ3</td>
 </tr>
@@ -5131,7 +5131,7 @@
 <tbody>
 <tr>
 <td style="text-align: right;">0–3</td>
-<td>Damiao × 4</td>
+<td>Damiao DM-3519 × 4</td>
 <td>CAN3</td>
 <td>slave ID 1–4</td>
 <td>足回りオムニホイール</td>
@@ -5162,7 +5162,7 @@
 <td>Feetech STS</td>
 <td>Serial7</td>
 <td>servo ID 1</td>
-<td>右砲塔 Pitch</td>
+<td>左砲塔 Pitch</td>
 </tr>
 <tr>
 <td style="text-align: right;">8</td>
@@ -5190,7 +5190,7 @@
 <td>Feetech STS</td>
 <td>Serial7</td>
 <td>servo ID 5</td>
-<td>左砲塔 Pitch</td>
+<td>右砲塔 Pitch</td>
 </tr>
 <tr>
 <td style="text-align: right;">12</td>

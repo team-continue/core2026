@@ -1948,10 +1948,19 @@
 </a>
 </li>
 <li class="md-nav__item">
-<a class="md-nav__link" href="#センサ搭載位置">
+<a class="md-nav__link" href="#アクチュエータ一覧">
 <span class="md-ellipsis">
       
-        センサ搭載位置
+        アクチュエータ一覧
+      
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#センサ一覧">
+<span class="md-ellipsis">
+      
+        センサ一覧
       
     </span>
 </a>
@@ -2001,7 +2010,7 @@
 <tbody>
 <tr>
 <td><a href="drivetrain/">旋回機構・駆動系</a></td>
-<td>無限回転Yaw・砲台Yaw、4輪オムニの寸法と逆運動学、加減速リミット</td>
+<td>無限回転Yaw、砲台Yaw・Pitchの機構構成</td>
 </tr>
 <tr>
 <td><a href="turret/">砲塔・装填・発射機構</a></td>
@@ -2092,46 +2101,294 @@
 </tr>
 </tbody>
 </table>
-<h2 id="センサ搭載位置">センサ搭載位置<a class="headerlink" href="#センサ搭載位置" title="Permanent link">¶</a></h2>
+<h2 id="アクチュエータ一覧">アクチュエータ一覧<a class="headerlink" href="#アクチュエータ一覧" title="Permanent link">¶</a></h2>
+<p>制御PCから指令できるアクチュエータの全リストです。<strong>論理ID</strong>は <code>/hardware/can/tx</code>（<code>core_msgs/CANArray</code>）とEtherCATの <code>motor_ref[]</code> で共通して使う番号で、CANプロトコル上のIDとは別物です。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">論理ID</th>
+<th>機種</th>
+<th>接続</th>
+<th>デバイスID</th>
+<th>搭載箇所・用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">0</td>
+<td>Damiao DM-3519</td>
+<td>CAN3</td>
+<td>slave 1</td>
+<td>足回りオムニホイール 0</td>
+</tr>
+<tr>
+<td style="text-align: right;">1</td>
+<td>Damiao DM-3519</td>
+<td>CAN3</td>
+<td>slave 2</td>
+<td>足回りオムニホイール 1</td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td>Damiao DM-3519</td>
+<td>CAN3</td>
+<td>slave 3</td>
+<td>足回りオムニホイール 2</td>
+</tr>
+<tr>
+<td style="text-align: right;">3</td>
+<td>Damiao DM-3519</td>
+<td>CAN3</td>
+<td>slave 4</td>
+<td>足回りオムニホイール 3</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td>RoboStride 06</td>
+<td>CAN3</td>
+<td>motor 1</td>
+<td>車体無限回転Yaw</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td>RoboStride 05</td>
+<td>CAN2</td>
+<td>motor 1</td>
+<td>左砲台Yaw</td>
+</tr>
+<tr>
+<td style="text-align: right;">6</td>
+<td>RoboStride 05</td>
+<td>CAN2</td>
+<td>motor 2</td>
+<td>右砲台Yaw</td>
+</tr>
+<tr>
+<td style="text-align: right;">7</td>
+<td>Feetech STS</td>
+<td>Serial7</td>
+<td>servo 1</td>
+<td>左砲塔 Pitch</td>
+</tr>
+<tr>
+<td style="text-align: right;">8</td>
+<td>Feetech STS</td>
+<td>Serial7</td>
+<td>servo 2</td>
+<td>右砲塔 装填（速度指令）</td>
+</tr>
+<tr>
+<td style="text-align: right;">9</td>
+<td>Feetech STS</td>
+<td>Serial7</td>
+<td>servo 3</td>
+<td>右砲塔 ディスク保持（右）</td>
+</tr>
+<tr>
+<td style="text-align: right;">10</td>
+<td>Feetech STS</td>
+<td>Serial7</td>
+<td>servo 4</td>
+<td>右砲塔 ディスク保持（左）</td>
+</tr>
+<tr>
+<td style="text-align: right;">11</td>
+<td>Feetech STS</td>
+<td>Serial7</td>
+<td>servo 5</td>
+<td>右砲塔 Pitch（回転方向反転）</td>
+</tr>
+<tr>
+<td style="text-align: right;">12</td>
+<td>Feetech STS</td>
+<td>Serial7</td>
+<td>servo 6</td>
+<td>左砲塔 装填（速度指令・回転方向反転）</td>
+</tr>
+<tr>
+<td style="text-align: right;">13</td>
+<td>Feetech STS</td>
+<td>Serial7</td>
+<td>servo 7</td>
+<td>左砲塔 ディスク保持（右）</td>
+</tr>
+<tr>
+<td style="text-align: right;">14</td>
+<td>Feetech STS</td>
+<td>Serial7</td>
+<td>servo 8</td>
+<td>左砲塔 ディスク保持（左）</td>
+</tr>
+<tr>
+<td style="text-align: right;">15</td>
+<td>ESC（PWM）</td>
+<td>upper ピン24</td>
+<td>—</td>
+<td>左砲塔 発射モータ</td>
+</tr>
+<tr>
+<td style="text-align: right;">16</td>
+<td>ESC（PWM）</td>
+<td>—</td>
+<td>—</td>
+<td>右砲塔 発射モータ。ファームウェア未実装</td>
+</tr>
+<tr>
+<td style="text-align: right;">17</td>
+<td>—</td>
+<td>GPIO 32</td>
+<td>—</td>
+<td>非常停止出力。upper側の処理はコメントアウト</td>
+</tr>
+</tbody>
+</table>
+<p>左右の割り当てと角度パラメータは <code>core_shooter/config/shooter.params.yaml</code>、サーボの回転方向と指令方式は <code>core_hardware/teensy41/upper/src/feetech.h</code>、CAN側のIDは <code>upper/src/can2.h</code> / <code>can3.h</code> が定義元です。</p>
+<table>
+<thead>
+<tr>
+<th>系統</th>
+<th style="text-align: right;">台数</th>
+<th>指令方式</th>
+<th>主な設定値</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Damiao DM-3519（CAN3）</td>
+<td style="text-align: right;">4</td>
+<td>ホストが生成した指令フレームをそのまま転送</td>
+<td>1 ms間隔で5台をラウンドロビン送信</td>
+</tr>
+<tr>
+<td>RoboStride 06（CAN3）</td>
+<td style="text-align: right;">1</td>
+<td>速度制御（<code>Speed_control_mode</code>）</td>
+<td>1.0 rad/s、3.0 rad/s²</td>
+</tr>
+<tr>
+<td>RoboStride 05（CAN2）</td>
+<td style="text-align: right;">2</td>
+<td>位置制御（<code>PosPP_control_mode</code>）</td>
+<td>1.0 rad/s、3.0 rad/s²、位置オフセットあり</td>
+</tr>
+<tr>
+<td>Feetech STS（Serial7 @1 Mbps）</td>
+<td style="text-align: right;">8</td>
+<td>位置指令（装填の2台のみ速度指令）</td>
+<td>制御周期 10 ms、STS3215 67 rpm / STS3020 100 rpm</td>
+</tr>
+<tr>
+<td>ESC（PWM）</td>
+<td style="text-align: right;">1（実装済み）</td>
+<td>パルス幅</td>
+<td>1000〜1400 µs、更新周期 10 ms</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition warning">
+<p class="admonition-title">論理ID 16と17はアクチュエータを動かしません</p>
+<p>EtherCATの <code>motor_ref</code> は論理ID 0–15までです。右砲塔の発射モータ（ID 16）はPDOに枠が無く、upperの <code>case 16</code> もコメントアウトされています。ID 17は <code>system_ref</code> としてupperへ届きますが、非常停止GPIOの処理がコメントアウトされています。</p>
+</div>
+<h2 id="センサ一覧">センサ一覧<a class="headerlink" href="#センサ一覧" title="Permanent link">¶</a></h2>
 <table>
 <thead>
 <tr>
 <th>センサ</th>
+<th style="text-align: right;">個数</th>
+<th>接続</th>
 <th>取り付け</th>
+<th>トピック</th>
 <th>定義元</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Livox Mid-360 LiDAR</td>
+<td style="text-align: right;">1</td>
+<td>Ethernet（<code>livox_ros_driver2</code>）</td>
 <td><code>base_link</code> から z=+0.5 m、roll=π（上下反転）</td>
-<td><code>navigation.launch.py</code> の静的TF</td>
+<td><code>/livox/lidar</code>（<code>PointCloud2</code>、10 Hz）</td>
+<td><code>navigation.launch.py</code></td>
 </tr>
 <tr>
-<td>カメラ（左砲塔）</td>
-<td><code>/dev/camera_left</code>、640×480 @30fps</td>
-<td><code>core_camera/launch/camera.launch.py</code></td>
-</tr>
-<tr>
-<td>カメラ（右砲塔）</td>
-<td><code>/dev/camera_right</code>、640×480 @30fps</td>
+<td>Mid-360 内蔵IMU</td>
+<td style="text-align: right;">1</td>
 <td>同上</td>
-</tr>
-<tr>
-<td>カメラ（TPS視点）</td>
-<td><code>/dev/camera_tps</code>、1280×720 @30fps</td>
 <td>同上</td>
+<td><code>/livox/imu</code></td>
+<td>同上（FAST-LIO無効中のため未使用）</td>
 </tr>
 <tr>
 <td>DM-IMU-L1</td>
-<td>回転上部車体へ+X前方・+Z上向きで固定（<code>/imu</code>）</td>
+<td style="text-align: right;">1</td>
+<td>USB CDC、921600 bps</td>
+<td>回転上部車体へ+X前方・+Z上向きで固定</td>
+<td><code>/imu</code>（200 Hz、<code>damiao_imu_link</code>）</td>
 <td><code>core_damiao_imu</code> / <code>body_controller.launch.py</code></td>
+</tr>
+<tr>
+<td>USBカメラ（左砲塔）</td>
+<td style="text-align: right;">1</td>
+<td><code>/dev/camera_left</code></td>
+<td>左砲塔</td>
+<td><code>/turret_camera_left/color/image</code>（640×480 @30fps）</td>
+<td><code>core_camera/launch/camera.launch.py</code></td>
+</tr>
+<tr>
+<td>USBカメラ（右砲塔）</td>
+<td style="text-align: right;">1</td>
+<td><code>/dev/camera_right</code></td>
+<td>右砲塔</td>
+<td><code>/turret_camera_right/color/image</code>（640×480 @30fps）</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>USBカメラ（TPS視点）</td>
+<td style="text-align: right;">1</td>
+<td><code>/dev/camera_tps</code></td>
+<td>車体</td>
+<td><code>/turret_camera_tps/color/image</code>（1280×720 @30fps）</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>ディスク残量 距離センサ</td>
+<td style="text-align: right;">2（左右砲塔）</td>
+<td>—</td>
+<td>マガジン上部、高さ 500 mm（<code>sensor_height</code>）</td>
+<td><code>/mecha/shooter/{side}/distance</code>（<code>std_msgs/Int32</code>、mm）</td>
+<td><code>core_shooter/config/shooter.params.yaml</code></td>
+</tr>
+</tbody>
+</table>
+<p>競技装置と操縦機からの入力はセンサではありませんが、同じ経路でROS 2へ入ります。</p>
+<table>
+<thead>
+<tr>
+<th>入力</th>
+<th>接続</th>
+<th>トピック</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>競技装置（HP・撃破・チーム色）</td>
+<td>競技装置 → bottom Teensy Serial4（115200 bps） → CAN3 → upper → EtherCAT</td>
+<td><code>/hardware/hp</code>、<code>/hardware/destroy</code>、<code>/hardware/color</code></td>
+</tr>
+<tr>
+<td>無線受信機</td>
+<td>upper Serial5（115200 bps）</td>
+<td><code>/hardware/wireless</code>（<code>UInt8MultiArray</code>、7 B）</td>
 </tr>
 </tbody>
 </table>
 <div class="admonition note">
 <p class="admonition-title">LiDAR取り付け高さの記述が2箇所で異なります</p>
 <p><code>costmap_build.launch.py</code> のデバッグ用静的TFは z=+0.6 m / pitch=π で定義されており、<code>navigation.launch.py</code>（z=+0.5 m / roll=π）と一致しません。</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">ディスク距離センサのPublisherがリポジトリ内にありません</p>
+<p><code>magazine_manager</code> は <code>/mecha/shooter/{side}/distance</code> を購読しますが、これを発行するノードもファームウェア処理もリポジトリ内に見当たりません。距離センサの値が届かない間、残弾数は発射数カウントによる推定で動作します。</p>
 </div>
 <h2 id="関連ページ">関連ページ<a class="headerlink" href="#関連ページ" title="Permanent link">¶</a></h2>
 <ul>

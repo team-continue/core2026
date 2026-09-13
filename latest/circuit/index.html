@@ -1994,7 +1994,7 @@
     Upper["Teensy 4.1 (upper)&lt;br/&gt;AX58100 EtherCATスレーブ&lt;br/&gt;各バスの制御"]
     CAN3(("CAN3&lt;br/&gt;1 Mbps"))
     CAN2(("CAN2&lt;br/&gt;1 Mbps"))
-    Damiao["Damiao × 4&lt;br/&gt;足回り"]
+    Damiao["Damiao DM-3519 × 4&lt;br/&gt;足回り"]
     RS06["RoboStride 06 × 1&lt;br/&gt;車体Yaw"]
     RS05["RoboStride 05 × 2&lt;br/&gt;砲台Yaw"]
     Bottom["Teensy 4.1 (bottom)&lt;br/&gt;競技装置I/F"]
@@ -2024,7 +2024,7 @@
     style Bottom fill:#fff3e0,color:#333
     style CAN3 fill:#e8f5e9,color:#333
     style CAN2 fill:#e8f5e9,color:#333</code></pre>
-<p>CAN3にはupper TeensyのCAN3コントローラ、Damiao 4台、RoboStride 06 1台、bottom Teensyが同じバスのノードとして接続されます。bottomはupperから独立したCAN3バスではありません。upperがモータ指令を送る一方、bottomへ50 ms周期で状態を問い合わせます。</p>
+<p>CAN3にはupper TeensyのCAN3コントローラ、Damiao DM-3519 4台、RoboStride 06 1台、bottom Teensyが同じバスのノードとして接続されます。bottomはupperから独立したCAN3バスではありません。upperがモータ指令を送る一方、bottomへ50 ms周期で状態を問い合わせます。</p>
 <p>CAN2にはupper TeensyとRoboStride 05 2台が接続されます。Feetechサーボ、無線受信機、競技装置はCANではなく、それぞれ専用のシリアル接続です。</p>
 <h2 id="通信区間">通信区間<a class="headerlink" href="#通信区間" title="Permanent link">¶</a></h2>
 <table>

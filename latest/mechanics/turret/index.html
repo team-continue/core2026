@@ -4969,12 +4969,12 @@
 <p><img alt="alt text" src="../image.png" /></p>
 <div style="text-align: center">画像1</div>
 
-<p>発射機構の構成要素を画像2に示す。<br>
-構成要素は以下の3点である。<br>
+<p>発射機構の構成要素を画像2に示します。<br>
+構成要素は以下の3点です。<br>
 ①curious hand<br>
 ②発射ローラー<br>
 ③ディスク押し出し<br>
-この3項目について説明する</p>
+この3項目について説明します。</p>
 <p><img alt="alt text" src="../image-1.png" /></p>
 <div style="text-align: center">画像2</div>
 
@@ -4988,25 +4988,25 @@ curious handは中段でディスクを2つのサーボモータで押さえる�
 
 <h2 id="発射ローラー">発射ローラー<a class="headerlink" href="#発射ローラー" title="Permanent link">&para;</a></h2>
 <p>発射ローラーの詳細を画像4に示します。<br>
-構成は去年と同様にローラーは板金、3Dプリンター製ローラー、モータで構成されています。<br>
-板金はディスクを押し出す際のトルクがモータに直接加わらないように取り付けています「。</p>
+構成は昨年度と同様に、板金、3Dプリンター製ローラー、モータで構成されています。<br>
+板金はディスクを押し出す際のトルクがモータに直接加わらないように取り付けています。</p>
 <p>押し出し機構で押し出されたディスクをローラーが巻き込んで発射します。</p>
 <p><img alt="alt text" src="../image-3.png" /></p>
 <div style="text-align: center">画像4</div>
 
 <h2 id="ディスク押し出し">ディスク押し出し<a class="headerlink" href="#ディスク押し出し" title="Permanent link">&para;</a></h2>
-<p>発射ローラーの詳細を画像5に示します。
+<p>ディスク押し出しの詳細を画像5に示します。<br>
 サーボモータにひし形の3Dプリンターパーツを取り付けてディスクの押し出しを行っています。<br>
 昨年度と比べサーボモータを1つに押し出し距離を伸ばすように設計変更しています。<br>
 押し出し距離を伸ばしたことでジャム確率が減り発射の不安定さは軽減しました。<br>
-しかし、連現状の設計だとまだジャムる場合があるため設計変更が必要です。<br></p>
+しかし、現状の設計だとまだジャムる場合があるため設計変更が必要です。<br></p>
 <p><img alt="alt text" src="../image-4.png" /></p>
 <div style="text-align: center">画像5</div>
 
 <h2 id="ソフトウェアとメカ">ソフトウェアとメカ<a class="headerlink" href="#ソフトウェアとメカ" title="Permanent link">&para;</a></h2>
 <p>以下からはソフトウェアから見た機体の機構構成を記載します</p>
 <h2 id="砲塔左右2基">砲塔（左右2基）<a class="headerlink" href="#砲塔左右2基" title="Permanent link">&para;</a></h2>
-<p><code>core_shooter/launch/shooter.launch.py</code> で左右それぞれに設定される可動範囲です。</p>
+<p><code>core_shooter/config/shooter.params.yaml</code> の <code>/**/&lt;side&gt;/aim_bot</code> で左右それぞれに設定される値です。</p>
 <table>
 <thead>
 <tr>
@@ -5018,8 +5018,8 @@ curious handは中段でディスクを2つのサーボモータで押さえる�
 <tbody>
 <tr>
 <td>Pitch モータID</td>
-<td>11（Feetech）</td>
 <td>7（Feetech）</td>
+<td>11（Feetech）</td>
 </tr>
 <tr>
 <td>Yaw モータID</td>
@@ -5028,8 +5028,8 @@ curious handは中段でディスクを2つのサーボモータで押さえる�
 </tr>
 <tr>
 <td>Pitch 可動範囲</td>
-<td><code>-1.44</code> ～ <code>0.0</code> rad</td>
-<td><code>-3.0</code> ～ <code>0.0</code> rad</td>
+<td><code>-2.0</code> ～ <code>3.14</code> rad</td>
+<td><code>-1.8</code> ～ <code>3.14</code> rad</td>
 </tr>
 <tr>
 <td>Yaw 反転</td>
@@ -5066,13 +5066,18 @@ curious handは中段でディスクを2つのサーボモータで押さえる�
 <tbody>
 <tr>
 <td><code>image_width</code> / <code>image_height</code></td>
-<td>1280.0 / 720.0</td>
+<td>320.0 / 320.0</td>
 <td>追尾計算で前提とする画像サイズ</td>
 </tr>
 <tr>
 <td><code>image_tolerance_x</code> / <code>_y</code></td>
-<td>20.0 / 20.0</td>
+<td>5.0 / 5.0</td>
 <td>目標到達とみなすピクセル許容誤差</td>
+</tr>
+<tr>
+<td><code>image_shoot_tolerance_x_px</code> / <code>_y_px</code></td>
+<td>50.0 / 50.0</td>
+<td>発射可と判定するピクセル許容誤差</td>
 </tr>
 <tr>
 <td><code>horizontal_fov_deg</code></td>
@@ -5093,45 +5098,58 @@ curious handは中段でディスクを2つのサーボモータで押さえる�
 </table>
 <h2 id="装填機構ディスクマガジン">装填機構（ディスクマガジン）<a class="headerlink" href="#装填機構ディスクマガジン" title="Permanent link">&para;</a></h2>
 <p><code>core_shooter/config/shooter.params.yaml</code> の値です。</p>
-<p>| 項目 | 値 | 説明 |</p>
-<p>|------|-----|------|
-| <code>max_disks</code> | 24 | 満タン時の装填数 |
-| <code>disk_thickness</code> | 20.0 mm | ディスク1枚の厚み |
-| <code>sensor_height</code> | 500.0 mm | 距離センサの取り付け高さ |
-| <code>window_size</code> | 3 | 残弾推定の移動平均窓 |
-| <code>regrip_enabled</code> | true | 再把持動作の有効化 |
-| <code>regrip_trigger_shots</code> | 6 | この発数を撃つと再把持を実施 |
-| <code>regrip_release_ms</code> | 1000 | 再把持時の解放時間 |
-| <code>hold_disable_height_margin_mm</code> | 0.5 | 保持解除判定の高さマージン |</p>
-<p>残弾数は距離センサの測定値と <code>sensor_height</code> / <code>disk_thickness</code> から推定します。</p>
-<p>ディスク保持は左右2つのFeetechサーボで行います。</p>
 <table>
 <thead>
 <tr>
-<th>砲塔</th>
-<th>保持サーボ（左）</th>
-<th>保持サーボ（右）</th>
-<th>保持角 左 / 右 [rad]</th>
-<th>装填モータID</th>
+<th>項目</th>
+<th>値</th>
+<th>説明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>左</td>
-<td>ID 14</td>
-<td>ID 13</td>
-<td><code>[0.35, 0.0]</code> / <code>[-0.35, 0.0]</code></td>
-<td>12</td>
+<td><code>max_disks</code></td>
+<td>24</td>
+<td>満タン時の装填数</td>
 </tr>
 <tr>
-<td>右</td>
-<td>ID 10</td>
-<td>ID 9</td>
-<td><code>[-0.35, 0.0]</code> / <code>[0.35, 0.0]</code></td>
-<td>8</td>
+<td><code>disk_thickness</code></td>
+<td>20.0 mm</td>
+<td>ディスク1枚の厚み</td>
+</tr>
+<tr>
+<td><code>sensor_height</code></td>
+<td>500.0 mm</td>
+<td>距離センサの取り付け高さ</td>
+</tr>
+<tr>
+<td><code>window_size</code></td>
+<td>3</td>
+<td>残弾推定の移動平均窓</td>
+</tr>
+<tr>
+<td><code>regrip_enabled</code></td>
+<td>true</td>
+<td>再把持動作の有効化</td>
+</tr>
+<tr>
+<td><code>regrip_trigger_shots</code></td>
+<td>6</td>
+<td>この発数を撃つと再把持を実施</td>
+</tr>
+<tr>
+<td><code>regrip_release_ms</code></td>
+<td>1000</td>
+<td>再把持時の解放時間</td>
+</tr>
+<tr>
+<td><code>hold_disable_height_margin_mm</code></td>
+<td>0.5</td>
+<td>保持解除判定の高さマージン</td>
 </tr>
 </tbody>
 </table>
+<p>残弾数は距離センサの測定値と <code>sensor_height</code> / <code>disk_thickness</code> から推定します。</p>
 <h2 id="発射機構">発射機構<a class="headerlink" href="#発射機構" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -5145,7 +5163,7 @@ curious handは中段でディスクを2つのサーボモータで押さえる�
 <tr>
 <td>発射モータ（左 / 右）</td>
 <td>ESC ID 15 / 16</td>
-<td><code>shooter.launch.py</code></td>
+<td><code>shooter.params.yaml</code></td>
 </tr>
 <tr>
 <td>目標回転数プリセット</td>
@@ -5174,10 +5192,6 @@ curious handは中段でディスクを2つのサーボモータで押さえる�
 </tr>
 </tbody>
 </table>
-<div class="admonition danger">
-<p class="admonition-title">右ESC（ID 16）はファームウェア側で無効です</p>
-<p><code>core_hardware/teensy41/upper/src/main.cpp</code> の EtherCAT パケットハンドラでは <code>case 16:</code> がコメントアウトされており、<strong>ID 16 への指令は現在のファームウェアでは処理されません</strong>。<code>shooter.launch.py</code> は右砲塔に <code>shoot_motor_id: 16</code> を設定しているため、右の発射モータを動かすにはファームウェアの修正が必要です。</p>
-</div>
 <h2 id="関連ページ">関連ページ<a class="headerlink" href="#関連ページ" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../drivetrain/">駆動系・旋回機構</a></li>
