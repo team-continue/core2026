@@ -34,6 +34,15 @@ if(BUILD_TESTING)
       CORE_SHOOTER_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../core_shooter/config")
   endif()
 
+  # 砲塔の可動包絡線（ROS非依存のヘッダ）を検証する。
+  core_add_gtest(test_turret_envelope test/test_turret_envelope.cpp)
+  if(TARGET test_turret_envelope)
+    ament_target_dependencies(test_turret_envelope core_shooter)
+    target_link_libraries(test_turret_envelope ${YAML_CPP_LIBRARIES})
+    target_compile_definitions(test_turret_envelope PRIVATE
+      CORE_SHOOTER_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../core_shooter/config")
+  endif()
+
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
