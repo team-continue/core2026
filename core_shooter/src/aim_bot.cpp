@@ -1,6 +1,8 @@
 #include <memory>
 #include <cmath>
+#include <cstdio>
 #include <algorithm>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -9,11 +11,13 @@
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float32.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "core_msgs/msg/can.hpp"
 #include "core_msgs/msg/can_array.hpp"
 
+#include "core_shooter/ballistics.hpp"
 #include "core_shooter/can_command.hpp"
 #include "core_shooter/parameter_utils.hpp"
 #include "core_shooter/test_mode_gate.hpp"
@@ -23,6 +27,50 @@ using namespace std::chrono_literals;
 namespace
 {
 constexpr double kDegToRad = M_PI / 180.0;
+
+using core_shooter::BallisticTable;
+using core_shooter::DirectionAngles;
+using core_shooter::Vector3;
+using core_shooter::isFinite;
+using core_shooter::toDirectionAngles;
+using core_shooter::vectorNorm;
+
+/// 追尾に使うターゲット入力の種類。
+enum class TargetInputMode
+{
+  Image,    ///< 画像座標（中心原点ピクセル）で追尾する方式
+  Point3D,  ///< 砲塔座標系の3次元座標で追尾する方式
+};
+
+/// 3次元座標入力を解釈する基準座標系。
+enum class Point3DFrame
+{
+  Turret,  ///< 砲身の現在向きを基準とする相対座標。方向角をそのまま角度誤差として扱う
+  Base,    ///< 砲塔基部に固定された座標。方向角をそのまま目標角として扱う
+};
+
+std::optional<TargetInputMode> parseTargetInputMode(const std::string & name)
+{
+  if (name == "image") {
+    return TargetInputMode::Image;
+  }
+  if (name == "point3d") {
+    return TargetInputMode::Point3D;
+  }
+  return std::nullopt;
+}
+
+std::optional<Point3DFrame> parsePoint3DFrame(const std::string & name)
+{
+  if (name == "turret") {
+    return Point3DFrame::Turret;
+  }
+  if (name == "base") {
+    return Point3DFrame::Base;
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 class AimBot : public rclcpp::Node
@@ -43,6 +91,39 @@ public:
     pitch_min_angle_ = core_shooter::declareAndGet<double>(
       *this, "pitch_min_angle", -3.14159265359);
     pitch_max_angle_ = core_shooter::declareAndGet<double>(*this, "pitch_max_angle", 3.14159265359);
+    const std::string target_input_mode_name =
+      core_shooter::declareAndGet<std::string>(*this, "target_input_mode", "image");
+    const std::string point3d_frame_name =
+      core_shooter::declareAndGet<std::string>(*this, "point3d.frame", "turret");
+    point3d_tolerance_yaw_rad_ = core_shooter::declareAndGet<double>(
+      *this, "point3d.tolerance_yaw_rad", 0.01);
+    point3d_tolerance_pitch_rad_ = core_shooter::declareAndGet<double>(
+      *this, "point3d.tolerance_pitch_rad", 0.01);
+    point3d_min_range_m_ = core_shooter::declareAndGet<double>(*this, "point3d.min_range_m", 0.05);
+    point3d_max_range_m_ = core_shooter::declareAndGet<double>(*this, "point3d.max_range_m", 0.0);
+    point3d_limit_command_rate_ = core_shooter::declareAndGet<bool>(
+      *this, "point3d.limit_command_rate", true);
+    point3d_target_velocity_max_m_per_sec_ = core_shooter::declareAndGet<double>(
+      *this, "point3d.target_velocity_max_m_per_sec", 10.0);
+    const std::string ballistic_table_path = core_shooter::declareAndGet<std::string>(
+      *this, "point3d.ballistic.table_path", "");
+    ballistic_max_shoot_range_m_ = core_shooter::declareAndGet<double>(
+      *this, "point3d.ballistic.max_shoot_range_m", 5.0);
+    camera_offset_y_m_ = core_shooter::declareAndGet<double>(
+      *this, "point3d.camera_offset.y_m", 0.0);
+    camera_offset_z_m_ = core_shooter::declareAndGet<double>(
+      *this, "point3d.camera_offset.z_m", 0.0);
+    shoot_status_rate_ = core_shooter::declareAndGet<double>(*this, "shoot_status_rate", 2.0);
+    image_shoot_tolerance_x_px_ = core_shooter::declareAndGet<double>(
+      *this, "image_shoot_tolerance_x_px", 50.0);
+    image_shoot_tolerance_y_px_ = core_shooter::declareAndGet<double>(
+      *this, "image_shoot_tolerance_y_px", 50.0);
+    aim_tolerance_x_m_ = core_shooter::declareAndGet<double>(
+      *this, "point3d.aim_tolerance.x_m", 0.5);
+    aim_tolerance_y_m_ = core_shooter::declareAndGet<double>(
+      *this, "point3d.aim_tolerance.y_m", 0.08);
+    aim_tolerance_z_m_ = core_shooter::declareAndGet<double>(
+      *this, "point3d.aim_tolerance.z_m", 0.08);
     image_center_x_ = core_shooter::declareAndGet<double>(*this, "image_center_x", 0.5);
     image_center_y_ = core_shooter::declareAndGet<double>(*this, "image_center_y", 0.5);
     image_width_ = core_shooter::declareAndGet<double>(*this, "image_width", 1280.0);
@@ -131,6 +212,26 @@ public:
         "zone.pitch_zone2_upper is treated as the ZoneAB upper limit for compatibility. Prefer zone.pitch_zone1_upper.");
     }
 
+    const auto parsed_target_input_mode = parseTargetInputMode(target_input_mode_name);
+    if (!parsed_target_input_mode) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid target_input_mode='%s' (must be \"image\" or \"point3d\")",
+        target_input_mode_name.c_str());
+      throw std::runtime_error("invalid aimbot target input mode");
+    }
+    target_input_mode_ = *parsed_target_input_mode;
+
+    const auto parsed_point3d_frame = parsePoint3DFrame(point3d_frame_name);
+    if (!parsed_point3d_frame) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid point3d.frame='%s' (must be \"turret\" or \"base\")",
+        point3d_frame_name.c_str());
+      throw std::runtime_error("invalid aimbot point3d frame");
+    }
+    point3d_frame_ = *parsed_point3d_frame;
+
     if (rate_ <= 0.0) {
       RCLCPP_FATAL(get_logger(), "Invalid rate=%f (must be > 0)", rate_);
       throw std::runtime_error("invalid aimbot rate");
@@ -177,7 +278,7 @@ public:
         target_velocity_ema_alpha_);
       throw std::runtime_error("invalid aimbot target velocity ema alpha");
     }
-    if (use_fov_image_tracking_ &&
+    if (target_input_mode_ == TargetInputMode::Image && use_fov_image_tracking_ &&
       (horizontal_fov_deg_ <= 0.0 || horizontal_fov_deg_ >= 180.0))
     {
       RCLCPP_FATAL(
@@ -186,6 +287,71 @@ public:
         horizontal_fov_deg_);
       throw std::runtime_error("invalid aimbot horizontal fov");
     }
+    if (point3d_tolerance_yaw_rad_ < 0.0 || point3d_tolerance_pitch_rad_ < 0.0 ||
+      point3d_min_range_m_ < 0.0 || point3d_max_range_m_ < 0.0 ||
+      point3d_target_velocity_max_m_per_sec_ < 0.0)
+    {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid point3d params: tolerance_yaw_rad=%f, tolerance_pitch_rad=%f, min_range_m=%f, max_range_m=%f, target_velocity_max_m_per_sec=%f (all must be >= 0)",
+        point3d_tolerance_yaw_rad_, point3d_tolerance_pitch_rad_, point3d_min_range_m_,
+        point3d_max_range_m_, point3d_target_velocity_max_m_per_sec_);
+      throw std::runtime_error("invalid aimbot point3d parameters");
+    }
+    if (!std::isfinite(camera_offset_y_m_) || !std::isfinite(camera_offset_z_m_)) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid point3d.camera_offset: y_m=%f, z_m=%f (must be finite)",
+        camera_offset_y_m_, camera_offset_z_m_);
+      throw std::runtime_error("invalid aimbot camera offset");
+    }
+    if (!std::isfinite(shoot_status_rate_)) {
+      RCLCPP_FATAL(
+        get_logger(), "Invalid shoot_status_rate=%f (must be finite)", shoot_status_rate_);
+      throw std::runtime_error("invalid aimbot shoot status rate");
+    }
+    if (image_shoot_tolerance_x_px_ < 0.0 || image_shoot_tolerance_y_px_ < 0.0) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid image_shoot_tolerance: x_px=%f, y_px=%f (must be >= 0)",
+        image_shoot_tolerance_x_px_, image_shoot_tolerance_y_px_);
+      throw std::runtime_error("invalid aimbot image shoot tolerance");
+    }
+    if (aim_tolerance_x_m_ < 0.0 || aim_tolerance_y_m_ < 0.0 || aim_tolerance_z_m_ < 0.0) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid point3d.aim_tolerance: x_m=%f, y_m=%f, z_m=%f (all must be >= 0)",
+        aim_tolerance_x_m_, aim_tolerance_y_m_, aim_tolerance_z_m_);
+      throw std::runtime_error("invalid aimbot aim tolerance");
+    }
+    if (ballistic_max_shoot_range_m_ < 0.0) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid point3d.ballistic.max_shoot_range_m=%f (must be >= 0; 0 disables the range gate)",
+        ballistic_max_shoot_range_m_);
+      throw std::runtime_error("invalid aimbot ballistic max shoot range");
+    }
+    if (!ballistic_table_path.empty()) {
+      std::string ballistic_error;
+      if (!BallisticTable::load(ballistic_table_path, ballistic_table_, ballistic_error)) {
+        RCLCPP_FATAL(
+          get_logger(), "Invalid ballistics table: %s", ballistic_error.c_str());
+        throw std::runtime_error("invalid aimbot ballistics table");
+      }
+      RCLCPP_INFO(
+        get_logger(),
+        "Loaded ballistics table from '%s': %zu samples covering %.3f..%.3fm",
+        ballistic_table_path.c_str(), ballistic_table_.size(),
+        ballistic_table_.minRange(), ballistic_table_.maxRange());
+    }
+    if (point3d_max_range_m_ > 0.0 && point3d_min_range_m_ > point3d_max_range_m_) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid point3d range: min_range_m=%f > max_range_m=%f",
+        point3d_min_range_m_, point3d_max_range_m_);
+      throw std::runtime_error("invalid aimbot point3d range");
+    }
+
     {
       std::string zone_config_error;
       if (!validateZoneConfig(
@@ -205,9 +371,16 @@ public:
     // ----------------------------
     // Subscriber
     // ----------------------------
-    target_image_sub_ = create_subscription<geometry_msgs::msg::PointStamped>(
-      "target_image_position", 10,
-      std::bind(&AimBot::targetImageCallback, this, std::placeholders::_1));
+    // ターゲット入力は排他。選択したモードの購読だけを生成する。
+    if (target_input_mode_ == TargetInputMode::Point3D) {
+      target_point_sub_ = create_subscription<geometry_msgs::msg::PointStamped>(
+        "target_point_3d", 10,
+        std::bind(&AimBot::targetPoint3dCallback, this, std::placeholders::_1));
+    } else {
+      target_image_sub_ = create_subscription<geometry_msgs::msg::PointStamped>(
+        "target_image_position", 10,
+        std::bind(&AimBot::targetImageCallback, this, std::placeholders::_1));
+    }
 
     test_mode_sub_ = create_subscription<std_msgs::msg::Bool>(
       "/test_mode", 10, std::bind(&AimBot::testModeCallback, this, std::placeholders::_1));
@@ -227,6 +400,11 @@ public:
     hazard_state_sub_ = create_subscription<std_msgs::msg::Bool>(
       "hazard_status", 10, std::bind(&AimBot::hazardCallback, this, std::placeholders::_1));
 
+    // 自動射撃の有効/無効。これだけは照準側では決められないので外から受け取る。
+    turret_auto_sub_ = create_subscription<std_msgs::msg::Bool>(
+      "turret_auto", 10,
+      [this](const std_msgs::msg::Bool::SharedPtr msg) {turret_auto_ = msg->data;});
+
     joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
       "/joint_states", 10, std::bind(&AimBot::jointStateCallback, this, std::placeholders::_1));
 
@@ -234,6 +412,17 @@ public:
     // Publisher
     // ----------------------------
     can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("/can/tx", 10);
+    // 自動射撃の引き金。照準が合っているかを知っているのはこのノードなので、
+    // turret_auto と突き合わせてここで判断する。
+    shoot_fullauto_pub_ = this->create_publisher<std_msgs::msg::Bool>("shoot_fullauto", 10);
+
+    // 「なぜ撃たないか」を外から見えるようにする。現場での切り分け用。
+    if (shoot_status_rate_ > 0.0) {
+      shoot_status_pub_ = this->create_publisher<std_msgs::msg::String>("shoot_status", 10);
+      const auto status_period = std::chrono::duration<double>(1.0 / shoot_status_rate_);
+      shoot_status_timer_ = create_wall_timer(
+        status_period, std::bind(&AimBot::publishShootStatus, this));
+    }
 
     // ----------------------------
     // Timer
@@ -241,13 +430,39 @@ public:
     const auto period = std::chrono::duration<double>(1.0 / rate_);
     timer_ = create_wall_timer(period, std::bind(&AimBot::timerCallback, this));
 
+    if (target_input_mode_ == TargetInputMode::Point3D) {
+      const std::string max_range_text = point3d_max_range_m_ > 0.0 ?
+        std::to_string(point3d_max_range_m_) :
+        std::string("inf");
+      RCLCPP_INFO(
+        get_logger(),
+        "AimBot started. target_input_mode=point3d, target_point_3d=PointStamped(turret frame: x forward, y left, z up [m]; x<0 means not detected), point3d.frame=%s, camera_offset=(y=%.4f, z=%.4f)m, tolerance=(yaw=%.4f, pitch=%.4f)rad, range=[%.3f, %s]m, ballistic=%s(table_points=%zu), max_shoot_range=%.3fm, shoot_fullauto published when turret_auto, limit_command_rate=%s, target_lead_time=%.3fs, target_velocity_filter=(min_dt=%.3fs,max=%.2fm/s,alpha=%.2f), return_rate=(yaw=%.3f,pitch=%.3f)rad/s, target_lost_return_delay=%.2fs, test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
+        point3d_frame_ == Point3DFrame::Turret ? "turret" : "base",
+        camera_offset_y_m_, camera_offset_z_m_,
+        point3d_tolerance_yaw_rad_, point3d_tolerance_pitch_rad_,
+        point3d_min_range_m_,
+        max_range_text.c_str(),
+        ballistic_table_.empty() ? "flat(straight trajectory)" : "measured table",
+        ballistic_table_.size(),
+        ballistic_max_shoot_range_m_,
+        point3d_limit_command_rate_ ? "true" : "false",
+        target_lead_time_sec_, target_velocity_min_dt_sec_,
+        point3d_target_velocity_max_m_per_sec_, target_velocity_ema_alpha_,
+        max_yaw_rate_, max_pitch_rate_,
+        target_lost_return_to_startup_delay_sec_,
+        enable_test_mode_ ? "true" : "false",
+        startup_release_yaw_angle_, startup_release_pitch_angle_);
+      return;
+    }
+
     RCLCPP_INFO(
       get_logger(),
-      "AimBot started. target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), target_lead_time=%.3fs, target_velocity_filter=(min_dt=%.3fs,max=%.1fpx/s,alpha=%.2f), return_rate=(yaw=%.3f,pitch=%.3f)rad/s, target_lost_return_delay=%.2fs, test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
+      "AimBot started. target_input_mode=image, target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), image_shoot_tolerance=(%.1f, %.1f)px, shoot_fullauto published when turret_auto, target_lead_time=%.3fs, target_velocity_filter=(min_dt=%.3fs,max=%.1fpx/s,alpha=%.2f), return_rate=(yaw=%.3f,pitch=%.3f)rad/s, target_lost_return_delay=%.2fs, test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
       image_width_, image_height_, image_center_x_, image_center_y_,
       getImageTargetCenterX(), getImageTargetCenterY(),
       use_fov_image_tracking_ ? "fov" : "gain",
-      horizontal_fov_deg_, image_tolerance_x_, image_tolerance_y_, target_lead_time_sec_,
+      horizontal_fov_deg_, image_tolerance_x_, image_tolerance_y_,
+      image_shoot_tolerance_x_px_, image_shoot_tolerance_y_px_, target_lead_time_sec_,
       target_velocity_min_dt_sec_, target_velocity_max_px_per_sec_, target_velocity_ema_alpha_,
       max_yaw_rate_, max_pitch_rate_,
       target_lost_return_to_startup_delay_sec_,
@@ -346,6 +561,64 @@ private:
     last_target_time_ = this->now();
   }
 
+  void targetPoint3dCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
+  {
+    // 入力はカメラ座標系（REP-103: x前方 / y左 / z上, 単位[m]）のターゲット座標。
+    // 「検出なし」は x に負の値を入れて通知される（前方にしか的は存在しないため）。
+    const Vector3 camera_point{msg->point.x, msg->point.y, msg->point.z};
+    if (!isFinite(camera_point)) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "target_point_3d contains non-finite values: ignored");
+      return;
+    }
+
+    // 未検出。camera_offset は y/z にしか効かないので、この判定は
+    // 砲塔座標へ移す前でも後でも結果が変わらない。
+    if (camera_point.x < 0.0) {
+      clearPoint3dTarget();
+      return;
+    }
+
+    // 原点近傍は測距失敗や初期値の可能性が高いので、検出扱いしない。
+    if (vectorNorm(camera_point) < point3d_min_range_m_) {
+      clearPoint3dTarget();
+      return;
+    }
+
+    // カメラ取付位置のぶんだけ平行移動して砲塔座標系へ移す。
+    // これをしないと近距離ほど視差で狙いがずれる。
+    const Vector3 point = toTurretFrame(camera_point);
+
+    const double range = vectorNorm(point);
+    if (point3d_max_range_m_ > 0.0 && range > point3d_max_range_m_) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "target_point_3d range=%.3fm exceeds point3d.max_range_m=%.3fm: ignored",
+        range, point3d_max_range_m_);
+      clearPoint3dTarget();
+      return;
+    }
+
+    const rclcpp::Time sample_time = getTargetSampleTime(*msg);
+    target_point_ = point;
+    has_target_ = true;
+    updateTargetPoint3dPrediction(point, sample_time);
+    last_target_time_ = this->now();
+  }
+
+  /// カメラ座標系の点を砲塔座標系へ移す。
+  ///
+  /// camera_offset は砲塔の回転中心から見たカメラ取付位置[m]。
+  /// カメラ基準の座標にこれを足すと砲塔基準の座標になる。
+  Vector3 toTurretFrame(const Vector3 & camera_point) const
+  {
+    return Vector3{
+      camera_point.x,
+      camera_point.y + camera_offset_y_m_,
+      camera_point.z + camera_offset_z_m_};
+  }
+
   void testYawCallback(const std_msgs::msg::Float32::SharedPtr msg)
   {
     test_yaw_target_ = msg->data;
@@ -388,6 +661,14 @@ private:
 
   void timerCallback()
   {
+    // 各周期の既定は発射不可。射程内のターゲットに照準が合ったときだけ許可に変わる。
+    aimed_at_target_ = false;
+    runControlCycle();
+    publishShootFullauto();
+  }
+
+  void runControlCycle()
+  {
     const bool test_mode_enabled = isTestModeEnabled();
     ControlMode mode = ControlMode::AutoTrack;
     if (hazard_state_) {
@@ -405,6 +686,14 @@ private:
     }
 
     const bool entering_mode = setActiveControlMode(mode);
+
+    // 既定の理由をモードから決める。AutoTrack はこの後の経路で上書きされる。
+    switch (mode) {
+      case ControlMode::Emergency: shoot_block_reason_ = "emergency stop"; break;
+      case ControlMode::Manual: shoot_block_reason_ = "manual mode"; break;
+      case ControlMode::Test: shoot_block_reason_ = "test mode"; break;
+      case ControlMode::AutoTrack: shoot_block_reason_ = "no target"; break;
+    }
 
     switch (mode) {
       case ControlMode::Emergency: {
@@ -432,7 +721,7 @@ private:
                 "Manual mode ON: start interpolated move to yaw=%f, pitch=%f using max_yaw_rate/max_pitch_rate (pitch becomes controllable via manual_pitch_angle)",
                 manual_mode_yaw_fixed_angle_, manual_mode_pitch_initial_angle_);
             }
-        }
+          }
 
           if (!has_manual_pitch_target_) {
             RCLCPP_WARN_THROTTLE(
@@ -587,12 +876,30 @@ private:
           return;
         }
 
+        if (target_input_mode_ == TargetInputMode::Point3D) {
+          publishPoint3dTrackingCommand();
+          return;
+        }
+
         // 入力は中心原点のピクセル座標。image_center_x/y で狙う画像中心をずらし、
         // その中心からの誤差で追尾する。
         {
           const auto [predicted_target_x, predicted_target_y] = getPredictedTargetImagePosition();
           const double x_error = predicted_target_x - getImageTargetCenterX();
           const double y_error = predicted_target_y - getImageTargetCenterY();
+
+          // 狙っている画像中心にターゲットが十分近ければ発射を許す。
+          // 判定基準は image_center_x/y（= 実際に狙っている点）なので、
+          // 追尾の収束先と発射判定の基準が必ず一致する。
+          aimed_at_target_ =
+            std::fabs(x_error) <= image_shoot_tolerance_x_px_ &&
+            std::fabs(y_error) <= image_shoot_tolerance_y_px_;
+          if (!aimed_at_target_) {
+            shoot_block_reason_ = formatReason(
+              "off center: err=(%.1f, %.1f)px tol=(%.1f, %.1f)px",
+              x_error, y_error, image_shoot_tolerance_x_px_, image_shoot_tolerance_y_px_);
+          }
+
           const double yaw_base = has_joint_state_ ? yaw_angle_ : command_yaw_angle_;
           const double pitch_base = has_joint_state_ ?
             (pitch_angle_ + pitch_offset_) :
@@ -635,6 +942,124 @@ private:
           return;
         }
     }
+  }
+
+  /// 発射を許可する水平距離かどうか。max_shoot_range_m が 0 以下なら制限なし。
+  bool isWithinShootRange(double horizontal_range_m) const
+  {
+    return ballistic_max_shoot_range_m_ <= 0.0 ||
+           horizontal_range_m < ballistic_max_shoot_range_m_;
+  }
+
+  /// 砲身が目標に向いているかを、目標位置での着弾ずれ[m]に換算して判定する。
+  ///
+  /// residual_yaw/pitch_rad は弾道補正まで含めた「まだ振り残している角度」。
+  /// これを目標までの距離倍して横(y)・縦(z)のずれに直し、閾値と比べる。
+  /// x は弾道テーブルが覆っていない距離のはみ出し量（解が保証されない距離）を見る。
+  bool isAimedAtTarget(
+    double slant_range_m, double horizontal_range_m,
+    double residual_yaw_rad, double residual_pitch_rad)
+  {
+    const double miss_y_m = slant_range_m * std::tan(residual_yaw_rad);
+    const double miss_z_m = slant_range_m * std::tan(residual_pitch_rad);
+    const double range_error_m = ballistic_table_.rangeError(horizontal_range_m);
+
+    const bool aimed =
+      std::fabs(range_error_m) <= aim_tolerance_x_m_ &&
+      std::fabs(miss_y_m) <= aim_tolerance_y_m_ &&
+      std::fabs(miss_z_m) <= aim_tolerance_z_m_;
+
+    if (!aimed) {
+      shoot_block_reason_ = formatReason(
+        "not aimed: miss=(x=%.3f, y=%.3f, z=%.3f)m tol=(%.3f, %.3f, %.3f)m",
+        range_error_m, miss_y_m, miss_z_m,
+        aim_tolerance_x_m_, aim_tolerance_y_m_, aim_tolerance_z_m_);
+      RCLCPP_DEBUG_THROTTLE(
+        this->get_logger(), *this->get_clock(), 1000,
+        "not aimed yet: miss=(x=%.4f, y=%.4f, z=%.4f)m tolerance=(%.4f, %.4f, %.4f)m",
+        range_error_m, miss_y_m, miss_z_m,
+        aim_tolerance_x_m_, aim_tolerance_y_m_, aim_tolerance_z_m_);
+    }
+    return aimed;
+  }
+
+  /// 砲塔座標系の3次元座標から yaw/pitch 指令を算出して発行する。
+  void publishPoint3dTrackingCommand()
+  {
+    const Vector3 predicted_target = getPredictedTargetPoint();
+    const DirectionAngles target_direction = toDirectionAngles(predicted_target);
+
+    // 実測した着弾ずれを打ち消す向きに射角を補正する（テーブル未設定なら直線弾道）。
+    const double horizontal_range_m = std::hypot(predicted_target.x, predicted_target.y);
+    const DirectionAngles ballistic_correction = ballistic_table_.correction(horizontal_range_m);
+    const double aim_yaw_rad = target_direction.yaw_rad + ballistic_correction.yaw_rad;
+    const double aim_pitch_rad = target_direction.pitch_rad + ballistic_correction.pitch_rad;
+
+    // 射程外のターゲットは追尾だけ続け、発射は許可しない。
+    const bool within_shoot_range = isWithinShootRange(horizontal_range_m);
+    if (!within_shoot_range) {
+      shoot_block_reason_ = formatReason(
+        "out of range: %.2fm >= max_shoot_range %.2fm",
+        horizontal_range_m, ballistic_max_shoot_range_m_);
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(),
+        *this->get_clock(), 2000,
+        "target horizontal range=%.3fm is at or beyond point3d.ballistic.max_shoot_range_m=%.3fm: tracking continues but shooting is not permitted",
+        horizontal_range_m, ballistic_max_shoot_range_m_);
+    }
+
+    // AutoTrack は画像追尾と同じく現在角ベースで補正し、指令のドリフトを防ぐ。
+    const double yaw_base = has_joint_state_ ? yaw_angle_ : command_yaw_angle_;
+    const double pitch_base = has_joint_state_ ?
+      (pitch_angle_ + pitch_offset_) :
+      command_pitch_angle_;
+
+    double yaw_target = yaw_base;
+    double pitch_target = pitch_base;
+
+    // まだ振り残している角度（弾道補正込み）。不感帯に入っても値は潰さず、
+    // 発射判定にはこの生の残差を使う。
+    double residual_yaw_rad = 0.0;
+    double residual_pitch_rad = 0.0;
+
+    if (point3d_frame_ == Point3DFrame::Turret) {
+      // 砲身基準の相対座標なので、方向角がそのまま角度誤差になる。
+      residual_yaw_rad = aim_yaw_rad;
+      residual_pitch_rad = aim_pitch_rad;
+      if (std::fabs(aim_yaw_rad) > point3d_tolerance_yaw_rad_) {
+        yaw_target = yaw_base + yaw_direction_ * aim_yaw_rad;
+      }
+      if (std::fabs(aim_pitch_rad) > point3d_tolerance_pitch_rad_) {
+        pitch_target = pitch_base + pitch_direction_ * aim_pitch_rad;
+      }
+    } else {
+      // 砲塔基部基準の絶対座標なので、方向角がそのまま目標角になる。
+      const double absolute_yaw = yaw_direction_ * aim_yaw_rad;
+      const double absolute_pitch = pitch_direction_ * aim_pitch_rad + pitch_offset_;
+      residual_yaw_rad = absolute_yaw - yaw_base;
+      residual_pitch_rad = absolute_pitch - pitch_base;
+      if (std::fabs(absolute_yaw - yaw_base) > point3d_tolerance_yaw_rad_) {
+        yaw_target = absolute_yaw;
+      }
+      if (std::fabs(absolute_pitch - pitch_base) > point3d_tolerance_pitch_rad_) {
+        pitch_target = absolute_pitch;
+      }
+    }
+
+    // 砲身が目標へ向いているか（弾道補正込み）を、射程判定と合わせて発射許可にする。
+    aimed_at_target_ = within_shoot_range &&
+      isAimedAtTarget(
+      vectorNorm(predicted_target), horizontal_range_m,
+      residual_yaw_rad, residual_pitch_rad);
+
+    if (point3d_limit_command_rate_) {
+      // 3次元入力は最大180degの誤差を取り得るため、1周期あたりの指令変化量を制限する。
+      yaw_target = stepToward(command_yaw_angle_, yaw_target, max_yaw_rate_ / rate_);
+      pitch_target = stepToward(command_pitch_angle_, pitch_target, max_pitch_rate_ / rate_);
+    }
+
+    setCommandTarget(yaw_target, pitch_target);
+    publishCommandTarget();
   }
 
   double clampYaw(double angle) const
@@ -1036,7 +1461,15 @@ private:
     has_target_velocity_ = false;
     target_image_velocity_x_ = 0.0;
     target_image_velocity_y_ = 0.0;
+    target_point_velocity_ = Vector3{};
     has_previous_target_sample_ = false;
+  }
+
+  void clearPoint3dTarget()
+  {
+    has_target_ = false;
+    target_point_ = Vector3{};
+    resetTargetMotionPrediction();
   }
 
   void storeTargetSample(double x, double y, const rclcpp::Time & sample_time)
@@ -1105,6 +1538,111 @@ private:
     return {predicted_x, predicted_y};
   }
 
+  void storeTargetPoint3dSample(const Vector3 & point, const rclcpp::Time & sample_time)
+  {
+    previous_target_point_ = point;
+    previous_target_sample_time_ = sample_time;
+    has_previous_target_sample_ = true;
+  }
+
+  void updateTargetPoint3dPrediction(const Vector3 & point, const rclcpp::Time & sample_time)
+  {
+    if (!has_previous_target_sample_) {
+      storeTargetPoint3dSample(point, sample_time);
+      return;
+    }
+
+    const double dt = (sample_time - previous_target_sample_time_).seconds();
+    if (dt <= 0.0) {
+      resetTargetMotionPrediction();
+      storeTargetPoint3dSample(point, sample_time);
+      return;
+    }
+    if (dt < target_velocity_min_dt_sec_) {
+      return;
+    }
+
+    const auto clampVelocity = [this](double value) {
+        return std::clamp(
+          value,
+          -point3d_target_velocity_max_m_per_sec_,
+          point3d_target_velocity_max_m_per_sec_);
+      };
+    const Vector3 instant_velocity{
+      clampVelocity((point.x - previous_target_point_.x) / dt),
+      clampVelocity((point.y - previous_target_point_.y) / dt),
+      clampVelocity((point.z - previous_target_point_.z) / dt)};
+
+    if (!has_target_velocity_ || target_velocity_ema_alpha_ >= 1.0) {
+      target_point_velocity_ = instant_velocity;
+    } else if (target_velocity_ema_alpha_ <= 0.0) {
+      target_point_velocity_ = Vector3{};
+    } else {
+      const double keep = 1.0 - target_velocity_ema_alpha_;
+      target_point_velocity_ = Vector3{
+        keep * target_point_velocity_.x + target_velocity_ema_alpha_ * instant_velocity.x,
+        keep * target_point_velocity_.y + target_velocity_ema_alpha_ * instant_velocity.y,
+        keep * target_point_velocity_.z + target_velocity_ema_alpha_ * instant_velocity.z};
+    }
+    has_target_velocity_ = true;
+    storeTargetPoint3dSample(point, sample_time);
+  }
+
+  Vector3 getPredictedTargetPoint() const
+  {
+    if (!has_target_velocity_ || target_lead_time_sec_ <= 0.0) {
+      return target_point_;
+    }
+    return Vector3{
+      target_point_.x + target_point_velocity_.x * target_lead_time_sec_,
+      target_point_.y + target_point_velocity_.y * target_lead_time_sec_,
+      target_point_.z + target_point_velocity_.z * target_lead_time_sec_};
+  }
+
+  /// 自動射撃の引き金を発行する。
+  ///
+  /// turret_auto が有効で、かつ射程内のターゲットに照準が合っているときだけ true。
+  /// 非常停止・手動・テストモードでは runControlCycle が aimed_at_target_ を
+  /// 立てないので、自動的に false になる。
+  /// 理由文字列を組み立てる。制御周期で呼ぶので固定長バッファで済ませる。
+  template<typename ... Args>
+  static std::string formatReason(const char * format, Args ... args)
+  {
+    char buffer[192];
+    const int written = std::snprintf(buffer, sizeof(buffer), format, args ...);
+    if (written < 0) {
+      return "format error";
+    }
+    return std::string(buffer);
+  }
+
+  /// 発射可否とその理由を発行する。「なぜ撃たないか」の切り分け用。
+  ///
+  /// turret_auto が落ちているのか、射程外なのか、照準が合っていないのか、
+  /// ターゲットを見失っているのかが `ros2 topic echo` で分かるようにする。
+  void publishShootStatus()
+  {
+    if (!shoot_status_pub_) {
+      return;
+    }
+    std_msgs::msg::String msg;
+    if (!turret_auto_) {
+      msg.data = "blocked: turret_auto off";
+    } else if (aimed_at_target_) {
+      msg.data = "firing";
+    } else {
+      msg.data = "blocked: " + shoot_block_reason_;
+    }
+    shoot_status_pub_->publish(msg);
+  }
+
+  void publishShootFullauto()
+  {
+    std_msgs::msg::Bool msg;
+    msg.data = turret_auto_ && aimed_at_target_;
+    shoot_fullauto_pub_->publish(msg);
+  }
+
   void publishCommandTarget()
   {
     if (!has_command_target_) {
@@ -1134,6 +1672,9 @@ private:
   double previous_target_image_y_ = 0.0;
   double target_image_velocity_x_ = 0.0;
   double target_image_velocity_y_ = 0.0;
+  Vector3 target_point_;
+  Vector3 previous_target_point_;
+  Vector3 target_point_velocity_;
   bool has_target_ = false;
   bool has_previous_target_sample_ = false;
   bool has_target_velocity_ = false;
@@ -1160,6 +1701,9 @@ private:
   bool startup_release_hold_active_ = false;
   bool has_active_control_mode_ = false;
   ControlMode active_control_mode_ = ControlMode::AutoTrack;
+  bool aimed_at_target_ = false;
+  bool turret_auto_ = false;
+  std::string shoot_block_reason_ = "starting up";
 
   double rate_;
   double pitch_offset_;
@@ -1167,6 +1711,24 @@ private:
   double yaw_max_angle_;
   double pitch_min_angle_;
   double pitch_max_angle_;
+  TargetInputMode target_input_mode_ = TargetInputMode::Image;
+  Point3DFrame point3d_frame_ = Point3DFrame::Turret;
+  double point3d_tolerance_yaw_rad_ = 0.01;
+  double point3d_tolerance_pitch_rad_ = 0.01;
+  double point3d_min_range_m_ = 0.05;
+  double point3d_max_range_m_ = 0.0;
+  bool point3d_limit_command_rate_ = true;
+  double point3d_target_velocity_max_m_per_sec_ = 10.0;
+  BallisticTable ballistic_table_;
+  double ballistic_max_shoot_range_m_ = 5.0;
+  double shoot_status_rate_ = 2.0;
+  double image_shoot_tolerance_x_px_ = 50.0;
+  double image_shoot_tolerance_y_px_ = 50.0;
+  double camera_offset_y_m_ = 0.0;
+  double camera_offset_z_m_ = 0.0;
+  double aim_tolerance_x_m_ = 0.5;
+  double aim_tolerance_y_m_ = 0.08;
+  double aim_tolerance_z_m_ = 0.08;
   double image_center_x_;
   double image_center_y_;
   double image_width_;
@@ -1224,15 +1786,20 @@ private:
   int yaw_motor_id_;
   // ROS通信
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr shoot_fullauto_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr shoot_status_pub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr target_image_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr target_point_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr test_mode_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr test_yaw_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr test_pitch_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr manual_mode_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr manual_pitch_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_state_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr turret_auto_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::TimerBase::SharedPtr shoot_status_timer_;
 };
 
 int main(int argc, char * argv[])

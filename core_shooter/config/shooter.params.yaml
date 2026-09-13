@@ -65,6 +65,10 @@
     # periodic rate
     rate: 30.0
 
+    # 発射可否とその理由を shoot_status (std_msgs/String) で発行する周期[Hz]。
+    # 「なぜ撃たないか」を ros2 topic echo で切り分けるための診断出力。0以下で無効。
+    shoot_status_rate: 2.0
+
     # test/manual mode
     enable_test_mode: false # test_mode topic未受信時のデフォルト値（aim_bot / shooter_controller ともに test_mode: std_msgs/Bool を優先）
     # test_mode: std_msgs/Bool (relative topic)
@@ -78,7 +82,52 @@
     # manual_mode=true 時の pitch は std_msgs/Float32 の manual_pitch_angle topic で加算入力（-1..1, 0で保持）
     # 遷移直後の pitch は manual_mode_pitch_initial_angle
 
-    # image target settings
+    # target input mode
+    #   "image":   target_image_position の画像座標で追尾する（従来方式）
+    #   "point3d": target_point_3d の砲塔座標系3次元座標で追尾する
+    # 選択したモードの topic だけを購読する（もう一方は購読しない）
+    target_input_mode: "image"
+
+    # 3D target settings（target_input_mode="point3d" のとき使用）
+    # target_point_3d: geometry_msgs/PointStamped
+    #   image モードと同じ target_pose トピックで届く。中身の解釈だけが違う。
+    #   砲塔座標系（REP-103）: x軸=前方（砲身の向き）, y軸=左, z軸=上, 単位[m]
+    #   yaw   = atan2(y, x)             … x軸前向きからの左右角
+    #   pitch = atan2(z, hypot(x, y))   … 水平面からの仰角
+    #   検出なし -> x が負の値で届く（的は前方にしか存在しないため）
+    point3d:
+      frame: "turret" # "turret": 砲身基準の相対座標（方向角を角度誤差として現在角に加算）/ "base": 砲塔基部基準の絶対座標（方向角をそのまま目標角にする）
+      # camera_offset は砲塔の回転中心から見たカメラ取付位置[m]。左右で異なる -> 左右で個別設定
+      #   入力座標にこれを足して砲塔座標系へ移す。設定しないと近距離ほど視差で狙いがずれる。
+      tolerance_yaw_rad: 0.01 # yaw の不感帯[rad]
+      tolerance_pitch_rad: 0.01 # pitch の不感帯[rad]
+      min_range_m: 0.05 # これ未満のノルムは測距失敗とみなし未検出扱い[m]（未検出の主判定は x<0）
+      max_range_m: 0.0 # これを超えるノルムは無視[m]。0以下で無制限
+      limit_command_rate: true # max_yaw_rate / max_pitch_rate で1周期あたりの指令変化量を制限する
+      target_velocity_max_m_per_sec: 10.0 # 速度推定の各軸上限[m/s]（target_lead_time_sec > 0 のとき使用）
+
+      # フライングディスクの曲射弾道補正
+      #   実測テーブルは左右別に config/ballistics_{left,right}.yaml へ置き、
+      #   launch が砲塔ごとの絶対パスを table_path として渡す。
+      #   500mm ごとに計測した着弾点のずれ(y, z)[m] を射角補正へ換算して適用する。
+      #   テーブルが覆っていない距離では補正せず、的の方向へそのまま砲塔を向ける。
+      #   table_path が空なら常に直線弾道として動作する。
+      ballistic:
+        # table_path は launch が砲塔ごとの絶対パスを渡すので、ここでは指定しない。
+        # 自動照準は距離に関わらずターゲットを捕捉していれば追従する。
+        # ここで制限するのは自動発射だけ。
+        max_shoot_range_m: 5.0 # この水平距離以上では発射を許可しない[m]。0以下で制限なし
+
+      # 発射を許可する照準精度。砲身の振り残し角を目標位置での着弾ずれ[m]に換算して判定する。
+      #   y / z: 目標位置での横 / 縦のずれ。的に当たるかを決める
+      #   x:     弾道テーブルが覆っていない距離のはみ出し量（解が保証されない距離）
+      # aim_bot はこの判定と射程判定の両方を満たしたときだけ shoot_permission=true を出す。
+      aim_tolerance:
+        x_m: 0.5 # ±500mm
+        y_m: 0.08 # ±80mm
+        z_m: 0.08 # ±80mm
+
+    # image target settings（target_input_mode="image" のとき使用）
     # target_image_position: geometry_msgs/PointStamped
     #   detected     -> point=(x_px, y_px, 0)  [center-origin pixel coords]
     #   not detected -> point=(0, 0, 1)
@@ -86,14 +135,16 @@
     image_height: 320.0 #720.0
     use_fov_image_tracking: false # true: 画角+画像比率ベース, false: yaw/pitch_image_gain による加算制御
     horizontal_fov_deg: 100.0 # 横画角[deg]。縦画角は image_height / image_width 比から導出
-    # image_tolerance_x/y はピクセル誤差ベースで効く（両方式共通） -> 左右で個別設定
+    # image_tolerance_x/y は追尾の不感帯[px]（両方式共通） -> 左右で個別設定
+    # image_shoot_tolerance_x/y_px は「狙っている画像中心にどれだけ近ければ撃つか」[px]
+    #   -> 左右で個別設定。判定基準は image_center_x/y なので追尾の収束先と必ず一致する。
     # image_center_x/y は狙う画像中心の正規化座標。0.5,0.5 が幾何学中心 -> 左右で個別設定
     # 例: image_center_x=0.55 -> 画像中央より右へ 5% ずらした位置を目標中心にする
-    target_lead_time_sec: 0.0 #0.10 # [s] 連続する target_image_position から画像平面速度を推定し、この秒数先の予測座標を狙う。0で無効
-    target_velocity_min_dt_sec: 0.01 # [s] これ未満のサンプル間隔では速度を更新しない
-    target_velocity_max_px_per_sec: 1500.0 #200.0 # [px/s] 画像平面上の速度推定の各軸上限
-    target_velocity_ema_alpha: 0.25 #1.0 # [0..1] 速度推定のEMA係数。1で生値、0で速度追従なし
-    target_timeout_sec: 0.2
+    target_lead_time_sec: 0.0 #0.10 # [s] 連続するターゲット入力から速度を推定し、この秒数先の予測座標を狙う。0で無効（両モード共通）
+    target_velocity_min_dt_sec: 0.01 # [s] これ未満のサンプル間隔では速度を更新しない（両モード共通）
+    target_velocity_max_px_per_sec: 1500.0 #200.0 # [px/s] 画像平面上の速度推定の各軸上限（point3d では point3d.target_velocity_max_m_per_sec を使用）
+    target_velocity_ema_alpha: 0.25 #1.0 # [0..1] 速度推定のEMA係数。1で生値、0で速度追従なし（両モード共通）
+    target_timeout_sec: 0.2 # ターゲットロスト判定時間[s]（両モード共通）
     target_lost_return_to_startup_delay_sec: 2.0 # target喪失後、この秒数だけ現在角を保持したら startup_release_* へ戻す
 
     # 原点復帰などの動きの速さ
@@ -172,10 +223,19 @@
     image_center_y: 0.4
     image_tolerance_x: 5.0
     image_tolerance_y: 5.0
+    image_shoot_tolerance_x_px: 50.0
+    image_shoot_tolerance_y_px: 50.0
 
     # image error -> angle command gain
     yaw_image_gain: 0.0005
     pitch_image_gain: 0.008
+
+    # 砲塔回転中心から見たカメラ取付位置[m]（砲塔座標系: y左 / z上）
+    # 例: カメラが砲身より 50mm 上なら z_m: 0.05
+    point3d:
+      camera_offset:
+        y_m: 0.0
+        z_m: 0.0
 
     zone:
       yaw_reversed: true # true のとき zone 判定用 yaw を符号反転
@@ -209,10 +269,19 @@
     image_center_y: 0.5
     image_tolerance_x: 5.0
     image_tolerance_y: 5.0
+    image_shoot_tolerance_x_px: 50.0
+    image_shoot_tolerance_y_px: 50.0
 
     # image error -> angle command gain
     yaw_image_gain: 0.0007
     pitch_image_gain: 0.01
+
+    # 砲塔回転中心から見たカメラ取付位置[m]（砲塔座標系: y左 / z上）
+    # 例: カメラが砲身より 50mm 上なら z_m: 0.05
+    point3d:
+      camera_offset:
+        y_m: 0.0
+        z_m: 0.0
 
     zone:
       yaw_reversed: false # true のとき zone 判定用 yaw を符号反転
