@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
-#include <queue>
 
 namespace path_planner
 {
@@ -25,7 +25,7 @@ void PathPlanner::setLocalCostmap(
 PathPlanner::PlanResult PathPlanner::plan(
   const nav_msgs::msg::OccupancyGrid & map,
   const geometry_msgs::msg::PoseStamped & start,
-  const geometry_msgs::msg::PoseStamped & goal) const
+  const geometry_msgs::msg::PoseStamped & goal)
 {
   GridIndex start_cell;
   GridIndex goal_cell;
@@ -39,7 +39,23 @@ PathPlanner::PlanResult PathPlanner::plan(
     return PlanResult{Status::kStartOrGoalOutOfBounds, {}};
   }
 
-  if (isOccupied(map, start_cell) || isOccupied(map, goal_cell)) {
+  const int width = static_cast<int>(map.info.width);
+  const int height = static_cast<int>(map.info.height);
+  if (map.data.size() <
+    static_cast<size_t>(width) * static_cast<size_t>(height))
+  {
+    // Malformed grid: treat like the fully occupied map it would have
+    // been under per-cell bounds checking.
+    return PlanResult{Status::kStartOrGoalOccupied, {}};
+  }
+
+  buildLocalPatch(map);
+
+  const int start_index = start_cell.y * width + start_cell.x;
+  const int goal_index = goal_cell.y * width + goal_cell.x;
+  if (isBlocked(cellValue(map, start_index, start_cell.x, start_cell.y)) ||
+    isBlocked(cellValue(map, goal_index, goal_cell.x, goal_cell.y)))
+  {
     return PlanResult{Status::kStartOrGoalOccupied, {}};
   }
 
@@ -54,85 +70,113 @@ PathPlanner::PlanResult PathPlanner::plan(
 bool PathPlanner::computePath(
   const nav_msgs::msg::OccupancyGrid & map,
   const GridIndex & start, const GridIndex & goal,
-  std::vector<GridIndex> & out_path) const
+  std::vector<GridIndex> & out_path)
 {
   const int width = static_cast<int>(map.info.width);
   const int height = static_cast<int>(map.info.height);
-  const int map_size = width * height;
+
+  const int margin = settings_.search_window_margin;
+  if (margin >= 0) {
+    const Window window{
+      std::max(0, std::min(start.x, goal.x) - margin),
+      std::max(0, std::min(start.y, goal.y) - margin),
+      std::min(width - 1, std::max(start.x, goal.x) + margin),
+      std::min(height - 1, std::max(start.y, goal.y) + margin)};
+    const bool covers_full_map = window.x0 == 0 && window.y0 == 0 &&
+      window.x1 == width - 1 && window.y1 == height - 1;
+    if (!covers_full_map &&
+      searchWindow(map, start, goal, window, out_path))
+    {
+      return true;
+    }
+    // Windowed attempt failed: fall back to the full map to preserve
+    // completeness.
+  }
+
+  const Window full_map{0, 0, width - 1, height - 1};
+  return searchWindow(map, start, goal, full_map, out_path);
+}
+
+bool PathPlanner::searchWindow(
+  const nav_msgs::msg::OccupancyGrid & map,
+  const GridIndex & start, const GridIndex & goal,
+  const Window & window, std::vector<GridIndex> & out_path)
+{
+  const int width = static_cast<int>(map.info.width);
+  const int height = static_cast<int>(map.info.height);
+  beginSearchEpoch(width * height);
 
   auto indexOf = [width](int x, int y) {return y * width + x;};
   auto toGrid = [width](int index) -> GridIndex {
       return GridIndex{index % width, index / width};
     };
 
-  std::vector<double> g_score(map_size,
-    std::numeric_limits<double>::infinity());
-  std::vector<int> came_from(map_size, -1);
-  std::vector<bool> closed(map_size, false);
-  std::priority_queue<OpenItem> open;
-
   const int start_index = indexOf(start.x, start.y);
   const int goal_index = indexOf(goal.x, goal.y);
-  g_score[start_index] = 0.0;
-  open.push(OpenItem{heuristic(start, goal), 0.0, start_index});
+  g_score_[start_index] = 0.0;
+  came_from_[start_index] = -1;
+  visit_gen_[start_index] = generation_;
+  open_heap_.clear();
+  open_heap_.push_back(OpenItem{heuristic(start, goal), start_index});
 
-  const std::vector<GridIndex> neighbors =
-    settings_.use_diagonal ?
-    std::vector<GridIndex>{{1, 0}, {-1, 0}, {0, 1}, {0, -1},
-    {1, 1}, {-1, 1}, {1, -1}, {-1, -1}} :
-  std::vector<GridIndex>{{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+  static constexpr GridIndex kDiagonalOffsets[8] =
+  {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
+  static constexpr GridIndex kCardinalOffsets[4] =
+  {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+  const GridIndex * neighbors =
+    settings_.use_diagonal ? kDiagonalOffsets : kCardinalOffsets;
+  const int neighbor_count = settings_.use_diagonal ? 8 : 4;
 
-  while (!open.empty()) {
-    auto current = open.top();
-    open.pop();
-    if (closed[current.index]) {
+  while (!open_heap_.empty()) {
+    std::pop_heap(open_heap_.begin(), open_heap_.end(), OpenItemGreater{});
+    const OpenItem current = open_heap_.back();
+    open_heap_.pop_back();
+    if (closed_gen_[current.index] == generation_) {
       continue;
     }
     if (current.index == goal_index) {
-      reconstructPath(map, came_from, goal_index, out_path);
+      reconstructPath(map, came_from_, goal_index, out_path);
       return true;
     }
-    closed[current.index] = true;
+    closed_gen_[current.index] = generation_;
 
-    GridIndex current_cell = toGrid(current.index);
-    for (const auto & offset : neighbors) {
-      GridIndex next{current_cell.x + offset.x, current_cell.y + offset.y};
-      if (next.x < 0 || next.y < 0 || next.x >= width || next.y >= height) {
-        continue;
-      }
-      if (isOccupied(map, next)) {
+    const GridIndex current_cell = toGrid(current.index);
+    const double current_g = g_score_[current.index];
+    for (int i = 0; i < neighbor_count; ++i) {
+      const GridIndex & offset = neighbors[i];
+      const GridIndex next{current_cell.x + offset.x,
+        current_cell.y + offset.y};
+      if (next.x < window.x0 || next.y < window.y0 || next.x > window.x1 ||
+        next.y > window.y1)
+      {
         continue;
       }
       const int next_index = indexOf(next.x, next.y);
-      if (closed[next_index]) {
+      if (closed_gen_[next_index] == generation_) {
         continue;
       }
-      const double base_cost = (offset.x != 0 && offset.y != 0) ? kDiagonalCost : 1.0;
-      double step_cost = base_cost;
-      if (settings_.cost_weight > 0.0) {
-        int8_t cell_value = map.data[next.y * width + next.x];
-        if (local_costmap_.has_value()) {
-          const auto & lm = local_costmap_.value();
-          double wx = 0.0, wy = 0.0;
-          gridToWorld(map, next, wx, wy);
-          GridIndex local_cell;
-          if (worldToGrid(lm, wx, wy, local_cell)) {
-            const int li = local_cell.y * static_cast<int>(lm.info.width) + local_cell.x;
-            if (li >= 0 && li < static_cast<int>(lm.data.size())) {
-              cell_value = std::max(cell_value, lm.data[li]);
-            }
-          }
-        }
-        if (cell_value > 0) {
-          step_cost += settings_.cost_weight * (static_cast<double>(cell_value) / 100.0);
-        }
+      const int8_t cell_value = cellValue(map, next_index, next.x, next.y);
+      if (isBlocked(cell_value)) {
+        continue;
       }
-      const double tentative_g = g_score[current.index] + step_cost;
-      if (tentative_g < g_score[next_index]) {
-        came_from[next_index] = current.index;
-        g_score[next_index] = tentative_g;
-        const double f_score = tentative_g + heuristic(next, goal);
-        open.push(OpenItem{f_score, tentative_g, next_index});
+      double step_cost = (offset.x != 0 && offset.y != 0) ?
+        kDiagonalCost : 1.0;
+      if (settings_.cost_weight > 0.0 && cell_value > 0) {
+        step_cost +=
+          settings_.cost_weight * (static_cast<double>(cell_value) / 100.0);
+      }
+      const double tentative_g = current_g + step_cost;
+      if (visit_gen_[next_index] != generation_ ||
+        tentative_g < g_score_[next_index])
+      {
+        visit_gen_[next_index] = generation_;
+        came_from_[next_index] = current.index;
+        g_score_[next_index] = tentative_g;
+        open_heap_.push_back(
+          OpenItem{tentative_g + heuristic(next, goal), next_index});
+        std::push_heap(
+          open_heap_.begin(), open_heap_.end(),
+          OpenItemGreater{});
       }
     }
   }
@@ -162,9 +206,15 @@ void PathPlanner::reconstructPath(
 
 double PathPlanner::heuristic(const GridIndex & a, const GridIndex & b) const
 {
-  const double dx = static_cast<double>(a.x - b.x);
-  const double dy = static_cast<double>(a.y - b.y);
-  return std::hypot(dx, dy);
+  const double dx = static_cast<double>(std::abs(a.x - b.x));
+  const double dy = static_cast<double>(std::abs(a.y - b.y));
+  if (!settings_.use_diagonal) {
+    // Manhattan distance: tight lower bound for 4-connected moves.
+    return dx + dy;
+  }
+  // Octile distance: tight lower bound for 8-connected moves with
+  // diagonal cost kDiagonalCost.
+  return std::max(dx, dy) + (kDiagonalCost - 1.0) * std::min(dx, dy);
 }
 
 bool PathPlanner::worldToGrid(
@@ -200,47 +250,117 @@ void PathPlanner::gridToWorld(
   wy = origin_y + (static_cast<double>(cell.y) + 0.5) * resolution;
 }
 
-bool PathPlanner::isOccupied(
-  const nav_msgs::msg::OccupancyGrid & map,
-  const GridIndex & cell) const
+void PathPlanner::buildLocalPatch(const nav_msgs::msg::OccupancyGrid & map)
 {
+  patch_active_ = false;
+  if (!local_costmap_.has_value()) {
+    return;
+  }
+  const auto & local = local_costmap_.value();
+
+  // Bounding box of the local costmap on the global grid.
+  const double resolution = map.info.resolution;
+  const double origin_x = map.info.origin.position.x;
+  const double origin_y = map.info.origin.position.y;
+  const double local_x0 = local.info.origin.position.x;
+  const double local_y0 = local.info.origin.position.y;
+  const double local_x1 = local_x0 +
+    static_cast<double>(local.info.width) * local.info.resolution;
+  const double local_y1 = local_y0 +
+    static_cast<double>(local.info.height) * local.info.resolution;
+
   const int width = static_cast<int>(map.info.width);
-  const int index = cell.y * width + cell.x;
-  if (index < 0 || index >= static_cast<int>(map.data.size())) {
-    return true;
-  }
-  const int8_t global_value = map.data.at(index);
-  if (global_value < 0 && !settings_.allow_unknown) {
-    return true;
-  }
-  if (global_value >= settings_.occupied_threshold) {
-    return true;
+  const int height = static_cast<int>(map.info.height);
+  const int x0 = std::max(
+    0, static_cast<int>(std::floor((local_x0 - origin_x) / resolution)));
+  const int y0 = std::max(
+    0, static_cast<int>(std::floor((local_y0 - origin_y) / resolution)));
+  const int x1 = std::min(
+    width - 1,
+    static_cast<int>(std::floor((local_x1 - origin_x) / resolution)));
+  const int y1 = std::min(
+    height - 1,
+    static_cast<int>(std::floor((local_y1 - origin_y) / resolution)));
+  if (x0 > x1 || y0 > y1) {
+    return;
   }
 
-  if (local_costmap_.has_value()) {
-    const auto & local_map = local_costmap_.value();
-    double wx = 0.0;
-    double wy = 0.0;
-    gridToWorld(map, cell, wx, wy);
-    GridIndex local_cell;
-    if (worldToGrid(local_map, wx, wy, local_cell)) {
-      const int local_index =
-        local_cell.y * static_cast<int>(local_map.info.width) + local_cell.x;
-      if (local_index >= 0 &&
-        local_index < static_cast<int>(local_map.data.size()))
-      {
-        const int8_t local_value = local_map.data.at(local_index);
-        if (local_value < 0 && !settings_.allow_unknown) {
-          return true;
-        }
-        if (local_value >= settings_.occupied_threshold) {
-          return true;
+  patch_x0_ = x0;
+  patch_y0_ = y0;
+  patch_x1_ = x1;
+  patch_y1_ = y1;
+  patch_width_ = x1 - x0 + 1;
+  patch_values_.resize(
+    static_cast<size_t>(patch_width_) * static_cast<size_t>(y1 - y0 + 1));
+
+  const int local_width = static_cast<int>(local.info.width);
+  for (int y = y0; y <= y1; ++y) {
+    for (int x = x0; x <= x1; ++x) {
+      const int8_t global_value = map.data[y * width + x];
+      int8_t merged = global_value;
+      double wx = 0.0;
+      double wy = 0.0;
+      gridToWorld(map, GridIndex{x, y}, wx, wy);
+      GridIndex local_cell;
+      if (worldToGrid(local, wx, wy, local_cell)) {
+        const int local_index = local_cell.y * local_width + local_cell.x;
+        if (local_index >= 0 &&
+          local_index < static_cast<int>(local.data.size()))
+        {
+          const int8_t local_value = local.data[local_index];
+          if (!settings_.allow_unknown &&
+            (global_value < 0 || local_value < 0))
+          {
+            // Unknown in either grid blocks the cell; keep it marked
+            // unknown so isBlocked() rejects it.
+            merged = -1;
+          } else {
+            merged = std::max(global_value, local_value);
+          }
         }
       }
+      patch_values_[(y - y0) * patch_width_ + (x - x0)] = merged;
     }
   }
+  patch_active_ = true;
+}
 
-  return false;
+int8_t PathPlanner::cellValue(
+  const nav_msgs::msg::OccupancyGrid & map, int index, int x, int y) const
+{
+  if (patch_active_ && x >= patch_x0_ && x <= patch_x1_ && y >= patch_y0_ &&
+    y <= patch_y1_)
+  {
+    return patch_values_[(y - patch_y0_) * patch_width_ + (x - patch_x0_)];
+  }
+  return map.data[index];
+}
+
+bool PathPlanner::isBlocked(int8_t value) const
+{
+  if (value < 0) {
+    return !settings_.allow_unknown;
+  }
+  return value >= settings_.occupied_threshold;
+}
+
+void PathPlanner::beginSearchEpoch(int map_size)
+{
+  if (static_cast<int>(visit_gen_.size()) != map_size) {
+    g_score_.assign(map_size, std::numeric_limits<double>::infinity());
+    came_from_.assign(map_size, -1);
+    visit_gen_.assign(map_size, 0);
+    closed_gen_.assign(map_size, 0);
+    generation_ = 0;
+  }
+  ++generation_;
+  if (generation_ == 0) {
+    // The 32-bit stamp wrapped: old stamps would alias the new epoch,
+    // so reset them once.
+    std::fill(visit_gen_.begin(), visit_gen_.end(), 0);
+    std::fill(closed_gen_.begin(), closed_gen_.end(), 0);
+    generation_ = 1;
+  }
 }
 
 }  // namespace path_planner

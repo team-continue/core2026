@@ -27,14 +27,20 @@ private:
     const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   void onGoalPoseReceived(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
+  // Runs at replan_rate_hz and plans only when an input changed since the
+  // last plan, decoupling planning cost from topic rates.
+  void onReplanTimer();
+
   void tryPlan();
+
+  // Transforms the cells with the CURRENT start pose and publishes; cheap
+  // (no search), so it also runs on every start-pose message to keep the
+  // local-frame path aligned with the moving robot between replans.
   void publishPath(const std::vector<PathPlanner::GridIndex> & path_cells);
 
-  // Transform a point from global to local (robot) coordinates
-  void transformToLocal(
-    double global_x, double global_y,
-    const geometry_msgs::msg::Pose & robot_pose,
-    double & local_x, double & local_y) const;
+  // True when the pose differs from the start pose used for the last plan
+  // by more than the configured tolerances.
+  bool startPoseChanged(const geometry_msgs::msg::PoseStamped & pose) const;
 
   // Extract yaw from quaternion
   double getYawFromQuaternion(const geometry_msgs::msg::Quaternion & q) const;
@@ -55,6 +61,10 @@ private:
   bool allow_unknown_;
   bool use_diagonal_;
   double cost_weight_;
+  int search_window_margin_;
+  double replan_rate_hz_;
+  double replan_position_tolerance_;
+  double replan_yaw_tolerance_;
 
   // Subscribers
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr global_map_sub_;
@@ -66,10 +76,16 @@ private:
   // Publishers
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
 
+  // Timers
+  rclcpp::TimerBase::SharedPtr replan_timer_;
+
   // State
   std::optional<nav_msgs::msg::OccupancyGrid> global_map_;
   std::optional<geometry_msgs::msg::PoseStamped> start_pose_;
   std::optional<geometry_msgs::msg::PoseStamped> goal_pose_;
+  std::optional<geometry_msgs::msg::PoseStamped> last_planned_start_;
+  std::vector<PathPlanner::GridIndex> last_path_cells_;
+  bool plan_pending_{false};
 };
 
 }  // namespace path_planner
