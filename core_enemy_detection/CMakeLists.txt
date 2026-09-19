@@ -13,6 +13,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # find_package(rclcpp REQUIRED)
 # find_package(sensor_msgs REQUIRED)
 # find_package(OpenCV REQUIRED)
+find_package(Qt5 REQUIRED COMPONENTS Widgets)
+find_package(yaml-cpp REQUIRED)
 # find_package(cv_bridge REQUIRED)
 # find_package(image_transport REQUIRED)
 # find_package(tf2_ros REQUIRED)
@@ -94,6 +96,16 @@ install(TARGETS
     oakd_target_detector
     target_detector
     target_selector
+    DESTINATION lib/${PROJECT_NAME}
+)
+
+ament_auto_add_executable(hsv_tuner src/hsv_tuner.cpp)
+set_target_properties(hsv_tuner PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+ament_target_dependencies(hsv_tuner OpenCV)
+target_link_libraries(hsv_tuner Qt5::Widgets yaml-cpp ${OpenCV_LIBS})
+install(TARGETS hsv_tuner DESTINATION lib/${PROJECT_NAME})
+
+install(PROGRAMS scripts/detected_panel_image_republisher.py
     DESTINATION lib/${PROJECT_NAME}
 )
 
