@@ -113,7 +113,8 @@ class HaruHardware : public rclcpp::Node {
                         wireless_.data.assign(uint8_addr, uint8_addr + uint8_len);
                         wireless_pub_->publish(wireless_);
                     } else if (can_id == 104 && uint8_len == 1) {
-                        hardware_emergency_.data = (uint8_addr[0] == 1);
+                        // ID 104 は upper 基板の hardware_enable（1:通常, 0:非常停止）なので反転して publish する
+                        hardware_emergency_.data = (uint8_addr[0] == 0);
                         hardware_emergency_pub_->publish(hardware_emergency_);
                     }
                 }

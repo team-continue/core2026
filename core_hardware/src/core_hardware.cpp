@@ -173,7 +173,8 @@ void CoreHardware::handle_uint8_packet(uint8_t id, const std::vector<uint8_t>& d
     return;
   }
   if (id == 104U && !data.empty()) {
-    hardware_emergency_.data = (data.front() != 0U);
+    // ID 104 は upper 基板の hardware_enable（1:通常, 0:非常停止）なので反転して publish する
+    hardware_emergency_.data = (data.front() == 0U);
     hardware_emergency_pub_->publish(hardware_emergency_);
   }
 }
