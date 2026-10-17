@@ -1,5 +1,8 @@
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 import os
 
@@ -8,6 +11,12 @@ def generate_launch_description():
     # パラメータ YAML のフルパス
     pkg_dir = get_package_share_directory('core_enemy_detection')
     param_file = os.path.join(pkg_dir, 'config', 'sim_param2.yaml')
+    # コマンドラインのmodel_path:=...をOAK-Dノードの文字列パラメータへ渡す。
+    model_path_arg = DeclareLaunchArgument(
+        'model_path',
+        default_value=os.path.join(pkg_dir, 'config', 'best.rvc2.tar.xz'),
+        description='Absolute path to the DepthAI NN Archive',
+    )
 
     # =========================================================
     # OAK-D 系（right 砲塔向け）
@@ -24,6 +33,8 @@ def generate_launch_description():
         executable='oakd_panel_localizer',
         namespace=RIGHT_NS,
         name='oakd_panel_localizer',
+        parameters=[{'model_path': ParameterValue(
+            LaunchConfiguration('model_path'), value_type=str)}],
         output='screen',
     )
 
@@ -85,6 +96,7 @@ def generate_launch_description():
 
 
     return LaunchDescription([
+        model_path_arg,
         # OAK-D
         oakd_panel_localizer,
         oakd_target_detector,
