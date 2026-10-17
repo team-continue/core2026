@@ -6,6 +6,9 @@
     <!-- <arg name="use_rviz" value="false"/> -->
   <!-- </include> -->
 
+  <!-- Body Controller -->
+  <include file="$(find-pkg-share core_body_controller)/launch/body_controller.launch.py"/>
+
   <!-- Shooter -->
   <include file="$(find-pkg-share core_shooter)/launch/shooter.launch.py"/>
 
