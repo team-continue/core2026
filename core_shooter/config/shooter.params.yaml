@@ -140,10 +140,35 @@
     #   -> 左右で個別設定。判定基準は image_center_x/y なので追尾の収束先と必ず一致する。
     # image_center_x/y は狙う画像中心の正規化座標。0.5,0.5 が幾何学中心 -> 左右で個別設定
     # 例: image_center_x=0.55 -> 画像中央より右へ 5% ずらした位置を目標中心にする
-    target_lead_time_sec: 0.0 #0.10 # [s] 連続するターゲット入力から速度を推定し、この秒数先の予測座標を狙う。0で無効（両モード共通）
+    target_lead_time_sec: 0.0 #0.10 # [s] 推定した的の速度で、この秒数先の予測位置を狙う（両モード共通）。image では tracking.velocity_ff_gain > 0 のときだけ効く
     target_velocity_min_dt_sec: 0.01 # [s] これ未満のサンプル間隔では速度を更新しない（両モード共通）
-    target_velocity_max_px_per_sec: 1500.0 #200.0 # [px/s] 画像平面上の速度推定の各軸上限（point3d では point3d.target_velocity_max_m_per_sec を使用）
     target_velocity_ema_alpha: 0.25 #1.0 # [0..1] 速度推定のEMA係数。1で生値、0で速度追従なし（両モード共通）
+
+    # 画像追尾の追従制御（target_input_mode="image" のとき使用）
+    #   1. 画像の撮影時刻（target_pose の header.stamp）の関節角に画像誤差を足して、的の絶対角を求める
+    #   2. 絶対角の列から的の角速度を推定し、現在時刻 + target_lead_time_sec まで伸ばして目標角にする
+    #   3. command = 目標角 + kp*(目標角-実角) + ki*∫(目標角-実角) + kd*(目標角速度-実角速度)
+    # 調整順: 全ゲイン0（目標角をそのまま指令）で yaw/pitch_image_gain を合わせる
+    #   -> velocity_ff_gain を 1.0 に -> kp を上げる -> 行き過ぎが出たら kd -> 定常偏差が残るときだけ ki
+    image_latency_sec: 0.0 # [s] target_pose に stamp が無いとき、受信時刻からこれだけ前に撮影したとみなす
+    joint_state_history_sec: 1.0 # [s] 撮影時刻の関節角を引くために保持する履歴の長さ
+    tracking:
+      velocity_ff_gain: 0.0 # 速度FFの掛け率。0で予測なし、1で推定速度そのまま
+      target_velocity_max:
+        yaw_rad_per_sec: 5.0 # [rad/s] 的の角速度推定の上限（モータ角）
+        pitch_rad_per_sec: 5.0 # [rad/s]
+      measured_velocity_ema_alpha: 0.3 # (0..1] joint_states の角度差分から求める実角速度のEMA係数
+      # yaw と pitch はモータもギア比も違うので別々に調整する。左右で変えるときは個別設定で上書き
+      yaw:
+        kp: 0.0
+        ki: 0.0
+        kd: 0.0
+        integral_limit: 0.0 # [rad] I項の出力上限。0でI項無効
+      pitch:
+        kp: 0.0
+        ki: 0.0
+        kd: 0.0
+        integral_limit: 0.0 # [rad]
     target_timeout_sec: 0.2 # ターゲットロスト判定時間[s]（両モード共通）
     target_lost_return_to_startup_delay_sec: 2.0 # target喪失後、この秒数だけ現在角を保持したら startup_release_* へ戻す
 
@@ -153,6 +178,8 @@
 
     # image error -> angle command gain（use_fov_image_tracking=false の時に使用）
     # yaw_image_gain / pitch_image_gain は左右で個別設定
+    #   画像誤差[px]をモータ角[rad]に直す換算係数。1px のずれを消すのに必要なモータ角にする
+    #   （追従の速さは tracking.* で決まるので、ここは換算として正しい値に合わせる）
     yaw_direction: 1.0
     pitch_direction: 1.0
 

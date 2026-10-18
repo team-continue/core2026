@@ -34,6 +34,12 @@ if(BUILD_TESTING)
       CORE_SHOOTER_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../core_shooter/config")
   endif()
 
+  # aim_bot の追従制御（関節角履歴・的の角速度推定・速度FF+PD、ヘッダオンリー）を検証する。
+  core_add_gtest(test_tracking_controller test/test_tracking_controller.cpp)
+  if(TARGET test_tracking_controller)
+    ament_target_dependencies(test_tracking_controller core_shooter)
+  endif()
+
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
