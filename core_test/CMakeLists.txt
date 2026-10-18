@@ -34,6 +34,13 @@ if(BUILD_TESTING)
       CORE_SHOOTER_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../core_shooter/config")
   endif()
 
+  # core_shooter の砲塔モデルと MPC（ヘッダオンリー）を ROS 起動なしで検証する。
+  core_add_gtest(test_turret_mpc test/test_turret_mpc.cpp)
+  if(TARGET test_turret_mpc)
+    ament_target_dependencies(test_turret_mpc core_shooter)
+    target_link_libraries(test_turret_mpc ${YAML_CPP_LIBRARIES})
+  endif()
+
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

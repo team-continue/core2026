@@ -23,6 +23,9 @@ set(CORE_SHOOTER_NODES
   shooter_controller
   magazine_manager
   aim_bot
+  # 砲塔 MPC の実機試走ノードとオフライン・シミュレータ（docs/packages/core_shooter/turret_mpc_sysid.md）
+  turret_mpc_trial
+  turret_mpc_sim
 )
 
 foreach(node ${CORE_SHOOTER_NODES})
@@ -40,6 +43,15 @@ install(
   DESTINATION lib/${PROJECT_NAME}
   RENAME shooter_debug_topic_gui
 )
+
+# 砲塔のシステム同定ツール（データ取得ノード・オフライン同定・模擬サーボ）
+foreach(script turret_sysid_logger turret_sysid_identify turret_fake_servo)
+  install(
+    PROGRAMS scripts/${script}.py
+    DESTINATION lib/${PROJECT_NAME}
+    RENAME ${script}
+  )
+endforeach()
 
 install(
   DIRECTORY launch config

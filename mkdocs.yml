@@ -128,6 +128,7 @@ nav:
         - magazine_manager: packages/core_shooter/magazine_manager.md
         - aim_bot: packages/core_shooter/aim_bot.md
         - shooter_debug_topic_gui: packages/core_shooter/shooter_debug_topic_gui.md
+        - 砲塔MPCとシステム同定: packages/core_shooter/turret_mpc_sysid.md
     - Control:
       - core_body_controller:
         - packages/core_body_controller/index.md

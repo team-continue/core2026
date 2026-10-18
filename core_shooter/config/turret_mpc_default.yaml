@@ -1,0 +1,24 @@
+# ============================================================================
+# 砲塔 MPC（core_shooter/turret_mpc.hpp）の調整パラメータ。既定値。
+#
+# 軸・左右ごとに調整するときは、このファイルを
+#   config/turret_mpc_<side>_<axis>.yaml（例: turret_mpc_left_yaw.yaml）
+# にコピーして編集する。手順は docs/packages/core_shooter/turret_mpc_sysid.md。
+#
+# 指令角の範囲（command_min/max）はここでは決めない。砲塔の可動範囲は
+# shooter.params.yaml（pitch_min/max_angle, zone.*）や試験ノードのパラメータが与える。
+# ============================================================================
+turret_mpc:
+  rate_hz: 30.0               # 制御周期 [Hz]。aim_bot の rate と合わせる
+  horizon_steps: 15           # 予測ホライズン [周期]（30Hz で 0.5s）。むだ時間 + 整定時間より長く
+  block_lengths: [1, 1, 1, 2, 2, 3, 5]  # 入力ブロック長 [周期]。合計 = horizon_steps
+  tracking_weight: 1.0        # 追従誤差の重み（基準。通常 1.0 のまま）
+  terminal_weight: 0.0        # 最終段の追従誤差に追加する重み
+  rate_weight: 0.02           # 指令変化量（的の変化量との差）の重み。大きいほど滑らか・遅い
+  max_command_rate_rad_per_sec: 0.0   # 指令変化速度の上限 [rad/s]。0 以下で無制限
+  disturbance_gain: 0.5       # 出力外乱（定常ずれ）推定のゲイン [0..1]
+  resync_threshold_rad: 0.3   # モデルと実測のずれがこれを超えたら内部モデルを実測へ同期 [rad]
+  admm:
+    max_iterations: 500       # 制約が効いたときの ADMM 反復上限
+    rho: 0.3                  # ADMM ペナルティ（ヘッセ行列対角平均に対する比）
+    tolerance: 1.0e-5         # 収束判定 [rad]
