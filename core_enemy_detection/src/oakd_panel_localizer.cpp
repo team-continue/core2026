@@ -1,9 +1,23 @@
 #include <core_enemy_detection/oakd_panel_localizer.hpp>
+#include <rcl_interfaces/msg/parameter_descriptor.hpp>
+#include <stdexcept>
 
 using namespace core_enemy_detection;
 
 oakdPanelLocalizer::oakdPanelLocalizer() : Node("oakd_panel_localizer")
 {
+    // launchから渡されたモデルを起動時に読み込む。未指定時は従来のモデル。
+    const auto package_share = ament_index_cpp::get_package_share_directory("core_enemy_detection");
+    const auto default_model = std::filesystem::path(package_share) / "config" / "best.rvc2.tar.xz";
+    rcl_interfaces::msg::ParameterDescriptor descriptor;
+    descriptor.description = "Path to the DepthAI NN Archive (restart required to change)";
+    descriptor.read_only = true;
+    const auto model_path = this->declare_parameter<std::string>(
+        "model_path", default_model.string(), descriptor);
+    if (!std::filesystem::is_regular_file(model_path)) {
+        throw std::runtime_error("model_path is not a file: " + model_path);
+    }
+    RCLCPP_INFO(this->get_logger(), "Loading model: %s", model_path.c_str());
     panelInfoPub = this->create_publisher<core_msgs::msg::DetectedPanelInfoArray>("detected_panel_info", 1);
     // -----------------------------
     // Camera作成
@@ -14,9 +28,7 @@ oakdPanelLocalizer::oakdPanelLocalizer() : Node("oakd_panel_localizer")
     // -----------------------------
     // NN Archive読み込み
     // -----------------------------
-    const auto package_share = ament_index_cpp::get_package_share_directory("core_enemy_detection");
-    const auto model_path = std::filesystem::path(package_share) / "config" / "best.rvc2.tar.xz";
-    dai::NNArchive model(model_path.string());
+    dai::NNArchive model(model_path);
 
     // -----------------------------ll
     // DetectionNetwork作成
