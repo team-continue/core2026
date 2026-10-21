@@ -1,8 +1,8 @@
 <launch>
-  <!-- ROS 2 Bridge -->
-  <include file="$(find-pkg-share rosbridge_server)/launch/rosbridge_websocket_launch.xml">
-    <arg name="port" value="8765"/>  
-  </include>
+  <!-- ROS 2 Bridge (Android 操作UI用。/bridge/connected を core_mode の diagnostic が監視する) -->
+  <node pkg="ros2_ws_bridge" exec="bridge" name="ros2_websocket_bridge" output="screen">
+    <param name="port" value="8765"/>
+  </node>
 
   <!-- Navigation -->
   <include file="$(find-pkg-share core_launch)/launch/navigation.launch.py">
