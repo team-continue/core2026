@@ -12,7 +12,7 @@ CoreHardware::CoreHardware()
   socket_path_ = get_parameter("socket_path").as_string();
 
   can_pub_ = create_publisher<core_msgs::msg::CANArray>("can/rx", 10);
-  joint_pub_ = create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
+  joint_pub_ = create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
   wireless_pub_ = create_publisher<std_msgs::msg::UInt8MultiArray>("wireless", 10);
   destroy_pub_ = create_publisher<std_msgs::msg::Bool>("destroy", 10);
   hp_pub_ = create_publisher<std_msgs::msg::UInt8>("hp", 10);

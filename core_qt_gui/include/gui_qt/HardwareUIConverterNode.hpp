@@ -26,7 +26,7 @@ public:
             "~/input/imu", 10, std::bind(&HardwareUIConverterNode::imu_callback, this, std::placeholders::_1));
 
         joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-            "/joint_states", 10, std::bind(&HardwareUIConverterNode::joint_state_callback, this, std::placeholders::_1));
+            "/hardware/joint_states", 10, std::bind(&HardwareUIConverterNode::joint_state_callback, this, std::placeholders::_1));
 
         cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/cmd_vel", 10, std::bind(&HardwareUIConverterNode::cmd_vel_callback, this, std::placeholders::_1));

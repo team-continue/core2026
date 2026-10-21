@@ -109,7 +109,7 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         remappings=[
             ("can/tx", "/hardware/can/tx"),
-            ("joint_states", "/joint_states"),
+            ("joint_states", "/hardware/joint_states"),
             ("/rotation", "/control/rotation"),
         ],
         parameters=[
