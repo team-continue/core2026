@@ -126,8 +126,11 @@ private:
 
   void microcontrollerDiagCallback(const std_msgs::msg::Bool::SharedPtr msg)
   {
-    // 通信異常はラッチせず、通信が戻ったら自動復帰
+    // マイコン通信断はラッチする(解除は software_emergency=false)
     microcontroller_emergency_state_ = msg->data;
+    if (msg->data) {
+      high_emergency_level_ = true;
+    }
     evaluateHazardStates();
   }
 
