@@ -36,7 +36,7 @@ def generate_launch_description() -> LaunchDescription:
             }
         ],
         remappings=[
-            ("imu/data_raw", "/imu"),
+            ("imu/data_raw", "/sensing/imu"),
             ("imu/data", "filtered_imu"),
         ],
     )
