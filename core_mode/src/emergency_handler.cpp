@@ -241,12 +241,13 @@ private:
   // variables
   //========================================
   bool emergency_switch_state_ = false;
-  bool software_emergency_state_ = false;
+  // 起動時はソフトウェア緊急停止(ラッチ)から始め、software_emergency=false で解除するまで停止する
+  bool software_emergency_state_ = true;
   bool destroy_state_ = false;
   bool microcontroller_emergency_state_ = false;
   bool bridge_disconnected_state_ = false;
 
-  bool high_emergency_level_ = false;
+  bool high_emergency_level_ = true;
 };
 
 int main(int argc, char * argv[])
