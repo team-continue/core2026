@@ -74,7 +74,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        health_monitor_node,
         GroupAction([
             PushRosNamespace("system"),
             GroupAction([
@@ -83,5 +82,9 @@ def generate_launch_description():
                 diagnostic_node,
             ]),
             led_manager_node,
+            GroupAction([
+                PushRosNamespace("health"),
+                health_monitor_node,
+            ]),
         ]),
     ])
