@@ -11,7 +11,6 @@
       - camera_tps
       - camera_left
       - camera_right
-      - localization
 
     microcontroller: # モータ単位の状態はファーム対応待ち。暫定で joint_states 全体の途絶を見る
       topic: /hardware/joint_states
@@ -41,11 +40,6 @@
     camera_right:
       topic: /turret_camera_right/color/camera_info
       type: sensor_msgs/msg/CameraInfo
-      timeout_ms: 1000
-      level: warn
-    localization:
-      topic: /localization/odom
-      type: nav_msgs/msg/Odometry
       timeout_ms: 1000
       level: warn
 
