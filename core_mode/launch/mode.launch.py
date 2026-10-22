@@ -57,13 +57,16 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        health_monitor_node,
         GroupAction([
             PushRosNamespace("system"),
             GroupAction([
                 PushRosNamespace("emergency"),
                 emergency_handler_node,
                 diagnostic_node,
+            ]),
+            GroupAction([
+                PushRosNamespace("health"),
+                health_monitor_node,
             ]),
         ]),
     ])

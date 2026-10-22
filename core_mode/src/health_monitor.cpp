@@ -168,8 +168,9 @@ public:
     //========================================
     // publishers
     //========================================
+    // launch で system/health 名前空間に置き /system/health/diagnostics とする
     diagnostics_publisher_ =
-      create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
+      create_publisher<diagnostic_msgs::msg::DiagnosticArray>("diagnostics", 10);
 
     //========================================
     // timer
