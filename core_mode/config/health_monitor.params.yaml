@@ -4,19 +4,14 @@
 
     # トピックの途絶監視。名前ごとに topic / type / timeout_ms / level("warn" | "error") を指定する
     # 重いトピック(画像・点群)は避け、同じ機器から出る軽いトピックで代用する
+    # マイコン通信断は緊急停止の対象のため、ここではなく diagnostic → emergency_handler で扱う
     topic_checks:
-      - microcontroller
       - imu
       - livox
       - camera_tps
       - camera_left
       - camera_right
 
-    microcontroller: # モータ単位の状態はファーム対応待ち。暫定で joint_states 全体の途絶を見る
-      topic: /hardware/joint_states
-      type: sensor_msgs/msg/JointState
-      timeout_ms: 300
-      level: error
     imu:
       topic: /imu
       type: sensor_msgs/msg/Imu
