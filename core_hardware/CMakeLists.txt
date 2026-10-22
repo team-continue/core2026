@@ -117,6 +117,20 @@ target_link_libraries(core_hardware_usb
   ${core_msgs_LIBRARIES}
 )
 
+if(BUILD_TESTING)
+  # IPC のスナップショットと ROS メッセージへの変換の単体テスト (実機・daemon は不要)。
+  # test/main.cpp と test/CMakeLists.txt は実機確認用の別ツールなので登録しない
+  ament_auto_add_gtest(test_hardware_snapshot test/test_hardware_snapshot.cpp)
+  if(TARGET test_hardware_snapshot)
+    target_include_directories(test_hardware_snapshot PRIVATE ${CORE_HARDWARE_COMMON_INCLUDE_DIRS})
+  endif()
+
+  ament_auto_add_gtest(test_core_hardware_status test/test_core_hardware_status.cpp)
+  if(TARGET test_core_hardware_status)
+    target_include_directories(test_core_hardware_status PRIVATE ${CORE_HARDWARE_COMMON_INCLUDE_DIRS})
+  endif()
+endif()
+
 install(
   DIRECTORY
     launch
