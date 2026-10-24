@@ -4,7 +4,6 @@
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
-#include "core_msgs/msg/hardware_link_status.hpp"
 
 class Diagnostic : public rclcpp::Node
 {
@@ -46,8 +45,6 @@ public:
       create_publisher<std_msgs::msg::Bool>("microcontroller_timeout", 10);
     bridge_diagnostic_publisher_ =
       create_publisher<std_msgs::msg::Bool>("bridge_disconnected", 10);
-    bottom_can_diagnostic_publisher_ =
-      create_publisher<std_msgs::msg::Bool>("bottom_can_disconnected", 10);
 
     //========================================
     // subscribers
@@ -71,18 +68,6 @@ public:
           }
         });
     }
-
-    // 上下基板間の CAN 断は upper 基板が検出し、EtherCAT 経由で link_status.bottom_connected に載る。
-    // EtherCAT 自体が切れている場合は microcontroller_timeout で検出するため、ここでは CAN 断としない
-    link_status_subscription_ = create_subscription<core_msgs::msg::HardwareLinkStatus>(
-      "link_status", 10,
-      [this](const core_msgs::msg::HardwareLinkStatus::SharedPtr msg) {
-        const bool was_disconnected = bottom_can_disconnected_;
-        bottom_can_disconnected_ = msg->ethercat_connected && !msg->bottom_connected;
-        if (!was_disconnected && bottom_can_disconnected_) {
-          publish_bottom_can_state();
-        }
-      });
 
     //========================================
     // timer
@@ -109,16 +94,6 @@ private:
 
     // Bridge emergency check
     publish_bridge_state();
-
-    // Bottom CAN emergency check
-    publish_bottom_can_state();
-  }
-
-  void publish_bottom_can_state()
-  {
-    std_msgs::msg::Bool msg;
-    msg.data = bottom_can_disconnected_;
-    bottom_can_diagnostic_publisher_->publish(msg);
   }
 
   void publish_bridge_state()
@@ -140,14 +115,12 @@ private:
   //========================================
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr microcontroller_subscription_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr bridge_subscription_;
-  rclcpp::Subscription<core_msgs::msg::HardwareLinkStatus>::SharedPtr link_status_subscription_;
 
   //========================================
   // publisher members
   //========================================
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr microcontroller_diagnostic_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr bridge_diagnostic_publisher_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr bottom_can_diagnostic_publisher_;
 
   //========================================
   // timer callback member variable
@@ -157,7 +130,6 @@ private:
   rclcpp::Time microcontroller_lasttime_;
   rclcpp::Time bridge_lasttime_;
   bool bridge_connected_ = false;
-  bool bottom_can_disconnected_ = false;
 
   //========================================
   // parameter variables
