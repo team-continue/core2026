@@ -1,16 +1,12 @@
-#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <core_msgs/msg/can_array.hpp>
 #include <functional>
 #include <geometry_msgs/msg/twist.hpp>
 #include <memory>
-#include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
-#include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/bool.hpp>
-#include <std_msgs/msg/empty.hpp>
 #include <std_msgs/msg/float64.hpp>
 #include <std_msgs/msg/int32.hpp>
 #include <stdexcept>
@@ -27,8 +23,6 @@ private:
 
   static constexpr std::chrono::milliseconds TIMER_PERIOD{10};
   static constexpr double NOMINAL_TIMER_DT = 0.01;
-  // joint_states の position のうち腰 (RoboStride 06、CAN ID 4) の添字
-  static constexpr size_t WAIST_JOINT_INDEX = 4;
 
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
@@ -38,10 +32,6 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_stop_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr target_omega_pub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rotation_sub_;
-  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr yaw_mode_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr yaw_target_rate_sub_;
-  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr yaw_center_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_states_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   std::unique_ptr<core_body_controller::TargetAngleController> controller_;
@@ -57,28 +47,15 @@ private:
   bool has_received_imu_ = false;
   bool has_received_body_omega_ = false;
   int rotation_mode_ = 0;
-  core_body_controller::YawMode yaw_mode_ = core_body_controller::YawMode::kFront;
-  double yaw_rotation_velocity_ = 6.28;
-  double latest_target_rate_ = 0.0;
-  bool has_received_target_rate_ = false;
-  double latest_waist_position_ = 0.0;
-  bool has_received_joint_states_ = false;
-  double waist_front_offset_ = 0.0;
-  double waist_joint_direction_ = 1.0;
-  double joint_states_timeout_sec_ = 0.5;
   core_body_controller::YawTracker yaw_tracker_;
   SteadyTime last_cmd_vel_time_;
   SteadyTime last_imu_time_;
   SteadyTime last_body_omega_time_;
-  SteadyTime last_target_rate_time_;
-  SteadyTime last_joint_states_time_;
   SteadyTime last_control_time_;
 
   void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg);
   void timer_callback();
-  double gimbal_control(
-    double dt, bool cmd_vel_is_fresh, bool target_rate_is_fresh, bool body_omega_is_fresh);
-  void center_waist();
+  double gimbal_control(double dt, bool cmd_vel_is_fresh, bool body_omega_is_fresh);
   void publish_command(double omega);
   bool is_fresh(const SteadyTime & last_time, bool has_received, double timeout_sec) const;
 };
@@ -88,7 +65,6 @@ TargetAngleNode::TargetAngleNode()
 {
   const double yaw_rotation_velocity =
     this->declare_parameter<double>("yaw_rotation_velocity", 6.28);
-  yaw_rotation_velocity_ = yaw_rotation_velocity;
   const double yaw_rotation_acceleration =
     this->declare_parameter<double>("yaw_rotation_acceleration", M_PI * 3.0);
   cmd_vel_timeout_sec_ =
@@ -105,21 +81,6 @@ TargetAngleNode::TargetAngleNode()
     body_omega_timeout_sec_ <= 0.0)
   {
     throw std::invalid_argument("yaw limits and timeout parameters must be finite and positive");
-  }
-  waist_front_offset_ =
-    this->declare_parameter<double>("waist_front_offset", waist_front_offset_);
-  waist_joint_direction_ =
-    this->declare_parameter<double>("waist_joint_direction", waist_joint_direction_);
-  joint_states_timeout_sec_ =
-    this->declare_parameter<double>("joint_states_timeout_sec", joint_states_timeout_sec_);
-  if (!std::isfinite(waist_front_offset_)) {
-    throw std::invalid_argument("waist_front_offset must be finite");
-  }
-  if (waist_joint_direction_ != 1.0 && waist_joint_direction_ != -1.0) {
-    throw std::invalid_argument("waist_joint_direction must be 1.0 or -1.0");
-  }
-  if (!std::isfinite(joint_states_timeout_sec_) || joint_states_timeout_sec_ <= 0.0) {
-    throw std::invalid_argument("joint_states_timeout_sec must be finite and positive");
   }
   controller_ = std::make_unique<core_body_controller::TargetAngleController>(
     2.0, 0.0, 0.0, yaw_rotation_velocity, yaw_rotation_acceleration);
@@ -173,46 +134,6 @@ TargetAngleNode::TargetAngleNode()
         has_received_body_omega_ = false;
       }
     });
-  yaw_mode_sub_ = this->create_subscription<std_msgs::msg::Int32>(
-    "yaw_mode", 10, [this](const std_msgs::msg::Int32::SharedPtr msg) {
-      const auto mode = core_body_controller::to_yaw_mode(msg->data);
-      if (!mode) {
-        RCLCPP_WARN_THROTTLE(
-          this->get_logger(), *this->get_clock(), 1000,
-          "Ignoring unknown yaw_mode %d (0: front, 1: turret)", msg->data);
-        return;
-      }
-      if (*mode != yaw_mode_) {
-        RCLCPP_INFO(
-          this->get_logger(), "yaw mode: %s",
-          *mode == core_body_controller::YawMode::kTurret ? "turret" : "front");
-      }
-      yaw_mode_ = *mode;
-    });
-  yaw_target_rate_sub_ = this->create_subscription<std_msgs::msg::Float64>(
-    "yaw_target_rate", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) {
-      if (!std::isfinite(msg->data)) {
-        RCLCPP_WARN_THROTTLE(
-          this->get_logger(), *this->get_clock(), 1000, "Ignoring non-finite yaw_target_rate");
-        return;
-      }
-      latest_target_rate_ = std::clamp(msg->data, -yaw_rotation_velocity_, yaw_rotation_velocity_);
-      last_target_rate_time_ = std::chrono::steady_clock::now();
-      has_received_target_rate_ = true;
-    });
-  yaw_center_sub_ = this->create_subscription<std_msgs::msg::Empty>(
-    "yaw_center", 10, [this](const std_msgs::msg::Empty::SharedPtr) {center_waist();});
-  joint_states_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-    "joint_states", 10, [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
-      if (msg->position.size() <= WAIST_JOINT_INDEX ||
-      !std::isfinite(msg->position[WAIST_JOINT_INDEX]))
-      {
-        return;
-      }
-      latest_waist_position_ = msg->position[WAIST_JOINT_INDEX];
-      last_joint_states_time_ = std::chrono::steady_clock::now();
-      has_received_joint_states_ = true;
-    });
   target_omega_pub_ = this->create_publisher<std_msgs::msg::Float64>("target_omega", 10);
   timer_ = this->create_wall_timer(TIMER_PERIOD, std::bind(&TargetAngleNode::timer_callback, this));
 }
@@ -256,34 +177,12 @@ bool TargetAngleNode::is_fresh(
          timeout_sec;
 }
 
-void TargetAngleNode::center_waist()
+double TargetAngleNode::gimbal_control(double dt, bool cmd_vel_is_fresh, bool body_omega_is_fresh)
 {
-  if (emergency_stop_flag_) {
-    RCLCPP_WARN(this->get_logger(), "Ignoring yaw_center during emergency stop");
-    return;
+  if (cmd_vel_is_fresh) {
+    world_target_angle_ =
+      core_body_controller::normalize_angle(world_target_angle_ + latest_twist_.angular.z * dt);
   }
-  if (!is_fresh(last_imu_time_, has_received_imu_, imu_timeout_sec_)) {
-    RCLCPP_WARN(this->get_logger(), "Ignoring yaw_center: no fresh IMU data");
-    return;
-  }
-  if (!is_fresh(last_joint_states_time_, has_received_joint_states_, joint_states_timeout_sec_)) {
-    RCLCPP_WARN(this->get_logger(), "Ignoring yaw_center: no fresh waist position in joint_states");
-    return;
-  }
-  world_target_angle_ = core_body_controller::front_world_target(
-    latest_world_angle_, latest_waist_position_, waist_front_offset_, waist_joint_direction_);
-  RCLCPP_INFO(
-    this->get_logger(), "yaw center: waist=%.3f target=%.3f", latest_waist_position_,
-    world_target_angle_);
-}
-
-double TargetAngleNode::gimbal_control(
-  double dt, bool cmd_vel_is_fresh, bool target_rate_is_fresh, bool body_omega_is_fresh)
-{
-  world_target_angle_ = core_body_controller::next_world_target(
-    world_target_angle_, yaw_mode_,
-    cmd_vel_is_fresh ? std::optional<double>(latest_twist_.angular.z) : std::nullopt,
-    target_rate_is_fresh ? std::optional<double>(latest_target_rate_) : std::nullopt, dt);
 
   const double world_angle_error =
     core_body_controller::normalize_angle(world_target_angle_ - latest_world_angle_);
@@ -348,16 +247,12 @@ void TargetAngleNode::timer_callback()
       "body_omega timed out; disabling rotation feedforward");
   }
 
-  const bool target_rate_is_fresh =
-    is_fresh(last_target_rate_time_, has_received_target_rate_, cmd_vel_timeout_sec_);
-
-  const double omega =
-    gimbal_control(dt, cmd_vel_is_fresh, target_rate_is_fresh, body_omega_is_fresh);
+  const double omega = gimbal_control(dt, cmd_vel_is_fresh, body_omega_is_fresh);
   publish_command(omega);
   RCLCPP_INFO_THROTTLE(
     this->get_logger(), *this->get_clock(), 1000,
-    "yaw target=%.3f estimate=%.3f command=%.3f mode=%d yaw_mode=%d", world_target_angle_,
-    latest_world_angle_, omega, rotation_mode_, static_cast<int>(yaw_mode_));
+    "yaw target=%.3f estimate=%.3f command=%.3f mode=%d", world_target_angle_, latest_world_angle_,
+    omega, rotation_mode_);
 }
 
 int main(int argc, char * argv[])
