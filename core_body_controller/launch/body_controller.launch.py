@@ -52,6 +52,17 @@ def generate_launch_description() -> LaunchDescription:
         default_value="0.2",
         description="Maximum accepted age of body_omega feedforward [s]",
     )
+    waist_front_offset_arg = DeclareLaunchArgument(
+        "waist_front_offset",
+        default_value="0.0",
+        description="Waist motor position when the upper body faces the chassis front [rad]",
+    )
+    waist_joint_direction_arg = DeclareLaunchArgument(
+        "waist_joint_direction",
+        default_value="1.0",
+        description="1.0 if a positive waist motor position turns the upper body to positive yaw, "
+        "otherwise -1.0",
+    )
     use_damiao_imu_arg = DeclareLaunchArgument(
         "use_damiao_imu",
         default_value="true",
@@ -132,6 +143,7 @@ def generate_launch_description() -> LaunchDescription:
             ("imu", "/sensing/imu"),
             ("can/tx", "/hardware/can/tx"),
             ("/rotation", "/control/rotation"),
+            ("joint_states", "/hardware/joint_states"),
         ],
         parameters=[
             {
@@ -143,6 +155,12 @@ def generate_launch_description() -> LaunchDescription:
                 "imu_timeout_sec": LaunchConfiguration("imu_timeout_sec"),
                 "body_omega_timeout_sec": LaunchConfiguration(
                     "body_omega_timeout_sec"
+                ),
+                "waist_front_offset": ParameterValue(
+                    LaunchConfiguration("waist_front_offset"), value_type=float
+                ),
+                "waist_joint_direction": ParameterValue(
+                    LaunchConfiguration("waist_joint_direction"), value_type=float
                 ),
             }
         ],
@@ -159,6 +177,8 @@ def generate_launch_description() -> LaunchDescription:
             cmd_vel_timeout_arg,
             imu_timeout_arg,
             body_omega_timeout_arg,
+            waist_front_offset_arg,
+            waist_joint_direction_arg,
             use_damiao_imu_arg,
             imu_port_arg,
             imu_baudrate_arg,
