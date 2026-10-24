@@ -54,7 +54,7 @@ def generate_launch_description() -> LaunchDescription:
     )
     waist_front_offset_arg = DeclareLaunchArgument(
         "waist_front_offset",
-        default_value="0.0",
+        default_value="3.7822790145874023",
         description="Waist motor position when the upper body faces the chassis front [rad]",
     )
     waist_joint_direction_arg = DeclareLaunchArgument(
@@ -130,6 +130,12 @@ def generate_launch_description() -> LaunchDescription:
                 "auto_rotation_velocity": LaunchConfiguration("auto_rotation_velocity"),
                 "high_rotation_velocity": LaunchConfiguration("high_rotation_velocity"),
                 "cmd_vel_timeout_sec": LaunchConfiguration("cmd_vel_timeout_sec"),
+                "waist_front_offset": ParameterValue(
+                    LaunchConfiguration("waist_front_offset"), value_type=float
+                ),
+                "waist_joint_direction": ParameterValue(
+                    LaunchConfiguration("waist_joint_direction"), value_type=float
+                ),
             }
         ],
     )

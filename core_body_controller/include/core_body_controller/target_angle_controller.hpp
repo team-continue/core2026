@@ -44,6 +44,16 @@ inline double next_world_target(
   return normalize_angle(world_target + *rate * dt);
 }
 
+// current から goal へ、近いほうの向きに最大 max_step [rad] だけ進めた角度 (-π〜π)
+inline double step_toward_angle(double current, double goal, double max_step)
+{
+  const double diff = normalize_angle(goal - current);
+  if (!std::isfinite(diff) || !std::isfinite(max_step) || max_step <= 0.0) {
+    return normalize_angle(current);
+  }
+  return normalize_angle(current + std::clamp(diff, -max_step, max_step));
+}
+
 // 腰を車体の正面に向ける目標の向き [rad]。IMU は上半身にあるので、
 // 車体の正面の向き = 上半身の向き - 腰の角度 (車体の正面からのずれ)
 // waist_direction は腰のモータの角度の正の向きが、ワールドの yaw の正の向きと同じなら 1、逆なら -1

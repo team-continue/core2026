@@ -160,6 +160,24 @@ TEST(TargetAngleControllerTest, TargetUpdateWrapsAndRejectsInvalidInput)
     1e-12);
 }
 
+TEST(TargetAngleControllerTest, StepTowardAngleMovesSlowlyAlongTheShorterWay)
+{
+  // 最大 0.1 rad ずつ近づく
+  EXPECT_NEAR(core_body_controller::step_toward_angle(0.0, 1.0, 0.1), 0.1, 1e-12);
+  EXPECT_NEAR(core_body_controller::step_toward_angle(0.0, -1.0, 0.1), -0.1, 1e-12);
+  // 残りが小さければ goal に着く
+  EXPECT_NEAR(core_body_controller::step_toward_angle(0.95, 1.0, 0.1), 1.0, 1e-12);
+  // -π/π をまたぐときは近いほうへ回る
+  EXPECT_NEAR(
+    core_body_controller::step_toward_angle(M_PI - 0.05, -M_PI + 0.05, 0.2), -M_PI + 0.05,
+    1e-12);
+  EXPECT_NEAR(
+    core_body_controller::step_toward_angle(M_PI - 0.05, -M_PI + 0.5, 0.1), -M_PI + 0.05,
+    1e-12);
+  // 不正な速さでは動かない
+  EXPECT_NEAR(core_body_controller::step_toward_angle(0.3, 1.0, 0.0), 0.3, 1e-12);
+}
+
 TEST(TargetAngleControllerTest, FrontTargetRemovesTheWaistOffsetFromTheUpperBodyYaw)
 {
   // 上半身が 1.0 rad、腰が車体の正面から 0.4 rad 回っていれば、車体の正面は 0.6 rad

@@ -35,6 +35,7 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr world_target_angle_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr body_omega_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr body_omega_manual_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_stop_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr target_omega_pub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rotation_sub_;
@@ -49,6 +50,9 @@ private:
   double world_target_angle_ = 0.0;
   double latest_world_angle_ = 0.0;
   double latest_body_omega_ = 0.0;
+  // 車体の回転のうち無限回転を除いた分 (body_control_node が加速度を制限したあとの値)
+  double latest_body_omega_manual_ = 0.0;
+  bool has_received_body_omega_manual_ = false;
   double cmd_vel_timeout_sec_ = 0.2;
   double imu_timeout_sec_ = 0.2;
   double body_omega_timeout_sec_ = 0.2;
@@ -63,13 +67,18 @@ private:
   bool has_received_target_rate_ = false;
   double latest_waist_position_ = 0.0;
   bool has_received_joint_states_ = false;
-  double waist_front_offset_ = 0.0;
+  // 腰が車体の正面を向くときの角度 [rad] (実機の値。body_control_node と同じ)
+  double waist_front_offset_ = 3.7822790145874023;
   double waist_joint_direction_ = 1.0;
   double joint_states_timeout_sec_ = 0.5;
+  // CENTER で正面へ振り向くときの目標の向きの速さ [rad/s] (既定は 1 秒で 1 回転) と、振り向いている途中か
+  double yaw_center_velocity_ = 2.0 * M_PI;
+  bool centering_ = false;
   core_body_controller::YawTracker yaw_tracker_;
   SteadyTime last_cmd_vel_time_;
   SteadyTime last_imu_time_;
   SteadyTime last_body_omega_time_;
+  SteadyTime last_body_omega_manual_time_;
   SteadyTime last_target_rate_time_;
   SteadyTime last_joint_states_time_;
   SteadyTime last_control_time_;
@@ -121,6 +130,11 @@ TargetAngleNode::TargetAngleNode()
   if (!std::isfinite(joint_states_timeout_sec_) || joint_states_timeout_sec_ <= 0.0) {
     throw std::invalid_argument("joint_states_timeout_sec must be finite and positive");
   }
+  yaw_center_velocity_ =
+    this->declare_parameter<double>("yaw_center_velocity", yaw_center_velocity_);
+  if (!std::isfinite(yaw_center_velocity_) || yaw_center_velocity_ <= 0.0) {
+    throw std::invalid_argument("yaw_center_velocity must be finite and positive");
+  }
   controller_ = std::make_unique<core_body_controller::TargetAngleController>(
     2.0, 0.0, 0.0, yaw_rotation_velocity, yaw_rotation_acceleration);
 
@@ -165,12 +179,23 @@ TargetAngleNode::TargetAngleNode()
       last_body_omega_time_ = std::chrono::steady_clock::now();
       has_received_body_omega_ = true;
     });
+  body_omega_manual_sub_ = this->create_subscription<std_msgs::msg::Float64>(
+    "body_omega_manual", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) {
+      if (emergency_stop_flag_ || !std::isfinite(msg->data)) {
+        return;
+      }
+      latest_body_omega_manual_ = msg->data;
+      last_body_omega_manual_time_ = std::chrono::steady_clock::now();
+      has_received_body_omega_manual_ = true;
+    });
   emergency_stop_sub_ = this->create_subscription<std_msgs::msg::Bool>(
     "/system/emergency/hazard_status", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
       emergency_stop_flag_ = msg->data;
       if (emergency_stop_flag_) {
         latest_body_omega_ = 0.0;
         has_received_body_omega_ = false;
+        latest_body_omega_manual_ = 0.0;
+        has_received_body_omega_manual_ = false;
       }
     });
   yaw_mode_sub_ = this->create_subscription<std_msgs::msg::Int32>(
@@ -270,26 +295,61 @@ void TargetAngleNode::center_waist()
     RCLCPP_WARN(this->get_logger(), "Ignoring yaw_center: no fresh waist position in joint_states");
     return;
   }
-  world_target_angle_ = core_body_controller::front_world_target(
-    latest_world_angle_, latest_waist_position_, waist_front_offset_, waist_joint_direction_);
+  // 目標の向きを一気に変えず、gimbal_control で yaw_center_velocity の速さで正面に近づける
+  centering_ = true;
   RCLCPP_INFO(
-    this->get_logger(), "yaw center: waist=%.3f target=%.3f", latest_waist_position_,
-    world_target_angle_);
+    this->get_logger(), "yaw center: start (waist=%.3f, velocity=%.2f rad/s)",
+    latest_waist_position_, yaw_center_velocity_);
 }
 
 double TargetAngleNode::gimbal_control(
   double dt, bool cmd_vel_is_fresh, bool target_rate_is_fresh, bool body_omega_is_fresh)
 {
-  world_target_angle_ = core_body_controller::next_world_target(
-    world_target_angle_, yaw_mode_,
-    cmd_vel_is_fresh ? std::optional<double>(latest_twist_.angular.z) : std::nullopt,
-    target_rate_is_fresh ? std::optional<double>(latest_target_rate_) : std::nullopt, dt);
+  // TURRET で腰を回す操作が来たら、振り向きをやめて操作を優先する
+  if (centering_ && yaw_mode_ == core_body_controller::YawMode::kTurret &&
+    target_rate_is_fresh && std::abs(latest_target_rate_) > 1e-6)
+  {
+    centering_ = false;
+    RCLCPP_INFO(this->get_logger(), "yaw center: canceled by yaw_target_rate");
+  }
+  if (centering_ &&
+    !is_fresh(last_joint_states_time_, has_received_joint_states_, joint_states_timeout_sec_))
+  {
+    centering_ = false;
+    RCLCPP_WARN(this->get_logger(), "yaw center: canceled (no fresh waist position)");
+  }
+
+  if (centering_) {
+    // 正面の向きは毎回計算し直す (振り向く途中で車体が曲がっても正面に追いつく)
+    const double front = core_body_controller::front_world_target(
+      latest_world_angle_, latest_waist_position_, waist_front_offset_, waist_joint_direction_);
+    world_target_angle_ = core_body_controller::step_toward_angle(
+      world_target_angle_, front, yaw_center_velocity_ * dt);
+    if (std::abs(core_body_controller::normalize_angle(front - world_target_angle_)) < 1e-3) {
+      centering_ = false;
+      RCLCPP_INFO(this->get_logger(), "yaw center: done (target=%.3f)", world_target_angle_);
+    }
+  } else {
+    // FRONT は、車体が実際に回る分 (加速度の制限後、無限回転を除く) で目標を回し、上半身を車体と一体に動かす。
+    // 届いていなければ従来どおり cmd_vel の angular.z を使う
+    const bool body_omega_manual_is_fresh = is_fresh(
+      last_body_omega_manual_time_, has_received_body_omega_manual_, body_omega_timeout_sec_);
+    std::optional<double> front_rate;
+    if (body_omega_manual_is_fresh) {
+      front_rate = latest_body_omega_manual_;
+    } else if (cmd_vel_is_fresh) {
+      front_rate = latest_twist_.angular.z;
+    }
+    world_target_angle_ = core_body_controller::next_world_target(
+      world_target_angle_, yaw_mode_, front_rate,
+      target_rate_is_fresh ? std::optional<double>(latest_target_rate_) : std::nullopt, dt);
+  }
 
   const double world_angle_error =
     core_body_controller::normalize_angle(world_target_angle_ - latest_world_angle_);
-  const bool rotation_compensation_enabled = rotation_mode_ == 1 || rotation_mode_ == 2;
-  const double feedforward =
-    rotation_compensation_enabled && body_omega_is_fresh ? latest_body_omega_ : 0.0;
+  // 車体の回転 (body_omega) は回転モードに関係なく打ち消す。モードの切り替えの瞬間に補正を切ると、
+  // 加速・減速中 (body_control_node の加速度の制限で数秒かかる) に腰が車体と一緒に回されて前を向かなくなる
+  const double feedforward = body_omega_is_fresh ? latest_body_omega_ : 0.0;
   return controller_->update(world_angle_error, feedforward, dt);
 }
 
@@ -317,6 +377,7 @@ void TargetAngleNode::timer_callback()
 
   if (emergency_stop_flag_) {
     controller_->reset();
+    centering_ = false;
     publish_command(0.0);
     RCLCPP_ERROR_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000, "Emergency stop flag is set");
