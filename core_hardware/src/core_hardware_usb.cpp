@@ -41,7 +41,7 @@ class HaruHardware : public rclcpp::Node {
         declare_parameter("port", "/dev/ttyACM0");
         port_ = this->get_parameter("port").as_string();
         can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/rx", 10);
-        joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
+        joint_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
         wireless_pub_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>("wireless", 10);
         destroy_pub_ = this->create_publisher<std_msgs::msg::Bool>("destroy", 10);
         hp_pub_ = this->create_publisher<std_msgs::msg::UInt8>("hp", 10);

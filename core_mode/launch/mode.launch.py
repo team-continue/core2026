@@ -1,6 +1,6 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node, PushRosNamespace
-from launch.actions import GroupAction
+from launch.actions import GroupAction, Shutdown
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -23,7 +23,9 @@ def generate_launch_description():
         remappings=[
             ("emergency_switch", "/hardware/hardware_emergency"),
             ("destroy", "/hardware/destroy"),
-        ]
+        ],
+        # 緊急停止の判定が止まったまま動き続けないよう、落ちたら launch 全体を止める
+        on_exit=Shutdown(reason="emergency_handler exited"),
     )
 
     diagnostic_node = Node(
@@ -33,9 +35,10 @@ def generate_launch_description():
         output="screen",
         parameters=[mode_params],
         remappings=[
-            ("microcontroller_monitor", "/joint_states"),
-            ("receive_module_monitor", "/hardware/wireless"),
-        ]
+            ("microcontroller_monitor", "/hardware/joint_states"),
+            ("bridge_connected", "/bridge/connected"),
+        ],
+        on_exit=Shutdown(reason="diagnostic exited"),
     )
 
     return LaunchDescription([

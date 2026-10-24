@@ -3,6 +3,7 @@
     # emergency_handler
 
     # diagnostic:
-    microcontroller_diagnostic_time: 2000 # マイコンのタイムアウト[ms]
-    receiver_diagnostic_time: 2000 # receiverのタイムアウト[ms]
+    microcontroller_diagnostic_time: 300 # マイコン(/hardware/joint_states)のタイムアウト[ms]
+    bridge_diagnostic_time: 500 # ros2_ws_bridge(/bridge/connected)のタイムアウト[ms]
     diagnostic_cycle: 50 # diagnosticする周期[ms]
+    connection_monitor: "ros2_bridge" # 通信の死活監視: "ros2_bridge"(/bridge/connected を監視) | "none"(監視しない)

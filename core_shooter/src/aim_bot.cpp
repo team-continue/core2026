@@ -406,7 +406,7 @@ public:
       [this](const std_msgs::msg::Bool::SharedPtr msg) {turret_auto_ = msg->data;});
 
     joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
-      "/joint_states", 10, std::bind(&AimBot::jointStateCallback, this, std::placeholders::_1));
+      "/hardware/joint_states", 10, std::bind(&AimBot::jointStateCallback, this, std::placeholders::_1));
 
     // ----------------------------
     // Publisher
