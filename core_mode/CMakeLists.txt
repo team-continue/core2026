@@ -26,10 +26,6 @@ ament_auto_add_executable(diagnostic
   src/diagnostic.cpp
 )
 
-ament_auto_add_executable(health_monitor
-  src/health_monitor.cpp
-)
-
 install(
   DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}/
