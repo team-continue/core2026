@@ -1,10 +1,34 @@
 <launch>
   <!--
-    砲塔の原点合わせ用の最小構成。core_2026_hardware.xml は別に起動しておく。
-    非常停止を解除してから、左右それぞれ次を呼ぶ（終わるまで応答しない）:
-      ros2 service call /mecha/shooter/left/aim_bot/calibrate_origin std_srvs/srv/Trigger
-      ros2 service call /mecha/shooter/right/aim_bot/calibrate_origin std_srvs/srv/Trigger
+    砲塔の原点合わせ用の最小構成（ブリッジ・左右の aim_bot・core_mode）。
     システム全体（core2026_system.xml）の起動中でも、同じサービスで合わせられる。
+
+    ■ 起動
+      core_2026_hardware.xml を別に起動しておき、
+        ros2 launch core_launch core2026_turret_origin.xml
+      操作 UI で非常停止を解除する。
+
+    ■ 使い方（<side> は left / right。左右それぞれ実行する）
+      どちらのサービスも pitch → yaw の順にストッパへ押し当て、終わるまで応答しない。
+      非常停止で中断する（そのときは何も保存しない）。
+
+      1. 初回だけ: ストッパ角を実測する
+         砲塔を原点（pitch は水平、yaw は車体正面）に置いてから
+           ros2 service call /mecha/shooter/<side>/aim_bot/measure_origin_limit std_srvs/srv/Trigger
+         応答に出る limit_angle を core_shooter/config/shooter.params.yaml の
+         /**/<side>/aim_bot の turret_origin.yaw.limit_angle / turret_origin.pitch.limit_angle に書き、
+         limit_angle_measured: true にして commit する。aim_bot を再起動すると反映される。
+         （limit_angle_measured: false の間は 2 を拒否する）
+
+      2. 原点がずれたと思ったら: 原点を合わせる
+           ros2 service call /mecha/shooter/<side>/aim_bot/calibrate_origin std_srvs/srv/Trigger
+         すぐ反映される（再起動不要）。結果は
+         core_shooter/config/local/turret_origin_<side>.state.yaml（git 管理外）に保存され、
+         次回の起動時にも読み込まれる。
+
+    ■ 設定
+      押し当ての向き・速さ・接触の判定は shooter.params.yaml の turret_origin.*、
+      稼働中の衝突停止（当たった向きにだけ止まる）は turret_collision.* で変える。
   -->
 
   <!-- ROS 2 Bridge (操作UIから非常停止を解除する。切れていると core_mode が非常停止にする) -->
