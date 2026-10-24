@@ -1,3 +1,0 @@
-<launch>
-    <include file="$(find-pkg-share core_status_gui)/launch/status_display_gui.launch.py" />
-</launch>

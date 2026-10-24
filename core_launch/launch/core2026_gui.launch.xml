@@ -3,9 +3,9 @@
          qt_gui (HUD) はモニターが 2 台以上あれば 2 台目 (モニター2) に表示する -->
     <arg name="gui" default="both" description="GUI to launch: 'both', 'qt' (HUD, monitor 2) or 'status' (status display, monitor 1)"/>
 
-    <include file="$(find-pkg-share core_launch)/launch/core2026_status_gui.launch.xml"
+    <include file="$(find-pkg-share core_status_gui)/launch/status_display_gui.launch.py"
              if="$(eval '\'$(var gui)\' in [\'both\', \'status\']')" />
-    <include file="$(find-pkg-share core_launch)/launch/core2026_qt_gui.launch.xml"
+    <include file="$(find-pkg-share gui_qt)/launch/hud.launch.py"
              if="$(eval '\'$(var gui)\' in [\'both\', \'qt\']')" />
     <log message="Unknown gui:=$(var gui) (use 'both', 'qt' or 'status'); no GUI is launched"
          if="$(eval '\'$(var gui)\' not in [\'both\', \'qt\', \'status\']')" />
