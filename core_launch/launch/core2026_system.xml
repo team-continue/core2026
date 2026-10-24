@@ -1,18 +1,34 @@
 <launch>
+  <!-- 'real' (実機): センサを起動する / 'sim' (Unity シミュレーター): ROS-TCP-Endpoint を起動する -->
+  <arg name="environment" default="real" description="'real' (physical robot) or 'sim' (Unity simulator)"/>
+
   <!-- ROS 2 Bridge (Android 操作UI用。/bridge/connected を core_mode の diagnostic が監視する) -->
   <node pkg="ros2_ws_bridge" exec="bridge" name="ros2_websocket_bridge" output="screen">
     <param name="port" value="8765"/>
   </node>
 
-  <!-- Navigation -->
+  <!-- Sensing (real): LiDAR・砲塔カメラ・IMU を /sensing 名前空間で起動する -->
+  <include file="$(find-pkg-share core_launch)/launch/sensing.launch.py"
+           if="$(eval '\'$(var environment)\' == \'real\'')"/>
+
+  <!-- ROS-TCP-Endpoint (sim): Unity 側は名前空間の無い名前で送受信するので、core2026 の名前空間体系に合わせる。
+       endpoint がトピックごとに作るノードにも、このプロセスの remap が効く -->
+  <node pkg="ros_tcp_endpoint" exec="default_server_endpoint" name="ros_tcp_endpoint" output="screen"
+        if="$(eval '\'$(var environment)\' == \'sim\'')">
+    <param name="ROS_IP" value="127.0.0.1"/>
+    <param name="ROS_TCP_PORT" value="10000"/>
+    <remap from="/joint_states" to="/hardware/joint_states"/>
+    <remap from="/imu" to="/sensing/imu"/>
+    <remap from="/livox/lidar" to="/sensing/livox/lidar"/>
+    <remap from="/can/tx" to="/hardware/can/tx"/>
+    <remap from="/cmd_vel" to="/control/cmd_vel"/>
+  </node>
+
+  <!-- Navigation (body_controller も含む) -->
   <include file="$(find-pkg-share core_launch)/launch/navigation.launch.py">
-    <arg name="environment" value="real"/>
     <!-- <arg name="use_localization" value="true"/> -->
     <!-- <arg name="use_rviz" value="false"/> -->
   </include>
-
-  <!-- Body Controller -->
-  <include file="$(find-pkg-share core_body_controller)/launch/body_controller.launch.py"/>
 
   <!-- Shooter -->
   <include file="$(find-pkg-share core_shooter)/launch/shooter.launch.py"/>

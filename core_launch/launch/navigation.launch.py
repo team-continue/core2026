@@ -1,8 +1,8 @@
 """
 Navigation launch file.
 
-Launches the full navigation pipeline with configurable environment,
-control modes, and map presets.
+Launches the full navigation pipeline with configurable control modes and map presets.
+Sensors (real) and the Unity ROS-TCP-Endpoint (sim) are launched by core2026_system.xml.
 """
 
 import os
@@ -16,9 +16,7 @@ from launch.actions import (
     OpaqueFunction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node, PushRosNamespace
-from launch_ros.substitutions import FindPackageShare
 
 # ── Map presets ──────────────────────────────────────────────────────
 MAP_PRESETS = {
@@ -44,15 +42,10 @@ MAP_PRESETS = {
 def _launch_nodes(context):
     """Resolve map preset and return all node actions."""
     # ── Resolve launch arguments ─────────────────────────────────────
-    env = context.launch_configurations['environment']
     map_name = context.launch_configurations['map_name']
     use_rviz = context.launch_configurations['use_rviz']
     use_localization = context.launch_configurations.get(
         'use_localization', 'false').lower() == 'true'
-
-    is_real = (env == 'real')
-    use_damiao_imu = is_real and context.launch_configurations.get(
-        'use_damiao_imu', 'true').lower() == 'true'
 
     # ── Map preset ───────────────────────────────────────────────────
     preset = MAP_PRESETS.get(map_name)
@@ -68,48 +61,7 @@ def _launch_nodes(context):
 
     rviz_config = os.path.join(core_launch_share, 'config', 'navigation.rviz')
 
-    livox_user_config = PathJoinSubstitution([
-        FindPackageShare('livox_ros_driver2'), 'config', 'MID360_config.json',
-    ])
-
     actions = []
-
-    # ── 1. ROS-TCP-Endpoint (sim only) ───────────────────────────────
-    if not is_real:
-        actions.append(Node(
-            package='ros_tcp_endpoint',
-            executable='default_server_endpoint',
-            name='ros_tcp_endpoint',
-            output='screen',
-            parameters=[{'ROS_IP': '127.0.0.1', 'ROS_TCP_PORT': 10000}],
-        ))
-
-    # ── 2. Livox driver (real only) ──────────────────────────────────
-    if is_real:
-        actions.append(GroupAction([
-            PushRosNamespace('sensing'),
-            Node(
-                package='livox_ros_driver2',
-                executable='livox_ros_driver2_node',
-                name='livox_lidar_publisher',
-                output='screen',
-                remappings=[
-                    ('livox/lidar', '/sensing/livox/lidar'),
-                    ('livox/imu', '/sensing/livox/imu'),
-                ],
-                parameters=[{
-                    'xfer_format': 0,  # PointCloud2 (MID-360)
-                    'multi_topic': 0,
-                    'data_src': 0,
-                    'publish_freq': 10.0,
-                    'output_data_type': 0,
-                    'frame_id': 'livox_frame',
-                    'lvx_file_path': '/home/livox/livox_test.lvx',
-                    'user_config_path': livox_user_config,
-                    'cmdline_input_bd_code': 'livox0000000001',
-                }],
-            ),
-        ]))
 
     # ── 無効化中のノードについて ─────────────────────────────────────
     # 以下のコメントアウト済みブロックは名前空間対応済みの形で記述してあります。
@@ -317,14 +269,6 @@ def _launch_nodes(context):
         PythonLaunchDescriptionSource(
             os.path.join(body_ctrl_share, 'launch', 'body_controller.launch.py'),
         ),
-        launch_arguments={
-            'use_damiao_imu': 'true' if use_damiao_imu else 'false',
-            'imu_port': context.launch_configurations['imu_port'],
-            'imu_baudrate': context.launch_configurations['imu_baudrate'],
-            'imu_frame_id': context.launch_configurations['imu_frame_id'],
-            'imu_output_rate_hz': context.launch_configurations[
-                'imu_output_rate_hz'],
-        }.items(),
     ))
 
     # ── 12. RViz ────────────────────────────────────────────────────
@@ -342,10 +286,6 @@ def _launch_nodes(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument(
-            'environment', default_value='sim',
-            description="'sim' (Unity simulation) or 'real' (physical robot)",
-        ),
         DeclareLaunchArgument(
             'odom_source', default_value='sim',
             description="'sim' (/sim_odom) or 'fastlio' (/Odometry). Forced 'fastlio' when real.",
@@ -369,30 +309,6 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_localization', default_value='false',
             description='Enable NDT/ICP localization (dynamic map→odom TF)',
-        ),
-        DeclareLaunchArgument(
-            'use_damiao_imu', default_value='true',
-            description='Launch DM-IMU-L1 in real mode; always disabled in sim',
-        ),
-        DeclareLaunchArgument(
-            'imu_port',
-            default_value=(
-                '/dev/serial/by-id/'
-                'usb-DM-IMU_DM-IMU_USB_CDC_2025021200-if00'
-            ),
-            description='DM-IMU-L1 USB serial device (real mode only)',
-        ),
-        DeclareLaunchArgument(
-            'imu_baudrate', default_value='921600',
-            description='DM-IMU-L1 USB serial baud rate',
-        ),
-        DeclareLaunchArgument(
-            'imu_frame_id', default_value='damiao_imu_link',
-            description='Frame ID assigned to DM-IMU-L1 messages',
-        ),
-        DeclareLaunchArgument(
-            'imu_output_rate_hz', default_value='200',
-            description='DM-IMU-L1 output rate [Hz]',
         ),
         OpaqueFunction(function=_launch_nodes),
     ])
