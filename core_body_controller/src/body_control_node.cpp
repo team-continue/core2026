@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <stdexcept>
 
-constexpr double INITIAL_ANGLE = 3.7822790145874023;
-
 BodyControlNode::BodyControlNode()
 : Node("body_control_node")
 {
@@ -17,6 +15,16 @@ BodyControlNode::BodyControlNode()
     this->declare_parameter<double>("high_rotation_velocity", HIGH_ROTATION_VELOCITY);
   CMD_VEL_TIMEOUT_SEC =
     this->declare_parameter<double>("cmd_vel_timeout_sec", CMD_VEL_TIMEOUT_SEC);
+  waist_front_offset_ =
+    this->declare_parameter<double>("waist_front_offset", waist_front_offset_);
+  waist_joint_direction_ =
+    this->declare_parameter<double>("waist_joint_direction", waist_joint_direction_);
+  if (!std::isfinite(waist_front_offset_)) {
+    throw std::invalid_argument("waist_front_offset must be finite");
+  }
+  if (waist_joint_direction_ != 1.0 && waist_joint_direction_ != -1.0) {
+    throw std::invalid_argument("waist_joint_direction must be 1.0 or -1.0");
+  }
   if (!std::isfinite(ACCELERATION) || !std::isfinite(ROTATION_ACCELERATION) ||
     !std::isfinite(AUTO_ROTATION_VELOCITY) || !std::isfinite(HIGH_ROTATION_VELOCITY) ||
     !std::isfinite(CMD_VEL_TIMEOUT_SEC) || ACCELERATION <= 0.0 ||
@@ -58,9 +66,10 @@ BodyControlNode::BodyControlNode()
           msg->position.size());
         return;
       }
-      latest_body_angle_ = msg->position[4] - INITIAL_ANGLE;
+      latest_body_angle_ = waist_joint_direction_ * (msg->position[4] - waist_front_offset_);
     });
   body_omega_ = this->create_publisher<std_msgs::msg::Float64>("body_omega", 10);
+  body_omega_manual_ = this->create_publisher<std_msgs::msg::Float64>("body_omega_manual", 10);
   rotation_flag_sub_ = this->create_subscription<std_msgs::msg::Int32>(
     "/rotation", 10, [this](const std_msgs::msg::Int32::SharedPtr msg) {
       rotation_mode_ = msg->data;
@@ -106,8 +115,17 @@ void BodyControlNode::timer_callback()
   } else if (rotation_mode_ == 2) {
     rotation_velocity = HIGH_ROTATION_VELOCITY;
   }
-  const double target_angular_z = rotation_velocity + target_twist.angular.z;
-  cmd_vel_.angular.z = apply_rate_limit(cmd_vel_.angular.z, target_angular_z, angular_step);
+  // 無限回転の分と操作の分を別々に制限する。target_angle_node は操作の分だけ腰の目標に足すので、
+  // 無限回転のオン・オフで腰の向きが飛ばない
+  spin_omega_ = apply_rate_limit(spin_omega_, rotation_velocity, angular_step);
+  manual_omega_ = apply_rate_limit(manual_omega_, target_twist.angular.z, angular_step);
+  if (std::abs(spin_omega_) < 0.01 && rotation_velocity == 0.0) {
+    spin_omega_ = 0;
+  }
+  if (std::abs(manual_omega_) < 0.01 && target_twist.angular.z == 0.0) {
+    manual_omega_ = 0;
+  }
+  cmd_vel_.angular.z = spin_omega_ + manual_omega_;
 
   if (std::abs(cmd_vel_.linear.x) < 0.01) {
     cmd_vel_.linear.x = 0;
@@ -126,6 +144,10 @@ void BodyControlNode::timer_callback()
   std_msgs::msg::Float64 body_omega_msg;
   body_omega_msg.data = cmd_vel_.angular.z;
   body_omega_->publish(body_omega_msg);
+
+  std_msgs::msg::Float64 body_omega_manual_msg;
+  body_omega_manual_msg.data = manual_omega_;
+  body_omega_manual_->publish(body_omega_manual_msg);
 }
 
 void BodyControlNode::emergency_stop()
@@ -143,6 +165,7 @@ void BodyControlNode::emergency_stop()
   std_msgs::msg::Float64 body_omega_msg;
   body_omega_msg.data = 0.0;
   body_omega_->publish(body_omega_msg);
+  body_omega_manual_->publish(body_omega_msg);
 
   cmd_vel_.linear.x = 0;
   cmd_vel_.linear.y = 0;
@@ -150,6 +173,8 @@ void BodyControlNode::emergency_stop()
   cmd_vel_.angular.x = 0;
   cmd_vel_.angular.y = 0;
   cmd_vel_.angular.z = 0;
+  spin_omega_ = 0;
+  manual_omega_ = 0;
   rotation_mode_ = 0;
 }
 
