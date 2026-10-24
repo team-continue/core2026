@@ -2,56 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
-#include <optional>
 
 namespace core_body_controller
 {
 
 inline double normalize_angle(double angle) {return std::atan2(std::sin(angle), std::cos(angle));}
-
-// 腰 (上半身) の目標の向きを何で回すか
-enum class YawMode
-{
-  // cmd_vel の angular.z で回す。車体と一緒に回り、車体の正面に対する向きを保つ
-  kFront = 0,
-  // yaw_target_rate で回す。車体が曲がってもワールドでの向きを保つ
-  kTurret = 1,
-};
-
-// /control/yaw_mode の値をモードにする。知らない値なら nullopt
-inline std::optional<YawMode> to_yaw_mode(int value)
-{
-  switch (value) {
-    case static_cast<int>(YawMode::kFront):
-      return YawMode::kFront;
-    case static_cast<int>(YawMode::kTurret):
-      return YawMode::kTurret;
-    default:
-      return std::nullopt;
-  }
-}
-
-// 次の目標の向き [rad]。モードに応じた回転の速さ [rad/s] で回す。
-// その速さが届いていない (途絶えた) ときは目標をそのまま保つ
-inline double next_world_target(
-  double world_target, YawMode mode, std::optional<double> cmd_vel_angular_z,
-  std::optional<double> target_rate, double dt)
-{
-  const std::optional<double> rate = mode == YawMode::kFront ? cmd_vel_angular_z : target_rate;
-  if (!rate || !std::isfinite(*rate) || !std::isfinite(dt) || dt <= 0.0) {
-    return world_target;
-  }
-  return normalize_angle(world_target + *rate * dt);
-}
-
-// 腰を車体の正面に向ける目標の向き [rad]。IMU は上半身にあるので、
-// 車体の正面の向き = 上半身の向き - 腰の角度 (車体の正面からのずれ)
-// waist_direction は腰のモータの角度の正の向きが、ワールドの yaw の正の向きと同じなら 1、逆なら -1
-inline double front_world_target(
-  double world_angle, double waist_position, double waist_front_offset, double waist_direction)
-{
-  return normalize_angle(world_angle - waist_direction * (waist_position - waist_front_offset));
-}
 
 inline bool quaternion_to_yaw(double x, double y, double z, double w, double & yaw)
 {
