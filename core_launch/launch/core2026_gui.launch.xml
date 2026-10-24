@@ -1,4 +1,9 @@
 <launch>
-    <include file="$(find-pkg-share core_launch)/launch/core2026_status_gui.launch.xml" />
-    <include file="$(find-pkg-share core_launch)/launch/core2026_qt_gui.launch.xml" />
+    <!-- 起動する GUI を選ぶ (既定は両方)。status_gui は主ディスプレイ (モニター1) に、
+         qt_gui (HUD) はモニターが 2 台以上あれば 2 台目 (モニター2) に表示する -->
+    <arg name="use_status_gui" default="true" description="Launch the status display GUI (monitor 1)"/>
+    <arg name="use_qt_gui" default="true" description="Launch the Qt HUD GUI (monitor 2)"/>
+
+    <include file="$(find-pkg-share core_launch)/launch/core2026_status_gui.launch.xml" if="$(var use_status_gui)" />
+    <include file="$(find-pkg-share core_launch)/launch/core2026_qt_gui.launch.xml" if="$(var use_qt_gui)" />
 </launch>
