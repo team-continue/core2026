@@ -2,7 +2,7 @@
 Navigation launch file.
 
 Launches the full navigation pipeline with configurable control modes and map presets.
-Sensors (real) and the Unity ROS-TCP-Endpoint (sim) are launched by core2026_system.xml.
+Sensors (real) and the Unity ROS-TCP-Endpoint (sim) are launched by core2026_system.launch.xml.
 """
 
 import os
