@@ -78,7 +78,7 @@ def generate_launch_description():
         parameters=[param_file],
         output='screen',
         remappings=[
-            ('raw_image', '/turret_camera_left/color/image'),
+            ('raw_image', '/sensing/turret_camera_left/color/image'),
             ('color', '/hardware/color'),
         ],
     )

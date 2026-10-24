@@ -87,7 +87,7 @@ def generate_launch_description() -> LaunchDescription:
         name="damiao_imu_node",
         output="screen",
         condition=IfCondition(LaunchConfiguration("use_damiao_imu")),
-        remappings=[("imu", "/imu")],
+        remappings=[("imu", "/sensing/imu")],
         parameters=[
             {
                 "port": LaunchConfiguration("imu_port"),
@@ -129,7 +129,7 @@ def generate_launch_description() -> LaunchDescription:
         name="target_angle_node",
         output="screen",
         remappings=[
-            ("imu", "/imu"),
+            ("imu", "/sensing/imu"),
             ("can/tx", "/hardware/can/tx"),
             ("/rotation", "/control/rotation"),
         ],

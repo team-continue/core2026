@@ -27,7 +27,7 @@ def generate_launch_description() -> LaunchDescription:
                     executable="damiao_imu_node",
                     name="damiao_imu_node",
                     output="screen",
-                    remappings=[("imu", "/imu")],
+                    remappings=[("imu", "/sensing/imu")],
                     parameters=[
                         {
                             "port": LaunchConfiguration("imu_port"),
