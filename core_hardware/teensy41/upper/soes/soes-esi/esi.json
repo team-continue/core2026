@@ -4,7 +4,7 @@
     "VendorID": "0x1120",
     "ProductCode": "0x1120",
     "ProfileNo": "5001",
-    "RevisionNumber": "0x002",
+    "RevisionNumber": "0x003",
     "SerialNumber": "0x001",
     "HWversion": "0.0.1",
     "SWversion": "0.0.1",
@@ -307,7 +307,7 @@
         "otype": "ARRAY",
         "name": "system_state",
         "access": "RO",
-        "dtype": "BOOLEAN",
+        "dtype": "UNSIGNED8",
         "items": [
           {
             "name": "Max SubIndex"
@@ -345,6 +345,276 @@
             "name": "destory",
             "value": "0",
             "data": "&Obj.core_state[1]"
+          }
+        ],
+        "pdo_mappings": [
+          "txpdo"
+        ]
+      },
+      "6005": {
+        "otype": "ARRAY",
+        "name": "motor_diag",
+        "access": "RO",
+        "dtype": "UNSIGNED32",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "m0",
+            "value": "0",
+            "data": "&Obj.motor_diag[0]"
+          },
+          {
+            "name": "m1",
+            "value": "0",
+            "data": "&Obj.motor_diag[1]"
+          },
+          {
+            "name": "m2",
+            "value": "0",
+            "data": "&Obj.motor_diag[2]"
+          },
+          {
+            "name": "m3",
+            "value": "0",
+            "data": "&Obj.motor_diag[3]"
+          },
+          {
+            "name": "m4",
+            "value": "0",
+            "data": "&Obj.motor_diag[4]"
+          },
+          {
+            "name": "m5",
+            "value": "0",
+            "data": "&Obj.motor_diag[5]"
+          },
+          {
+            "name": "m6",
+            "value": "0",
+            "data": "&Obj.motor_diag[6]"
+          },
+          {
+            "name": "m7",
+            "value": "0",
+            "data": "&Obj.motor_diag[7]"
+          },
+          {
+            "name": "m8",
+            "value": "0",
+            "data": "&Obj.motor_diag[8]"
+          },
+          {
+            "name": "m9",
+            "value": "0",
+            "data": "&Obj.motor_diag[9]"
+          },
+          {
+            "name": "m10",
+            "value": "0",
+            "data": "&Obj.motor_diag[10]"
+          },
+          {
+            "name": "m11",
+            "value": "0",
+            "data": "&Obj.motor_diag[11]"
+          },
+          {
+            "name": "m12",
+            "value": "0",
+            "data": "&Obj.motor_diag[12]"
+          },
+          {
+            "name": "m13",
+            "value": "0",
+            "data": "&Obj.motor_diag[13]"
+          },
+          {
+            "name": "m14",
+            "value": "0",
+            "data": "&Obj.motor_diag[14]"
+          }
+        ],
+        "pdo_mappings": [
+          "txpdo"
+        ]
+      },
+      "6006": {
+        "otype": "ARRAY",
+        "name": "motor_voltage",
+        "access": "RO",
+        "dtype": "UNSIGNED16",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "m0",
+            "value": "0",
+            "data": "&Obj.motor_voltage[0]"
+          },
+          {
+            "name": "m1",
+            "value": "0",
+            "data": "&Obj.motor_voltage[1]"
+          },
+          {
+            "name": "m2",
+            "value": "0",
+            "data": "&Obj.motor_voltage[2]"
+          },
+          {
+            "name": "m3",
+            "value": "0",
+            "data": "&Obj.motor_voltage[3]"
+          },
+          {
+            "name": "m4",
+            "value": "0",
+            "data": "&Obj.motor_voltage[4]"
+          },
+          {
+            "name": "m5",
+            "value": "0",
+            "data": "&Obj.motor_voltage[5]"
+          },
+          {
+            "name": "m6",
+            "value": "0",
+            "data": "&Obj.motor_voltage[6]"
+          },
+          {
+            "name": "m7",
+            "value": "0",
+            "data": "&Obj.motor_voltage[7]"
+          },
+          {
+            "name": "m8",
+            "value": "0",
+            "data": "&Obj.motor_voltage[8]"
+          },
+          {
+            "name": "m9",
+            "value": "0",
+            "data": "&Obj.motor_voltage[9]"
+          },
+          {
+            "name": "m10",
+            "value": "0",
+            "data": "&Obj.motor_voltage[10]"
+          },
+          {
+            "name": "m11",
+            "value": "0",
+            "data": "&Obj.motor_voltage[11]"
+          },
+          {
+            "name": "m12",
+            "value": "0",
+            "data": "&Obj.motor_voltage[12]"
+          },
+          {
+            "name": "m13",
+            "value": "0",
+            "data": "&Obj.motor_voltage[13]"
+          },
+          {
+            "name": "m14",
+            "value": "0",
+            "data": "&Obj.motor_voltage[14]"
+          }
+        ],
+        "pdo_mappings": [
+          "txpdo"
+        ]
+      },
+      "6007": {
+        "otype": "ARRAY",
+        "name": "wireless",
+        "access": "RO",
+        "dtype": "UNSIGNED8",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "b0",
+            "value": "0",
+            "data": "&Obj.wireless[0]"
+          },
+          {
+            "name": "b1",
+            "value": "0",
+            "data": "&Obj.wireless[1]"
+          },
+          {
+            "name": "b2",
+            "value": "0",
+            "data": "&Obj.wireless[2]"
+          },
+          {
+            "name": "b3",
+            "value": "0",
+            "data": "&Obj.wireless[3]"
+          },
+          {
+            "name": "b4",
+            "value": "0",
+            "data": "&Obj.wireless[4]"
+          },
+          {
+            "name": "b5",
+            "value": "0",
+            "data": "&Obj.wireless[5]"
+          },
+          {
+            "name": "b6",
+            "value": "0",
+            "data": "&Obj.wireless[6]"
+          }
+        ],
+        "pdo_mappings": [
+          "txpdo"
+        ]
+      },
+      "6008": {
+        "otype": "ARRAY",
+        "name": "color",
+        "access": "RO",
+        "dtype": "UNSIGNED8",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "color",
+            "value": "0",
+            "data": "&Obj.color[0]"
+          }
+        ],
+        "pdo_mappings": [
+          "txpdo"
+        ]
+      },
+      "6009": {
+        "otype": "ARRAY",
+        "name": "bus_diag",
+        "access": "RO",
+        "dtype": "UNSIGNED32",
+        "items": [
+          {
+            "name": "Max SubIndex"
+          },
+          {
+            "name": "can3",
+            "value": "0",
+            "data": "&Obj.bus_diag[0]"
+          },
+          {
+            "name": "can2",
+            "value": "0",
+            "data": "&Obj.bus_diag[1]"
           }
         ],
         "pdo_mappings": [

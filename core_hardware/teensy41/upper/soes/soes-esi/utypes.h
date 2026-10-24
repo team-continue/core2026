@@ -18,6 +18,11 @@ typedef struct
    int16_t motor_state_torque[15];
    uint8_t system_state[2];
    uint8_t core_state[2];
+   uint32_t motor_diag[15];
+   uint16_t motor_voltage[15];
+   uint8_t wireless[7];
+   uint8_t color[1];
+   uint32_t bus_diag[2];
 
    /* Outputs */
 
