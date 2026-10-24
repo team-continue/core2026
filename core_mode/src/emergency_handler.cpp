@@ -40,10 +40,6 @@ public:
       "bridge_disconnected", 10,
       std::bind(&EmergencyHandlerNode::bridgeDiagCallback, this, std::placeholders::_1));
 
-    bottom_can_disconnected_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "bottom_can_disconnected", 10,
-      std::bind(&EmergencyHandlerNode::bottomCanDiagCallback, this, std::placeholders::_1));
-
     //========================================
     // publishers
     //========================================
@@ -144,16 +140,6 @@ private:
     evaluateHazardStates();
   }
 
-  void bottomCanDiagCallback(const std_msgs::msg::Bool::SharedPtr msg)
-  {
-    // 上下基板間の CAN 断はマイコン通信断と同じくラッチする(解除は software_emergency=false)
-    bottom_can_disconnected_state_ = msg->data;
-    if (msg->data) {
-      high_emergency_level_ = true;
-    }
-    evaluateHazardStates();
-  }
-
   //========================================
   // main logic
   //========================================
@@ -187,8 +173,7 @@ private:
       software_emergency_state_,
       microcontroller_emergency_state_,
       bridge_disconnected_state_,
-      destroy_state_,
-      bottom_can_disconnected_state_};
+      destroy_state_};
 
     status_msg.data = software_emergency_state_;
 
@@ -197,7 +182,6 @@ private:
     if (emergency_switch_state_) {labels.push_back("Emergency Switch triggered");}
     if (microcontroller_emergency_state_) {labels.push_back("Microcontroller timeout");}
     if (bridge_disconnected_state_) {labels.push_back("Bridge disconnected");}
-    if (bottom_can_disconnected_state_) {labels.push_back("Bottom CAN disconnected");}
     if (destroy_state_) {labels.push_back("Destroy command received");}
     if (software_emergency_state_) {labels.push_back("Software Emergency active");}
 
@@ -232,8 +216,7 @@ private:
     return emergency_switch_state_ ||
            destroy_state_ ||
            microcontroller_emergency_state_ ||
-           bridge_disconnected_state_ ||
-           bottom_can_disconnected_state_;
+           bridge_disconnected_state_;
   }
 
   //========================================
@@ -246,7 +229,6 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr destroy_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr microcontroller_emergency_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr bridge_disconnected_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr bottom_can_disconnected_sub_;
 
   //========================================
   // publisher variables
@@ -264,7 +246,6 @@ private:
   bool destroy_state_ = false;
   bool microcontroller_emergency_state_ = false;
   bool bridge_disconnected_state_ = false;
-  bool bottom_can_disconnected_state_ = false;
 
   bool high_emergency_level_ = true;
 };

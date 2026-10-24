@@ -37,7 +37,6 @@ def generate_launch_description():
         remappings=[
             ("microcontroller_monitor", "/hardware/joint_states"),
             ("bridge_connected", "/bridge/connected"),
-            ("link_status", "/hardware/link_status"),
         ],
         on_exit=Shutdown(reason="diagnostic exited"),
     )
