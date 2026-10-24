@@ -1,0 +1,22 @@
+<launch>
+  <!--
+    砲塔の原点合わせ用の最小構成。core_2026_hardware.xml は別に起動しておく。
+    非常停止を解除してから、左右それぞれ次を呼ぶ（終わるまで応答しない）:
+      ros2 service call /mecha/shooter/left/aim_bot/calibrate_origin std_srvs/srv/Trigger
+      ros2 service call /mecha/shooter/right/aim_bot/calibrate_origin std_srvs/srv/Trigger
+    システム全体（core2026_system.xml）の起動中でも、同じサービスで合わせられる。
+  -->
+
+  <!-- ROS 2 Bridge (操作UIから非常停止を解除する。切れていると core_mode が非常停止にする) -->
+  <node pkg="ros2_ws_bridge" exec="bridge" name="ros2_websocket_bridge" output="screen">
+    <param name="port" value="8765"/>
+  </node>
+
+  <!-- aim_bot (左右) のみ -->
+  <include file="$(find-pkg-share core_shooter)/launch/shooter.launch.py">
+    <arg name="aim_bot_only" value="true"/>
+  </include>
+
+  <!-- 非常停止 -->
+  <include file="$(find-pkg-share core_mode)/launch/mode.launch.py"/>
+</launch>

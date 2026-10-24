@@ -44,6 +44,8 @@ install(
 install(
   DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}/
+  # 原点合わせの結果（機体ごとの値。git 管理外）は配布しない
+  PATTERN "local" EXCLUDE
 )
 
 if(BUILD_TESTING)

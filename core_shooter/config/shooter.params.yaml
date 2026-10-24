@@ -166,7 +166,64 @@
     # zone.* / control.* の具体値は左右で個別設定
 
     # fixed angle offset [rad]
+    # 照準のバイアス（自動追尾の pitch 目標に足す）。原点ではない。原点は turret_origin.* で合わせる
     pitch_offset: 0.0
+
+    # ----------------------------------------
+    # 砲塔の原点合わせ（ストッパ押し当て）
+    #   ros2 service call /mecha/shooter/<side>/aim_bot/measure_origin_limit std_srvs/srv/Trigger
+    #     今の姿勢を原点とみなしてストッパ角を測る。結果の limit_angle を左右個別設定に書き、
+    #     limit_angle_measured を true にする（原点オフセットも今の姿勢で保存される）
+    #   ros2 service call /mecha/shooter/<side>/aim_bot/calibrate_origin std_srvs/srv/Trigger
+    #     ストッパに押し当て、limit_angle から原点オフセットを求めて保存する
+    # どちらも pitch → yaw の順に押し当て、終わるまで応答しない。非常停止で中断する。
+    # 角度は joint_states の生角。生角 = 論理角 + origin_offset、
+    # origin_offset = ストッパ接触時の生角 - limit_angle
+    # 結果は turret_origin.state_file（launch が渡す。git 管理外）に保存し、起動時に読む。
+    # direction / limit_angle / limit_angle_measured / cad_* は左右で個別設定
+    # ----------------------------------------
+    turret_origin:
+      yaw:
+        approach_speed: 0.2 # [rad/s] ストッパへ向けて目標角を送る速さ
+        lead: 0.15 # [rad] 目標角を実角より先に出す上限。押し付ける力の上限になる
+        contact_error_threshold: 0.08 # [rad] 目標 - 実角 がこれを超え（lead 未満にする）、
+        contact_velocity_threshold: 0.05 # [rad/s] かつ |速度| がこれ未満なら接触候補
+        contact_hold_sec: 0.2 # [s] 接触候補がこの時間続いたら接触
+        min_travel: 0.02 # [rad] 接触までに最低限動く量。既に当たっている / トルクが無いときの誤判定を防ぐ
+        max_travel: 3.0 # [rad] これだけ動いても接触しなければ中断
+        backoff: 0.1 # [rad] 接触後にストッパから戻す量
+        settle_sec: 0.5 # [s] 接触後・戻した後に保持する時間
+        timeout_sec: 30.0 # [s] 1 軸の押し当て全体のタイムアウト
+      pitch:
+        approach_speed: 0.2
+        lead: 0.15
+        contact_error_threshold: 0.08
+        contact_velocity_threshold: 0.05
+        contact_hold_sec: 0.2
+        min_travel: 0.02
+        max_travel: 5.5 # pitch_min_angle〜pitch_max_angle の幅より大きくする
+        backoff: 0.1
+        settle_sec: 0.5
+        timeout_sec: 40.0
+
+    # ----------------------------------------
+    # 稼働中の衝突検知
+    #   |指令角 - 実角| > error_threshold のまま |速度| < velocity_threshold が hold_sec 続いたら
+    #   当たったとみなし、その向きへの指令を実角で止める（逆向きには動ける）。
+    #   実角が逆向きに release_margin 以上離れたら制限を外す。解除の操作は要らない
+    # ----------------------------------------
+    turret_collision:
+      enable: true
+      grace_sec: 1.0 # [s] 非常停止の解除からこの時間は判定しない
+      release_margin: 0.1 # [rad]
+      yaw:
+        error_threshold: 0.2 # [rad] 普段の追従誤差（重力・摩擦で残る分）より大きくする
+        velocity_threshold: 0.05 # [rad/s]
+        hold_sec: 0.3 # [s]
+      pitch:
+        error_threshold: 0.2
+        velocity_threshold: 0.05
+        hold_sec: 0.3
 
     # ========================================
     # ShooterCmdGate
@@ -218,6 +275,22 @@
     pitch_min_angle: -2.0
     pitch_max_angle: 3.14
 
+    # 原点合わせ。direction は押し当てる向き（生角の符号）。実機で向きを確認してから使う
+    # limit_angle には measure_origin_limit の結果を書き、limit_angle_measured を true にする
+    turret_origin:
+      yaw:
+        direction: 1.0 # ロボット中心（内側）向き
+        limit_angle: 0.0
+        limit_angle_measured: false
+        cad_limit_angle: 0.0
+        cad_tolerance: 0.0 # [rad] 0 以下で CAD 値との照合をしない
+      pitch:
+        direction: -1.0 # 下向き
+        limit_angle: 0.0
+        limit_angle_measured: false
+        cad_limit_angle: 0.0
+        cad_tolerance: 0.0
+
     # image target settings
     image_center_x: 0.4
     image_center_y: 0.4
@@ -263,6 +336,21 @@
     # motor angle caps [rad]
     pitch_min_angle: -1.8
     pitch_max_angle: 3.14
+
+    # 原点合わせ（説明は left を参照）
+    turret_origin:
+      yaw:
+        direction: -1.0 # ロボット中心（内側）向き
+        limit_angle: 0.0
+        limit_angle_measured: false
+        cad_limit_angle: 0.0
+        cad_tolerance: 0.0
+      pitch:
+        direction: -1.0 # 下向き
+        limit_angle: 0.0
+        limit_angle_measured: false
+        cad_limit_angle: 0.0
+        cad_tolerance: 0.0
 
     # image target settings
     image_center_x: 0.55

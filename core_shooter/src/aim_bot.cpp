@@ -1,7 +1,11 @@
 #include <memory>
+#include <array>
 #include <cmath>
 #include <cstdio>
+#include <ctime>
 #include <algorithm>
+#include <filesystem>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -14,6 +18,7 @@
 #include "std_msgs/msg/string.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
+#include "std_srvs/srv/trigger.hpp"
 #include "core_msgs/msg/can.hpp"
 #include "core_msgs/msg/can_array.hpp"
 
@@ -21,6 +26,8 @@
 #include "core_shooter/can_command.hpp"
 #include "core_shooter/parameter_utils.hpp"
 #include "core_shooter/test_mode_gate.hpp"
+#include "core_shooter/turret_origin.hpp"
+#include "core_shooter/turret_stall.hpp"
 
 using namespace std::chrono_literals;
 
@@ -70,6 +77,19 @@ std::optional<Point3DFrame> parsePoint3DFrame(const std::string & name)
   }
   return std::nullopt;
 }
+
+/// 原点合わせ・衝突検知で軸ごとの値を配列で持つときの添字。
+enum TurretAxis : size_t
+{
+  kTurretYaw = 0,
+  kTurretPitch = 1,
+};
+constexpr size_t kTurretAxisCount = 2;
+constexpr std::array<const char *, kTurretAxisCount> kTurretAxisNames{"yaw", "pitch"};
+/// 原点合わせは pitch → yaw の順に 1 軸ずつ行う。
+constexpr std::array<TurretAxis, kTurretAxisCount> kOriginAxisOrder{kTurretPitch, kTurretYaw};
+/// joint_states がこれ以上途絶えたら、接触・衝突の判定に使わない [s]。
+constexpr double kJointStateStaleSec = 0.5;
 
 }  // namespace
 
@@ -189,6 +209,21 @@ public:
       *this, "control.hysteresis_rad", 0.017453292519943295);
     control_pitch_correct_tolerance_ = core_shooter::declareAndGet<double>(
       *this, "control.pitch_correct_tolerance", 0.01);
+    // 原点合わせ（ストッパ押し当て）。角度の扱いは core_shooter/turret_origin.hpp を参照。
+    origin_state_file_ = core_shooter::declareAndGet<std::string>(
+      *this, "turret_origin.state_file", "");
+    for (size_t axis = 0; axis < kTurretAxisCount; ++axis) {
+      origin_axis_params_[axis] = declareOriginAxisParams(kTurretAxisNames[axis]);
+    }
+    // 稼働中の衝突検知。当たった向きにだけ指令を止め、逆向きには動かせる。
+    collision_enable_ = core_shooter::declareAndGet<bool>(*this, "turret_collision.enable", true);
+    collision_grace_sec_ = core_shooter::declareAndGet<double>(
+      *this, "turret_collision.grace_sec", 1.0);
+    collision_release_margin_ = core_shooter::declareAndGet<double>(
+      *this, "turret_collision.release_margin", 0.1);
+    for (size_t axis = 0; axis < kTurretAxisCount; ++axis) {
+      collision_params_[axis] = declareCollisionParams(kTurretAxisNames[axis]);
+    }
     test_mode_.setDefault(enable_test_mode_);
     const auto & parameter_overrides =
       this->get_node_parameters_interface()->get_parameter_overrides();
@@ -368,6 +403,34 @@ public:
       }
     }
 
+    for (size_t axis = 0; axis < kTurretAxisCount; ++axis) {
+      if (const auto error = core_shooter::validateOriginAxisParams(origin_axis_params_[axis])) {
+        RCLCPP_FATAL(
+          get_logger(), "Invalid turret_origin.%s parameters: %s",
+          kTurretAxisNames[axis], error->c_str());
+        throw std::runtime_error("invalid aimbot turret origin parameters");
+      }
+      const auto & collision = collision_params_[axis];
+      if (!(collision.error_threshold > 0.0) || !(collision.velocity_threshold > 0.0) ||
+        collision.hold_sec < 0.0)
+      {
+        RCLCPP_FATAL(
+          get_logger(),
+          "Invalid turret_collision.%s parameters: error_threshold=%f, velocity_threshold=%f (must be > 0), hold_sec=%f (must be >= 0)",
+          kTurretAxisNames[axis], collision.error_threshold, collision.velocity_threshold,
+          collision.hold_sec);
+        throw std::runtime_error("invalid aimbot turret collision parameters");
+      }
+    }
+    if (collision_grace_sec_ < 0.0 || collision_release_margin_ < 0.0) {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid turret_collision parameters: grace_sec=%f, release_margin=%f (must be >= 0)",
+        collision_grace_sec_, collision_release_margin_);
+      throw std::runtime_error("invalid aimbot turret collision parameters");
+    }
+    loadOriginOffsetsAtStartup();
+
     // ----------------------------
     // Subscriber
     // ----------------------------
@@ -407,6 +470,27 @@ public:
 
     joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
       "/hardware/joint_states", 10, std::bind(&AimBot::jointStateCallback, this, std::placeholders::_1));
+
+    // ----------------------------
+    // Service
+    // ----------------------------
+    // どちらも押し当てが終わるまで応答を返さない（タイマ側で応答する）。
+    calibrate_origin_srv_ = create_service<std_srvs::srv::Trigger>(
+      "~/calibrate_origin",
+      [this](
+        std::shared_ptr<rclcpp::Service<std_srvs::srv::Trigger>> service,
+        std::shared_ptr<rmw_request_id_t> header,
+        std::shared_ptr<std_srvs::srv::Trigger::Request>) {
+        startOriginRun(OriginTask::Calibrate, std::move(service), std::move(header));
+      });
+    measure_origin_limit_srv_ = create_service<std_srvs::srv::Trigger>(
+      "~/measure_origin_limit",
+      [this](
+        std::shared_ptr<rclcpp::Service<std_srvs::srv::Trigger>> service,
+        std::shared_ptr<rmw_request_id_t> header,
+        std::shared_ptr<std_srvs::srv::Trigger::Request>) {
+        startOriginRun(OriginTask::MeasureLimit, std::move(service), std::move(header));
+      });
 
     // ----------------------------
     // Publisher
@@ -474,9 +558,27 @@ private:
   enum class ControlMode
   {
     Emergency,
+    Calibrating,
     Manual,
     Test,
     AutoTrack
+  };
+  enum class OriginTask
+  {
+    Calibrate,     ///< ストッパ角から原点オフセットを求める
+    MeasureLimit,  ///< 今の姿勢を原点とみなし、ストッパ角を実測する
+  };
+  /// 実行中の原点合わせ。軸ごとに kOriginAxisOrder の順で押し当てる。
+  struct OriginRun
+  {
+    OriginTask task = OriginTask::Calibrate;
+    size_t step = 0;  ///< kOriginAxisOrder の添字
+    core_shooter::OriginAxisState axis_state;
+    std::array<double, kTurretAxisCount> start_raw{};  ///< 開始時の生角
+    std::array<double, kTurretAxisCount> hold_raw{};   ///< 押し当て中でない軸に出す生角
+    std::array<double, kTurretAxisCount> contact_raw{};
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr service;
+    std::shared_ptr<rmw_request_id_t> request_header;
   };
   enum class YawZone
   {
@@ -498,6 +600,7 @@ private:
     hazard_state_ = msg->data;
 
     if (!hazard_state_ && prev) {
+      hazard_release_time_ = this->now();
       if (startup_release_init_pending_) {
         // ノード再起動後、最初の緊急停止解除時のみ設定済みの原点へ初期化する。
         setCommandTarget(startup_release_yaw_angle_, startup_release_pitch_angle_);
@@ -654,15 +757,41 @@ private:
       return;
     }
 
-    yaw_angle_ = msg->position[yaw_motor_id_];
-    pitch_angle_ = msg->position[pitch_motor_id_];
+    raw_angles_[kTurretYaw] = msg->position[yaw_motor_id_];
+    raw_angles_[kTurretPitch] = msg->position[pitch_motor_id_];
+    // 速度が無いと止まっているかを判定できない。NaN にして接触・衝突の判定を成立させない。
+    const size_t velocity_size = msg->velocity.size();
+    const bool has_velocity =
+      static_cast<size_t>(yaw_motor_id_) < velocity_size &&
+      static_cast<size_t>(pitch_motor_id_) < velocity_size;
+    if (!has_velocity) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(),
+        *this->get_clock(), 2000,
+        "joint_states velocity size mismatch: velocity=%zu, yaw_id=%d, pitch_id=%d (collision detection disabled)",
+        velocity_size, yaw_motor_id_, pitch_motor_id_);
+    }
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    velocities_[kTurretYaw] = has_velocity ? msg->velocity[yaw_motor_id_] : nan;
+    velocities_[kTurretPitch] = has_velocity ? msg->velocity[pitch_motor_id_] : nan;
+    updateLogicalAngles();
     has_joint_state_ = true;
+    last_joint_state_time_ = this->now();
+  }
+
+  /// 生角から原点オフセットを引いて、制御に使う論理角を更新する。
+  void updateLogicalAngles()
+  {
+    yaw_angle_ = raw_angles_[kTurretYaw] - origin_offsets_.yaw;
+    pitch_angle_ = raw_angles_[kTurretPitch] - origin_offsets_.pitch;
   }
 
   void timerCallback()
   {
     // 各周期の既定は発射不可。射程内のターゲットに照準が合ったときだけ許可に変わる。
     aimed_at_target_ = false;
+    // 前の周期に出した指令と今の実角で判定する。この周期の指令は publishCommandTarget で塞ぐ。
+    updateCollisionBlocks();
     runControlCycle();
     publishShootFullauto();
   }
@@ -670,9 +799,14 @@ private:
   void runControlCycle()
   {
     const bool test_mode_enabled = isTestModeEnabled();
+    if (hazard_state_ && origin_run_) {
+      finishOriginRun(false, "aborted by emergency stop (origin offsets unchanged)");
+    }
     ControlMode mode = ControlMode::AutoTrack;
     if (hazard_state_) {
       mode = ControlMode::Emergency;
+    } else if (origin_run_) {
+      mode = ControlMode::Calibrating;
     } else if (manual_mode_active_) {
       mode = ControlMode::Manual;
     } else if (test_mode_enabled) {
@@ -690,6 +824,7 @@ private:
     // 既定の理由をモードから決める。AutoTrack はこの後の経路で上書きされる。
     switch (mode) {
       case ControlMode::Emergency: shoot_block_reason_ = "emergency stop"; break;
+      case ControlMode::Calibrating: shoot_block_reason_ = "calibrating turret origin"; break;
       case ControlMode::Manual: shoot_block_reason_ = "manual mode"; break;
       case ControlMode::Test: shoot_block_reason_ = "test mode"; break;
       case ControlMode::AutoTrack: shoot_block_reason_ = "no target"; break;
@@ -704,6 +839,10 @@ private:
           publishCommandHold("emergency hold skipped: command target not initialized");
           return;
         }
+
+      case ControlMode::Calibrating:
+        stepOriginRun();
+        return;
 
       case ControlMode::Manual: {
           if (test_mode_enabled) {
@@ -1643,6 +1782,317 @@ private:
     shoot_fullauto_pub_->publish(msg);
   }
 
+  // ===== 原点合わせ =====
+  core_shooter::OriginAxisParams declareOriginAxisParams(const std::string & axis)
+  {
+    const std::string prefix = "turret_origin." + axis + ".";
+    const auto get = [this, &prefix](const std::string & name, double default_value) {
+        return core_shooter::declareAndGet<double>(*this, prefix + name, default_value);
+      };
+    core_shooter::OriginAxisParams params;
+    params.direction = get("direction", -1.0);
+    params.limit_angle = get("limit_angle", 0.0);
+    params.limit_angle_measured =
+      core_shooter::declareAndGet<bool>(*this, prefix + "limit_angle_measured", false);
+    params.cad_limit_angle = get("cad_limit_angle", 0.0);
+    params.cad_tolerance = get("cad_tolerance", 0.0);
+    params.approach_speed = get("approach_speed", 0.2);
+    params.lead = get("lead", 0.15);
+    params.contact.error_threshold = get("contact_error_threshold", 0.08);
+    params.contact.velocity_threshold = get("contact_velocity_threshold", 0.05);
+    params.contact.hold_sec = get("contact_hold_sec", 0.2);
+    params.min_travel = get("min_travel", 0.02);
+    params.max_travel = get("max_travel", 3.0);
+    params.backoff = get("backoff", 0.1);
+    params.settle_sec = get("settle_sec", 0.5);
+    params.timeout_sec = get("timeout_sec", 30.0);
+    return params;
+  }
+
+  core_shooter::StallParams declareCollisionParams(const std::string & axis)
+  {
+    const std::string prefix = "turret_collision." + axis + ".";
+    core_shooter::StallParams params;
+    params.error_threshold =
+      core_shooter::declareAndGet<double>(*this, prefix + "error_threshold", 0.2);
+    params.velocity_threshold =
+      core_shooter::declareAndGet<double>(*this, prefix + "velocity_threshold", 0.05);
+    params.hold_sec = core_shooter::declareAndGet<double>(*this, prefix + "hold_sec", 0.3);
+    return params;
+  }
+
+  void loadOriginOffsetsAtStartup()
+  {
+    if (origin_state_file_.empty()) {
+      RCLCPP_WARN(
+        get_logger(),
+        "turret_origin.state_file is empty: origin offsets start at 0 and calibration results are not saved");
+      return;
+    }
+    std::error_code ec;
+    if (!std::filesystem::exists(origin_state_file_, ec)) {
+      RCLCPP_WARN(
+        get_logger(),
+        "Turret origin state file '%s' not found: origin offsets start at 0 (run ~/calibrate_origin)",
+        origin_state_file_.c_str());
+      return;
+    }
+    std::string error;
+    if (!core_shooter::loadOriginOffsets(origin_state_file_, origin_offsets_, error)) {
+      RCLCPP_FATAL(get_logger(), "Invalid turret origin state file: %s", error.c_str());
+      throw std::runtime_error("invalid aimbot turret origin state file");
+    }
+    RCLCPP_INFO(
+      get_logger(), "Loaded turret origin offsets from '%s': yaw=%.4f, pitch=%.4f rad",
+      origin_state_file_.c_str(), origin_offsets_.yaw, origin_offsets_.pitch);
+  }
+
+  bool isJointStateStale() const
+  {
+    return !has_joint_state_ ||
+           (this->now() - last_joint_state_time_).seconds() > kJointStateStaleSec;
+  }
+
+  static void respondTrigger(
+    const rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr & service,
+    const std::shared_ptr<rmw_request_id_t> & header, bool success, const std::string & message)
+  {
+    std_srvs::srv::Trigger::Response response;
+    response.success = success;
+    response.message = message;
+    service->send_response(*header, response);
+  }
+
+  void startOriginRun(
+    OriginTask task, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr service,
+    std::shared_ptr<rmw_request_id_t> header)
+  {
+    const char * name = task == OriginTask::Calibrate ? "calibrate_origin" : "measure_origin_limit";
+    const auto refuse = [&](const std::string & reason) {
+        RCLCPP_ERROR(get_logger(), "%s refused: %s", name, reason.c_str());
+        respondTrigger(service, header, false, reason);
+      };
+    if (origin_run_) {
+      refuse("origin calibration is already running");
+      return;
+    }
+    if (hazard_state_) {
+      refuse("emergency stop is active; release it first");
+      return;
+    }
+    if (isJointStateStale()) {
+      refuse("joint_states not received");
+      return;
+    }
+    if (task == OriginTask::Calibrate) {
+      for (size_t axis = 0; axis < kTurretAxisCount; ++axis) {
+        if (!origin_axis_params_[axis].limit_angle_measured) {
+          refuse(
+            formatMessage(
+              "turret_origin.%s.limit_angle_measured is false; put the turret at its origin and run measure_origin_limit first",
+              kTurretAxisNames[axis]));
+          return;
+        }
+      }
+    }
+
+    OriginRun run;
+    run.task = task;
+    run.start_raw = raw_angles_;
+    run.hold_raw = raw_angles_;
+    run.axis_state = core_shooter::startOriginAxis(raw_angles_[kOriginAxisOrder[0]]);
+    run.service = std::move(service);
+    run.request_header = std::move(header);
+    origin_run_ = std::move(run);
+    resetCollisionBlocks();
+    RCLCPP_INFO(
+      get_logger(), "%s started: raw yaw=%.4f, pitch=%.4f rad", name,
+      raw_angles_[kTurretYaw], raw_angles_[kTurretPitch]);
+  }
+
+  /// 押し当て中の軸を 1 周期進め、両軸に生角の指令を出す。
+  void stepOriginRun()
+  {
+    OriginRun & run = *origin_run_;
+    const TurretAxis axis = kOriginAxisOrder[run.step];
+    if (isJointStateStale()) {
+      // 実角が更新されないまま目標角を送ると、止まっていると誤判定する。
+      publishRawTurretCommand(run.hold_raw);
+      finishOriginRun(false, "joint_states timed out (origin offsets unchanged)");
+      return;
+    }
+    run.axis_state = core_shooter::stepOriginAxis(
+      run.axis_state, raw_angles_[axis], velocities_[axis], 1.0 / rate_,
+      origin_axis_params_[axis]);
+    run.hold_raw[axis] = run.axis_state.target_raw;
+    publishRawTurretCommand(run.hold_raw);
+
+    if (run.axis_state.phase == core_shooter::OriginPhase::Failed) {
+      finishOriginRun(
+        false,
+        formatMessage(
+          "%s: %s (origin offsets unchanged)", kTurretAxisNames[axis],
+          run.axis_state.error.c_str()));
+      return;
+    }
+    if (run.axis_state.phase != core_shooter::OriginPhase::Done) {
+      return;
+    }
+
+    run.contact_raw[axis] = run.axis_state.contact_raw;
+    RCLCPP_INFO(
+      get_logger(), "origin %s: contact at raw=%.4f rad (travel=%.4f rad)",
+      kTurretAxisNames[axis], run.axis_state.contact_raw,
+      std::fabs(run.axis_state.contact_raw - run.axis_state.start_raw));
+    if (++run.step < kTurretAxisCount) {
+      run.axis_state = core_shooter::startOriginAxis(raw_angles_[kOriginAxisOrder[run.step]]);
+      return;
+    }
+    completeOriginRun();
+  }
+
+  /// 全軸の接触角から結果を求め、保存できたときだけ反映する。
+  void completeOriginRun()
+  {
+    const OriginRun & run = *origin_run_;
+    core_shooter::OriginOffsets offsets;
+    std::string summary;
+    if (run.task == OriginTask::Calibrate) {
+      offsets.yaw = core_shooter::computeOriginOffset(
+        run.contact_raw[kTurretYaw], origin_axis_params_[kTurretYaw].limit_angle);
+      offsets.pitch = core_shooter::computeOriginOffset(
+        run.contact_raw[kTurretPitch], origin_axis_params_[kTurretPitch].limit_angle);
+      summary = formatMessage(
+        "origin offsets updated: yaw %.4f -> %.4f, pitch %.4f -> %.4f rad",
+        origin_offsets_.yaw, offsets.yaw, origin_offsets_.pitch, offsets.pitch);
+    } else {
+      std::array<double, kTurretAxisCount> limits{};
+      for (size_t axis = 0; axis < kTurretAxisCount; ++axis) {
+        limits[axis] = core_shooter::computeLimitAngle(run.contact_raw[axis], run.start_raw[axis]);
+        if (const auto error =
+          core_shooter::checkLimitAgainstCad(limits[axis], origin_axis_params_[axis]))
+        {
+          finishOriginRun(
+            false, formatMessage("%s: %s (nothing saved)", kTurretAxisNames[axis], error->c_str()));
+          return;
+        }
+      }
+      // 開始時の姿勢を原点と定義したので、その生角がそのまま原点オフセットになる。
+      offsets.yaw = run.start_raw[kTurretYaw];
+      offsets.pitch = run.start_raw[kTurretPitch];
+      summary = formatMessage(
+        "measured limit_angle: yaw=%.6f, pitch=%.6f rad -> set turret_origin.<axis>.limit_angle and limit_angle_measured: true in shooter.params.yaml; origin offsets set to the start pose: yaw=%.4f, pitch=%.4f rad",
+        limits[kTurretYaw], limits[kTurretPitch], offsets.yaw, offsets.pitch);
+    }
+
+    if (origin_state_file_.empty()) {
+      summary += "; not saved (turret_origin.state_file is empty)";
+    } else {
+      std::string error;
+      if (!core_shooter::writeOriginOffsets(
+          origin_state_file_, offsets, currentTimestamp(), error))
+      {
+        finishOriginRun(false, "failed to save origin offsets (not applied): " + error);
+        return;
+      }
+      summary += "; saved to " + origin_state_file_;
+    }
+    origin_offsets_ = offsets;
+    updateLogicalAngles();
+    finishOriginRun(true, summary);
+  }
+
+  void finishOriginRun(bool success, const std::string & message)
+  {
+    const OriginRun run = std::move(*origin_run_);
+    origin_run_.reset();
+    // 次のモードがいきなり別の角度へ動かないよう、最後に出した生角を論理角に直して引き継ぐ。
+    setCommandTargetRaw(
+      run.hold_raw[kTurretYaw] - origin_offsets_.yaw,
+      run.hold_raw[kTurretPitch] - origin_offsets_.pitch);
+    resetCollisionBlocks();
+    if (success) {
+      RCLCPP_INFO(get_logger(), "origin calibration finished: %s", message.c_str());
+    } else {
+      RCLCPP_ERROR(get_logger(), "origin calibration failed: %s", message.c_str());
+    }
+    respondTrigger(run.service, run.request_header, success, message);
+  }
+
+  void publishRawTurretCommand(const std::array<double, kTurretAxisCount> & raw)
+  {
+    motorPublish(yaw_motor_id_, static_cast<float>(raw[kTurretYaw]));
+    motorPublish(pitch_motor_id_, static_cast<float>(raw[kTurretPitch]));
+  }
+
+  /// printf 形式で文字列を作る。formatReason と違い長さで切り詰めない（サービス応答用）。
+  template<typename ... Args>
+  static std::string formatMessage(const char * format, Args ... args)
+  {
+    const int length = std::snprintf(nullptr, 0, format, args ...);
+    if (length < 0) {
+      return "format error";
+    }
+    std::string text(static_cast<size_t>(length) + 1, '\0');
+    std::snprintf(text.data(), text.size(), format, args ...);
+    text.resize(static_cast<size_t>(length));
+    return text;
+  }
+
+  static std::string currentTimestamp()
+  {
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    localtime_r(&now, &local);
+    char buffer[32];
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%S", &local);
+    return buffer;
+  }
+
+  // ===== 衝突検知 =====
+  /// 指令に追従できずに止まった軸を見つけ、その向きを塞ぐ。離れた向きの制限は外す。
+  void updateCollisionBlocks()
+  {
+    const std::array<double, kTurretAxisCount> actual{yaw_angle_, pitch_angle_};
+    for (size_t axis = 0; axis < kTurretAxisCount; ++axis) {
+      collision_blocks_[axis] = core_shooter::releaseBlock(
+        collision_blocks_[axis], actual[axis], collision_release_margin_);
+    }
+
+    // 非常停止中・解除直後はモータが指令に追従しないので判定しない。
+    const bool active = collision_enable_ && !hazard_state_ && !origin_run_ &&
+      has_command_target_ && !isJointStateStale() &&
+      (this->now() - hazard_release_time_).seconds() >= collision_grace_sec_;
+    if (!active) {
+      collision_stalls_.fill(core_shooter::StallState{});
+      return;
+    }
+
+    const std::array<double, kTurretAxisCount> command{command_yaw_angle_, command_pitch_angle_};
+    for (size_t axis = 0; axis < kTurretAxisCount; ++axis) {
+      collision_stalls_[axis] = core_shooter::stepStall(
+        collision_stalls_[axis], command[axis], actual[axis], velocities_[axis], 1.0 / rate_,
+        collision_params_[axis]);
+      if (!collision_stalls_[axis].stalled) {
+        continue;
+      }
+      collision_stalls_[axis] = core_shooter::StallState{};
+      collision_blocks_[axis] =
+        core_shooter::blockOnStall(collision_blocks_[axis], command[axis], actual[axis]);
+      RCLCPP_WARN(
+        get_logger(),
+        "turret %s collision detected at %.4f rad (command=%.4f): stop moving toward the %s side until it moves back by %.3f rad",
+        kTurretAxisNames[axis], actual[axis], command[axis],
+        command[axis] > actual[axis] ? "+" : "-", collision_release_margin_);
+    }
+  }
+
+  void resetCollisionBlocks()
+  {
+    collision_stalls_.fill(core_shooter::StallState{});
+    collision_blocks_.fill(core_shooter::DirectionalBlock{});
+  }
+
   void publishCommandTarget()
   {
     if (!has_command_target_) {
@@ -1651,8 +2101,15 @@ private:
         "publishCommandTarget skipped: command target not initialized");
       return;
     }
-    motorPublish(yaw_motor_id_, static_cast<float>(command_yaw_angle_));
-    motorPublish(pitch_motor_id_, static_cast<float>(command_pitch_angle_));
+    // 衝突で塞いだ向きへは出さない。内部の指令角も合わせ、指令角を積み上げるモードが
+    // 塞いだ先へ進み続けないようにする（逆向きの入力がすぐ効く）。
+    command_yaw_angle_ =
+      core_shooter::clampByBlock(command_yaw_angle_, collision_blocks_[kTurretYaw]);
+    command_pitch_angle_ =
+      core_shooter::clampByBlock(command_pitch_angle_, collision_blocks_[kTurretPitch]);
+    motorPublish(yaw_motor_id_, static_cast<float>(command_yaw_angle_ + origin_offsets_.yaw));
+    motorPublish(
+      pitch_motor_id_, static_cast<float>(command_pitch_angle_ + origin_offsets_.pitch));
   }
 
   void motorPublish(int id, float data)
@@ -1784,6 +2241,21 @@ private:
   double correction_target_pitch_ = 0.0;
   int pitch_motor_id_;
   int yaw_motor_id_;
+  // 原点合わせ・衝突検知。軸ごとの値は TurretAxis で引く。
+  std::array<double, kTurretAxisCount> raw_angles_{};  ///< joint_states の生角
+  std::array<double, kTurretAxisCount> velocities_{};
+  rclcpp::Time last_joint_state_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time hazard_release_time_{0, 0, RCL_ROS_TIME};
+  std::string origin_state_file_;
+  std::array<core_shooter::OriginAxisParams, kTurretAxisCount> origin_axis_params_{};
+  core_shooter::OriginOffsets origin_offsets_;
+  std::optional<OriginRun> origin_run_;
+  bool collision_enable_ = true;
+  double collision_grace_sec_ = 1.0;
+  double collision_release_margin_ = 0.1;
+  std::array<core_shooter::StallParams, kTurretAxisCount> collision_params_{};
+  std::array<core_shooter::StallState, kTurretAxisCount> collision_stalls_{};
+  std::array<core_shooter::DirectionalBlock, kTurretAxisCount> collision_blocks_{};
   // ROS通信
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr shoot_fullauto_pub_;
@@ -1798,6 +2270,8 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr turret_auto_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr calibrate_origin_srv_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr measure_origin_limit_srv_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::TimerBase::SharedPtr shoot_status_timer_;
 };

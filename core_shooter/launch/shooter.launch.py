@@ -2,7 +2,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import GroupAction
+from launch.actions import DeclareLaunchArgument, GroupAction
+from launch.conditions import UnlessCondition
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node, PushRosNamespace
 
 # ノード固有のパラメータはすべて config/shooter.params.yaml で管理する。
@@ -32,12 +34,31 @@ def _ballistics_file(side):
     )
 
 
+# 原点合わせの結果（原点オフセット）の保存先。機体ごとの値なので git には入れない。
+# --symlink-install のビルドでは share の config がソースへのリンクなので、
+# ソースツリーの config/local/ に置く（Docker でもソースはバインドマウントされて残る）。
+# そうでないビルドでは $ROS_HOME/core2026/（既定は ~/.ros/core2026/）に置く。
+def _default_turret_origin_state_dir():
+    params = _params_file()
+    if os.path.islink(params):
+        return os.path.join(os.path.dirname(os.path.realpath(params)), "local")
+    ros_home = os.environ.get(
+        "ROS_HOME", os.path.join(os.path.expanduser("~"), ".ros"))
+    return os.path.join(ros_home, "core2026")
+
+
+# aim_bot_only:=true では aim_bot 以外を起動しない（原点合わせ用の最小構成）。
+def _unless_aim_bot_only():
+    return UnlessCondition(LaunchConfiguration("aim_bot_only"))
+
+
 def _shooter_cmd_gate(params):
     return Node(
         package="core_shooter",
         executable="shooter_cmd_gate",
         name="shooter_cmd_gate",
         output="screen",
+        condition=_unless_aim_bot_only(),
         parameters=[params],
         remappings=[
             ("manual_mode", "/ui/manual_mode"),
@@ -61,6 +82,7 @@ def _shooter_controller(params):
         executable="shooter_controller",
         name="shooter_controller",
         output="screen",
+        condition=_unless_aim_bot_only(),
         parameters=[params],
         remappings=[
             HAZARD_REMAP,
@@ -76,6 +98,7 @@ def _magazine_manager(params):
         executable="magazine_manager",
         name="magazine_manager",
         output="screen",
+        condition=_unless_aim_bot_only(),
         parameters=[params],
         remappings=[
             ("disk_distance_sensor", "distance"),
@@ -94,6 +117,12 @@ def _aim_bot(params, side):
         parameters=[
             params,
             {"point3d.ballistic.table_path": _ballistics_file(side)},
+            {
+                "turret_origin.state_file": PathJoinSubstitution([
+                    LaunchConfiguration("turret_origin_state_dir"),
+                    f"turret_origin_{side}.state.yaml",
+                ]),
+            },
         ],
         remappings=[
             HAZARD_REMAP,
@@ -131,6 +160,16 @@ def generate_launch_description():
     params = _params_file()
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            "aim_bot_only",
+            default_value="false",
+            description="true にすると aim_bot だけを起動する（原点合わせ用）",
+        ),
+        DeclareLaunchArgument(
+            "turret_origin_state_dir",
+            default_value=_default_turret_origin_state_dir(),
+            description="原点合わせの結果を保存するディレクトリ",
+        ),
         GroupAction([
             PushRosNamespace("mecha"),
             GroupAction([

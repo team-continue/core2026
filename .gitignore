@@ -68,3 +68,6 @@ log/
 =======
 vendor
 >>>>>>> origin/feature/hardware
+
+# 砲塔の原点合わせの結果（機体ごとの値。aim_bot が書き換える）
+core_shooter/config/local/
