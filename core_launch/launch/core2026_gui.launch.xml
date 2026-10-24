@@ -1,9 +1,12 @@
 <launch>
-    <!-- 起動する GUI を選ぶ (既定は両方)。status_gui は主ディスプレイ (モニター1) に、
+    <!-- 起動する GUI を選ぶ: both (既定) / qt / status。status_gui は主ディスプレイ (モニター1) に、
          qt_gui (HUD) はモニターが 2 台以上あれば 2 台目 (モニター2) に表示する -->
-    <arg name="use_status_gui" default="true" description="Launch the status display GUI (monitor 1)"/>
-    <arg name="use_qt_gui" default="true" description="Launch the Qt HUD GUI (monitor 2)"/>
+    <arg name="gui" default="both" description="GUI to launch: 'both', 'qt' (HUD, monitor 2) or 'status' (status display, monitor 1)"/>
 
-    <include file="$(find-pkg-share core_launch)/launch/core2026_status_gui.launch.xml" if="$(var use_status_gui)" />
-    <include file="$(find-pkg-share core_launch)/launch/core2026_qt_gui.launch.xml" if="$(var use_qt_gui)" />
+    <include file="$(find-pkg-share core_launch)/launch/core2026_status_gui.launch.xml"
+             if="$(eval '\'$(var gui)\' in [\'both\', \'status\']')" />
+    <include file="$(find-pkg-share core_launch)/launch/core2026_qt_gui.launch.xml"
+             if="$(eval '\'$(var gui)\' in [\'both\', \'qt\']')" />
+    <log message="Unknown gui:=$(var gui) (use 'both', 'qt' or 'status'); no GUI is launched"
+         if="$(eval '\'$(var gui)\' not in [\'both\', \'qt\', \'status\']')" />
 </launch>
