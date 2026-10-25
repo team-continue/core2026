@@ -52,6 +52,11 @@ def generate_launch_description() -> LaunchDescription:
         default_value="0.2",
         description="Maximum accepted age of body_omega feedforward [s]",
     )
+    use_dead_reckoning_arg = DeclareLaunchArgument(
+        "use_dead_reckoning",
+        default_value="true",
+        description="Launch dead_reckoning_node (wheel + IMU). Disable in sim",
+    )
     use_damiao_imu_arg = DeclareLaunchArgument(
         "use_damiao_imu",
         default_value="true",
@@ -148,6 +153,19 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
+    dead_reckoning = Node(
+        package="core_body_controller",
+        executable="dead_reckoning_node",
+        name="dead_reckoning_node",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("use_dead_reckoning")),
+        remappings=[
+            ("joint_states", "/hardware/joint_states"),
+            ("imu", "/sensing/imu"),
+            ("dead_reckoning", "/localization/dead_reckoning"),
+        ],
+    )
+
     return LaunchDescription(
         [
             acceleration_arg,
@@ -159,6 +177,7 @@ def generate_launch_description() -> LaunchDescription:
             cmd_vel_timeout_arg,
             imu_timeout_arg,
             body_omega_timeout_arg,
+            use_dead_reckoning_arg,
             use_damiao_imu_arg,
             imu_port_arg,
             imu_baudrate_arg,
@@ -172,6 +191,7 @@ def generate_launch_description() -> LaunchDescription:
                 PushRosNamespace("control"),
                 body_control,
                 target_angle,
+                dead_reckoning,
             ]),
         ]
     )

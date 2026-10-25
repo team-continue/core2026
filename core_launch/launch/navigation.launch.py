@@ -91,6 +91,17 @@ def _launch_nodes(context):
                 ('/cmd_vel', '/control/cmd_vel'),
             ],
         ))
+        # Unity は joint_states に車輪の速度を入れないので、dead_reckoning_node の
+        # 代わりに /sim_odom から /localization/dead_reckoning を出す
+        actions.append(GroupAction([
+            PushRosNamespace('localization'),
+            Node(
+                package='core_launch',
+                executable='sim_dead_reckoning_node.py',
+                name='sim_dead_reckoning_node',
+                output='screen',
+            ),
+        ]))
 
     # ── 2. Livox driver (real only) ──────────────────────────────────
     if is_real:
@@ -326,6 +337,7 @@ def _launch_nodes(context):
             os.path.join(body_ctrl_share, 'launch', 'body_controller.launch.py'),
         ),
         launch_arguments={
+            'use_dead_reckoning': 'true' if is_real else 'false',
             'use_damiao_imu': 'true' if use_damiao_imu else 'false',
             'imu_port': context.launch_configurations['imu_port'],
             'imu_baudrate': context.launch_configurations['imu_baudrate'],

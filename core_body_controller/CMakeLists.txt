@@ -36,6 +36,10 @@ ament_auto_add_executable(target_angle_node
   src/target_angle_node.cpp
 )
 
+ament_auto_add_executable(dead_reckoning_node
+  src/dead_reckoning_node.cpp
+)
+
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -45,6 +49,16 @@ if(BUILD_TESTING)
     test/test_target_angle_controller.cpp
   )
   target_include_directories(test_target_angle_controller PRIVATE include)
+
+  ament_add_gtest(test_omni_kinematics
+    test/test_omni_kinematics.cpp
+  )
+  target_include_directories(test_omni_kinematics PRIVATE include)
+
+  ament_add_gtest(test_dead_reckoning
+    test/test_dead_reckoning.cpp
+  )
+  target_include_directories(test_dead_reckoning PRIVATE include)
 
   add_launch_test(test/test_body_controller_launch.py TIMEOUT 45)
 

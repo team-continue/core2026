@@ -18,6 +18,7 @@ install(DIRECTORY
 install(PROGRAMS
   scripts/map_server_node.py
   scripts/odom_bridge_node.py
+  scripts/sim_dead_reckoning_node.py
   scripts/navigation.sh
   DESTINATION lib/${PROJECT_NAME}
 )
