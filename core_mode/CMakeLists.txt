@@ -26,6 +26,10 @@ ament_auto_add_executable(diagnostic
   src/diagnostic.cpp
 )
 
+ament_auto_add_executable(led_manager
+  src/led_manager.cpp
+)
+
 install(
   DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}/
@@ -41,9 +45,13 @@ if(BUILD_TESTING)
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_led_selector test/test_led_selector.cpp)
+  target_include_directories(test_led_selector PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endif()
 
 ament_auto_package(
   # INSTALL_TO_SHARE
-  # USE_SCOPED_HEADER_INSTALL_DIR
+  USE_SCOPED_HEADER_INSTALL_DIR
 )

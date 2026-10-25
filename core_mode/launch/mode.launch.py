@@ -41,6 +41,23 @@ def generate_launch_description():
         on_exit=Shutdown(reason="diagnostic exited"),
     )
 
+    led_manager_node = Node(
+        package="core_mode",
+        executable="led_manager",
+        name="led_manager",
+        output="screen",
+        parameters=[mode_params],
+        remappings=[
+            ("hazard_status", "/system/emergency/hazard_status"),
+            ("hazard_states", "/system/emergency/hazard_states"),
+            ("behavior_state", "/behavior_system/state"),
+            ("rotation", "/control/rotation"),
+            ("enemy_detected", "/enemy_detected"),
+            ("led/upper", "/hardware/led/upper"),
+            ("led/bottom", "/hardware/led/bottom"),
+        ],
+    )
+
     return LaunchDescription([
         GroupAction([
             PushRosNamespace("system"),
@@ -49,5 +66,6 @@ def generate_launch_description():
                 emergency_handler_node,
                 diagnostic_node,
             ]),
+            led_manager_node,
         ]),
     ])
