@@ -3,7 +3,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/int32.hpp>
-#include <std_msgs/msg/u_int8.hpp>
 #include <std_msgs/msg/string.hpp>
 
 #include <cmath>
@@ -111,12 +110,6 @@ public:
           have_odom_ = true;
         });
 
-    sub_hazard_ = create_subscription<std_msgs::msg::Bool>(
-        "/system/emergency/hazard_status", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local(),
-        [this](const std_msgs::msg::Bool::SharedPtr msg) {
-          emergency = msg->data;
-        });
-
     rclcpp::QoS goal_qos(1);
     goal_qos.transient_local();
     goal_qos.reliable();
@@ -127,8 +120,6 @@ public:
     state_pub_ = create_publisher<std_msgs::msg::Int32>(state_topic_, 10);
     state_name_pub_ = create_publisher<std_msgs::msg::String>(state_name_topic_, 10);
     pause_pub_ = create_publisher<std_msgs::msg::Bool>(pause_topic_, 10);
-
-    led_upper_pub_ = create_publisher<std_msgs::msg::UInt8>("/led/upper", 10);
 
     const double safe_rate = publish_rate_hz_ > 0.0 ? publish_rate_hz_ : 1.0;
     timer_ = create_wall_timer(
@@ -159,45 +150,27 @@ private:
     publishState(next_state);
     setPause(next_state != BehaviorState::AUTO_WAYPOINT);
 
-    std_msgs::msg::UInt8 msg;
     switch (next_state) {
       case BehaviorState::MANUAL:
         setRotation(false);
         last_source_ = GoalSource::NONE;
-        
-        msg.data = 2;
         break;
       case BehaviorState::AUTO_SELECTED:
         setRotation(false);
         handleSelectedGoal();
-
-        msg.data = 8;
         break;
       case BehaviorState::ATTACK:
         setRotation(true);
         publishStopGoal();
-
-        msg.data = 9;
         break;
       case BehaviorState::AUTO_WAYPOINT:
         setRotation(false);
         handleWaypointGoal();
-
-        msg.data = 7;
         break;
       case BehaviorState::AUTO_IDLE:
         setRotation(false);
         last_source_ = GoalSource::NONE;
-        
-        msg.data = 6;
         break;
-    }
-
-    if (emergency) {
-      msg.data = 4;
-      led_upper_pub_->publish(msg);
-    } else {
-      led_upper_pub_->publish(msg);
     }
   }
 
@@ -353,7 +326,6 @@ private:
   bool have_waypoint_goal_{false};
   bool selected_pose_dirty_{false};
   bool waypoint_goal_dirty_{false};
-  bool emergency;
   GoalSource last_source_{GoalSource::NONE};
   geometry_msgs::msg::PoseStamped last_goal_pose_;
   geometry_msgs::msg::PoseStamped latest_selected_pose_;
@@ -372,13 +344,11 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr goal_reached_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr waypoint_goal_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_hazard_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_pub_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr rotation_pub_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr state_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_name_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pause_pub_;
-  rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr led_upper_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 
