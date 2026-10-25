@@ -82,6 +82,14 @@ def _launch_nodes(context):
             name='ros_tcp_endpoint',
             output='screen',
             parameters=[{'ROS_IP': '127.0.0.1', 'ROS_TCP_PORT': 10000}],
+            # Unity 側のトピック名は名前空間なしなので、実機と同じ名前に合わせる
+            remappings=[
+                ('/imu', '/sensing/imu'),
+                ('/joint_states', '/hardware/joint_states'),
+                ('/livox/lidar', '/sensing/livox/lidar'),
+                ('/can/tx', '/hardware/can/tx'),
+                ('/cmd_vel', '/control/cmd_vel'),
+            ],
         ))
 
     # ── 2. Livox driver (real only) ──────────────────────────────────
