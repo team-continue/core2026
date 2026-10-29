@@ -60,12 +60,16 @@ void dispatch_received_outputs() {
   data[0] = obj.system_ref[0] ? 1.0f : 0.0f;
   ecat_PacketCallBack(17, data, 1);
 
-  uint8_t led_data[3] = {
+  // LED_TAPE[i] の下位 8 bit がパターン、上位 8 bit が色。テープごとに (パターン, 色) の順で並べる
+  uint8_t led_data[6] = {
       static_cast<uint8_t>(obj.LED_TAPE[0] & 0xFF),
+      static_cast<uint8_t>((obj.LED_TAPE[0] >> 8) & 0xFF),
       static_cast<uint8_t>(obj.LED_TAPE[1] & 0xFF),
+      static_cast<uint8_t>((obj.LED_TAPE[1] >> 8) & 0xFF),
       static_cast<uint8_t>(obj.LED_TAPE[2] & 0xFF),
+      static_cast<uint8_t>((obj.LED_TAPE[2] >> 8) & 0xFF),
   };
-  ecat_PacketCallBack(100, led_data, 3);
+  ecat_PacketCallBack(100, led_data, 6);
 }
 
 void app_hook() {
@@ -179,4 +183,14 @@ void ecat_begin() {
 
 void ecat_update() {
   ecat_slv();
+}
+
+bool ecat_link_up() {
+  // DL Status (0x0110) の port 0 の物理リンクのビット。
+  // ET1100 互換の配置 (bit 4) を前提にしている。AX58100 で実機確認が必要。
+  constexpr uint16_t kDlStatusPort0LinkMask = 0x0010;
+  uint16_t dl_status = 0;
+  ESC_read(ESCREG_DLSTATUS, &dl_status, sizeof(dl_status));
+  dl_status = etohs(dl_status);
+  return (dl_status & kDlStatusPort0LinkMask) != 0;
 }
