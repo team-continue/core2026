@@ -11,6 +11,8 @@
 
 ## 起動と事前確認
 
+この手順は `orthros/main` のROS 2 Humbleで検証した。Ubuntu 24.04・ROS 2 Jazzyへ移行した環境では、下の `source` を `source /opt/ros/jazzy/setup.bash` に置き換える。Jazzyでの試験は未実施。
+
 ```bash
 source /opt/ros/humble/setup.bash
 # このブランチを src にチェックアウトしたワークスペースで実行

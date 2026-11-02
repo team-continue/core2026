@@ -7,11 +7,6 @@
   <maintainer email="pizac.twitter@gmail.com">pizac</maintainer>
   <license>Apache 2.0</license>
 
-  <depend>core_msgs</depend>
-  <depend>sensor_msgs</depend>
-  <depend>visualization_msgs</depend>
-  <depend>geometry_msgs</depend>
-
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
@@ -22,6 +17,11 @@
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-scipy</exec_depend>
   <exec_depend>python3-matplotlib</exec_depend>
+
+  <depend>core_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>geometry_msgs</depend>
 
   <test_depend>python3-pytest</test_depend>
 
