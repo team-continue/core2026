@@ -12,3 +12,5 @@ pip3 install --no-cache-dir pythonQwt
 ```
 ros2 run core_tools motor_tool
 ```
+
+[腰Yaw・足回りの同定手順](base_sysid.md)

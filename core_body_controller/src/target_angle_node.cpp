@@ -33,6 +33,11 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr target_omega_pub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rotation_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  // Only enabled by the commissioning launch. A lost probe must command zero.
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr sysid_velocity_sub_;
+  std::chrono::steady_clock::time_point last_sysid_command_{};
+  double sysid_velocity_ = 0.0;
+  SteadyTime last_hazard_time_{};
 
   std::unique_ptr<core_body_controller::TargetAngleController> controller_;
   geometry_msgs::msg::Twist latest_twist_;
@@ -85,6 +90,17 @@ TargetAngleNode::TargetAngleNode()
   controller_ = std::make_unique<core_body_controller::TargetAngleController>(
     2.0, 0.0, 0.0, yaw_rotation_velocity, yaw_rotation_acceleration);
 
+  if (declare_parameter<bool>("sysid_velocity_mode", false)) {
+    sysid_velocity_sub_ = create_subscription<std_msgs::msg::Float64>(
+      "sysid_velocity", 1, [this](const std_msgs::msg::Float64::SharedPtr msg) {
+        if (emergency_stop_flag_ || !std::isfinite(msg->data) || std::abs(msg->data) > 0.35) {
+          sysid_velocity_ = 0.0;
+          return;
+        }
+        sysid_velocity_ = msg->data;
+        last_sysid_command_ = std::chrono::steady_clock::now();
+      });
+  }
   twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
     "cmd_vel", 10, [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
       if (!std::isfinite(msg->angular.z)) {
@@ -129,9 +145,11 @@ TargetAngleNode::TargetAngleNode()
   emergency_stop_sub_ = this->create_subscription<std_msgs::msg::Bool>(
     "/system/emergency/hazard_status", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
       emergency_stop_flag_ = msg->data;
+      last_hazard_time_ = std::chrono::steady_clock::now();
       if (emergency_stop_flag_) {
         latest_body_omega_ = 0.0;
         has_received_body_omega_ = false;
+        sysid_velocity_ = 0.0;
       }
     });
   target_omega_pub_ = this->create_publisher<std_msgs::msg::Float64>("target_omega", 10);
@@ -228,6 +246,13 @@ void TargetAngleNode::timer_callback()
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000,
       "Waiting for fresh IMU data; publishing zero yaw command");
+    return;
+  }
+
+  if (sysid_velocity_sub_) {
+    const bool input_fresh = is_fresh(last_sysid_command_, true, cmd_vel_timeout_sec_);
+    const bool hazard_fresh = is_fresh(last_hazard_time_, true, 0.35);
+    publish_command(input_fresh && hazard_fresh ? sysid_velocity_ : 0.0);
     return;
   }
 

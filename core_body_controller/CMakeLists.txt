@@ -47,6 +47,7 @@ if(BUILD_TESTING)
   target_include_directories(test_target_angle_controller PRIVATE include)
 
   add_launch_test(test/test_body_controller_launch.py TIMEOUT 45)
+  add_launch_test(test/test_waist_sysid_launch.py TIMEOUT 30)
 
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
