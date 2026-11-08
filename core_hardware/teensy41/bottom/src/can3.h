@@ -31,9 +31,8 @@ CAN_message_t can3_msg;
 
 void can3_cb(const CAN_message_t &msg) {
   // Serial.println("ok");//動かすときはここをコメントアウトにしないとエラー
-  if(msg.id == 0xff && msg.len == 2){// LED_TAPE[1], LED_TAPE[2]
-      bottom_led.write(msg.buf[0]);
-      // bottom_led.write(msg.buf[1]);
+  if(msg.id == 0xff && msg.len == 2){// bottom テープの (パターン, 色)。upper が LED_TAPE[1] から作る
+      bottom_led.write(msg.buf[0], msg.buf[1]);
       can3_msg.buf[0] = client.destoy;
       can3_msg.buf[1] = client.hp;
       can3_msg.buf[2] = client.color;
