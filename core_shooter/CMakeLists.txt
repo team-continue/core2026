@@ -42,6 +42,13 @@ install(
 )
 
 install(
+  PROGRAMS
+    scripts/aim_bot_tracking_sim.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME aim_bot_tracking_sim
+)
+
+install(
   DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}/
 )
