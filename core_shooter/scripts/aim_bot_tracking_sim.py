@@ -3,10 +3,10 @@
 aim_bot の画像追尾を実機なしで試すための仮想砲塔・仮想カメラ.
 
 aim_bot の位置指令（/hardware/can/tx）を受けて むだ時間 + 2次遅れ で動く仮想モータの角度を
-/joint_states に出し、仮想の的と「撮影時刻の砲塔角」の差を画像座標[px]に直して
+/hardware/joint_states に出し、仮想の的と「撮影時刻の砲塔角」の差を画像座標[px]に直して
 target_pose として遅延付きで出す。終了時に追従誤差を集計して表示し、CSV に保存する。
 
-実機の core_hardware や敵検出と同時に起動しないこと（/joint_states や target_pose が二重になる）。
+実機の core_hardware や敵検出と同時に起動しないこと（/hardware/joint_states や target_pose が二重になる）。
 ROS_LOCALHOST_ONLY=1 か別の ROS_DOMAIN_ID で、ロボットのネットワークから切り離して使う。
 """
 
@@ -132,7 +132,7 @@ class TrackingSim(Node):
         self.lost_captures = 0
         self.finished = False
 
-        self.joint_pub = self.create_publisher(JointState, '/joint_states', 10)
+        self.joint_pub = self.create_publisher(JointState, '/hardware/joint_states', 10)
         self.target_pub = self.create_publisher(PointStamped, 'target_pose', 10)
         self.hazard_pub = self.create_publisher(Bool, '/system/emergency/hazard_status', 10)
         self.create_subscription(CANArray, '/hardware/can/tx', self._on_can, 10)
