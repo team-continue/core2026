@@ -6,6 +6,13 @@
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
+namespace {
+// daemon の last_ethercat_rx_ms と同じ時計 (system_clock の epoch ms) にそろえる
+int64_t to_epoch_ms(const std::chrono::system_clock::time_point tp) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()).count();
+}
+}  // namespace
+
 CoreHardware::CoreHardware()
     : rclcpp::Node("core_hardware") {
   declare_parameter("socket_path", std::string(core_hardware::kDefaultSocketPath));
@@ -18,6 +25,8 @@ CoreHardware::CoreHardware()
   hp_pub_ = create_publisher<std_msgs::msg::UInt8>("hp", 10);
   color_pub_ = create_publisher<std_msgs::msg::UInt8>("color", 10);
   hardware_emergency_pub_ = create_publisher<std_msgs::msg::Bool>("hardware_emergency", 10);
+  motor_status_pub_ = create_publisher<core_msgs::msg::MotorStatusArray>("motor_status", rclcpp::SensorDataQoS());
+  link_status_pub_ = create_publisher<core_msgs::msg::HardwareLinkStatus>("link_status", 10);
 
   can_sub_ = create_subscription<core_msgs::msg::CANArray>(
       "can/tx", 10, std::bind(&CoreHardware::can_cb, this, _1));
@@ -28,6 +37,7 @@ CoreHardware::CoreHardware()
   led_bottom2_sub_ = create_subscription<std_msgs::msg::UInt8>(
       "led/bottom2", 10, std::bind(&CoreHardware::led_bottom2_cb, this, _1));
   timer_ = create_wall_timer(10ms, std::bind(&CoreHardware::timer_cb, this));
+  status_timer_ = create_wall_timer(100ms, std::bind(&CoreHardware::status_timer_cb, this));
 
   joint_states_.name = std::vector<std::string>{};
   joint_states_.effort.resize(kJointNum, 0.0);
@@ -55,9 +65,28 @@ void CoreHardware::timer_cb() {
     client_.close();
     connected_ = false;
     ethercat_connected_ = false;
+    // 切断前のスナップショットを再接続後に現在の状態として使わないように捨てる
+    latest_state_ = core_hardware::HardwareSnapshot{};
     pending_can_array_.array.clear();
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "Hardware bridge IPC error: %s", ex.what());
   }
+}
+
+void CoreHardware::status_timer_cb() {
+  const auto stamp = now();
+  auto link_status = core_hardware::make_link_status(
+      connected_, latest_state_, to_epoch_ms(std::chrono::system_clock::now()));
+  link_status.header.stamp = stamp;
+  link_status_pub_->publish(link_status);
+
+  // EtherCAT 通信中でなければ (スナップショット未受信を含む) latest_state_ はモータの現在の状態ではないので出さない。
+  // 購読側はタイムアウトで「不明」と判断する
+  if (!link_status.ethercat_connected) {
+    return;
+  }
+  auto motor_status = core_hardware::make_motor_status_array(latest_state_);
+  motor_status.header.stamp = stamp;
+  motor_status_pub_->publish(motor_status);
 }
 
 void CoreHardware::can_cb(const core_msgs::msg::CANArray::SharedPtr msg) {
@@ -83,16 +112,7 @@ void CoreHardware::ensure_connected() {
 
 void CoreHardware::update_ethercat_connection_log() {
   const auto now_tp = std::chrono::system_clock::now();
-  const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          now_tp.time_since_epoch())
-                          .count();
-  const bool daemon_connected = latest_state_.ethercat_connected[0] != 0U;
-  const uint64_t last_rx_ms = latest_state_.last_ethercat_rx_ms[0];
-  const bool ethercat_connected =
-      daemon_connected &&
-      last_rx_ms != 0U &&
-      now_ms >= static_cast<int64_t>(last_rx_ms) &&
-      (now_ms - static_cast<int64_t>(last_rx_ms)) <= 1000;
+  const bool ethercat_connected = core_hardware::is_ethercat_connected(latest_state_, to_epoch_ms(now_tp));
 
   if (ethercat_connected) {
     if (!ethercat_connected_) {

@@ -27,6 +27,7 @@ bool hardware_emergency = false;
 unsigned long wireless_prev_connect_ms = 0;
 uint8_t wireless_data[LEN_WIRELESS] = {0};
 uint8_t hardware_enable[1] = {0};
+uint8_t bottom_connect[1] = {0};
 uint8_t destory[1] = {0};
 uint8_t damege[1] = {0};
 unsigned long prev_ts = 0;
@@ -66,6 +67,7 @@ void ecat_FrameCallBack(){
       can3_motor[i]->motor_state.position_rad
     };
     ecat_setFloat(i, f, 6);
+    ecat_setDiag(i, can3_motor[i]->diag());
   }
   for(int i =0;i<CAN2_NUM_MOTOR;++i){
     float f[6] = {
@@ -77,6 +79,7 @@ void ecat_FrameCallBack(){
       can2_motor[i].feedback.position_rad
     };
     ecat_setFloat(i + CAN3_NUM_MOTOR, f, 6);
+    ecat_setDiag(i + CAN3_NUM_MOTOR, can2_motor[i].diag());
   }
 
   for(int i =0;i<LEN_SERVO;++i){
@@ -89,7 +92,12 @@ void ecat_FrameCallBack(){
       sts.servos[i].pos
     };
     ecat_setFloat(i+CAN3_NUM_MOTOR+CAN2_NUM_MOTOR, f, 6);
+    ecat_setDiag(i+CAN3_NUM_MOTOR+CAN2_NUM_MOTOR, sts.diag(i));
   }
+
+  // CAN バスの状態 ([0] = can3, [1] = can2)
+  ecat_setBusDiag(0, can3_bus_diag());
+  ecat_setBusDiag(1, can2_bus_diag());
 
   destory[0] = bottom_can3.destroy() ? 1 : 0;
   damege[0] = bottom_can3.hp();
@@ -106,6 +114,9 @@ void ecat_FrameCallBack(){
   ecat_setUint8(103, color_payload, 1);
   hardware_enable[0] = hardware_emergency ? 0 : 1;
   ecat_setUint8(104, hardware_enable, 1);
+  // bottom 基板との CAN 接続
+  bottom_connect[0] = connect_bottom ? 1 : 0;
+  ecat_setUint8(105, bottom_connect, 1);
 }
 
 // // PCから受信時にパケットごとに呼ばれるやつ

@@ -72,6 +72,15 @@ class Bottom : public MotorBase {
            (now_ms - last_recv_can_ts_ms_) < BOTTOM_CAN_TIMEOUT_MS;
   }
 
+  // 診断情報。モータではないので connected だけを使う
+  // (PDO の motor_diag に欄は無く、接続は system_state[1] で PC に送る)
+  MotorDiag diag() const override {
+    MotorDiag d;
+    d.supported = true;
+    d.connected = isCanConnected(millis());
+    return d;
+  }
+
   bool destroy() const { return destroy_; }
   uint8_t hp() const { return hp_; }
   uint8_t color() const { return color_; }

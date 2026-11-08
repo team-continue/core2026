@@ -11,8 +11,17 @@
 
 namespace {
 
+namespace diag_layout = core_hardware::motor_diag;
+
+// PDO の配列の長さは共有ヘッダの数と合わせる
+static_assert(sizeof(Obj.motor_diag) / sizeof(Obj.motor_diag[0]) == diag_layout::kNumMotors,
+              "motor_diag の要素数が共有ヘッダの kNumMotors と一致しない");
+static_assert(sizeof(Obj.motor_voltage) / sizeof(Obj.motor_voltage[0]) == diag_layout::kNumMotors,
+              "motor_voltage の要素数が共有ヘッダの kNumMotors と一致しない");
+static_assert(sizeof(Obj.bus_diag) / sizeof(Obj.bus_diag[0]) == diag_layout::kNumCanBuses,
+              "bus_diag の要素数が共有ヘッダの kNumCanBuses と一致しない");
+
 _Objects &obj = Obj;
-constexpr size_t kWirelessPayloadBytes = 7;
 
 int clamp_to_int16(const float value) {
   if (value > 32767.0f) {
@@ -42,9 +51,7 @@ bool set_state_frame(const uint8_t id, const float *data, const int flt_len) {
   }
   if (id < 15) {
     obj.motor_state_vel[id] = clamp_to_int16(data[3]);
-    if (id >= 4) {
-      obj.motor_state_torque[id] = clamp_to_int16(data[1]);
-    }
+    obj.motor_state_torque[id] = clamp_to_int16(data[1]);
     return true;
   }
   return false;
@@ -106,26 +113,40 @@ bool ecat_setUint8(const uint8_t id, const uint8_t *data, const int u8_len) {
       obj.core_state[1] = data[0];
       return true;
     case 102: {
-      uint8_t *torque_bytes = reinterpret_cast<uint8_t *>(obj.motor_state_torque);
-      const size_t copy_len = static_cast<size_t>(u8_len) < kWirelessPayloadBytes ? static_cast<size_t>(u8_len) : kWirelessPayloadBytes;
-      memset(torque_bytes, 0, kWirelessPayloadBytes);
-      memcpy(torque_bytes, data, copy_len);
+      const size_t copy_len = static_cast<size_t>(u8_len) < sizeof(obj.wireless) ? static_cast<size_t>(u8_len) : sizeof(obj.wireless);
+      memset(obj.wireless, 0, sizeof(obj.wireless));
+      memcpy(obj.wireless, data, copy_len);
       return true;
     }
-    case 103: {
-      if (u8_len <= 0) {
-        return false;
-      }
-      uint8_t *torque_bytes = reinterpret_cast<uint8_t *>(obj.motor_state_torque);
-      torque_bytes[kWirelessPayloadBytes] = data[0];
+    case 103:
+      obj.color[0] = data[0];
       return true;
-    }
     case 104:
       obj.system_state[0] = data[0] != 0;
+      return true;
+    case 105:
+      obj.system_state[1] = data[0] != 0;
       return true;
     default:
       return false;
   }
+}
+
+bool ecat_setDiag(const uint8_t id, const core_hardware::motor_diag::MotorDiag &diag) {
+  if (id >= diag_layout::kNumMotors) {
+    return false;
+  }
+  obj.motor_diag[id] = diag_layout::pack_motor_diag(diag);
+  obj.motor_voltage[id] = diag.voltage_cv;
+  return true;
+}
+
+bool ecat_setBusDiag(const uint8_t bus, const core_hardware::motor_diag::BusDiag &diag) {
+  if (bus >= diag_layout::kNumCanBuses) {
+    return false;
+  }
+  obj.bus_diag[bus] = diag_layout::pack_bus_diag(diag);
+  return true;
 }
 
 bool ecat_setFloat(const uint8_t id, const float *data, const int flt_len) {

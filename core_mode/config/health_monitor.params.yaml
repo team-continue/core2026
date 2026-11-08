@@ -45,3 +45,36 @@
       timeout_ms: 2000
       warn_voltage: 22.2 # [V] 仮値。バッテリー仕様に合わせて調整する
       error_voltage: 21.0 # [V] 仮値
+
+    # PC とハードウェアの通信状態 (core_hardware が publish)。link/daemon・link/ethercat・link/bottom を出す
+    # 未受信・timeout_ms 超過は STALE。経路の手前が切れているときの先の区間も STALE
+    link_status:
+      enabled: true
+      topic: /hardware/link_status
+      timeout_ms: 500
+
+    # モータと CAN バスの状態 (core_hardware が publish)。motor/<名前>・can/<バス名> を出す
+    motor_status:
+      enabled: true
+      topic: /hardware/motor_status
+      timeout_ms: 500
+      # names[id] を motor/<名前> とする (id は PDO 上のモータ ID)。範囲外の ID は motor/<id>
+      names:
+        - wheel_0 # 0-3: Damiao 足回り
+        - wheel_1
+        - wheel_2
+        - wheel_3
+        - body_yaw # 4: RoboStride 06 車体ヨー
+        - left_yaw # 5-6: RoboStride 05 砲塔ヨー
+        - right_yaw
+        - left_pitch # 7-14: Feetech STS
+        - right_loading
+        - right_disk_hold_r
+        - right_disk_hold_l
+        - right_pitch
+        - left_loading
+        - left_disk_hold_r
+        - left_disk_hold_l
+      # 主温度とローター温度の高いほうで判定する
+      temp_warn_c: 60.0 # [℃] 仮値
+      temp_error_c: 70.0 # [℃] 仮値。Feetech STS の既定の過熱保護 (70 ℃) に合わせた
