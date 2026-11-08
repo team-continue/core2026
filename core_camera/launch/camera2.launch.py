@@ -44,8 +44,8 @@ def generate_launch_description():
             1280,
             720,
             30.0,
-            '/turret_camera_tps/color/image',
-            '/turret_camera_tps/color/camera_info',
+            '/sensing/turret_camera_tps/color/image',
+            '/sensing/turret_camera_tps/color/camera_info',
         ),
         _cam(
             'camera_left',
@@ -53,7 +53,7 @@ def generate_launch_description():
             640,
             480,
             30.0,
-            '/turret_camera_left/color/image',
-            '/turret_camera_left/color/camera_info',
+            '/sensing/turret_camera_left/color/image',
+            '/sensing/turret_camera_left/color/camera_info',
         ),
     ])

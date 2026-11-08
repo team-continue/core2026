@@ -40,7 +40,7 @@ CostmapBuildNode::CostmapBuildNode(const rclcpp::NodeOptions & options)
   points_filt_topic_ =
     declare_parameter<std::string>("points_filt_topic", "/lidar/points_filtered");
   points_no_self_topic_ =
-    declare_parameter<std::string>("points_no_self_topic", "/livox/lidar/no_self");
+    declare_parameter<std::string>("points_no_self_topic", "/sensing/livox/lidar/no_self");
   local_topic_ = declare_parameter<std::string>("local_topic", "/costmap/local");
 
   // ---------- フレーム名 ----------
@@ -173,7 +173,7 @@ void CostmapBuildNode::onPoints(const sensor_msgs::msg::PointCloud2::SharedPtr m
   last_points_stamp_ = this->now();
 
   // 即座に自身除去し発行（TF不要 — センサ座標系で動作）
-  // FAST-LIO が /livox/lidar/no_self を必要とするため、
+  // FAST-LIO が /sensing/livox/lidar/no_self を必要とするため、
   // TF の有無に関係なくここで発行する（循環参照防止）
   last_points_no_self_ = removeSelfPoints(*msg, 0.0, 0.0);
   has_points_no_self_ = true;

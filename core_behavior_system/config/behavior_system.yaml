@@ -58,21 +58,3 @@
     enemy_detected_topic: "enemy_detected"
     stale_timeout_sec: 0.5
     detected_z_threshold: 0.5
-
-/**/attack_shoot_manager:
-  ros__parameters:
-    left_target_topic: "/perception/enemy_detection/left/target_pose"
-    right_target_topic: "/perception/enemy_detection/right/target_pose"
-    left_shoot_fullauto_topic: "/mecha/shooter/left/shoot_fullauto"
-    right_shoot_fullauto_topic: "/mecha/shooter/right/shoot_fullauto"
-    left_turret_auto_topic: "/ui/left/turret_auto"
-    right_turret_auto_topic: "/ui/right/turret_auto"
-    image_width: 320.0
-    image_height: 320.0
-    image_center_x: 0.5
-    image_center_y: 0.5
-    center_tolerance_x_px: 50.0
-    center_tolerance_y_px: 50.0
-    detected_z_threshold: 0.5
-    stale_timeout_sec: 0.2
-    publish_rate_hz: 20.0

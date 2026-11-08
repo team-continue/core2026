@@ -161,7 +161,7 @@ public:
     // subscribers sensor
     //========================================
     joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-      "/joint_states", 10,
+      "/hardware/joint_states", 10,
       std::bind(&ShooterController::jointStateCallback, this, std::placeholders::_1));
     jam_sensor_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "jam", 10,

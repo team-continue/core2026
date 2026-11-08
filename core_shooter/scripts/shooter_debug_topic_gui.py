@@ -113,7 +113,7 @@ class DebugTopicPublisher(Node):
         self._add_monitor_subscription("/mecha/shooter/left/distance", Int32)
         self._add_monitor_subscription("/mecha/shooter/right/distance", Int32)
         self.joint_states_sub = self.create_subscription(
-            JointState, "/joint_states", self._joint_states_callback, self.monitor_qos
+            JointState, "/hardware/joint_states", self._joint_states_callback, self.monitor_qos
         )
         self.can_tx_monitor_sub = self.create_subscription(
             CANArray, "/hardware/can/tx", self._can_tx_callback, self.monitor_qos
@@ -537,7 +537,7 @@ class DebugGui:
         detail_panel = ttk.Frame(frame)
         detail_panel.grid(row=summary_row + 1, column=0, columnspan=4, sticky=tk.EW, pady=(0, 4))
 
-        joint_wrap = ttk.LabelFrame(detail_panel, text="/joint_states", padding=8)
+        joint_wrap = ttk.LabelFrame(detail_panel, text="/hardware/joint_states", padding=8)
         joint_wrap.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 8))
         can_tx_wrap = ttk.LabelFrame(detail_panel, text="/hardware/can/tx", padding=8)
         can_tx_wrap.grid(row=0, column=1, sticky=tk.NSEW)

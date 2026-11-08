@@ -94,8 +94,8 @@ def _launch_nodes(context):
                 name='livox_lidar_publisher',
                 output='screen',
                 remappings=[
-                    ('livox/lidar', '/livox/lidar'),
-                    ('livox/imu', '/livox/imu'),
+                    ('livox/lidar', '/sensing/livox/lidar'),
+                    ('livox/imu', '/sensing/livox/imu'),
                 ],
                 parameters=[{
                     'xfer_format': 0,  # PointCloud2 (MID-360)
@@ -130,7 +130,7 @@ def _launch_nodes(context):
     #                     FindPackageShare('fast_lio'), 'config', 'mid360.yaml',
     #                 ]),
     #                 {
-    #                     'common.lid_topic': '/livox/lidar',
+    #                     'common.lid_topic': '/sensing/livox/lidar',
     #                     'common.imu_topic': imu_topic,
     #                     'preprocess.lidar_type': lidar_type,
     #                 },

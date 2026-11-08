@@ -1,8 +1,8 @@
 /**/costmap_build_node:
   ros__parameters:
     # ----- topics -----
-    points_in_topic: /livox/lidar
-    points_no_self_topic: /livox/lidar/no_self
+    points_in_topic: /sensing/livox/lidar
+    points_no_self_topic: /sensing/livox/lidar/no_self
     local_topic: costmap/local
 
     # ----- frames -----
