@@ -19,13 +19,25 @@ def generate_test_description():
         parameters=[{'sysid_velocity_mode': True, 'cmd_vel_timeout_sec': 0.12,
                      'imu_timeout_sec': 0.12}],
         remappings=[('/system/emergency/hazard_status', '/waist_test/hazard')])
-    return launch.LaunchDescription([controller, launch_testing.actions.ReadyToTest()])
+    full_turn_controller = launch_ros.actions.Node(
+        package='core_body_controller', executable='target_angle_node', namespace='waist_turn_test',
+        parameters=[{'sysid_velocity_mode': True, 'sysid_velocity_limit': 6.28,
+                     'cmd_vel_timeout_sec': 0.12, 'imu_timeout_sec': 0.12}],
+        remappings=[('/system/emergency/hazard_status', '/waist_turn_test/hazard')])
+    return launch.LaunchDescription([
+        controller, full_turn_controller, launch_testing.actions.ReadyToTest()])
 
 
 class TestWaistSysid(unittest.TestCase):
     def test_only_fresh_safe_commands_reach_id4(self):
+        self.check_route('waist_test', 0.15, 0.36, 0.60)
+
+    def test_full_turn_commands_keep_stop_and_timeout_guards(self):
+        self.check_route('waist_turn_test', 6.28, 6.29, 0.90)
+
+    def check_route(self, namespace, valid_speed, invalid_speed, duration):
         rclpy.init()
-        node = rclpy.create_node('driver', namespace='waist_test')
+        node = rclpy.create_node('driver', namespace=namespace)
         try:
             velocity = node.create_publisher(Float64, 'sysid_velocity', 1)
             hazard = node.create_publisher(Bool, 'hazard', 1)
@@ -44,7 +56,7 @@ class TestWaistSysid(unittest.TestCase):
 
             def check(speed, stop, send_imu, expected):
                 output.clear()
-                end = time.monotonic() + 0.60
+                end = time.monotonic() + duration
                 while time.monotonic() < end:
                     if stop is not None:
                         hazard.publish(Bool(data=stop))
@@ -58,15 +70,19 @@ class TestWaistSysid(unittest.TestCase):
                 for value in output[-5:]:
                     self.assertAlmostEqual(value, expected, places=5)
 
-            check(0.15, None, True, 0.0)   # no initial clearance
-            check(0.15, False, True, 0.15)
+            check(valid_speed, None, True, 0.0)   # no initial clearance
+            check(valid_speed, False, True, valid_speed)
+            if valid_speed > 1.0:
+                self.assertTrue(any(0.0 < value < valid_speed - 0.1 for value in output))
             check(None, False, True, 0.0)  # command expires
-            check(-0.15, False, True, -0.15)
-            check(-0.15, True, True, 0.0)  # e-stop wins over repeated commands
-            check(-0.15, False, True, -0.15)
-            check(-0.15, None, True, 0.0)  # missing hazard even if commands continue
-            check(0.15, False, False, 0.0)
-            check(0.36, False, True, 0.0)
+            check(-valid_speed, False, True, -valid_speed)
+            check(-valid_speed, True, True, 0.0)  # e-stop wins over repeated commands
+            check(-valid_speed, False, True, -valid_speed)
+            check(-valid_speed, None, True, 0.0)  # missing hazard even if commands continue
+            check(valid_speed, False, False, 0.0)
+            check(invalid_speed, False, True, 0.0)
+            check(float('nan'), False, True, 0.0)
+            check(float('inf'), False, True, 0.0)
         finally:
             node.destroy_node()
             rclpy.shutdown()

@@ -37,6 +37,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr sysid_velocity_sub_;
   std::chrono::steady_clock::time_point last_sysid_command_{};
   double sysid_velocity_ = 0.0;
+  double sysid_velocity_limit_ = 0.35;
   SteadyTime last_hazard_time_{};
 
   std::unique_ptr<core_body_controller::TargetAngleController> controller_;
@@ -83,18 +84,26 @@ TargetAngleNode::TargetAngleNode()
     !std::isfinite(cmd_vel_timeout_sec_) || !std::isfinite(imu_timeout_sec_) ||
     !std::isfinite(body_omega_timeout_sec_) || yaw_rotation_velocity <= 0.0 ||
     yaw_rotation_acceleration <= 0.0 || cmd_vel_timeout_sec_ <= 0.0 || imu_timeout_sec_ <= 0.0 ||
-    body_omega_timeout_sec_ <= 0.0)
-  {
+    body_omega_timeout_sec_ <= 0.0) {
     throw std::invalid_argument("yaw limits and timeout parameters must be finite and positive");
   }
   controller_ = std::make_unique<core_body_controller::TargetAngleController>(
     2.0, 0.0, 0.0, yaw_rotation_velocity, yaw_rotation_acceleration);
 
+  sysid_velocity_limit_ = declare_parameter<double>("sysid_velocity_limit", 0.35);
+  if (
+    !std::isfinite(sysid_velocity_limit_) || sysid_velocity_limit_ <= 0.0 ||
+    sysid_velocity_limit_ > 6.28) {
+    throw std::invalid_argument("sysid_velocity_limit must be in (0, 6.28] rad/s");
+  }
   if (declare_parameter<bool>("sysid_velocity_mode", false)) {
     sysid_velocity_sub_ = create_subscription<std_msgs::msg::Float64>(
       "sysid_velocity", 1, [this](const std_msgs::msg::Float64::SharedPtr msg) {
-        if (emergency_stop_flag_ || !std::isfinite(msg->data) || std::abs(msg->data) > 0.35) {
+        if (
+          emergency_stop_flag_ || !std::isfinite(msg->data) ||
+          std::abs(msg->data) > sysid_velocity_limit_) {
           sysid_velocity_ = 0.0;
+          last_sysid_command_ = SteadyTime{};
           return;
         }
         sysid_velocity_ = msg->data;
@@ -116,7 +125,7 @@ TargetAngleNode::TargetAngleNode()
   can_pub_ = this->create_publisher<core_msgs::msg::CANArray>("can/tx", 10);
   rotation_sub_ = this->create_subscription<std_msgs::msg::Int32>(
     "/rotation", 10,
-    [this](const std_msgs::msg::Int32::SharedPtr msg) {rotation_mode_ = msg->data;});
+    [this](const std_msgs::msg::Int32::SharedPtr msg) { rotation_mode_ = msg->data; });
   imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
     "imu", 10, std::bind(&TargetAngleNode::imu_callback, this, std::placeholders::_1));
   world_target_angle_sub_ = this->create_subscription<std_msgs::msg::Float64>(
@@ -160,9 +169,8 @@ void TargetAngleNode::imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg)
 {
   double measured_yaw = 0.0;
   if (!core_body_controller::quaternion_to_yaw(
-      msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w,
-      measured_yaw))
-  {
+        msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w,
+        measured_yaw)) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000,
       "Ignoring IMU message containing an invalid orientation quaternion");
@@ -173,7 +181,7 @@ void TargetAngleNode::imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg)
   const double arrival_dt =
     has_received_imu_ ? std::chrono::duration<double>(arrival_time - last_imu_time_).count() : 0.0;
   const bool imu_stream_is_continuous = has_received_imu_ && std::isfinite(arrival_dt) &&
-    arrival_dt > 0.0 && arrival_dt <= imu_timeout_sec_;
+                                        arrival_dt > 0.0 && arrival_dt <= imu_timeout_sec_;
 
   if (has_received_imu_ && !imu_stream_is_continuous) {
     RCLCPP_WARN_THROTTLE(
@@ -192,7 +200,7 @@ bool TargetAngleNode::is_fresh(
 {
   return has_received &&
          std::chrono::duration<double>(std::chrono::steady_clock::now() - last_time).count() <=
-         timeout_sec;
+           timeout_sec;
 }
 
 double TargetAngleNode::gimbal_control(double dt, bool cmd_vel_is_fresh, bool body_omega_is_fresh)
@@ -252,7 +260,13 @@ void TargetAngleNode::timer_callback()
   if (sysid_velocity_sub_) {
     const bool input_fresh = is_fresh(last_sysid_command_, true, cmd_vel_timeout_sec_);
     const bool hazard_fresh = is_fresh(last_hazard_time_, true, 0.35);
-    publish_command(input_fresh && hazard_fresh ? sysid_velocity_ : 0.0);
+    if (input_fresh && hazard_fresh) {
+      // Keep the normal velocity and acceleration limits; record this final CAN input.
+      publish_command(controller_->update(0.0, sysid_velocity_, dt));
+    } else {
+      controller_->reset();
+      publish_command(0.0);
+    }
     return;
   }
 

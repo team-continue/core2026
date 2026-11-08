@@ -13,13 +13,28 @@ from std_msgs.msg import Bool, Float64
 
 
 LIMITS = {'waist': 0.35, 'vx': 0.20, 'vy': 0.20, 'wz': 0.35}
+FULL_TURN_PROFILES = ('turns', 'turns-valid')
+FULL_TURN_SPEED_LIMIT = 6.28
+FULL_TURN_EXCURSION = 8 * math.pi
 HAZARD = '/system/emergency/hazard_status'
 CAN = '/hardware/can/tx'
 PROFILES = {
     'step': [(0, 1), (1, 1), (0, 1), (-1, 1), (0, 2)],
     'multistep': [(0, 1), (0.5, 0.8), (1, 0.8), (0, 1), (-0.75, 0.8),
                   (-0.25, 0.8), (0.5, 0.8), (0, 2)],
+    'turns': [(0, 1), (1, 3), (0, 3), (-1, 3), (0, 3)],
+    'turns-valid': [(0, 1), (0.5, 3), (0, 3), (-1, 3), (0, 3), (1, 3), (0, 3)],
 }
+
+
+def make_plan(axis, profile, amplitude):
+    full_turns = profile in FULL_TURN_PROFILES
+    if full_turns and axis != 'waist':
+        raise ValueError('full-turn profiles are only available for waist')
+    limit = FULL_TURN_SPEED_LIMIT if full_turns else LIMITS[axis]
+    if not math.isfinite(amplitude) or not 0 < amplitude <= limit:
+        raise ValueError(f'amplitude must be in (0, {limit}]')
+    return [(level * amplitude, duration) for level, duration in PROFILES[profile]]
 
 
 def yaw(q):
@@ -33,6 +48,8 @@ class Probe(Node):
     def __init__(self, args):
         super().__init__('base_sysid_probe')
         self.args = args
+        self.waist_excursion_limit = (
+            FULL_TURN_EXCURSION if args.profile in FULL_TURN_PROFILES else 0.65)
         self.samples = {}
         self.tripped = False
         self.origin = None
@@ -60,7 +77,8 @@ class Probe(Node):
             self.tripped = True
             return
         angle = msg.position[4]
-        if self.started and abs(angle - self.waist_origin) > 0.65 and self.is_waist:
+        if (self.started and self.is_waist and
+                abs(angle - self.waist_origin) > self.waist_excursion_limit):
             self.tripped = True
         self.latest_waist = angle
         self.samples['joints'] = time.monotonic()
@@ -162,10 +180,14 @@ def main():
     parser.add_argument('--execute', action='store_true',
                         help='Send commands (default only prints the plan).')
     args = parser.parse_args()
-    if not 0 < args.amplitude <= LIMITS[args.axis]:
-        parser.error(f'amplitude must be in (0, {LIMITS[args.axis]}]')
-    plan = [(level * args.amplitude, duration) for level, duration in PROFILES[args.profile]]
+    try:
+        plan = make_plan(args.axis, args.profile, args.amplitude)
+    except ValueError as exc:
+        parser.error(str(exc))
     print(f'{args.axis}: ' + ', '.join(f'{v:+.3f} x {d:g}s' for v, d in plan), flush=True)
+    if args.profile in FULL_TURN_PROFILES:
+        print(f'waist encoder excursion limit: {FULL_TURN_EXCURSION:.3f} rad (4 turns); '
+              f'launch waist_velocity_limit must be at least {args.amplitude:g} rad/s', flush=True)
     if not args.execute:
         return
     rclpy.init()

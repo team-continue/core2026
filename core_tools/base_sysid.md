@@ -11,7 +11,7 @@
 
 ## 起動と事前確認
 
-この手順は `orthros/main` のROS 2 Humbleで検証した。Ubuntu 24.04・ROS 2 Jazzyへ移行した環境では、下の `source` を `source /opt/ros/jazzy/setup.bash` に置き換える。Jazzyでの試験は未実施。
+この手順は `core2026` のUbuntu 22.04・ROS 2 Humble向け。元の同定ブランチと同じ `4e0e0ac` を基点とする。Ubuntu 24.04・ROS 2 Jazzyでの試験は未実施。
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -47,6 +47,24 @@ ros2 run core_tools base_sysid_probe vx --profile step --amplitude 0.12 --execut
 ```
 
 次に別bag `vx_valid` を開始して `--profile multistep`（異なる振幅・切替順）で同じ方向を測る。腰は `waist`、横は `vy`、旋回は `wz`。振幅は並進がm/s、腰と旋回がrad/s。初回は小さくする。既定は0.12、許容上限は並進0.20、角速度0.35。腰の位置目標をモータ速度入力に流用しない。試験コマンドの既定は波形表示だけで、送信には `--execute` が必要。
+
+## 腰の連続回転：各方向3秒
+
+通常の `step` / `multistep` は従来どおり腰の上限0.35 rad/s、開始角から0.65 radで中断する。腰の連続回転を試す場合だけ `turns` / `turns-valid` を選ぶ。これらは腰専用で、走行方向には指定できない。
+
+`turns` の波形は、静止1秒 → 正転3秒 → 静止3秒 → 逆転3秒 → 静止3秒。振幅6.28 rad/sは約1回転/秒の指令値で、腰はベルト駆動のため実際の上回り速度はプーリ比に依存する。記録する関節角はID 4のアクチュエータ出力角であり、腰の実角度への比率補正はこのツールでは行わない。
+
+同定用の速度上限はlaunch側でも明示する。通常の腰制御と同じ速度・加速度制限（既定6.28 rad/s、約9.42 rad/s²）を通し、解析の入力にはその制限後のCAN指令を使う。非常停止、古いIMU、古い試験指令・停止状態、不正な速度値ではゼロ指令へ戻る。
+
+```bash
+ros2 launch core_tools base_sysid.launch.py waist_velocity_limit:=6.28
+# 計画の表示のみ。波形・周囲・停止系を確認してから --execute を付ける。
+ros2 run core_tools base_sysid_probe waist --profile turns --amplitude 6.28
+```
+
+連続回転プロファイルでも、開始位置からのエンコーダ角の変化が4回転（8π rad）を超えれば中断する。センサと停止状態の途絶監視、CAN送信ノードの監視は通常の試験と同じ。初回は低振幅で回転方向・角度の連続性・停止を確認する。機体に書き込まれたファームやモータ内部の設定値は、このlaunchでは変更しない。
+
+推定用は `turns`、独立した検証用bagには `turns-valid` を使う。検証波形は静止1秒の後、半振幅の正転 → 全振幅の逆転 → 全振幅の正転を各3秒、各区間の後に静止3秒を入れる。収録トピックは上の手順と同じで、腰の解析にはオドメトリを使わない。
 
 ## 解析とUnityとの比較
 
