@@ -58,6 +58,21 @@ def generate_launch_description():
         ],
     )
 
+    health_monitor_params = os.path.join(
+        get_package_share_directory("core_mode"),
+        "config",
+        "health_monitor.params.yaml"
+    )
+
+    # 緊急停止に至らない異常の表示用。停止判定には関与しないため on_exit は付けない
+    health_monitor_node = Node(
+        package="core_mode",
+        executable="health_monitor",
+        name="health_monitor",
+        output="screen",
+        parameters=[health_monitor_params],
+    )
+
     return LaunchDescription([
         GroupAction([
             PushRosNamespace("system"),
@@ -67,5 +82,9 @@ def generate_launch_description():
                 diagnostic_node,
             ]),
             led_manager_node,
+            GroupAction([
+                PushRosNamespace("health"),
+                health_monitor_node,
+            ]),
         ]),
     ])

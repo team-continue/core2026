@@ -15,10 +15,18 @@
 #define DAMIAO_CAN_TIMEOUT 100 // ms
 #define DAMIAO_GEAR_RATIO (3591. / 187.)
 
+// フィードバックフレームの状態 (buf[0] の上位 4 bit)
+// 0x8〜0xE (故障) はマニュアル由来の値で、実機では未確認 (要確認)
 struct DamiaoStatus{
     static constexpr uint8_t DISABLED = 0x00;
     static constexpr uint8_t ENABLED = 0x01;
-    static constexpr uint8_t OVERLOAD = 0x0E;
+    static constexpr uint8_t OVER_VOLTAGE = 0x08;   // 過電圧
+    static constexpr uint8_t UNDER_VOLTAGE = 0x09;  // 低電圧
+    static constexpr uint8_t OVER_CURRENT = 0x0A;   // 過電流
+    static constexpr uint8_t MOS_OVER_TEMP = 0x0B;  // MOS 過熱
+    static constexpr uint8_t COIL_OVER_TEMP = 0x0C; // コイル過熱
+    static constexpr uint8_t COMM_LOST = 0x0D;      // 通信断
+    static constexpr uint8_t OVERLOAD = 0x0E;       // 過負荷
 };
 
 FCTP_CLASS class Damiao : public MotorBase {
@@ -296,6 +304,22 @@ FCTP_CLASS class Damiao : public MotorBase {
             feedback.position_rad = (accumulated_pos - offset_pos) / DAMIAO_GEAR_RATIO;
             connect = connect_can;
             return true;
+        }
+
+        // 診断情報。状態・温度は最後に受信したフィードバックの値
+        MotorDiag diag() const override {
+            MotorDiag d;
+            d.supported = true;
+            d.connected = connect_can;
+            d.enabled = connect_can && feedback.status == DamiaoStatus::ENABLED;
+            d.fault = feedback.status >= DamiaoStatus::OVER_VOLTAGE;
+            d.error_code = feedback.status;
+            // 未接続のときの温度は古い値なので出さない。電圧はフィードバックに無い
+            if (connect_can) {
+                d.temp = core_hardware::motor_diag::to_temp_i8(feedback.temp_mos);
+                d.temp_rotor = core_hardware::motor_diag::to_temp_i8(feedback.temp_rotor);
+            }
+            return d;
         }
 
     private:
