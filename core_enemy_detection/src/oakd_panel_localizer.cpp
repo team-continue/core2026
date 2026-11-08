@@ -8,7 +8,7 @@ oakdPanelLocalizer::oakdPanelLocalizer() : Node("oakd_panel_localizer")
 {
     // launchから渡されたモデルを起動時に読み込む。未指定時は従来のモデル。
     const auto package_share = ament_index_cpp::get_package_share_directory("core_enemy_detection");
-    const auto default_model = std::filesystem::path(package_share) / "config" / "best.rvc2.tar.xz";
+    const auto default_model = std::filesystem::path(package_share) / "config" / "best_yolov8n.rvc2.tar.xz";
     rcl_interfaces::msg::ParameterDescriptor descriptor;
     descriptor.description = "Path to the DepthAI NN Archive (restart required to change)";
     descriptor.read_only = true;
@@ -38,6 +38,7 @@ oakdPanelLocalizer::oakdPanelLocalizer() : Node("oakd_panel_localizer")
     detectionNetwork->build(camera, model);
 
     // 古いフレームを溜めない
+    detectionNetwork->input.setMaxSize(1);
     detectionNetwork->input.setBlocking(false);
 
     // まずは低レイテンシ重視で1 thread
@@ -58,26 +59,31 @@ oakdPanelLocalizer::oakdPanelLocalizer() : Node("oakd_panel_localizer")
     // -----------------------------
     pipeline.start();
 
-    timer = this->create_wall_timer(std::chrono::milliseconds(33), std::bind(&oakdPanelLocalizer::detectPanel, this));
+    timer = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&oakdPanelLocalizer::detectPanel, this));
 }
 
 void oakdPanelLocalizer::detectPanel(){
-
+    
+    
     if(pipeline.isRunning()){
-
+        
+        // -----------------------------
+        // 検出結果取得
+        // -----------------------------
+        // const auto start = TimingClock::now();
+        auto detectionMessage = detectionQueue->get<dai::ImgDetections>();
+        
         // -------------------------
         // 画像取得
         // -------------------------
         auto frameMessage = frameQueue->get<dai::ImgFrame>();
-
-        // -----------------------------
-        // 検出結果取得
-        // -----------------------------
-        auto detectionMessage = detectionQueue->get<dai::ImgDetections>();
-
-        if(frameMessage && detectionMessage){
+        // const auto end = TimingClock::now();
+        
+        if(frameMessage && detectionMessage/* && frameMessage->getSequenceNum() == detectionMessage->getSequenceNum()*/){
             // 検出結果がある場合は、検出結果を処理する
             processDetection(frameMessage, detectionMessage);
+            // std::cout << "取得 time: " << (end - start).count() / 1e6 << " ms" << std::endl;
+            // std::cout << "レイテンシ time: " << (end - frameMessage->getTimestamp()).count() / 1e6 << " ms" << std::endl;
         }
     }
 
