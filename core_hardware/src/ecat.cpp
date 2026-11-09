@@ -3,9 +3,12 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+
+#include "core_hardware/motor_diag_layout.h"
 
 extern "C" {
 #include "utypes.h"
@@ -20,19 +23,47 @@ constexpr std::size_t kOutputLedTape1BitOffset = kOutputLedTape0BitOffset + 16U;
 constexpr std::size_t kOutputLedTape2BitOffset = kOutputLedTape1BitOffset + 16U;
 constexpr std::size_t kOutputRequiredBytes = (kOutputLedTape2BitOffset + 16U + 7U) / 8U;
 
+// TxPDO (upper 基板 → PC) の配置。esi.json / objectlist.c / utypes.h と同じ順に並べる
 constexpr std::size_t kInputMotorPosOffset = 0U;
 constexpr std::size_t kInputMotorPosBytes = 15U * sizeof(float);
 constexpr std::size_t kInputMotorVelOffset = kInputMotorPosOffset + kInputMotorPosBytes;
 constexpr std::size_t kInputMotorVelBytes = 15U * sizeof(int16_t);
 constexpr std::size_t kInputMotorTorqueOffset = kInputMotorVelOffset + kInputMotorVelBytes;
 constexpr std::size_t kInputMotorTorqueBytes = 15U * sizeof(int16_t);
-constexpr std::size_t kInputSystemStateBitOffset = (kInputMotorTorqueOffset + kInputMotorTorqueBytes) * 8U;
-constexpr std::size_t kInputCoreStateBitOffset = kInputSystemStateBitOffset + 2U;
-constexpr std::size_t kInputRequiredBytes = (kInputCoreStateBitOffset + (2U * 8U) + 7U) / 8U;
+constexpr std::size_t kInputSystemStateOffset = kInputMotorTorqueOffset + kInputMotorTorqueBytes;
+constexpr std::size_t kInputSystemStateBytes = 2U * sizeof(uint8_t);
+constexpr std::size_t kInputCoreStateOffset = kInputSystemStateOffset + kInputSystemStateBytes;
+constexpr std::size_t kInputCoreStateBytes = 2U * sizeof(uint8_t);
+constexpr std::size_t kInputMotorDiagOffset = kInputCoreStateOffset + kInputCoreStateBytes;
+constexpr std::size_t kInputMotorDiagBytes = 15U * sizeof(uint32_t);
+constexpr std::size_t kInputMotorVoltageOffset = kInputMotorDiagOffset + kInputMotorDiagBytes;
+constexpr std::size_t kInputMotorVoltageBytes = 15U * sizeof(uint16_t);
+constexpr std::size_t kInputWirelessOffset = kInputMotorVoltageOffset + kInputMotorVoltageBytes;
+constexpr std::size_t kInputWirelessBytes = 7U * sizeof(uint8_t);
+constexpr std::size_t kInputColorOffset = kInputWirelessOffset + kInputWirelessBytes;
+constexpr std::size_t kInputColorBytes = 1U * sizeof(uint8_t);
+constexpr std::size_t kInputBusDiagOffset = kInputColorOffset + kInputColorBytes;
+constexpr std::size_t kInputBusDiagBytes = 2U * sizeof(uint32_t);
+constexpr std::size_t kInputRequiredBytes = kInputBusDiagOffset + kInputBusDiagBytes;
+
+// ESI RevisionNumber 3 (core_hardware::motor_diag::kEsiRevision) の TxPDO 配置
+static_assert(kInputSystemStateOffset == 120U, "system_state must start at byte 120");
+static_assert(kInputCoreStateOffset == 122U, "core_state must start at byte 122");
+static_assert(kInputMotorDiagOffset == 124U, "motor_diag must start at byte 124");
+static_assert(kInputMotorVoltageOffset == 184U, "motor_voltage must start at byte 184");
+static_assert(kInputWirelessOffset == 214U, "wireless must start at byte 214");
+static_assert(kInputColorOffset == 221U, "color must start at byte 221");
+static_assert(kInputBusDiagOffset == 222U, "bus_diag must start at byte 222");
+static_assert(kInputRequiredBytes == 230U, "TxPDO must be 230 bytes");
+static_assert(sizeof(_Objects::system_state) == kInputSystemStateBytes, "utypes.h system_state size mismatch");
+static_assert(sizeof(_Objects::core_state) == kInputCoreStateBytes, "utypes.h core_state size mismatch");
+static_assert(sizeof(_Objects::motor_diag) == kInputMotorDiagBytes, "utypes.h motor_diag size mismatch");
+static_assert(sizeof(_Objects::motor_voltage) == kInputMotorVoltageBytes, "utypes.h motor_voltage size mismatch");
+static_assert(sizeof(_Objects::wireless) == kInputWirelessBytes, "utypes.h wireless size mismatch");
+static_assert(sizeof(_Objects::color) == kInputColorBytes, "utypes.h color size mismatch");
+static_assert(sizeof(_Objects::bus_diag) == kInputBusDiagBytes, "utypes.h bus_diag size mismatch");
 
 constexpr std::array<uint8_t, 15> kPacketJointIds = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
-constexpr std::size_t kWirelessPayloadBytes = 7U;
-constexpr std::size_t kWirelessOverlayBytes = 8U;
 
 void throw_state_error(const char* prefix, const ecx_contextt& ctx) {
   std::ostringstream oss;
@@ -52,6 +83,18 @@ int16_t read_int16_unaligned(const uint8_t* buffer, std::size_t offset) {
   return value;
 }
 
+uint16_t read_uint16_unaligned(const uint8_t* buffer, std::size_t offset) {
+  uint16_t value = 0;
+  std::memcpy(&value, buffer + offset, sizeof(value));
+  return value;
+}
+
+uint32_t read_uint32_unaligned(const uint8_t* buffer, std::size_t offset) {
+  uint32_t value = 0;
+  std::memcpy(&value, buffer + offset, sizeof(value));
+  return value;
+}
+
 float read_float_unaligned(const uint8_t* buffer, std::size_t offset) {
   float value = 0.0f;
   std::memcpy(&value, buffer + offset, sizeof(value));
@@ -64,16 +107,6 @@ void write_float_unaligned(uint8_t* buffer, std::size_t offset, float value) {
 
 void write_uint16_unaligned(uint8_t* buffer, std::size_t offset, uint16_t value) {
   std::memcpy(buffer + offset, &value, sizeof(value));
-}
-
-std::array<uint8_t, kWirelessPayloadBytes> unpack_wireless_from_torque_bytes(const uint8_t* inputs) {
-  std::array<uint8_t, kWirelessPayloadBytes> wireless{};
-  std::memcpy(wireless.data(), inputs + kInputMotorTorqueOffset, wireless.size());
-  return wireless;
-}
-
-uint8_t unpack_color_from_torque_bytes(const uint8_t* inputs) {
-  return inputs[kInputMotorTorqueOffset + kWirelessPayloadBytes];
 }
 }  // namespace
 
@@ -108,12 +141,30 @@ void Ecat::connect(const char* ifname) {
     throw std::runtime_error("Expected at least one EtherCAT slave");
   }
 
+  // PDO 配置の版を 2 段で確かめ、どちらかが違えば値を読み違えるので通信を始めない。
+  // - EEPROM (SII) の RevisionNumber (eep_rev): esi.json から書いた EEPROM が今の配置の版か
+  // - 下の Ibytes: SOEM は CoE の SDO でファームの PDO 構成を読んでサイズを決めるので、ファームが今の配置か
+  const uint32_t eep_rev = ctx_.slavelist[kSlaveIndex].eep_rev;
+  if (eep_rev != core_hardware::motor_diag::kEsiRevision) {
+    std::ostringstream oss;
+    oss << "EtherCAT slave revision mismatch: expected RevisionNumber=0x" << std::hex
+        << core_hardware::motor_diag::kEsiRevision << " but slave " << std::dec << kSlaveIndex
+        << " reports eep_rev=0x" << std::hex << eep_rev << std::dec
+        << " (from its EEPROM/SII). The upper board was set up for a different PDO layout than this core_hardware build."
+        << " Rewrite the slave EEPROM from the current esi.json and flash the matching upper firmware.";
+    close();
+    throw std::runtime_error(oss.str());
+  }
+
   ecx_config_map_group(&ctx_, iomap_, 0);
   output_bytes_ = ctx_.slavelist[kSlaveIndex].Obytes;
   input_bytes_ = ctx_.slavelist[kSlaveIndex].Ibytes;
   if (output_bytes_ < static_cast<int>(kOutputRequiredBytes) || input_bytes_ < static_cast<int>(kInputRequiredBytes)) {
     std::ostringstream oss;
-    oss << "PDO size mismatch Obytes=" << output_bytes_ << " Ibytes=" << input_bytes_;
+    oss << "PDO size mismatch Obytes=" << output_bytes_ << " (expected >= " << kOutputRequiredBytes << ")"
+        << " Ibytes=" << input_bytes_ << " (expected >= " << kInputRequiredBytes << ")."
+        << " The PDO mapping read from the upper firmware (CoE) does not match this core_hardware build;"
+        << " flash the matching upper firmware.";
     close();
     throw std::runtime_error(oss.str());
   }
@@ -271,8 +322,7 @@ void Ecat::emit_rx_packets() const {
 
   for (uint8_t id : kPacketJointIds) {
     const int16_t velocity = read_int16_unaligned(inputs, kInputMotorVelOffset + (static_cast<std::size_t>(id) * sizeof(int16_t)));
-    const int16_t raw_torque = read_int16_unaligned(inputs, kInputMotorTorqueOffset + (static_cast<std::size_t>(id) * sizeof(int16_t)));
-    const int16_t torque = (id <= 3U) ? 0 : raw_torque;
+    const int16_t torque = read_int16_unaligned(inputs, kInputMotorTorqueOffset + (static_cast<std::size_t>(id) * sizeof(int16_t)));
     const float position = read_float_unaligned(inputs, kInputMotorPosOffset + (static_cast<std::size_t>(id) * sizeof(float)));
     Obj.motor_state_pos[id] = position;
     Obj.motor_state_vel[id] = velocity;
@@ -289,23 +339,31 @@ void Ecat::emit_rx_packets() const {
     }
   }
 
-  const uint8_t system_upper = static_cast<uint8_t>(unpack_bits(inputs, kInputSystemStateBitOffset, 1U));
-  const uint8_t system_bottom = static_cast<uint8_t>(unpack_bits(inputs, kInputSystemStateBitOffset + 1U, 1U));
-  Obj.system_state[0] = system_upper;
-  Obj.system_state[1] = system_bottom;
-
-  for (std::size_t i = 0; i < 2U; ++i) {
-    Obj.core_state[i] = static_cast<uint8_t>(unpack_bits(inputs, kInputCoreStateBitOffset + (i * 8U), 8U));
+  // system_state: [0] = hardware_enable (1:通常, 0:非常停止), [1] = bottom 基板との CAN 接続 (1:接続)
+  for (std::size_t i = 0; i < std::size(Obj.system_state); ++i) {
+    Obj.system_state[i] = inputs[kInputSystemStateOffset + i];
   }
-  const auto wireless = unpack_wireless_from_torque_bytes(inputs);
-  const uint8_t color = unpack_color_from_torque_bytes(inputs);
+  for (std::size_t i = 0; i < std::size(Obj.core_state); ++i) {
+    Obj.core_state[i] = inputs[kInputCoreStateOffset + i];
+  }
+  for (std::size_t i = 0; i < std::size(Obj.motor_diag); ++i) {
+    Obj.motor_diag[i] = read_uint32_unaligned(inputs, kInputMotorDiagOffset + (i * sizeof(uint32_t)));
+  }
+  for (std::size_t i = 0; i < std::size(Obj.motor_voltage); ++i) {
+    Obj.motor_voltage[i] = read_uint16_unaligned(inputs, kInputMotorVoltageOffset + (i * sizeof(uint16_t)));
+  }
+  std::memcpy(Obj.wireless, inputs + kInputWirelessOffset, sizeof(Obj.wireless));
+  std::memcpy(Obj.color, inputs + kInputColorOffset, sizeof(Obj.color));
+  for (std::size_t i = 0; i < std::size(Obj.bus_diag); ++i) {
+    Obj.bus_diag[i] = read_uint32_unaligned(inputs, kInputBusDiagOffset + (i * sizeof(uint32_t)));
+  }
 
   if (uint8_packet_callback_) {
     uint8_packet_callback_(100U, {Obj.core_state[0]});
     uint8_packet_callback_(101U, {Obj.core_state[1]});
-    uint8_packet_callback_(102U, std::vector<uint8_t>(wireless.begin(), wireless.end()));
-    uint8_packet_callback_(103U, {color});
-    uint8_packet_callback_(104U, {system_upper});
+    uint8_packet_callback_(102U, std::vector<uint8_t>(std::begin(Obj.wireless), std::end(Obj.wireless)));
+    uint8_packet_callback_(103U, {Obj.color[0]});
+    uint8_packet_callback_(104U, {Obj.system_state[0]});
   }
 }
 
