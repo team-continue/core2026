@@ -14,6 +14,7 @@
 #include <std_msgs/msg/float64.hpp>
 #include <std_msgs/msg/int32.hpp>
 #include <stdexcept>
+#include <string>
 
 #include "core_body_controller/target_angle_controller.hpp"
 
@@ -61,7 +62,8 @@ private:
   bool has_received_imu_ = false;
   bool has_received_body_omega_ = false;
   int rotation_mode_ = 0;
-  core_body_controller::YawMode yaw_mode_ = core_body_controller::YawMode::kFront;
+  // 起動時のモードはパラメータ yaw_mode (既定 TURRET) で決め、/control/yaw_mode で切り替える
+  core_body_controller::YawMode yaw_mode_ = core_body_controller::YawMode::kTurret;
   double yaw_rotation_velocity_ = 6.28;
   double latest_target_rate_ = 0.0;
   bool has_received_target_rate_ = false;
@@ -135,6 +137,15 @@ TargetAngleNode::TargetAngleNode()
   if (!std::isfinite(yaw_center_velocity_) || yaw_center_velocity_ <= 0.0) {
     throw std::invalid_argument("yaw_center_velocity must be finite and positive");
   }
+  const int initial_yaw_mode =
+    this->declare_parameter<int>("yaw_mode", static_cast<int>(yaw_mode_));
+  const auto parsed_yaw_mode = core_body_controller::to_yaw_mode(initial_yaw_mode);
+  if (!parsed_yaw_mode) {
+    const std::string message =
+      "yaw_mode must be 0 (front) or 1 (turret), got " + std::to_string(initial_yaw_mode);
+    throw std::invalid_argument(message);
+  }
+  yaw_mode_ = *parsed_yaw_mode;
   controller_ = std::make_unique<core_body_controller::TargetAngleController>(
     2.0, 0.0, 0.0, yaw_rotation_velocity, yaw_rotation_acceleration);
 

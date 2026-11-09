@@ -63,6 +63,12 @@ def generate_launch_description() -> LaunchDescription:
         description="1.0 if a positive waist motor position turns the upper body to positive yaw, "
         "otherwise -1.0",
     )
+    yaw_mode_arg = DeclareLaunchArgument(
+        "yaw_mode",
+        default_value="1",
+        description="Initial waist yaw mode (0: front, 1: turret); "
+        "switch at runtime with /control/yaw_mode",
+    )
     use_damiao_imu_arg = DeclareLaunchArgument(
         "use_damiao_imu",
         default_value="true",
@@ -162,6 +168,9 @@ def generate_launch_description() -> LaunchDescription:
                 "body_omega_timeout_sec": LaunchConfiguration(
                     "body_omega_timeout_sec"
                 ),
+                "yaw_mode": ParameterValue(
+                    LaunchConfiguration("yaw_mode"), value_type=int
+                ),
                 "waist_front_offset": ParameterValue(
                     LaunchConfiguration("waist_front_offset"), value_type=float
                 ),
@@ -185,6 +194,7 @@ def generate_launch_description() -> LaunchDescription:
             body_omega_timeout_arg,
             waist_front_offset_arg,
             waist_joint_direction_arg,
+            yaw_mode_arg,
             use_damiao_imu_arg,
             imu_port_arg,
             imu_baudrate_arg,
