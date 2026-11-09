@@ -2,6 +2,7 @@
 // hazard(緊急停止)とは分離した表示用途のノード。
 
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -91,6 +92,10 @@ DiagnosticStatus evaluate_battery(
     make_key_value("voltage", std::to_string(battery->voltage)),
     make_key_value("percentage", std::to_string(battery->percentage)),
   };
+  if (!std::isfinite(battery->voltage)) {
+    return make_status(
+      name, config.topic, DiagnosticStatus::STALE, "invalid voltage", std::move(values));
+  }
   if (battery->voltage < config.error_voltage) {
     return make_status(name, config.topic, DiagnosticStatus::ERROR, "voltage critical", std::move(values));
   }
@@ -120,6 +125,9 @@ public:
     // parameters
     //========================================
     const auto publish_period_ms = this->declare_parameter("publish_period_ms", 1000);
+    if (publish_period_ms <= 0) {
+      throw std::invalid_argument("publish_period_ms must be > 0");
+    }
     const auto check_names =
       this->declare_parameter<std::vector<std::string>>("topic_checks", std::vector<std::string>{});
     for (const auto & name : check_names) {

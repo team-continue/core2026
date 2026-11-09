@@ -53,6 +53,15 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_led_selector test/test_led_selector.cpp)
   target_include_directories(test_led_selector PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_health_monitor test/test_health_monitor.py
+    TIMEOUT 60
+    ENV
+      "HEALTH_MONITOR_EXECUTABLE=$<TARGET_FILE:health_monitor>"
+      "ROS_LOCALHOST_ONLY=1"
+      "ROS_DOMAIN_ID=137"
+  )
 endif()
 
 ament_auto_package(
