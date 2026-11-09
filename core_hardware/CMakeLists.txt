@@ -131,4 +131,10 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_led_command test/test_led_command.cpp)
+  target_include_directories(test_led_command PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+endif()
+
 ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR)

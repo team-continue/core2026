@@ -65,9 +65,9 @@
     # periodic rate
     rate: 30.0
 
-    # 発射可否とその理由を shoot_status (std_msgs/String) で発行する周期[Hz]。
+    # 発射可否とその理由を aim_status (std_msgs/String) で発行する周期[Hz]。
     # 「なぜ撃たないか」を ros2 topic echo で切り分けるための診断出力。0以下で無効。
-    shoot_status_rate: 2.0
+    aim_status_rate: 2.0
 
     # test/manual mode
     enable_test_mode: false # test_mode topic未受信時のデフォルト値（aim_bot / shooter_controller ともに test_mode: std_msgs/Bool を優先）

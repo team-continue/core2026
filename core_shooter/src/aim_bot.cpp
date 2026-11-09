@@ -113,7 +113,7 @@ public:
       *this, "point3d.camera_offset.y_m", 0.0);
     camera_offset_z_m_ = core_shooter::declareAndGet<double>(
       *this, "point3d.camera_offset.z_m", 0.0);
-    shoot_status_rate_ = core_shooter::declareAndGet<double>(*this, "shoot_status_rate", 2.0);
+    aim_status_rate_ = core_shooter::declareAndGet<double>(*this, "aim_status_rate", 2.0);
     image_shoot_tolerance_x_px_ = core_shooter::declareAndGet<double>(
       *this, "image_shoot_tolerance_x_px", 50.0);
     image_shoot_tolerance_y_px_ = core_shooter::declareAndGet<double>(
@@ -305,10 +305,10 @@ public:
         camera_offset_y_m_, camera_offset_z_m_);
       throw std::runtime_error("invalid aimbot camera offset");
     }
-    if (!std::isfinite(shoot_status_rate_)) {
+    if (!std::isfinite(aim_status_rate_)) {
       RCLCPP_FATAL(
-        get_logger(), "Invalid shoot_status_rate=%f (must be finite)", shoot_status_rate_);
-      throw std::runtime_error("invalid aimbot shoot status rate");
+        get_logger(), "Invalid aim_status_rate=%f (must be finite)", aim_status_rate_);
+      throw std::runtime_error("invalid aimbot aim status rate");
     }
     if (image_shoot_tolerance_x_px_ < 0.0 || image_shoot_tolerance_y_px_ < 0.0) {
       RCLCPP_FATAL(
@@ -417,11 +417,11 @@ public:
     shoot_fullauto_pub_ = this->create_publisher<std_msgs::msg::Bool>("shoot_fullauto", 10);
 
     // 「なぜ撃たないか」を外から見えるようにする。現場での切り分け用。
-    if (shoot_status_rate_ > 0.0) {
-      shoot_status_pub_ = this->create_publisher<std_msgs::msg::String>("shoot_status", 10);
-      const auto status_period = std::chrono::duration<double>(1.0 / shoot_status_rate_);
-      shoot_status_timer_ = create_wall_timer(
-        status_period, std::bind(&AimBot::publishShootStatus, this));
+    if (aim_status_rate_ > 0.0) {
+      aim_status_pub_ = this->create_publisher<std_msgs::msg::String>("aim_status", 10);
+      const auto status_period = std::chrono::duration<double>(1.0 / aim_status_rate_);
+      aim_status_timer_ = create_wall_timer(
+        status_period, std::bind(&AimBot::publishAimStatus, this));
     }
 
     // ----------------------------
@@ -1620,9 +1620,9 @@ private:
   ///
   /// turret_auto が落ちているのか、射程外なのか、照準が合っていないのか、
   /// ターゲットを見失っているのかが `ros2 topic echo` で分かるようにする。
-  void publishShootStatus()
+  void publishAimStatus()
   {
-    if (!shoot_status_pub_) {
+    if (!aim_status_pub_) {
       return;
     }
     std_msgs::msg::String msg;
@@ -1633,7 +1633,7 @@ private:
     } else {
       msg.data = "blocked: " + shoot_block_reason_;
     }
-    shoot_status_pub_->publish(msg);
+    aim_status_pub_->publish(msg);
   }
 
   void publishShootFullauto()
@@ -1721,7 +1721,7 @@ private:
   double point3d_target_velocity_max_m_per_sec_ = 10.0;
   BallisticTable ballistic_table_;
   double ballistic_max_shoot_range_m_ = 5.0;
-  double shoot_status_rate_ = 2.0;
+  double aim_status_rate_ = 2.0;
   double image_shoot_tolerance_x_px_ = 50.0;
   double image_shoot_tolerance_y_px_ = 50.0;
   double camera_offset_y_m_ = 0.0;
@@ -1787,7 +1787,7 @@ private:
   // ROS通信
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr shoot_fullauto_pub_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr shoot_status_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr aim_status_pub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr target_image_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr target_point_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr test_mode_sub_;
@@ -1799,7 +1799,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr turret_auto_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::TimerBase::SharedPtr shoot_status_timer_;
+  rclcpp::TimerBase::SharedPtr aim_status_timer_;
 };
 
 int main(int argc, char * argv[])

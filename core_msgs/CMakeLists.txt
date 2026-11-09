@@ -33,6 +33,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/DetectedPanelInfoArray.msg"
   "msg/PoseWithWeight.msg"
   "msg/Path.msg"
+  "msg/LedCommand.msg"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs
 )
 ament_export_dependencies(rosidl_default_runtime)

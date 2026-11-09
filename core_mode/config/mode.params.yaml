@@ -7,3 +7,27 @@
     bridge_diagnostic_time: 500 # ros2_ws_bridge(/bridge/connected)のタイムアウト[ms]
     diagnostic_cycle: 50 # diagnosticする周期[ms]
     connection_monitor: "ros2_bridge" # 通信の死活監視: "ros2_bridge"(/bridge/connected を監視) | "none"(監視しない)
+
+    # led_manager:
+    publish_rate_hz: 10.0 # LED 指令の出力周期[Hz]。core_hardware の途絶判定に使うので変化がなくても出す
+    state_timeout_ms: 1000 # behavior の状態がこの時間来なければ、足回りを manual として表示する[ms]
+    input_timeout_ms: 1000 # aim_bot の aim_status (2 Hz) の途絶判定[ms]
+    manual_fire_window_ms: 500 # shooter_controller の発射通知からこの時間は手動の射撃中とみなす[ms]
+    shooter_namespace: "/mecha/shooter" # 砲塔の状態トピックの名前空間 ({shooter_namespace}/left/... など)
+    # 状態ごとの表示 [パターン, 色]。パターンと色の番号は Teensy の led.h と同じ
+    # 色: 0 = 白, 1 = 赤, 2 = 黄, 3 = 緑, 4 = 青
+    commands:
+      microcontroller_timeout: [12, 1] # kTripleFlash・赤
+      controller_disconnected: [9, 1] # kDoubleFlash・赤
+      destroy: [14, 1] # kBlinkSlow・赤
+      software_emergency: [11, 1] # kSingleFlash・赤
+      turret_error: [8, 2] # kBlink・黄
+      turret_auto_firing: [9, 0] # kDoubleFlash・白
+      turret_manual_firing: [11, 0] # kSingleFlash・白
+      turret_enemy_detected: [8, 0] # kBlink・白
+      turret_auto_idle: [6, 0] # kCenterOutChase・白
+      turret_manual: [2, 0] # kChase・白
+      chassis_auto_rotating: [13, 3] # kBlinkMedium・緑
+      chassis_manual_rotating: [13, 0] # kBlinkMedium・白
+      chassis_auto: [2, 3] # kChase・緑
+      chassis_manual: [2, 0] # kChase・白
