@@ -1,0 +1,15 @@
+# 機体の形。衝突判定と自機の除去に使う。
+/**:
+  ros__parameters:
+    footprint:
+      enabled: true
+      length_m: 0.8
+      width_m: 0.8
+      margin_m: 0.1
+      # 機体の上面の床からの高さ [m]。自機の除去だけに使う
+      height_m: 0.8
+      # 自機の除去の余裕 [m]。検出（perception_node）と FAST-LIO の前処理は、base_link（床に投影した機体中心）で
+      # xy が長さと幅の半分にこの値を足した箱の中にあり、高さが height_m にこの値を足した値以下の点を自機として
+      # 除く（FAST-LIO の値は launch がここと URDF から作る）。LiDAR は機体の前の端の低い所（床から 0.25m）に
+      # あるので、機体の上面までを除く。enabled は衝突判定だけの切り替えで、自機の除去には効かない
+      self_filter_margin_m: 0.05

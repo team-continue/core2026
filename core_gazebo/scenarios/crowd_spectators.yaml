@@ -1,0 +1,67 @@
+# crowd_goals.yaml に観客 32 人を足したもの。フィールドの中の相手とゴールは crowd_goals と同じ。
+# 観客は spectator: true にし、run_scenario.py の接触と最小距離の計算から除く。
+# 場所は field.sdf（field_obstacles.sdf、field_static.sdf も同じ）の固定物に合わせた:
+# - 柵の外を歩く人 12 人: 柵（x=±12.05、y=±7.55 の外側の面）と観客席・ブース・柱・机の間
+# - 柵の外でほぼその場で揺れる人 8 人: 柵から 0.5〜0.9m の所で 0.3〜0.4m の間を往復
+# - 観客席（stand_north: x -20〜10、y 14〜19、上面 z=5）の上の人 12 人（揺れる 8 人、歩く 4 人）
+# 観客席の上の人は床から 5m 以上にいるので、高さの帯（0.1〜2.2m）では除けない。
+# config/exclude_regions.yaml の stand_north がこの人たちを囲む
+start: [-6.0, -2.5, 0.0]
+goals:
+  - [8.0, -5.0, 0.0]
+  - [8.0, 5.0, 0.0]
+  - [-8.0, 5.0, 0.0]
+  - [-8.0, -5.0, 0.0]
+  - [0.0, 0.0, 0.0]
+  - [10.0, 0.0, 0.0]
+  - [-10.0, 0.0, 0.0]
+timeout_s: 240
+repeat: 1
+obstacles:
+  # フィールドの中の相手（crowd_goals.yaml と同じ）
+  - {name: robot_1, type: robot, start: [-11.0, -6.0], end: [11.0, -6.0], peak_speed: 3.0, phase: 0.0}
+  - {name: robot_2, type: robot, start: [11.0, -3.0], end: [-11.0, -3.0], peak_speed: 2.5, phase: 0.2}
+  - {name: robot_3, type: robot, start: [-11.0, 0.0], end: [11.0, 0.0], peak_speed: 3.0, phase: 0.5}
+  - {name: robot_4, type: robot, start: [11.0, 3.0], end: [-11.0, 3.0], peak_speed: 2.0, phase: 0.1}
+  - {name: robot_5, type: robot, start: [-11.0, 6.0], end: [11.0, 6.0], peak_speed: 3.0, phase: 0.7}
+  - {name: robot_6, type: robot, start: [-8.0, -7.0], end: [-8.0, 7.0], peak_speed: 2.5, phase: 0.3}
+  - {name: robot_7, type: robot, start: [-2.0, 7.0], end: [-2.0, -7.0], peak_speed: 3.0, phase: 0.6}
+  - {name: robot_8, type: robot, start: [3.0, -7.0], end: [3.0, 7.0], peak_speed: 2.0, phase: 0.85}
+  - {name: robot_9, type: robot, start: [8.0, 7.0], end: [8.0, -7.0], peak_speed: 3.0, phase: 0.4}
+  - {name: human_1, type: human, start: [-5.0, -5.0], end: [5.0, 5.0], peak_speed: 1.2, phase: 0.0}
+  - {name: human_2, type: human, start: [6.0, -5.0], end: [-4.0, 5.0], peak_speed: 1.2, phase: 0.5}
+  # 柵の外を歩く人（北、南、東、西に 3 人ずつ）
+  - {name: spec_walk_n1, type: human, spectator: true, start: [-16.0, 9.0], end: [14.0, 9.0], peak_speed: 1.2, phase: 0.0}
+  - {name: spec_walk_n2, type: human, spectator: true, start: [12.0, 10.5], end: [-18.0, 10.5], peak_speed: 1.0, phase: 0.3}
+  - {name: spec_walk_n3, type: human, spectator: true, start: [-10.0, 12.5], end: [16.0, 12.5], peak_speed: 1.3, phase: 0.6}
+  - {name: spec_walk_s1, type: human, spectator: true, start: [16.0, -9.0], end: [-16.0, -9.0], peak_speed: 1.2, phase: 0.15}
+  - {name: spec_walk_s2, type: human, spectator: true, start: [-18.0, -10.5], end: [14.0, -10.5], peak_speed: 1.1, phase: 0.45}
+  - {name: spec_walk_s3, type: human, spectator: true, start: [8.0, -13.0], end: [-20.0, -13.0], peak_speed: 1.4, phase: 0.75}
+  - {name: spec_walk_e1, type: human, spectator: true, start: [13.5, -11.0], end: [13.5, 11.0], peak_speed: 1.2, phase: 0.2}
+  - {name: spec_walk_e2, type: human, spectator: true, start: [16.0, 10.0], end: [16.0, -12.0], peak_speed: 1.0, phase: 0.5}
+  - {name: spec_walk_e3, type: human, spectator: true, start: [19.0, -6.0], end: [19.0, 13.0], peak_speed: 1.3, phase: 0.85}
+  - {name: spec_walk_w1, type: human, spectator: true, start: [-13.5, 11.0], end: [-13.5, -11.0], peak_speed: 1.2, phase: 0.1}
+  - {name: spec_walk_w2, type: human, spectator: true, start: [-16.0, -12.0], end: [-16.0, 10.0], peak_speed: 1.1, phase: 0.4}
+  - {name: spec_walk_w3, type: human, spectator: true, start: [-19.5, 12.0], end: [-19.5, -12.0], peak_speed: 1.3, phase: 0.7}
+  # 柵の外でほぼその場で揺れる人
+  - {name: spec_sway_f1, type: human, spectator: true, start: [-8.0, 8.2], end: [-7.6, 8.4], peak_speed: 0.25, phase: 0.0}
+  - {name: spec_sway_f2, type: human, spectator: true, start: [-2.5, 8.3], end: [-2.1, 8.1], peak_speed: 0.2, phase: 0.3}
+  - {name: spec_sway_f3, type: human, spectator: true, start: [3.0, 8.2], end: [3.4, 8.5], peak_speed: 0.25, phase: 0.6}
+  - {name: spec_sway_f4, type: human, spectator: true, start: [8.5, 8.4], end: [8.1, 8.2], peak_speed: 0.2, phase: 0.9}
+  - {name: spec_sway_f5, type: human, spectator: true, start: [-5.0, -8.3], end: [-4.6, -8.1], peak_speed: 0.25, phase: 0.2}
+  - {name: spec_sway_f6, type: human, spectator: true, start: [1.5, -8.2], end: [1.9, -8.4], peak_speed: 0.2, phase: 0.5}
+  - {name: spec_sway_f7, type: human, spectator: true, start: [12.8, 2.0], end: [12.6, 2.4], peak_speed: 0.25, phase: 0.7}
+  - {name: spec_sway_f8, type: human, spectator: true, start: [-12.8, -3.0], end: [-12.6, -2.6], peak_speed: 0.2, phase: 0.1}
+  # 観客席の上の人（足元 z=5.0）。揺れる 8 人と、列に沿って歩く 4 人
+  - {name: spec_stand_1, type: human, spectator: true, z: 5.0, start: [-17.0, 14.8], end: [-16.7, 15.0], peak_speed: 0.2, phase: 0.0}
+  - {name: spec_stand_2, type: human, spectator: true, z: 5.0, start: [-11.0, 14.8], end: [-10.6, 14.9], peak_speed: 0.25, phase: 0.35}
+  - {name: spec_stand_3, type: human, spectator: true, z: 5.0, start: [-4.0, 14.8], end: [-3.7, 15.1], peak_speed: 0.2, phase: 0.7}
+  - {name: spec_stand_4, type: human, spectator: true, z: 5.0, start: [3.0, 14.8], end: [3.3, 14.9], peak_speed: 0.25, phase: 0.15}
+  - {name: spec_stand_5, type: human, spectator: true, z: 5.0, start: [-14.0, 16.0], end: [-13.6, 16.2], peak_speed: 0.2, phase: 0.5}
+  - {name: spec_stand_6, type: human, spectator: true, z: 5.0, start: [-7.0, 16.0], end: [-6.7, 16.3], peak_speed: 0.25, phase: 0.8}
+  - {name: spec_stand_7, type: human, spectator: true, z: 5.0, start: [0.0, 17.2], end: [0.3, 17.4], peak_speed: 0.2, phase: 0.25}
+  - {name: spec_stand_8, type: human, spectator: true, z: 5.0, start: [6.5, 16.0], end: [6.8, 16.2], peak_speed: 0.25, phase: 0.6}
+  - {name: spec_stand_walk_1, type: human, spectator: true, z: 5.0, start: [-19.0, 17.2], end: [8.0, 17.2], peak_speed: 0.9, phase: 0.0}
+  - {name: spec_stand_walk_2, type: human, spectator: true, z: 5.0, start: [8.5, 18.3], end: [-18.5, 18.3], peak_speed: 0.8, phase: 0.4}
+  - {name: spec_stand_walk_3, type: human, spectator: true, z: 5.0, start: [-15.0, 15.4], end: [5.0, 15.4], peak_speed: 1.0, phase: 0.7}
+  - {name: spec_stand_walk_4, type: human, spectator: true, z: 5.0, start: [-2.0, 16.6], end: [-18.0, 16.6], peak_speed: 0.7, phase: 0.2}

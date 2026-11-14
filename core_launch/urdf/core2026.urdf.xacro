@@ -1,0 +1,179 @@
+<?xml version="1.0"?>
+<!-- core2026 の機体（core2025_attacker.urdf の形）に、自律移動のセンサ（Mid-360・Damiao IMU）を足したもの。
+     実機の robot_state_publisher と Gazebo（gazebo:=true）で同じものを使う。
+     base_link は床に投影した機体の中心（z は床からの高さ） -->
+<robot name="core2026" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- Mid-360 の取り付け。既定は core2026 の実機（機体の中心、床から 0.5m、上下逆さ。以前の
+       navigation.launch.py の static_tf_base_livox と同じ） -->
+  <xacro:arg name="lidar_x" default="0.0"/>
+  <xacro:arg name="lidar_height" default="0.5"/>
+  <!-- LiDAR の前後の軸まわりの回転 [rad]。π で上下逆さ -->
+  <xacro:arg name="lidar_roll" default="${pi}"/>
+  <!-- Damiao IMU の取り付け（暫定。実機の値が分かったら直す） -->
+  <xacro:arg name="damiao_imu_x" default="0.0"/>
+  <xacro:arg name="damiao_imu_y" default="0.0"/>
+  <xacro:arg name="damiao_imu_z" default="0.4"/>
+  <!-- Gazebo で使うとき true。可動の関節（腰・upperwing）を固定にし、シミュレーションの定義を読む -->
+  <xacro:arg name="gazebo" default="false"/>
+  <!-- Gazebo の衝突形状の箱の高さ [m]。LiDAR より低くする（箱の中からは見えない）。
+       自機の除去の箱は footprint.yaml の height_m で、これとは別 -->
+  <xacro:arg name="body_height" default="0.3"/>
+  <!-- Gazebo で機体のメッシュを描くか。LiDAR の光線は描いたものに当たる -->
+  <xacro:arg name="meshes" default="true"/>
+  <!-- 以下は Gazebo（core2026.gazebo.xacro）だけで使う -->
+  <xacro:arg name="rear_lidar" default="false"/>
+  <xacro:arg name="rear_lidar_x" default="-0.44"/>
+  <xacro:arg name="rear_lidar_height" default="0.25"/>
+  <xacro:arg name="drive_dead_time" default="0.0"/>
+  <xacro:arg name="slip_longitudinal_ratio" default="1.0"/>
+  <xacro:arg name="slip_lateral_ratio" default="1.0"/>
+  <xacro:arg name="slip_yaw_ratio" default="1.0"/>
+  <xacro:arg name="slip_time_constant" default="0.0"/>
+  <xacro:arg name="slip_static_friction_accel" default="0.0"/>
+  <xacro:arg name="slip_kinetic_friction_accel" default="0.0"/>
+  <xacro:arg name="slip_noise_ratio" default="0.0"/>
+  <xacro:arg name="slip_noise_time" default="0.5"/>
+
+  <!-- 引数は文字列なので、式で使えるよう真偽値にする -->
+  <xacro:property name="gazebo" value="${'$(arg gazebo)'.lower() == 'true'}"/>
+  <xacro:property name="meshes" value="${'$(arg meshes)'.lower() == 'true'}"/>
+  <xacro:property name="rear_lidar" value="${'$(arg rear_lidar)'.lower() == 'true'}"/>
+  <xacro:property name="body_length" value="0.8"/>
+  <xacro:property name="body_width" value="0.8"/>
+  <xacro:property name="body_height" value="$(arg body_height)"/>
+  <xacro:property name="body_mass" value="30.0"/>
+  <!-- 床に接触すると摩擦で速度指令どおりに動かなくなるので、衝突形状を床から浮かせる -->
+  <xacro:property name="floor_clearance" value="0.02"/>
+  <!-- FAST-LIO の mid360.yaml の extrinsic_T の符号を反転した値（LiDAR 座標系での IMU の位置） -->
+  <xacro:property name="livox_imu_x" value="0.011"/>
+  <xacro:property name="livox_imu_y" value="0.02329"/>
+  <xacro:property name="livox_imu_z" value="-0.04412"/>
+
+  <xacro:macro name="mesh_visual" params="name">
+    <xacro:if value="${meshes}">
+      <visual>
+        <geometry>
+          <mesh filename="package://core_launch/urdf/mesh/${name}.dae"/>
+        </geometry>
+      </visual>
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- KDL は慣性を持つルートリンクを扱えないので、base_link は形だけにする -->
+  <link name="base_link">
+    <xacro:mesh_visual name="attacker_shooter"/>
+  </link>
+
+  <!-- 衝突と質量（Gazebo 用の箱）。機体の外形 0.8m 角は footprint.yaml と同じ -->
+  <link name="body_link">
+    <inertial>
+      <mass value="${body_mass}"/>
+      <inertia
+        ixx="${body_mass / 12.0 * (body_width * body_width + body_height * body_height)}"
+        ixy="0" ixz="0"
+        iyy="${body_mass / 12.0 * (body_length * body_length + body_height * body_height)}"
+        iyz="0"
+        izz="${body_mass / 12.0 * (body_length * body_length + body_width * body_width)}"/>
+    </inertial>
+    <collision>
+      <geometry>
+        <box size="${body_length} ${body_width} ${body_height - 2.0 * floor_clearance}"/>
+      </geometry>
+    </collision>
+    <xacro:unless value="${meshes}">
+      <visual>
+        <geometry>
+          <box size="${body_length} ${body_width} ${body_height}"/>
+        </geometry>
+      </visual>
+    </xacro:unless>
+  </link>
+  <joint name="base_to_body" type="fixed">
+    <parent link="base_link"/>
+    <child link="body_link"/>
+    <origin xyz="0 0 ${body_height / 2.0}"/>
+  </joint>
+
+  <!-- core2025_attacker.urdf と同じ可動部。Gazebo では固定にして、機体を 1 つの剛体にする -->
+  <link name="chassis_link">
+    <xacro:mesh_visual name="attacker_chassis"/>
+    <inertial>
+      <mass value="0.5"/>
+      <inertia ixx="0.05" ixy="0.0" ixz="0.0" iyy="0.05" iyz="0.0" izz="0.05"/>
+    </inertial>
+  </link>
+  <joint name="base_to_chassis" type="${'fixed' if gazebo else 'continuous'}">
+    <parent link="base_link"/>
+    <child link="chassis_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <xacro:unless value="${gazebo}">
+      <axis xyz="0 0 1"/>
+    </xacro:unless>
+  </joint>
+
+  <link name="upperwing_link">
+    <xacro:mesh_visual name="attacker_upperwing"/>
+    <inertial>
+      <mass value="0.2"/>
+      <inertia ixx="0.01" ixy="0.0" ixz="0.0" iyy="0.01" iyz="0.0" izz="0.01"/>
+    </inertial>
+  </link>
+  <joint name="base_to_upperwing" type="${'fixed' if gazebo else 'revolute'}">
+    <parent link="base_link"/>
+    <child link="upperwing_link"/>
+    <origin xyz="0.1635 0.1761 0.226833" rpy="0 0 0"/>
+    <xacro:unless value="${gazebo}">
+      <axis xyz="0 -1 0"/>
+      <limit effort="1000.0" lower="-0.78" upper="0.78" velocity="0.1"/>
+    </xacro:unless>
+  </joint>
+
+  <link name="camera0_link"/>
+  <joint name="upperwing_to_camera0" type="fixed">
+    <parent link="upperwing_link"/>
+    <child link="camera0_link"/>
+    <origin xyz="0.0208 -0.0945 0.0262" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera1_link"/>
+  <joint name="base_to_camera1" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera1_link"/>
+    <origin xyz="0.0824 -0.1713 0.6860" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 実機のドライバと同じフレーム名。点群の原点になる -->
+  <link name="livox_frame"/>
+  <joint name="base_to_livox" type="fixed">
+    <parent link="base_link"/>
+    <child link="livox_frame"/>
+    <origin xyz="$(arg lidar_x) 0 $(arg lidar_height)" rpy="$(arg lidar_roll) 0 0"/>
+  </joint>
+
+  <link name="livox_imu_link"/>
+  <joint name="livox_to_imu" type="fixed">
+    <parent link="livox_frame"/>
+    <child link="livox_imu_link"/>
+    <origin xyz="${livox_imu_x} ${livox_imu_y} ${livox_imu_z}"/>
+  </joint>
+
+  <xacro:if value="${gazebo and rear_lidar}">
+    <link name="livox_rear_frame"/>
+    <joint name="base_to_livox_rear" type="fixed">
+      <parent link="base_link"/>
+      <child link="livox_rear_frame"/>
+      <origin xyz="$(arg rear_lidar_x) 0 $(arg rear_lidar_height)" rpy="0 0 ${pi}"/>
+    </joint>
+  </xacro:if>
+
+  <link name="damiao_imu_link"/>
+  <joint name="base_to_damiao_imu" type="fixed">
+    <parent link="base_link"/>
+    <child link="damiao_imu_link"/>
+    <origin xyz="$(arg damiao_imu_x) $(arg damiao_imu_y) $(arg damiao_imu_z)"/>
+  </joint>
+
+  <xacro:if value="${gazebo}">
+    <xacro:include filename="$(find core_gazebo)/urdf/core2026.gazebo.xacro"/>
+  </xacro:if>
+</robot>

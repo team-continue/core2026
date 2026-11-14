@@ -1,0 +1,13 @@
+repositories:
+  FAST_LIO:
+    type: git
+    url: https://github.com/hku-mars/FAST_LIO.git
+    version: cc3c9e8b1469b33b8072764d6db2348ed6dc597f
+  lidar_localization_ros2:
+    type: git
+    url: https://github.com/rsasaki0109/lidar_localization_ros2.git
+    version: 3db35455a9d8c740771cb5786db967ca6e6d9fd6
+  ndt_omp_ros2:
+    type: git
+    url: https://github.com/rsasaki0109/ndt_omp_ros2.git
+    version: 9f5567e3ffab76cce44a3881cbe7a1dac7887e67

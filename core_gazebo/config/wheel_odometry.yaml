@@ -1,0 +1,29 @@
+# シミュレーションの車輪の速度（wheel_odometry_sim）の設定。実機の足回りが返す速度（/vehicle/twist）の代わり。
+# 真値の姿勢の差分に、実機の車輪で起きる誤差を足す（core_gazebo/wheel_odometry_model.hpp）。値は仮のもので、
+# 実機の記録が取れたら合わせる
+/**:
+  ros__parameters:
+    rate_hz: 50.0
+    # 差分を取る間。真値は 200Hz
+    window_s: 0.02
+    # 誤差の乱数の種。同じなら同じ誤差になる
+    seed: 1
+    error:
+      # 倍率の誤差（起動時に軸ごとに 1 回引く）。全方向の車輪は横に滑りやすいので、横を大きくする
+      scale_std_x: 0.02
+      scale_std_y: 0.03
+      scale_std_yaw: 0.03
+      # ゆっくり変わる偏り
+      drift_std_linear_mps: 0.01
+      drift_std_angular_radps: 0.01
+      drift_time_constant_s: 5.0
+      # 加減速の滑り。加速度の上限 5m/s2 で 5cm/s
+      accel_slip_s: 0.01
+      # ときどき起きる大きな滑り（ぶつかったときの空転など）。30 秒に 1 回ほど
+      burst_rate_hz: 0.0333
+      burst_speed_min_mps: 0.2
+      burst_speed_max_mps: 0.6
+      burst_duration_min_s: 0.1
+      burst_duration_max_s: 0.5
+      noise_std_linear_mps: 0.02
+      noise_std_angular_radps: 0.02

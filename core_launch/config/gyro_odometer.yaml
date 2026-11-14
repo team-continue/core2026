@@ -1,0 +1,14 @@
+# 車輪の速度と IMU の角速度を合わせて機体の速度を出すノード（gyro_odometer）の設定。launch の state_source:=ekf で使う。
+# 並進（vx, vy）は車輪から、回転（wz）はジャイロから取る（core_localization/gyro_odometer.hpp）
+/**:
+  ros__parameters:
+    wheel_topic: /sensing/vehicle/twist
+    # IMU は launch が imu_source.yaml の fused のトピック（/imu/fused）を渡す
+    output_topic: /localization/twist_with_covariance
+    base_frame: base_link
+    # メッセージに分散がないときの値。融合の出力とシミュレーションの車輪の速度には分散が入っている
+    gyro_variance: 1.0e-4
+    wheel_linear_variance: 0.01
+    wheel_angular_variance: 0.04
+    # 融合の出力（200Hz）の 20 周期分。途絶えたら車輪の角速度に切り替える
+    gyro_timeout_s: 0.1

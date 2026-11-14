@@ -1,0 +1,62 @@
+# LIO（FAST-LIO）に入れる IMU の、IMU ごとの設定。launch 引数 imu_source（livox / damiao / fused）で選ぶ。
+# ROS のパラメータファイルではなく、launch（core_nav_launch/imu_source.py）が読んで各ノードに渡す。
+#
+# 値はシミュレーションのもの。位置と姿勢は core_launch/urdf/core2026.urdf.xacro（既定の取り付け。LiDAR は
+# 機体の前の端の lidar_x=0.44m、床から lidar_height=0.25m）、雑音は robot.gazebo.xacro から計算した。
+# 実機では測った値に書き換え、URDF も同じ値にそろえる。
+# FAST-LIO の外部パラメータと TF（URDF）が食い違うと、lio_odom_adapter が起動時にエラーを出す。
+#
+# 項目:
+#   topic: IMU のトピック
+#   frame: IMU の取り付け位置の TF のフレーム。FAST-LIO の姿勢はこの座標系（body）で出る
+#   extrinsic_T, extrinsic_R: FAST-LIO の mapping.extrinsic_T・extrinsic_R と同じ意味。IMU の座標系で表した
+#     LiDAR（livox_frame）の位置 [m] と、LiDAR の座標系から IMU の座標系への回転（行優先の 3x3）
+#   extrinsic: urdf と書くと、extrinsic_T・extrinsic_R の代わりに、launch がロボットの記述（URDF。LiDAR の取り付けと
+#     同じもの）の base_link から frame と livox_frame までの変換から求める
+#   accel_scale: 加速度を m/s2 に直す倍率。FAST-LIO の accel_clip（fast_lio.yaml に m/s2 で書く）をこの IMU の
+#     単位に直すのと、融合（fused）に使う。FAST-LIO は起動時の加速度の平均で単位を合わせるので、それ以外には効かない
+#   gyro_noise_std_radps, accel_noise_std_mps2: 1 サンプルの雑音の標準偏差。融合の重み（分散の逆数）に使う
+#   gyro_saturation_radps, accel_saturation_mps2: どれかの軸の絶対値がこの値以上なら飽和とみなし、融合に使わない
+livox:
+  topic: /sensing/livox/imu
+  # 実機のドライバはメッセージの frame_id を livox_frame に固定するので、取り付け位置はここで決める
+  frame: livox_imu_link
+  # URDF の livox_frame→livox_imu_link は (0.011, 0.02329, -0.04412)m で回転なし（FAST-LIO の mid360.yaml の値）。
+  # IMU から見た LiDAR の位置は、その符号を反転したもの
+  extrinsic_T: [-0.011, -0.02329, 0.04412]
+  extrinsic_R: [1.0, 0.0, 0.0,
+                0.0, 1.0, 0.0,
+                0.0, 0.0, 1.0]
+  # シミュレーションは m/s2。実機の Mid-360 は g 単位なので 9.80665 にする
+  accel_scale: 1.0
+  # robot.gazebo.xacro の gyro_stddev と accel_stddev。実機は静止時の記録の標準偏差に置き換える
+  gyro_noise_std_radps: 0.001
+  accel_noise_std_mps2: 0.01
+  # レンジは資料で確かめていない仮の値で、±2000deg/s と ±8g の 98%。実機のレンジに合わせる。
+  # 加速度は FAST-LIO が accel_clip（約 3g）で切るので、閾値が多少ずれても影響は小さい
+  gyro_saturation_radps: 34.2
+  accel_saturation_mps2: 76.9
+
+damiao:
+  topic: /sensing/imu
+  frame: damiao_imu_link
+  # LiDAR と一体でないので、IMU から見た LiDAR の位置は LiDAR の取り付け（xacro の lidar_x・lidar_height）と
+  # Damiao の取り付け位置（damiao_imu_x/y/z）で変わる。以前は既定の取り付けの値 (0.44, 0, -0.15) を書いていたので、
+  # 取り付けを launch 引数で変えると（lidar_x:=0.0 lidar_height:=0.85 なら正しくは (0, 0, 0.45)）TF と食い違った。
+  # launch が LiDAR の取り付けと同じロボットの記述（URDF）から求める（livox は LiDAR と一体なので取り付けによらない）
+  extrinsic: urdf
+  # シミュレーションは m/s2。実機のドライバの単位を確かめる
+  accel_scale: 1.0
+  # robot.gazebo.xacro の gyro_stddev と accel_stddev
+  gyro_noise_std_radps: 0.002
+  accel_noise_std_mps2: 0.02
+  # レンジは資料で確かめていない仮の値で、±2000deg/s と ±6g の 98%
+  gyro_saturation_radps: 34.2
+  accel_saturation_mps2: 57.7
+
+# 2 つを測定の段階で融合した出力（imu_fusion ノード、設定は imu_fusion.yaml）。
+# 出力は主の座標系・時刻・周期なので、FAST-LIO の外部パラメータと body の座標系は主のものを使う
+fused:
+  topic: /sensing/imu/fused
+  primary: damiao
+  secondary: livox

@@ -1,0 +1,223 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -40,6 +40,7 @@
+ #include <csignal>
+ #include <chrono>
+ #include <unistd.h>
++#include <unordered_set>  // lidar_nav: keep_existing_map_points
+ #include <Python.h>
+ #include <so3_math.h>
+ #include <rclcpp/rclcpp.hpp>
+@@ -74,6 +75,8 @@
+ double match_time = 0, solve_time = 0, solve_const_H_time = 0;
+ int    kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
+ double accel_clip = 0.0;
++// lidar_nav: 地図のボクセルにすでに点があれば、新しい点で置き換えない（map_incremental を参照）
++bool   keep_existing_map_points = false;
+ bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extrinsic_est_en = true, path_en = true;
+ /**************************/
+ 
+@@ -449,9 +452,66 @@
+     return true;
+ }
+ 
++// lidar_nav: 地図のボクセル（filter_size_map の格子）に点がまだないときだけ点を足し、すでにある点は置き換えない。
++// 上流の更新は、ボクセルの中の点を「ボクセルの中心に最も近い点」へ置き換え続ける。足す点の位置にはその周期の姿勢の
++// 推定のぶれが乗るので、中心へ寄る向きにぶれた周期の点ほど残り、地図の面が中心へ寄って、照合がそれを追う。床や壁の
++// ような座標軸にそろった広い面では、これが積み重なり、姿勢が面と中心の距離（最大でボクセルの半分）までずれていく
++void map_incremental_keep_existing()
++{
++    PointVector PointToAdd;
++    PointToAdd.reserve(feats_down_size);
++    // 同じ周期の点どうしが同じボクセルに入ったときは、最初の点だけを足す
++    std::unordered_set<int64_t> batch_voxels;
++    batch_voxels.reserve(2 * feats_down_size);
++    PointVector in_voxel;
++    const float size = filter_size_map_min;
++    for (int i = 0; i < feats_down_size; i++)
++    {
++        PointType &point = feats_down_world->points[i];
++        pointBodyToWorld(&(feats_down_body->points[i]), &point);
++        const int64_t ix = static_cast<int64_t>(floor(point.x / size));
++        const int64_t iy = static_cast<int64_t>(floor(point.y / size));
++        const int64_t iz = static_cast<int64_t>(floor(point.z / size));
++        // 各軸 21 ビット（0.5m の格子で ±500km）に収めて 1 つの鍵にする
++        const int64_t key = ((ix & 0x1FFFFF) << 42) | ((iy & 0x1FFFFF) << 21) | (iz & 0x1FFFFF);
++        if (!batch_voxels.insert(key).second) continue;
++        BoxPointType box;
++        box.vertex_min[0] = ix * size;
++        box.vertex_min[1] = iy * size;
++        box.vertex_min[2] = iz * size;
++        for (int axis = 0; axis < 3; axis++) box.vertex_max[axis] = box.vertex_min[axis] + size;
++        // 照合で探した近傍の点が同じボクセルにあれば、点はある。なければ箱で探して確かめる
++        bool occupied = false;
++        for (const auto &near : Nearest_Points[i])
++        {
++            if (near.x >= box.vertex_min[0] && near.x < box.vertex_max[0] && near.y >= box.vertex_min[1] &&
++                near.y < box.vertex_max[1] && near.z >= box.vertex_min[2] && near.z < box.vertex_max[2])
++            {
++                occupied = true;
++                break;
++            }
++        }
++        if (!occupied)
++        {
++            ikdtree.Box_Search(box, in_voxel);
++            occupied = !in_voxel.empty();
++        }
++        if (!occupied) PointToAdd.push_back(point);
++    }
++    double st_time = omp_get_wtime();
++    ikdtree.Add_Points(PointToAdd, false);
++    add_point_size = PointToAdd.size();
++    kdtree_incremental_time = omp_get_wtime() - st_time;
++}
++
+ int process_increments = 0;
+ void map_incremental()
+ {
++    if (keep_existing_map_points)  // lidar_nav
++    {
++        map_incremental_keep_existing();
++        return;
++    }
+     PointVector PointToAdd;
+     PointVector PointNoNeedDownsample;
+     PointToAdd.reserve(feats_down_size);
+@@ -853,10 +913,19 @@
+         this->declare_parameter<int>("preprocess.scan_line", 16);
+         this->declare_parameter<int>("preprocess.timestamp_unit", US);
+         this->declare_parameter<int>("preprocess.scan_rate", 10);
++        // lidar_nav: 自機の除去（機体の箱）。既定は無効で、上流の動きのまま
++        this->declare_parameter<bool>("preprocess.self_filter.enabled", false);
++        this->declare_parameter<double>("preprocess.self_filter.half_length", 0.0);
++        this->declare_parameter<double>("preprocess.self_filter.half_width", 0.0);
++        this->declare_parameter<double>("preprocess.self_filter.top_height", 0.0);
++        this->declare_parameter<vector<double>>("preprocess.self_filter.extrinsic_T", vector<double>());
++        this->declare_parameter<vector<double>>("preprocess.self_filter.extrinsic_R", vector<double>());
+         this->declare_parameter<int>("point_filter_num", 2);
+         this->declare_parameter<bool>("feature_extract_enable", false);
+         this->declare_parameter<bool>("runtime_pos_log_enable", false);
+         this->declare_parameter<bool>("mapping.extrinsic_est_en", true);
++        // lidar_nav: 地図のボクセルの点を置き換えない。既定は無効で、上流の動きのまま
++        this->declare_parameter<bool>("mapping.keep_existing_map_points", false);
+         this->declare_parameter<bool>("pcd_save.pcd_save_en", false);
+         this->declare_parameter<int>("pcd_save.interval", -1);
+         this->declare_parameter<vector<double>>("mapping.extrinsic_T", vector<double>());
+@@ -894,11 +963,46 @@
+         this->get_parameter_or<bool>("feature_extract_enable", p_pre->feature_enabled, false);
+         this->get_parameter_or<bool>("runtime_pos_log_enable", runtime_pos_log, 0);
+         this->get_parameter_or<bool>("mapping.extrinsic_est_en", extrinsic_est_en, true);
++        this->get_parameter_or<bool>("mapping.keep_existing_map_points", keep_existing_map_points, false);
+         this->get_parameter_or<bool>("pcd_save.pcd_save_en", pcd_save_en, false);
+         this->get_parameter_or<int>("pcd_save.interval", pcd_save_interval, -1);
+         this->get_parameter_or<vector<double>>("mapping.extrinsic_T", extrinT, vector<double>());
+         this->get_parameter_or<vector<double>>("mapping.extrinsic_R", extrinR, vector<double>());
+ 
++        // lidar_nav: 自機の除去（機体の箱）の値を読む。有効なのに使えない設定なら起動を止める
++        this->get_parameter_or<bool>("preprocess.self_filter.enabled", p_pre->self_filter.enabled, false);
++        if (p_pre->self_filter.enabled)
++        {
++            vector<double> self_T, self_R;
++            this->get_parameter_or<double>("preprocess.self_filter.half_length", p_pre->self_filter.half_length, 0.0);
++            this->get_parameter_or<double>("preprocess.self_filter.half_width", p_pre->self_filter.half_width, 0.0);
++            this->get_parameter_or<double>("preprocess.self_filter.top_height", p_pre->self_filter.top_height, 0.0);
++            this->get_parameter_or<vector<double>>("preprocess.self_filter.extrinsic_T", self_T, vector<double>());
++            this->get_parameter_or<vector<double>>("preprocess.self_filter.extrinsic_R", self_R, vector<double>());
++            string error;
++            if (p_pre->lidar_type != AVIA || p_pre->feature_enabled)
++                error = "lidar_type 1（Livox CustomMsg）で feature_extract_enable が false のときだけ使えます";
++            else if (!(p_pre->self_filter.half_length > 0.0) || !(p_pre->self_filter.half_width > 0.0) ||
++                     !(p_pre->self_filter.top_height > 0.0))
++                error = "half_length、half_width、top_height は正の値にしてください";
++            else if (self_T.size() != 3 || self_R.size() != 9)
++                error = "extrinsic_T は 3 個、extrinsic_R は 9 個（行優先）の数値にしてください";
++            if (!error.empty())
++            {
++                RCLCPP_FATAL(this->get_logger(), "preprocess.self_filter: %s", error.c_str());
++                throw std::invalid_argument("preprocess.self_filter: " + error);
++            }
++            p_pre->self_filter.T_base_lidar << VEC_FROM_ARRAY(self_T);
++            p_pre->self_filter.R_base_lidar << MAT_FROM_ARRAY(self_R);
++            RCLCPP_INFO(this->get_logger(), "自機の除去: 箱の半分 %.3f x %.3f m、上面 %.3f m、base_link での LiDAR の位置 [%.3f %.3f %.3f]",
++                        p_pre->self_filter.half_length, p_pre->self_filter.half_width,
++                        p_pre->self_filter.top_height, self_T[0], self_T[1], self_T[2]);
++        }
++
++        // lidar_nav: 地図の更新の仕方を起動時に出す
++        RCLCPP_INFO(this->get_logger(), "地図の更新: %s（ボクセル %.2f m）",
++                    keep_existing_map_points ? "点のないボクセルにだけ足し、すでにある点は置き換えない" : "上流のまま（ボクセルの中心に近い点へ置き換える）",
++                    filter_size_map_min);
+         RCLCPP_INFO(this->get_logger(), "p_pre->lidar_type %d", p_pre->lidar_type);
+ 
+         path.header.stamp = this->get_clock()->now();
+diff --git a/src/preprocess.cpp b/src/preprocess.cpp
+--- a/src/preprocess.cpp
++++ b/src/preprocess.cpp
+@@ -46,6 +46,18 @@
+   point_filter_num = pfilt_num;
+ }
+ 
++// lidar_nav: 自機の除去。base_link で xy が機体の箱の中にあり、高さが箱の上面以下の点を自機とみなす。
++// LiDAR は機体の前の端の低い所にあるので、LiDAR より上の機体の面も除く。
++// core_perception の selectObstaclePoints と同じ判定
++bool Preprocess::in_self_box(const PointType &pt) const
++{
++  if (!self_filter.enabled)
++    return false;
++  const Eigen::Vector3d base = self_filter.R_base_lidar * Eigen::Vector3d(pt.x, pt.y, pt.z) + self_filter.T_base_lidar;
++  return std::abs(base.x()) <= self_filter.half_length && std::abs(base.y()) <= self_filter.half_width &&
++         base.z() <= self_filter.top_height;
++}
++
+ void Preprocess::process(const livox_ros_driver2::msg::CustomMsg::UniquePtr &msg, PointCloudXYZI::Ptr& pcl_out)
+ {
+   avia_handler(msg);
+@@ -185,7 +197,8 @@
+           if (((abs(pl_full[i].x - pl_full[i - 1].x) > 1e-7)
+               || (abs(pl_full[i].y - pl_full[i - 1].y) > 1e-7)
+               || (abs(pl_full[i].z - pl_full[i - 1].z) > 1e-7))
+-              && (pl_full[i].x * pl_full[i].x + pl_full[i].y * pl_full[i].y + pl_full[i].z * pl_full[i].z > (blind * blind)))
++              && (pl_full[i].x * pl_full[i].x + pl_full[i].y * pl_full[i].y + pl_full[i].z * pl_full[i].z > (blind * blind))
++              && !in_self_box(pl_full[i]))  // lidar_nav: 自機の除去
+           {
+             pl_surf.push_back(pl_full[i]);
+           }
+diff --git a/src/preprocess.h b/src/preprocess.h
+--- a/src/preprocess.h
++++ b/src/preprocess.h
+@@ -132,6 +132,21 @@
+     (uint8_t, line, line)
+ )
+ 
++// lidar_nav: 自機の除去（機体の箱）のために追加。avia_handler（lidar_type 1）だけが使い、
++// ほかの handler は上流のまま（blind の球だけ）
++struct SelfFilter
++{
++  bool enabled = false;
++  // base_link の x・y 方向の箱の半分の長さ [m]
++  double half_length = 0.0;
++  double half_width = 0.0;
++  // base_link（床に投影した機体中心）での箱の上面の高さ [m]（機体の上面と余裕）
++  double top_height = 0.0;
++  // LiDAR の点を base_link へ移す変換（p_base = R p_lidar + T）。T は base_link で表した LiDAR の位置
++  Eigen::Matrix3d R_base_lidar = Eigen::Matrix3d::Identity();
++  Eigen::Vector3d T_base_lidar = Eigen::Vector3d::Zero();
++};
++
+ class Preprocess
+ {
+   public:
+@@ -152,9 +167,11 @@
+   int lidar_type, point_filter_num, N_SCANS, SCAN_RATE, time_unit;
+   double blind;
+   bool feature_enabled, given_offset_time;
++  SelfFilter self_filter;  // lidar_nav: 自機の除去
+   // ros::Publisher pub_full, pub_surf, pub_corn;
+ 
+ private:
++  bool in_self_box(const PointType &pt) const;  // lidar_nav: 自機の除去
+   void avia_handler(const livox_ros_driver2::msg::CustomMsg::UniquePtr &msg);
+   void oust64_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &msg);
+   void velodyne_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &msg);

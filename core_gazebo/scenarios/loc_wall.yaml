@@ -1,0 +1,42 @@
+# 自己位置の試験（check_localization_stress.py）用: 機体が走る y=0 の両側（y=±1.1）を、止まった他ロボット 34 台で
+# 1m ごとに埋める（x=-8〜8）。床から 0.8m までの横の見通しがほぼふさがり、地図照合の補正が段差で動く。
+start: [-9.0, 0.0, 0.0]
+goals:
+  - [9.0, 0.0, 0.0]
+timeout_s: 240
+repeat: 1
+obstacles:
+  - {name: robot_1, type: robot, start: [-8.0, 1.1], end: [-8.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_2, type: robot, start: [-7.0, 1.1], end: [-7.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_3, type: robot, start: [-6.0, 1.1], end: [-6.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_4, type: robot, start: [-5.0, 1.1], end: [-5.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_5, type: robot, start: [-4.0, 1.1], end: [-4.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_6, type: robot, start: [-3.0, 1.1], end: [-3.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_7, type: robot, start: [-2.0, 1.1], end: [-2.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_8, type: robot, start: [-1.0, 1.1], end: [-1.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_9, type: robot, start: [0.0, 1.1], end: [0.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_10, type: robot, start: [1.0, 1.1], end: [1.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_11, type: robot, start: [2.0, 1.1], end: [2.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_12, type: robot, start: [3.0, 1.1], end: [3.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_13, type: robot, start: [4.0, 1.1], end: [4.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_14, type: robot, start: [5.0, 1.1], end: [5.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_15, type: robot, start: [6.0, 1.1], end: [6.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_16, type: robot, start: [7.0, 1.1], end: [7.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_17, type: robot, start: [8.0, 1.1], end: [8.0, 1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_18, type: robot, start: [-8.0, -1.1], end: [-8.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_19, type: robot, start: [-7.0, -1.1], end: [-7.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_20, type: robot, start: [-6.0, -1.1], end: [-6.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_21, type: robot, start: [-5.0, -1.1], end: [-5.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_22, type: robot, start: [-4.0, -1.1], end: [-4.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_23, type: robot, start: [-3.0, -1.1], end: [-3.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_24, type: robot, start: [-2.0, -1.1], end: [-2.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_25, type: robot, start: [-1.0, -1.1], end: [-1.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_26, type: robot, start: [0.0, -1.1], end: [0.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_27, type: robot, start: [1.0, -1.1], end: [1.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_28, type: robot, start: [2.0, -1.1], end: [2.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_29, type: robot, start: [3.0, -1.1], end: [3.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_30, type: robot, start: [4.0, -1.1], end: [4.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_31, type: robot, start: [5.0, -1.1], end: [5.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_32, type: robot, start: [6.0, -1.1], end: [6.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_33, type: robot, start: [7.0, -1.1], end: [7.0, -1.1], peak_speed: 0.0, phase: 0.0}
+  - {name: robot_34, type: robot, start: [8.0, -1.1], end: [8.0, -1.1], peak_speed: 0.0, phase: 0.0}

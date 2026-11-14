@@ -1,0 +1,9 @@
+# 最初のゴールの上に相手が止まっている。次のゴールには普通に着ける
+start: [-8.0, -3.0, 0.0]
+goals:
+  - [6.0, 2.0, 0.0]
+  - [-6.0, 4.0, 0.0]
+timeout_s: 90
+repeat: 1
+obstacles:
+  - {name: robot_parked, type: robot, start: [6.0, 2.0], peak_speed: 0.0}

@@ -1,0 +1,128 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- シミュレーション専用の定義。実機では Gazebo に読まれないだけで影響しない -->
+
+  <!-- IMUのノイズは資料で確認していない仮の値 -->
+  <xacro:macro name="axis_noise" params="axis stddev">
+    <xacro:element xacro:name="${axis}">
+      <noise type="gaussian">
+        <mean>0</mean>
+        <stddev>${stddev}</stddev>
+      </noise>
+    </xacro:element>
+  </xacro:macro>
+
+  <xacro:macro name="sim_imu" params="link name topic frame_id gyro_stddev accel_stddev enable_orientation">
+    <gazebo reference="${link}">
+      <sensor name="${name}" type="imu">
+        <always_on>1</always_on>
+        <update_rate>200</update_rate>
+        <topic>${topic}</topic>
+        <gz_frame_id>${frame_id}</gz_frame_id>
+        <imu>
+          <enable_orientation>${enable_orientation}</enable_orientation>
+          <angular_velocity>
+            <xacro:axis_noise axis="x" stddev="${gyro_stddev}"/>
+            <xacro:axis_noise axis="y" stddev="${gyro_stddev}"/>
+            <xacro:axis_noise axis="z" stddev="${gyro_stddev}"/>
+          </angular_velocity>
+          <linear_acceleration>
+            <xacro:axis_noise axis="x" stddev="${accel_stddev}"/>
+            <xacro:axis_noise axis="y" stddev="${accel_stddev}"/>
+            <xacro:axis_noise axis="z" stddev="${accel_stddev}"/>
+          </linear_acceleration>
+        </imu>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- 床と接触させず、力で水平に動かすので重力は切る。IMUの重力加速度はワールドの値から出る -->
+  <gazebo reference="base_link">
+    <gravity>false</gravity>
+  </gazebo>
+
+  <!-- Mid-360: 垂直視野 -7〜52度、距離 0.1〜40m、距離ノイズ 2cm は公式仕様の値。
+       ただし gpu_lidar の距離の下限は描画の近い側の切り取り面になる。0.1m にすると、機体の前の端（前の面の
+       4cm 外）に付けた LiDAR から 0.1m より近い前の面が描画されず、裏向きの面も描かれないので、後ろ向きの光線が
+       機体を突き抜けて後ろの壁に当たる。そこで描画の下限は 0.02m にして機体でさえぎらせ、Mid-360 の最短距離
+       0.1m は points_to_livox（min_range_m）で切る。
+       実機は非反復スキャンで毎フレーム違う場所に点が当たる。少ない本数の格子だと同じ輪に点が並び、
+       FAST-LIO が輪どうしを合わせて移動量を小さく見積もる。そこで密な格子（0.5度間隔）で測り、
+       points_to_livox で実機と同じ 20,000点/フレームに毎回ランダムに間引く -->
+  <xacro:macro name="mid360_lidar" params="link name topic">
+    <gazebo reference="${link}">
+      <sensor name="${name}" type="gpu_lidar">
+        <always_on>1</always_on>
+        <update_rate>10</update_rate>
+        <topic>${topic}</topic>
+        <gz_frame_id>${link}</gz_frame_id>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>720</samples>
+              <resolution>1</resolution>
+              <min_angle>${-pi}</min_angle>
+              <max_angle>${pi}</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>112</samples>
+              <resolution>1</resolution>
+              <min_angle>${radians(-7.0)}</min_angle>
+              <max_angle>${radians(52.0)}</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.02</min>
+            <max>40.0</max>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0</mean>
+            <stddev>0.02</stddev>
+          </noise>
+        </lidar>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:mid360_lidar link="livox_frame" name="mid360" topic="/sim/lidar"/>
+  <!-- 検出のための 2 台目（rear_lidar:=true のとき）。1 台目と同じ設定で、点群は /sim/lidar_rear/points に出る。
+       内蔵 IMU は使わないので出さない -->
+  <xacro:if value="$(arg rear_lidar)">
+    <xacro:mid360_lidar link="livox_rear_frame" name="mid360_rear" topic="/sim/lidar_rear"/>
+  </xacro:if>
+
+  <!-- 実機のドライバは IMU のフレームを livox_frame に固定し、姿勢は出さない。同じ形にする -->
+  <xacro:sim_imu link="livox_imu_link" name="livox_imu" topic="/sensing/livox/imu"
+                 frame_id="livox_frame" gyro_stddev="0.001" accel_stddev="0.01"
+                 enable_orientation="false"/>
+  <xacro:sim_imu link="damiao_imu_link" name="damiao_imu" topic="/sensing/imu"
+                 frame_id="damiao_imu_link" gyro_stddev="0.002" accel_stddev="0.02"
+                 enable_orientation="true"/>
+
+  <gazebo>
+    <!-- 加減速度の上限は仮の値 -->
+    <plugin filename="omni_force_drive" name="core_gazebo::OmniForceDrive">
+      <topic>/sim/cmd_vel</topic>
+      <max_linear_accel>5.0</max_linear_accel>
+      <max_angular_accel>10.0</max_angular_accel>
+      <dead_time>$(arg drive_dead_time)</dead_time>
+      <longitudinal_ratio>$(arg slip_longitudinal_ratio)</longitudinal_ratio>
+      <lateral_ratio>$(arg slip_lateral_ratio)</lateral_ratio>
+      <yaw_ratio>$(arg slip_yaw_ratio)</yaw_ratio>
+      <time_constant>$(arg slip_time_constant)</time_constant>
+      <static_friction_accel>$(arg slip_static_friction_accel)</static_friction_accel>
+      <kinetic_friction_accel>$(arg slip_kinetic_friction_accel)</kinetic_friction_accel>
+      <noise_ratio>$(arg slip_noise_ratio)</noise_ratio>
+      <noise_time>$(arg slip_noise_time)</noise_time>
+    </plugin>
+    <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>world</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <odom_topic>/ground_truth/odom</odom_topic>
+      <tf_topic>/ground_truth/tf</tf_topic>
+      <odom_publish_frequency>200</odom_publish_frequency>
+      <dimensions>3</dimensions>
+    </plugin>
+  </gazebo>
+</robot>

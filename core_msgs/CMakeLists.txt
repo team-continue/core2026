@@ -33,6 +33,14 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/DetectedPanelInfoArray.msg"
   "msg/PoseWithWeight.msg"
   "msg/Path.msg"
+  # 自律移動（core_localization・core_perception・core_planning）
+  "msg/ContactStatus.msg"
+  "msg/LocalizationHealth.msg"
+  "msg/NavigationStatus.msg"
+  "msg/ProcessStats.msg"
+  "msg/SafetyStatus.msg"
+  "msg/TrackedObject.msg"
+  "msg/TrackedObjectArray.msg"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs
 )
 ament_export_dependencies(rosidl_default_runtime)

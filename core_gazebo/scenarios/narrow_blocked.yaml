@@ -1,0 +1,11 @@
+# field_narrow.sdf の幅 1.1m（片側 0.15m、y = -5.0）の通路の正面から、その先のゴールへ向かう。
+# 片側の余裕が narrow_passage.min_side_clearance_m（0.2m）未満なので、この通路には入らない。
+# 大域計画が通路を塞いでいれば隣の幅 1.25m（y = -2.0）の通路へ回り、格子の丸めで経路ができれば
+# 局所計画が入口の手前で止まる（どちらも機体はこの通路に入らない）
+start: [-8.0, -5.0, 0.0]
+goals:
+  - [8.0, -5.0, 0.0]
+timeout_s: 90
+repeat: 1
+world: field_narrow.sdf
+obstacles: []

@@ -1,0 +1,68 @@
+# FAST-LIO の mid360.yaml をもとにした設定。変えた値にだけ理由を書く。
+/**:
+  ros__parameters:
+    feature_extract_enable: false
+    point_filter_num: 3
+    max_iteration: 3
+    filter_size_surf: 0.5
+    filter_size_map: 0.5
+    cube_side_length: 1000.0
+    runtime_pos_log_enable: false
+    map_file_path: ""
+
+    common:
+      lid_topic: "/sensing/livox/lidar"
+      # launch が imu_source.yaml の選んだ IMU のトピックで上書きする
+      imu_topic: "/sensing/livox/imu"
+      time_sync_en: false
+      time_offset_lidar_to_imu: 0.0
+      # 加速度の大きさの上限 [m/s2]。FAST-LIO は IMU の単位で比べるので、launch が imu_source.yaml の
+      # accel_scale で選んだ IMU の単位に直して渡す（実機の Mid-360 は g 単位なので約 3.06 になる）。
+      # 走行では重力を合わせても約 11m/s2。衝突の鋭い加速度をそのまま積分すると自己位置を失う
+      accel_clip: 30.0
+
+    preprocess:
+      lidar_type: 1
+      scan_line: 4
+      # Mid-360 の最短距離。近すぎる雑音だけを除く。自機の点は launch が渡す preprocess.self_filter
+      # （footprint.yaml の機体の箱と URDF の取り付け）で除く。以前の 0.65m の球（天板の角まで約 0.57m）は
+      # 機体の外の近くの相手まで消していた。比べるときは launch 引数 lio_self_filter:=legacy_blind で戻せる
+      blind: 0.1
+      timestamp_unit: 3
+      scan_rate: 10
+
+    mapping:
+      acc_cov: 0.1
+      gyr_cov: 0.1
+      b_acc_cov: 0.0001
+      b_gyr_cov: 0.0001
+      fov_degree: 360.0
+      det_range: 100.0
+      # シミュレーションでは取り付け位置が既知なので推定しない。実機では値を確かめてから決める
+      extrinsic_est_en: false
+      # 地図（filter_size_map の格子）のボクセルにすでに点があれば置き換えない（FAST-LIO を直した機能。
+      # fast_lio_self_filter.patch）。上流は「ボクセルの中心に最も近い点」へ置き換え続けるので、床や壁のような
+      # 座標軸にそろった広い面が格子の中心の面へ寄っていき、照合がそれを追って、止まっていても姿勢が面と中心の距離
+      # （最大でボクセルの半分の 25cm）までずれた。ずれの量と向きは、起動時の IMU の位置と面の位置の、格子に対する
+      # ずれで決まる（シミュレーションで、Mid-360 を前の端に付けたときの前後 +16cm、Damiao の高さ +13cm、
+      # 0.85m の取り付けの高さ +5cm。開始位置を 0.2m ずらすと向きが逆になり、格子を 0.25m にすると高さの向きが
+      # 逆になった）。有効にすると、静止と走行（直進、旋回）の LIO の誤差は、水平 1〜3cm、高さ 1cm 以下になった
+      keep_existing_map_points: true
+      # launch が imu_source.yaml の選んだ IMU の値で上書きする
+      extrinsic_T: [-0.011, -0.02329, 0.04412]
+      extrinsic_R: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+
+    # 経路と全フレームの保存はメモリに溜まり続けるので切る。点群の出力は可視化するときだけ有効にする
+    publish:
+      path_en: false
+      effect_map_en: false
+      map_en: false
+      scan_publish_en: false
+      dense_publish_en: false
+      scan_bodyframe_pub_en: false
+
+    pcd_save:
+      pcd_save_en: false
+      interval: -1

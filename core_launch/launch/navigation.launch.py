@@ -11,13 +11,13 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
-    GroupAction,
     IncludeLaunchDescription,
     OpaqueFunction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
-from launch_ros.actions import Node, PushRosNamespace
+from launch.substitutions import Command, PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 # ── Map presets ──────────────────────────────────────────────────────
@@ -47,8 +47,6 @@ def _launch_nodes(context):
     env = context.launch_configurations['environment']
     map_name = context.launch_configurations['map_name']
     use_rviz = context.launch_configurations['use_rviz']
-    use_localization = context.launch_configurations.get(
-        'use_localization', 'false').lower() == 'true'
 
     is_real = (env == 'real')
     use_damiao_imu = is_real and context.launch_configurations.get(
@@ -85,95 +83,77 @@ def _launch_nodes(context):
         ))
 
     # ── 2. Livox driver (real only) ──────────────────────────────────
+    # FAST-LIO と検出は CustomMsg（xfer_format 1）を受ける
     if is_real:
-        actions.append(GroupAction([
-            PushRosNamespace('sensing'),
-            Node(
-                package='livox_ros_driver2',
-                executable='livox_ros_driver2_node',
-                name='livox_lidar_publisher',
-                output='screen',
-                remappings=[
-                    ('livox/lidar', '/sensing/livox/lidar'),
-                    ('livox/imu', '/sensing/livox/imu'),
-                ],
-                parameters=[{
-                    'xfer_format': 0,  # PointCloud2 (MID-360)
-                    'multi_topic': 0,
-                    'data_src': 0,
-                    'publish_freq': 10.0,
-                    'output_data_type': 0,
-                    'frame_id': 'livox_frame',
-                    'lvx_file_path': '/home/livox/livox_test.lvx',
-                    'user_config_path': livox_user_config,
-                    'cmdline_input_bd_code': 'livox0000000001',
-                }],
-            ),
-        ]))
+        actions.append(Node(
+            package='livox_ros_driver2',
+            executable='livox_ros_driver2_node',
+            name='livox_driver',
+            namespace='sensing',
+            output='screen',
+            remappings=[
+                ('livox/lidar', '/sensing/livox/lidar'),
+                ('livox/imu', '/sensing/livox/imu'),
+            ],
+            parameters=[{
+                'xfer_format': 1,  # CustomMsg (MID-360)
+                'multi_topic': 0,
+                'data_src': 0,
+                'publish_freq': 10.0,
+                'output_data_type': 0,
+                'frame_id': 'livox_frame',
+                'lvx_file_path': '/home/livox/livox_test.lvx',
+                'user_config_path': livox_user_config,
+                'cmdline_input_bd_code': 'livox0000000001',
+            }],
+        ))
 
-    # ── 無効化中のノードについて ─────────────────────────────────────
-    # 以下のコメントアウト済みブロックは名前空間対応済みの形で記述してあります。
-    # そのままコメントを外せば docs/architecture/topics.md のトピック一覧と
-    # 一致した名前空間（localization / map / planning）で起動します。
+    # ── 3. 自律移動（real only） ─────────────────────────────────────
+    # 設計: 1 台構成・コンポーネント版。base_link→センサの固定 TF は URDF から出す
+    if is_real:
+        robot_xacro = os.path.join(core_launch_share, 'urdf', 'core2026.urdf.xacro')
+        actions.append(Node(
+            package='robot_state_publisher',
+            executable='robot_state_publisher',
+            output='screen',
+            parameters=[{
+                'robot_description': ParameterValue(
+                    Command(['xacro ', robot_xacro]), value_type=str),
+            }],
+            remappings=[('joint_states', '/hardware/joint_states')],
+        ))
 
-    # ── 3. FAST-LIO (when use_fastlio) ──────────────────────────────
-    # if use_fastlio:
-    #     actions.append(GroupAction([
-    #         PushRosNamespace('localization'),
-    #         Node(
-    #             package='fast_lio',
-    #             executable='fastlio_mapping',
-    #             name='fastlio_mapping',
-    #             output='screen',
-    #             parameters=[
-    #                 PathJoinSubstitution([
-    #                     FindPackageShare('fast_lio'), 'config', 'mid360.yaml',
-    #                 ]),
-    #                 {
-    #                     'common.lid_topic': '/sensing/livox/lidar',
-    #                     'common.imu_topic': imu_topic,
-    #                     'preprocess.lidar_type': lidar_type,
-    #                 },
-    #             ],
-    #         ),
-    #     ]))
-
-    # ── 4. Static TF / Localization ──────────────────────────────────
-    if use_localization:
-        # Dynamic map→odom from NDT/ICP localization node
-        localization_share = get_package_share_directory('core_localization')
-        localization_config = os.path.join(
-            localization_share, 'config', 'localization_params.yaml')
-
-        # Resolve PCD map path from map_name → pcd_maps/<map_name>.pcd
-        resolved_pcd_path = os.path.join(
-            localization_share, 'pcd_maps', f'{map_name}.pcd')
-
-        if not os.path.isfile(resolved_pcd_path):
+        map_path = context.launch_configurations.get('map_path', '')
+        if not map_path:
+            map_path = os.path.join(core_launch_share, 'maps', f'{map_name}.pcd')
+        if not os.path.isfile(map_path):
             raise RuntimeError(
-                f"PCD map not found: '{resolved_pcd_path}'. "
-                f"Place the PCD file at core_localization/pcd_maps/{map_name}.pcd "
-                f"and rebuild.")
+                f"PCD map not found: '{map_path}'. "
+                f"Place core_launch/maps/{map_name}.pcd or pass map_path:=<pcd>.")
+        composition = context.launch_configurations['composition']
 
-        actions.append(GroupAction([
-            PushRosNamespace('localization'),
-            Node(
-                package='core_localization',
-                executable='localization_node',
-                name='localization_node',
-                output='screen',
-                parameters=[
-                    localization_config,
-                    {
-                        'global_map_path': resolved_pcd_path,
-                        'initial_pose_x': preset['init_x'],
-                        'initial_pose_y': preset['init_y'],
-                    },
-                ],
-            ),
-        ]))
+        def include(name, arguments):
+            return IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(core_launch_share, 'launch', name)),
+                launch_arguments=arguments.items(),
+            )
+
+        actions.append(include('localization_stack.launch.py', {
+            'map_path': map_path,
+            'initial_x': str(preset['init_x']),
+            'initial_y': str(preset['init_y']),
+            'initial_yaw': context.launch_configurations['init_yaw'],
+            'composition': composition,
+        }))
+        actions.append(include('perception.launch.py', {
+            'map_path': map_path, 'composition': composition,
+        }))
+        actions.append(include('planning.launch.py', {
+            'map_path': map_path, 'composition': composition,
+        }))
     else:
-        # Static identity map→odom (no global localization)
+        # Unity シミュレーションは自律移動を起動しない（Gazebo は sim_nav.launch.py を使う）
         actions.append(Node(
             package='tf2_ros',
             executable='static_transform_publisher',
@@ -185,132 +165,6 @@ def _launch_nodes(context):
                 '--frame-id', 'map', '--child-frame-id', 'odom',
             ],
         ))
-
-    actions.append(Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_base_livox',
-        output='screen',
-        arguments=[
-            '--x', '0', '--y', '0', '--z', '0.5',
-            '--roll', '3.141592653589793', '--pitch', '0', '--yaw', '0',
-            '--frame-id', 'base_link', '--child-frame-id', 'livox_frame',
-        ],
-    ))
-
-    # ── 5. Map server ───────────────────────────────────────────────
-    # ソース内はいずれも絶対名なので PushRosNamespace では移動しない。
-    # /map はグローバル据え置き、グローバルコストマップのみリマップする。
-    # actions.append(GroupAction([
-    #     PushRosNamespace('map'),
-    #     Node(
-    #         package='core_launch',
-    #         executable='map_server_node.py',
-    #         name='map_server_node',
-    #         output='screen',
-    #         remappings=[
-    #             ('/costmap/global', '/map/costmap/global'),
-    #         ],
-    #         parameters=[{
-    #             'image_path': map_image_path,
-    #             'resolution': preset['resolution'],
-    #             'origin_x': preset['origin_x'],
-    #             'origin_y': preset['origin_y'],
-    #             'inflation_radius_m': 0.40,
-    #             'decay_margin_m': 0.20,
-    #         }],
-    #     ),
-    # ]))
-
-    # ── 6. Odom bridge ──────────────────────────────────────────────
-    # 入力（/sim_odom, /Odometry）は外部境界なのでグローバル据え置き。
-    # actions.append(GroupAction([
-    #     PushRosNamespace('localization'),
-    #     Node(
-    #         package='core_launch',
-    #         executable='odom_bridge_node.py',
-    #         name='odom_bridge_node',
-    #         output='screen',
-    #         remappings=[
-    #             ('/odom', '/localization/odom'),
-    #             ('/start_pose', '/localization/start_pose'),
-    #         ],
-    #         parameters=[{
-    #             'odom_source': effective_odom_source,
-    #             'init_x': preset['init_x'],
-    #             'init_y': preset['init_y'],
-    #             'init_yaw': float(init_yaw),
-    #         }],
-    #     ),
-    # ]))
-
-    # ── 7. Path planner ─────────────────────────────────────────────
-    # actions.append(GroupAction([
-    #     PushRosNamespace('planning'),
-    #     Node(
-    #         package='core_path_planner',
-    #         executable='path_planner_node',
-    #         name='core_path_planner_node',
-    #         output='screen',
-    #         parameters=[{
-    #             'goal_topic': '/behavior/goal_pose',
-    #             'start_topic': '/localization/start_pose',
-    #             'path_topic': 'planned_path',
-    #             'local_costmap_topic': 'costmap/local',
-    #             'global_map_topic': '/map',
-    #             'publish_in_global_frame': True,
-    #             'global_frame_id': 'odom',
-    #             'cost_weight': 2.0,
-    #         }],
-    #     ),
-    # ]))
-
-    # ── 8. MPPI controller ──────────────────────────────────────────
-    # use_smoother = context.launch_configurations.get('use_smoother', 'true')
-    # mppi_cmd_vel_topic = (
-    #     'cmd_vel_raw' if use_smoother.lower() == 'true' else '/control/cmd_vel')
-
-    # actions.append(GroupAction([
-    #     PushRosNamespace('planning'),
-    #     Node(
-    #         package='core_mppi',
-    #         executable='core_mppi_node',
-    #         name='core_mppi_node',
-    #         output='screen',
-    #         remappings=[('/goal_reached', '/behavior/goal_reached')],
-    #         parameters=[mppi_params, {'cmd_vel_topic': mppi_cmd_vel_topic}],
-    #     ),
-    # ]))
-
-    # ── 9. cmd_vel smoother ──────────────────────────────────────────
-    # if use_smoother.lower() == 'true':
-    #     actions.append(GroupAction([
-    #         PushRosNamespace('planning'),
-    #         Node(
-    #             package='core_cmd_vel_smoother',
-    #             executable='cmd_vel_smoother_node',
-    #             name='cmd_vel_smoother_node',
-    #             output='screen',
-    #             parameters=[{
-    #                 'alpha': 1.0,
-    #                 'input_topic': 'cmd_vel_raw',
-    #                 'output_topic': '/control/cmd_vel',
-    #                 'timeout_sec': 0.2,
-    #             }],
-    #         ),
-    #     ]))
-
-    # ── 10. Costmap builder ─────────────────────────────────────────
-    # actions.append(GroupAction([
-    #     PushRosNamespace('planning'),
-    #     Node(
-    #         package='core_costmap_builder',
-    #         executable='costmap_build_node',
-    #         name='costmap_build_node',
-    #         output='screen',
-    #         parameters=[costmap_params],
-    #     ),
-    # ]))
 
     # ── 11. Body controller ─────────────────────────────────────────
     actions.append(IncludeLaunchDescription(
@@ -347,28 +201,25 @@ def generate_launch_description():
             description="'sim' (Unity simulation) or 'real' (physical robot)",
         ),
         DeclareLaunchArgument(
-            'odom_source', default_value='sim',
-            description="'sim' (/sim_odom) or 'fastlio' (/Odometry). Forced 'fastlio' when real.",
-        ),
-        DeclareLaunchArgument(
             'map_name', default_value='core1_field',
             description=f"Map preset: {', '.join(MAP_PRESETS.keys())}",
         ),
         DeclareLaunchArgument(
             'init_yaw', default_value='0.0',
-            description='Initial yaw in odom frame [rad] (FAST-LIO mode)',
+            description='Initial yaw on the map [rad]',
         ),
         DeclareLaunchArgument(
             'use_rviz', default_value='true',
             description='Launch RViz2',
         ),
         DeclareLaunchArgument(
-            'use_smoother', default_value='true',
-            description='Enable cmd_vel EMA smoother between MPPI and body_controller',
+            'map_path', default_value='',
+            description='PCD map for localization/perception/planning '
+                        '(empty: core_launch/maps/<map_name>.pcd). Real only',
         ),
         DeclareLaunchArgument(
-            'use_localization', default_value='false',
-            description='Enable NDT/ICP localization (dynamic map→odom TF)',
+            'composition', default_value='true', choices=['true', 'false'],
+            description='Run navigation nodes in per-stage component containers',
         ),
         DeclareLaunchArgument(
             'use_damiao_imu', default_value='true',

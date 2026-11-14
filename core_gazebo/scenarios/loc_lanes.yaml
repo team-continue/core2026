@@ -1,0 +1,28 @@
+# 自己位置の試験（check_localization_stress.py）用: 機体が走る y=0 の両側に他ロボットの列を置き、平行に往復させる。
+# 機体とは 0.7m 以上離れる。y=±6.3 の列は柵（y=±7.55）の手前を走り、地図照合の手がかりの柵を隠す。14 台と人 2 人。
+start: [-9.0, 0.0, 0.0]
+goals:
+  - [9.0, 0.0, 0.0]
+timeout_s: 240
+repeat: 1
+obstacles:
+  # 機体のすぐ横（y=±1.5）
+  - {name: robot_1, type: robot, start: [-11.0, 1.5], end: [11.0, 1.5], peak_speed: 3.0, phase: 0.0}
+  - {name: robot_2, type: robot, start: [11.0, 1.5], end: [-11.0, 1.5], peak_speed: 3.0, phase: 0.5}
+  - {name: robot_3, type: robot, start: [-11.0, -1.5], end: [11.0, -1.5], peak_speed: 2.5, phase: 0.25}
+  - {name: robot_4, type: robot, start: [11.0, -1.5], end: [-11.0, -1.5], peak_speed: 2.5, phase: 0.75}
+  # その外（y=±2.5）
+  - {name: robot_5, type: robot, start: [-11.0, 2.5], end: [11.0, 2.5], peak_speed: 2.0, phase: 0.1}
+  - {name: robot_6, type: robot, start: [11.0, 2.5], end: [-11.0, 2.5], peak_speed: 2.5, phase: 0.6}
+  - {name: robot_7, type: robot, start: [-11.0, -2.5], end: [11.0, -2.5], peak_speed: 3.0, phase: 0.35}
+  - {name: robot_8, type: robot, start: [11.0, -2.5], end: [-11.0, -2.5], peak_speed: 2.0, phase: 0.85}
+  # 中ほど（y=±4.0）
+  - {name: robot_9, type: robot, start: [-11.0, 4.0], end: [11.0, 4.0], peak_speed: 2.5, phase: 0.45}
+  - {name: robot_10, type: robot, start: [11.0, -4.0], end: [-11.0, -4.0], peak_speed: 2.5, phase: 0.95}
+  # 柵の手前（y=±6.3）。柵を隠す
+  - {name: robot_11, type: robot, start: [-11.0, 6.3], end: [11.0, 6.3], peak_speed: 3.0, phase: 0.2}
+  - {name: robot_12, type: robot, start: [11.0, 6.3], end: [-11.0, 6.3], peak_speed: 2.0, phase: 0.7}
+  - {name: robot_13, type: robot, start: [-11.0, -6.3], end: [11.0, -6.3], peak_speed: 3.0, phase: 0.4}
+  - {name: robot_14, type: robot, start: [11.0, -6.3], end: [-11.0, -6.3], peak_speed: 2.0, phase: 0.9}
+  - {name: human_1, type: human, start: [-6.0, 5.2], end: [6.0, 5.2], peak_speed: 1.2, phase: 0.0}
+  - {name: human_2, type: human, start: [6.0, -5.2], end: [-6.0, -5.2], peak_speed: 1.2, phase: 0.5}

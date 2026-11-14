@@ -1,0 +1,12 @@
+# すれ違いの規則。side は自機が避ける側（right か left）。
+/**:
+  ros__parameters:
+    passing_rule:
+      enabled: true
+      side: right
+      # 規則どおりの側を通る割合（head_on の往復）。crowd_stats で 1.0 が 78%、3.0 が 82%、
+      # Gazebo で 1.0 が 79%（49/62 回）、3.0 が 83%（33/40 回）。差はばらつきの範囲に収まる
+      weight: 1.0
+      range_m: 4.0
+      commit_distance_m: 6.0
+      lateral_range_m: 3.0

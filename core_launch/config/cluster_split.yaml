@@ -1,0 +1,7 @@
+# 接近した相手が 1 つのクラスタになったときに分ける。
+/**:
+  ros__parameters:
+    cluster_split:
+      enabled: true
+      max_cluster_size_m: 1.2
+      expected_robot_size_m: 0.8

@@ -1,0 +1,22 @@
+# field_obstacles.sdf の静止物 8 個の間でゴールを順に回る。大域経路が静止物の周りで曲がるかを見せる。
+# 続くゴールを結ぶ直線は 6 本とも静止物を通る（開始位置から 1 つ目への直線も static_box_e から 0.08m）。
+# ゴールは柵から 1.5m 以上、静止物から 1.5m 以上、下の相手の外形が通る範囲から 1.0m 以上離す。
+# 相手は静止物を通らない線で往復させる（外形どうしで 0.8m 以上離す）
+start: [-6.0, -2.5, 0.0]
+goals:
+  - [-1.4, -4.7, 0.0]
+  - [-8.1, 1.5, 0.0]
+  - [0.0, 4.2, 0.0]
+  - [-3.8, 1.5, 0.0]
+  - [2.6, -4.9, 0.0]
+  - [8.4, 2.1, 0.0]
+  - [4.0, 4.7, 0.0]
+timeout_s: 240
+repeat: 1
+world: field_obstacles.sdf
+obstacles:
+  - {name: robot_1, type: robot, start: [-11.0, 0.0], end: [11.0, 0.0], peak_speed: 2.5, phase: 0.0}
+  - {name: robot_2, type: robot, start: [11.0, 6.3], end: [-11.0, 6.3], peak_speed: 2.0, phase: 0.35}
+  - {name: robot_3, type: robot, start: [10.0, -7.0], end: [10.0, 7.0], peak_speed: 2.0, phase: 0.6}
+  - {name: human_1, type: human, start: [-11.0, -6.3], end: [11.0, -6.3], peak_speed: 1.2, phase: 0.15}
+  - {name: human_2, type: human, start: [-10.0, 7.0], end: [-10.0, -7.0], peak_speed: 1.0, phase: 0.8}

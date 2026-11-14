@@ -1,0 +1,21 @@
+# 行き詰まりの検知と復帰。止まって待ち、少し下がってから再び進む。
+/**:
+  ros__parameters:
+    stuck_recovery:
+      enabled: true
+      no_progress_timeout_s: 2.0
+      min_progress_m: 0.2
+      wait_s: 1.0
+      backoff_distance_m: 0.5
+      max_retries: 3
+      # ゴールまでの残りの距離が減らなくても、前に進んだとみなした位置からこの距離以上動けば進んでいる
+      # とみなす。残りの距離だけで測ると、すき間を行き過ぎて引き返すと残りが増え、0.6〜1.0m/s で
+      # 動いていても行き詰まり（WAIT）になっていた（gap_test の記録）。0.5m は、no_progress_timeout_s
+      # の 2 秒で平均 0.25m/s 以上動くこと。その場で揺れるだけ（±0.2m）なら数えない。0 で元の動き。
+      # 記録の再生（第1段の後の obstacle_goals 3 回と、gap の base 3 回）で、前 2 秒の平均 0.4〜0.9m/s で
+      # 動いていた WAIT 3 回がなくなり、すき間の前で 0.35m/s 以下でもたつく WAIT は残った（こちらは
+      # mppi.yaml の grid_resolution_m 0.05 で止まらなくなる）
+      moving_distance_m: 0.5
+      # 動いていることで進んでいるとみなすのは、残りの距離が最後に減ってからこの時間まで。動き回るだけで
+      # ゴールへ近づけないときは、この後 no_progress_timeout_s で行き詰まりとする
+      moving_timeout_s: 10.0
