@@ -32,6 +32,7 @@
 #include "core_nav_common/field_bounds.hpp"
 #include "core_nav_common/parameters.hpp"
 #include "core_planning/grid_map.hpp"
+#include "core_planning/static_map_params.hpp"
 #include "core_planning/jps.hpp"
 #include "core_planning/path_smoother.hpp"
 
@@ -47,8 +48,6 @@ using nav_msgs::msg::Path;
 
 // 地図の固定物とする点の範囲。柵は別に扱うので、フィールドの端は除く
 constexpr double kFieldInsetM = 0.1;
-constexpr double kStaticMinHeightM = 0.15;
-constexpr double kStaticMaxHeightM = 2.0;
 // 占有の中にいるときに探す空きセルの範囲
 constexpr double kNearestFreeRadiusM = 2.0;
 // 経路の閉塞で計画し直す最短の間隔
@@ -266,6 +265,7 @@ public:
     using core_nav_common::declareInt;
     using core_nav_common::declareString;
     declareString(*this, "map_path", "", "地図の PCD", true);
+    declareStaticMapParams(*this);
     declareString(*this, "map_frame", "map", "地図のフレーム", true);
     declareString(*this, "odom_frame", "odom", "追跡結果のフレーム", true);
     declareString(*this, "base_frame", "base_link", "機体のフレーム", true);
@@ -393,13 +393,16 @@ private:
     field.y_min = get_parameter("field.y_min").as_double();
     field.y_max = get_parameter("field.y_max").as_double();
     OccupancyGrid grid = makeFieldGrid(field, get_parameter("planner.resolution_m").as_double());
+    const StaticMapOptions static_map = staticMapOptions(*this);
     const std::string map_path = get_parameter("map_path").as_string();
     if (map_path.empty()) {
       RCLCPP_WARN(get_logger(), "地図がないので、柵だけで計画します");
     } else {
       addStaticObstacles(
-        grid, map_path, field, kFieldInsetM, kStaticMinHeightM, kStaticMaxHeightM);
+        grid, map_path, field, kFieldInsetM, static_map.min_height_m, static_map.max_height_m);
     }
+    // 入らない範囲（進入禁止ゾーンなど）は、地図がなくても使う
+    addPolygons(grid, static_map.keep_out);
     distance_field_ = computeDistanceField(grid);
     inflated_radius_ = inflationRadius();
     inflated_ = inflate(distance_field_, inflated_radius_);

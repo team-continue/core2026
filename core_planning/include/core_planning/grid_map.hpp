@@ -3,6 +3,7 @@
 #ifndef CORE_PLANNING__GRID_MAP_HPP_
 #define CORE_PLANNING__GRID_MAP_HPP_
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -103,6 +104,28 @@ void addStaticObstacles(
 
 DistanceField computeDistanceField(const OccupancyGrid & grid);
 
+// map 座標の多角形（頂点の並び。閉じた形として扱う）
+using Polygon = std::vector<std::array<double, 2>>;
+
+// 静止物の地図の作り方。フィールドごとの設定（field_file）で変える
+struct StaticMapOptions
+{
+  // 地図の PCD のうち、静止物として使う点の高さ [m]。CoRE-1 のフィールドは低い物（バンカー 0.15m、
+  // 高台 0.2m）が多いので、下限を下げる
+  double min_height_m{0.15};
+  double max_height_m{2.0};
+  // 床に物はないが入らない範囲（CoRE-1 の進入禁止ゾーンなど）。占有にする
+  std::vector<Polygon> keep_out;
+};
+
+// 多角形の中（セルの中心が内側）を占有にする
+void addPolygons(OccupancyGrid & grid, const std::vector<Polygon> & polygons);
+
+// keep_out.x・keep_out.y（全多角形の頂点を続けて並べたもの）と keep_out.counts（多角形ごとの頂点の数）から
+// 多角形を作る。数が合わなければ std::invalid_argument
+std::vector<Polygon> polygonsFromArrays(
+  const std::vector<double> & xs, const std::vector<double> & ys, const std::vector<std::int64_t> & counts);
+
 // 距離の場から、半径 radius 未満を占有にした格子を作る
 OccupancyGrid inflate(const DistanceField & field, double radius);
 
@@ -117,7 +140,8 @@ double planningInflationRadius(
 // 柵とし、map_path が空でなければ、地図の PCD のうちフィールドの内側 0.1m より内で、高さ 0.15〜2.0m の
 // 点を占有にする。地図を読めなければ std::runtime_error
 DistanceField buildDistanceField(
-  const FieldBounds & field, double resolution, const std::string & map_path);
+  const FieldBounds & field, double resolution, const std::string & map_path,
+  const StaticMapOptions & options = StaticMapOptions{});
 }  // namespace core_planning
 
 #endif  // CORE_PLANNING__GRID_MAP_HPP_

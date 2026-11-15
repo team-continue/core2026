@@ -90,6 +90,12 @@ WORLD_TO_MAP: Final = {
     'field_static.sdf': 'arena_static.pcd',
     'field_obstacles.sdf': 'arena_obstacles.pcd',
     'field_narrow.sdf': 'arena_narrow.pcd',
+    # CoRE-1 の試験のフィールド（core_gazebo/scripts/make_core1_field.py で作る）
+    'core1_2027.sdf': 'core1_2027.pcd',
+}
+# ワールドごとのフィールドの設定（範囲・静止物の高さ・入らない範囲）。sim_nav.launch.py の field_file に渡す
+WORLD_TO_FIELD: Final = {
+    'core1_2027.sdf': 'field_core1_2027.yaml',
 }
 # 点群を除いて記録する
 BAG_TOPICS: Final = (
@@ -237,6 +243,9 @@ def start_stack(
         'map_path': str(map_path),
         'scenario_file': str(scenario_path.resolve()),
     }
+    field_file = field_config(spec.world)
+    if field_file is not None:
+        arguments['field_file'] = str(field_file)
     for item in launch_args:
         name, separator, value = item.partition('=')
         if not separator:
@@ -465,6 +474,103 @@ def drive_goal(
         x=x, y=y, yaw=yaw, reached=reached, final_state=final_state, duration_s=now - start,
         final_distance_m=math.hypot(end.x - x, end.y - y),
     )
+
+
+def field_config(world: str) -> Path | None:
+    """ワールドのフィールドの設定（WORLD_TO_FIELD）。なければ None."""
+    name = WORLD_TO_FIELD.get(world)
+    if name is None:
+        return None
+    return Path(get_package_share_directory('core_launch')) / 'config' / name
+
+
+def load_static_polygons(world_path: Path) -> list[tuple[str, np.ndarray]]:
+    """押し出した構造物（polyline の形の静止物。CoRE-1 の試験のフィールド）を SDF から読む."""
+    polygons = []
+    for model in ET.parse(world_path).getroot().findall('./world/model'):
+        polyline = model.find('./link/collision/geometry/polyline')
+        if polyline is None:
+            continue
+        points = [[float(v) for v in (point.text or '').split()] for point in polyline.findall('point')]
+        if len(points) < 3 or any(len(point) != 2 for point in points):
+            raise CheckError(f'{world_path}: {model.attrib["name"]} の polyline の頂点が正しくありません')
+        polygons.append((model.attrib['name'], np.array(points, dtype=np.float64)))
+    return polygons
+
+
+def load_keep_out(world: str) -> list[np.ndarray]:
+    """ワールドのフィールドの設定から、入らない範囲（進入禁止ゾーン）の多角形を読む."""
+    path = field_config(world)
+    if path is None:
+        return []
+    try:
+        document = yaml.safe_load(path.read_text(encoding='utf-8'))
+        keep_out = document['/**']['ros__parameters'].get('keep_out', {})
+    except (OSError, yaml.YAMLError, KeyError, TypeError) as error:
+        raise CheckError(f'フィールドの設定 {path} を読めません: {error}') from error
+    xs, ys, counts = keep_out.get('x', []), keep_out.get('y', []), keep_out.get('counts', [])
+    if len(xs) != len(ys) or sum(counts) != len(xs):
+        raise CheckError(f'{path} の keep_out の数が合いません')
+    polygons, start = [], 0
+    for count in counts:
+        polygons.append(np.array(list(zip(xs[start:start + count], ys[start:start + count])), dtype=np.float64))
+        start += count
+    return polygons
+
+
+def inside_polygon(px: np.ndarray, py: np.ndarray, polygon: np.ndarray) -> np.ndarray:
+    """点が多角形の中にあるか（偶奇規則）."""
+    result = np.zeros(px.shape, dtype=bool)
+    for (ax, ay), (bx, by) in zip(polygon, np.roll(polygon, 1, axis=0)):
+        crosses = (ay > py) != (by > py)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            at = ax + (py - ay) * (bx - ax) / (by - ay)
+        result ^= crosses & (px < at)
+    return result
+
+
+def polygon_distance(px: np.ndarray, py: np.ndarray, polygon: np.ndarray) -> np.ndarray:
+    """点から多角形までの符号付き距離（内側は負）."""
+    distance = np.full(px.shape, np.inf)
+    for (ax, ay), (bx, by) in zip(polygon, np.roll(polygon, 1, axis=0)):
+        ex, ey = bx - ax, by - ay
+        length2 = ex * ex + ey * ey
+        t = np.clip(((px - ax) * ex + (py - ay) * ey) / length2, 0.0, 1.0) if length2 > 0.0 else 0.0
+        distance = np.minimum(distance, np.hypot(px - (ax + t * ex), py - (ay + t * ey)))
+    return np.where(inside_polygon(px, py, polygon), -distance, distance)
+
+
+def outline_points(samples: Sequence['Pose']) -> tuple[np.ndarray, np.ndarray]:
+    """各時刻の機体の外周の点（map 座標）。形は (時刻, 点)."""
+    outline = np.array(footprint_outline(OWN_HALF_M))
+    xs = np.array([p.x for p in samples])[:, None]
+    ys = np.array([p.y for p in samples])[:, None]
+    yaws = np.array([p.yaw for p in samples])[:, None]
+    c, s = np.cos(yaws), np.sin(yaws)
+    return xs + c * outline[:, 0] - s * outline[:, 1], ys + s * outline[:, 0] + c * outline[:, 1]
+
+
+def analyze_structures(samples: Sequence['Pose'], world_path: Path, world: str) -> ResultDict:
+    """押し出した構造物までの距離と接触、入らない範囲に機体がかかった回数と時間."""
+    result: ResultDict = {
+        'min_structure_gap_m': None, 'structure_contacts': 0, 'keep_out_entries': 0, 'keep_out_time_s': 0.0,
+    }
+    polygons = load_static_polygons(world_path)
+    keep_out = load_keep_out(world)
+    if not samples or (not polygons and not keep_out):
+        return result
+    px, py = outline_points(samples)
+    times = np.array([p.t for p in samples])
+    if polygons:
+        gaps = np.min([polygon_distance(px, py, polygon).min(axis=1) for _, polygon in polygons], axis=0)
+        touching = gaps <= STATIC_TOUCH_M
+        result['min_structure_gap_m'] = float(gaps.min())
+        result['structure_contacts'] = int(np.count_nonzero(touching[1:] & ~touching[:-1]) + int(touching[0]))
+    if keep_out:
+        inside = np.any([inside_polygon(px, py, polygon).any(axis=1) for polygon in keep_out], axis=0)
+        result['keep_out_entries'] = int(np.count_nonzero(inside[1:] & ~inside[:-1]) + int(inside[0]))
+        result['keep_out_time_s'] = float(np.sum(np.diff(times)[inside[:-1]])) if len(times) > 1 else 0.0
+    return result
 
 
 def load_static_boxes(world_path: Path) -> list[StaticBox]:
@@ -730,11 +836,14 @@ def analyze_run(
     result.update(analyze_obstacles(samples, field_obstacles(spec.obstacles), warn_m))
     result['spectators'] = len(spec.obstacles) - len(field_obstacles(spec.obstacles))
     result.update(analyze_static(samples, world_path))
+    result.update(analyze_structures(samples, world_path, spec.world))
     fence_touched = as_float(result['min_fence_clearance_m']) <= 0.0
     result['ok'] = (
         reached == len(goal_results)
         and as_float(result['own_fault_contacts']) == 0.0
         and as_float(result['static_contacts']) == 0.0
+        and as_float(result['structure_contacts']) == 0.0
+        and as_float(result['keep_out_entries']) == 0.0
         and not fence_touched
     )
     return result
@@ -776,6 +885,11 @@ def print_summary(result: Mapping[str, object]) -> None:
         f"柵までの最小距離 {format_optional(result['min_fence_clearance_m'])}m、"
         f"静止物までの最小距離 {format_optional(result['min_static_gap_m'])}m"
     )
+    if result.get('min_structure_gap_m') is not None or result.get('keep_out_entries'):
+        print(
+            f"構造物: 最小距離 {format_optional(result['min_structure_gap_m'])}m、接触 {result['structure_contacts']} 回、"
+            f"進入禁止ゾーン {result['keep_out_entries']} 回（{format_optional(result['keep_out_time_s'], 1)}秒）"
+        )
     print(
         f"計算時間[ms]: 計画 平均 {format_optional(result['planning_ms_mean'])}、99%点 {format_optional(result['planning_ms_p99'])}、"
         f"検出 平均 {format_optional(result['perception_ms_mean'])}、99%点 {format_optional(result['perception_ms_p99'])}"

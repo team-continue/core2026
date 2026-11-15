@@ -71,7 +71,7 @@ def generate_launch_description() -> LaunchDescription:
         'filter_layout', 'every_n_frames', 'voxel_enabled', 'voxel_leaf_size_m',
         'random_enabled', 'random_target_points', 'imu_source', 'point_extraction',
         'exclude_regions_file', 'lio_self_filter', 'composition', 'localization_params_file',
-        'state_source',
+        'state_source', 'field_file',
     )
     # 渡した引数がこの launch の引数を上書きしないよう、スコープを分ける
     simulation = GroupAction([
@@ -170,6 +170,10 @@ def generate_launch_description() -> LaunchDescription:
         ),
         DeclareLaunchArgument(
             'map_path', default_value=str(share / 'maps' / 'arena_sim.pcd'), description='地図の PCD',
+        ),
+        DeclareLaunchArgument(
+            'field_file', default_value='',
+            description='フィールドの範囲・静止物の高さ・入らない範囲を config/field.yaml の後から重ねる設定ファイル（空なら重ねない）',
         ),
         DeclareLaunchArgument('filter_layout', default_value='map_matching'),
         DeclareLaunchArgument('every_n_frames', default_value='1'),

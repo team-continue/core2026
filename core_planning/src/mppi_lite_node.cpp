@@ -48,6 +48,7 @@
 #include "core_planning/chassis_tracker.hpp"
 #include "core_planning/drive_delay.hpp"
 #include "core_planning/grid_map.hpp"
+#include "core_planning/static_map_params.hpp"
 #include "core_planning/mppi.hpp"
 #include "core_planning/traction_estimator.hpp"
 #include "core_planning/tracks_sync.hpp"
@@ -244,7 +245,7 @@ public:
     const auto field_start = std::chrono::steady_clock::now();
     distance_field_ = buildDistanceField(
       field, get_parameter("grid_resolution_m").as_double(),
-      get_parameter("map_path").as_string());
+      get_parameter("map_path").as_string(), staticMapOptions(*this));
     RCLCPP_INFO(
       get_logger(), "距離の場 %dx%d（%.3fm）を %.1f ms で作りました", distance_field_.info().width,
       distance_field_.info().height, distance_field_.info().resolution,
@@ -288,6 +289,7 @@ private:
     using core_nav_common::declareString;
 
     declareString(*this, "map_path", "", "地図の PCD。空なら柵だけを障害物にする", true);
+    declareStaticMapParams(*this);
     declareString(*this, "map_frame", "map", "地図のフレーム", true);
     declareString(*this, "odom_frame", "odom", "計画のフレーム", true);
     declareDouble(*this, "grid_resolution_m", 0.05, 0.01, 1.0, "距離の場の格子の大きさ", true);

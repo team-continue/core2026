@@ -1,0 +1,37 @@
+# CoRE-1 の試験のフィールド（make_core1_field.py が作る。手で直さず、スクリプトで作り直す）。
+# navigation.launch.py の map_name:=core1_2027 と sim_nav.launch.py の field_file で config/field.yaml に重ねる。
+# - static_map.min_height_m: フェンス 0.14m・バンカー 0.15m を静止物として拾う
+# - keep_out: 進入禁止ゾーン（3.2）。計画はここを壁として扱う
+/**:
+  ros__parameters:
+    field:
+      x_min: -12.0
+      x_max: 12.0
+      y_min: -7.5
+      y_max: 7.5
+    static_map:
+      min_height_m: 0.08
+    keep_out:
+      x:
+      - -6.824
+      - -7.844
+      - -6.612
+      - -5.593
+      - 5.593
+      - 6.823
+      - 6.825
+      - 7.844
+      - 6.613
+      y:
+      - 0.851
+      - -0.913
+      - -3.983
+      - -2.219
+      - 2.22
+      - -0.85
+      - -0.851
+      - 0.913
+      - 3.983
+      counts:
+      - 4
+      - 5

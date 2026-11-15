@@ -36,6 +36,19 @@ MAP_PRESETS = {
         'init_y': 5.9,
         'init_yaw': 0.0,
     },
+    # CoRE-1 の試験のフィールド（core_gazebo/scripts/make_core1_field.py がルールナビの図 3-1 から作る）。
+    # 初期姿勢は赤のスタートゾーンの中
+    'core1_2027': {
+        'pcd': 'core1_2027.pcd',
+        'field': 'field_core1_2027.yaml',
+        'image': 'core1_2027.png',
+        'resolution': 0.05,
+        'origin_x': -13.0,
+        'origin_y': -8.5,
+        'init_x': -10.25,
+        'init_y': -5.5,
+        'init_yaw': 0.0,
+    },
     'curious_house': {
         'pcd': 'curious_house.pcd',
         'field': 'field_curious_house.yaml',

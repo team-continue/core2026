@@ -87,3 +87,44 @@ def test_vectorized_gap_matches_point_distance() -> None:
         ]
         assert math.isclose(gap, min(distances), abs_tol=1e-9)
         assert distances[int(index)] == min(distances)
+
+
+# --- CoRE-1 の試験のフィールド（押し出した構造物と進入禁止ゾーン）
+from run_scenario import (  # noqa: E402
+    analyze_structures,
+    inside_polygon,
+    polygon_distance,
+)
+import numpy as np  # noqa: E402
+
+POLYLINE_WORLD = """<?xml version="1.0"?>
+<sdf version="1.9"><world name="test">
+  <model name="wall_1"><static>true</static>
+    <link name="link"><collision name="collision"><geometry><polyline>
+      <point>2 -1</point><point>2.2 -1</point><point>2.2 1</point><point>2 1</point><height>1.0</height>
+    </polyline></geometry></collision></link></model>
+</world></sdf>
+"""
+
+
+def test_polygon_distance_is_signed() -> None:
+    square = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+    px = np.array([0.5, 2.0, 0.5])
+    py = np.array([0.5, 0.5, -0.25])
+    distance = polygon_distance(px, py, square)
+    assert distance[0] == -0.5
+    assert distance[1] == 1.0
+    assert distance[2] == 0.25
+    assert inside_polygon(px, py, square).tolist() == [True, False, False]
+
+
+def test_structures_count_gap_and_contacts(tmp_path: Path) -> None:
+    world = tmp_path / 'world.sdf'
+    world.write_text(POLYLINE_WORLD)
+    # +x へ進み、機体の前の面（x + 0.4）が壁（x = 2.0）に触れて止まる
+    poses = [Pose(t=0.02 * i, x=0.5 + 0.02 * i, y=0.0, z=0.0, yaw=0.0) for i in range(56)]
+    result = analyze_structures(poses, world, 'field.sdf')
+    assert result['min_structure_gap_m'] < 0.01
+    assert result['structure_contacts'] == 1
+    # field.sdf には入らない範囲がない
+    assert result['keep_out_entries'] == 0

@@ -44,6 +44,7 @@
 #include "core_nav_common/parameters.hpp"
 #include "core_planning/chassis_tracker.hpp"
 #include "core_planning/grid_map.hpp"
+#include "core_planning/static_map_params.hpp"
 #include "core_planning/safety.hpp"
 #include "core_planning/track_motion.hpp"
 
@@ -252,6 +253,7 @@ public:
       *this, "safety_stop.static.grid_resolution_m", 0.05, 0.01, 1.0,
       "静止物の距離の場の格子の大きさ（mppi.yaml の grid_resolution_m と同じにする）", true);
     declareString(*this, "map_path", "", "地図の PCD。空なら静止物の判定をしない", true);
+    declareStaticMapParams(*this);
     declareString(*this, "map_frame", "map", "地図のフレーム", true);
     declareString(*this, "odom_frame", "odom", "安全停止のフレーム", true);
     declareDouble(*this, "field.x_min", -12.0, -1000.0, 1000.0, "フィールドの範囲", true);
@@ -399,7 +401,8 @@ private:
     const auto start = std::chrono::steady_clock::now();
     try {
       distance_field_ = buildDistanceField(
-        field, get_parameter("safety_stop.static.grid_resolution_m").as_double(), map_path);
+        field, get_parameter("safety_stop.static.grid_resolution_m").as_double(), map_path,
+        staticMapOptions(*this));
     } catch (const std::exception & error) {
       static_field_unavailable_ = std::string("距離の場を作れない: ") + error.what();
       RCLCPP_ERROR(

@@ -1,0 +1,473 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <!-- CoRE-1 の試験のフィールド（make_core1_field.py で作る） -->
+  <world name="field">
+    <!-- 1kHzにして、200HzのIMUと10HzのLiDARの周期をステップ幅で割り切れるようにする -->
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <gravity>0 0 -9.81</gravity>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <!-- 環境変数 CORE_SCENARIO_FILE のシナリオに従って他ロボットと人間を動かす -->
+    <plugin filename="moving_obstacles" name="core_gazebo::MovingObstacles"/>
+
+    <scene>
+      <ambient>0.6 0.6 0.6 1</ambient>
+      <background>0.8 0.85 0.9 1</background>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 14 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.3 0.2 -0.9</direction>
+    </light>
+
+    <!-- LiDARは見た目の形状を検出するので、見た目の床をアリーナ全体より広くする -->
+    <model name="ground">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>60 40</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>60 40</size></plane></geometry>
+          <material><ambient>0.55 0.6 0.55 1</ambient><diffuse>0.55 0.6 0.55 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- フィールドは x: -12〜12m、y: -7.5〜7.5m。柵の内側の面がこの境界に一致する。
+         柵は高さ140mm。厚さ50mmは仮の値 -->
+
+    <!-- アリーナは内寸 59 x 38 x 高さ15m。フィールドが中央にあると仮定している -->
+    <model name="arena_wall_east">
+      <static>true</static>
+      <pose>29.75 0 7.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.5 39 15</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.5 39 15</size></box></geometry></visual>
+      </link>
+    </model>
+    <model name="arena_wall_west">
+      <static>true</static>
+      <pose>-29.75 0 7.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.5 39 15</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.5 39 15</size></box></geometry></visual>
+      </link>
+    </model>
+    <model name="arena_wall_north">
+      <static>true</static>
+      <pose>0 19.25 7.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>60 0.5 15</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>60 0.5 15</size></box></geometry></visual>
+      </link>
+    </model>
+    <model name="arena_wall_south">
+      <static>true</static>
+      <pose>0 -19.25 7.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>60 0.5 15</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>60 0.5 15</size></box></geometry></visual>
+      </link>
+    </model>
+    <model name="ceiling">
+      <static>true</static>
+      <pose>0 0 15.25 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>60 39 0.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>60 39 0.5</size></box></geometry></visual>
+      </link>
+    </model>
+
+    <!-- フィールドの外の固定物。実物の配置は不明で、すべて仮のもの。
+         長方形のアリーナと柵だけだと地図照合が180度回転で曖昧になるので、非対称に置く -->
+    <model name="stand_north">
+      <static>true</static>
+      <pose>-5 16.5 2.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>30 5 5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>30 5 5</size></box></geometry></visual>
+      </link>
+    </model>
+    <model name="booth_west">
+      <static>true</static>
+      <pose>-25 -10 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>6 8 3</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>6 8 3</size></box></geometry></visual>
+      </link>
+    </model>
+    <model name="pillar_east">
+      <static>true</static>
+      <pose>24 12 7.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><cylinder><radius>0.6</radius><length>15</length></cylinder></geometry></collision>
+        <visual name="visual"><geometry><cylinder><radius>0.6</radius><length>15</length></cylinder></geometry></visual>
+      </link>
+    </model>
+    <model name="truss">
+      <static>true</static>
+      <pose>8 -6 12 0 0 0.3</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>20 1 1.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>20 1 1.5</size></box></geometry></visual>
+      </link>
+    </model>
+    <model name="table_south">
+      <static>true</static>
+      <pose>15 -15 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>10 1 1</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>10 1 1</size></box></geometry></visual>
+      </link>
+    </model>
+
+    <!-- 手順5の試験用にフィールド内へ置いた静止物。実物の配置の情報ではない。
+         初期位置 (-6, -2.5) の周り 1.5m は空け、通路は 1.6m 以上残す。
+         build_truth_map.py の経路で地図を作れるよう、y=-5.5、y=0、y=5.5、x=±10 の線から機体 1 台分離す。
+         static_box_b と柵の間（y: -7.5〜-5.0、幅 2.5m）は blocked_corridor シナリオの通路に使う -->
+  
+    <!-- 以下は make_core1_field.py が CoRE-1 のフィールドの形から作ったもの。手で直さず、スクリプトで作り直す -->
+    <model name="fence_1">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-12.0000 -7.4990</point><point>-12.0000 -7.5400</point><point>12.0380 -7.5390</point><point>12.0390 3.5010</point><point>11.9980 3.5000</point><point>11.9980 -7.4980</point><height>0.140</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-12.0000 -7.4990</point><point>-12.0000 -7.5400</point><point>12.0380 -7.5390</point><point>12.0390 3.5010</point><point>11.9980 3.5000</point><point>11.9980 -7.4980</point><height>0.140</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="fence_2">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>12.0010 7.5380</point><point>-12.0390 7.5390</point><point>-12.0400 -3.5010</point><point>-11.9990 -3.5000</point><point>-11.9990 7.4980</point><point>12.0000 7.4980</point><height>0.140</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>12.0010 7.5380</point><point>-12.0390 7.5390</point><point>-12.0400 -3.5010</point><point>-11.9990 -3.5000</point><point>-11.9990 7.4980</point><point>12.0000 7.4980</point><height>0.140</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="highland_1">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-2.4200 -5.9990</point><point>-2.4210 -7.5010</point><point>1.0010 -7.5010</point><point>1.0000 -5.9990</point><point>0.1990 -5.9990</point><point>0.1980 -7.4600</point><point>-0.1190 -7.4600</point><point>-0.1190 -5.9990</point><height>0.200</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-2.4200 -5.9990</point><point>-2.4210 -7.5010</point><point>1.0010 -7.5010</point><point>1.0000 -5.9990</point><point>0.1990 -5.9990</point><point>0.1980 -7.4600</point><point>-0.1190 -7.4600</point><point>-0.1190 -5.9990</point><height>0.200</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="highland_2">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-1.5470 -5.9250</point><point>-1.4940 -5.9260</point><point>-1.4940 -5.7960</point><point>-1.3990 -5.7020</point><point>-0.3410 -5.7020</point><point>-0.2470 -5.7960</point><point>-0.2450 -5.9260</point><point>-0.1940 -5.9250</point><point>-0.1940 -5.7750</point><point>-0.3200 -5.6490</point><point>-1.4200 -5.6490</point><point>-1.5470 -5.7740</point><height>0.200</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-1.5470 -5.9250</point><point>-1.4940 -5.9260</point><point>-1.4940 -5.7960</point><point>-1.3990 -5.7020</point><point>-0.3410 -5.7020</point><point>-0.2470 -5.7960</point><point>-0.2450 -5.9260</point><point>-0.1940 -5.9250</point><point>-0.1940 -5.7750</point><point>-0.3200 -5.6490</point><point>-1.4200 -5.6490</point><point>-1.5470 -5.7740</point><height>0.200</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="highland_3">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-1.0000 7.5010</point><point>-1.0010 5.9990</point><point>-0.1990 5.9990</point><point>-0.1990 7.4600</point><point>0.1180 7.4600</point><point>0.1190 5.9990</point><point>2.4210 5.9990</point><point>2.4200 7.5010</point><height>0.200</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-1.0000 7.5010</point><point>-1.0010 5.9990</point><point>-0.1990 5.9990</point><point>-0.1990 7.4600</point><point>0.1180 7.4600</point><point>0.1190 5.9990</point><point>2.4210 5.9990</point><point>2.4200 7.5010</point><height>0.200</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="highland_4">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>0.1940 5.9260</point><point>0.1930 5.7740</point><point>0.3200 5.6490</point><point>1.4200 5.6490</point><point>1.5460 5.7750</point><point>1.5460 5.9250</point><point>1.4950 5.9260</point><point>1.4930 5.7960</point><point>1.3990 5.7020</point><point>0.3410 5.7020</point><point>0.2460 5.7960</point><point>0.2460 5.9260</point><height>0.200</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>0.1940 5.9260</point><point>0.1930 5.7740</point><point>0.3200 5.6490</point><point>1.4200 5.6490</point><point>1.5460 5.7750</point><point>1.5460 5.9250</point><point>1.4950 5.9260</point><point>1.4930 5.7960</point><point>1.3990 5.7020</point><point>0.3410 5.7020</point><point>0.2460 5.7960</point><point>0.2460 5.9260</point><height>0.200</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="bunker_1">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-5.3120 -1.7280</point><point>-6.8640 -4.4150</point><point>-5.5630 -5.1660</point><point>-4.0120 -2.4800</point><height>0.150</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-5.3120 -1.7280</point><point>-6.8640 -4.4150</point><point>-5.5630 -5.1660</point><point>-4.0120 -2.4800</point><height>0.150</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="bunker_2">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-6.7800 -4.5470</point><point>-6.8570 -4.6780</point><point>-6.8100 -4.8500</point><point>-5.9660 -5.3380</point><point>-5.7940 -5.2910</point><point>-5.7190 -5.1610</point><point>-5.7630 -5.1340</point><point>-5.8290 -5.2460</point><point>-5.9590 -5.2810</point><point>-6.7650 -4.8150</point><point>-6.8000 -4.6860</point><point>-6.7350 -4.5740</point><height>0.150</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-6.7800 -4.5470</point><point>-6.8570 -4.6780</point><point>-6.8100 -4.8500</point><point>-5.9660 -5.3380</point><point>-5.7940 -5.2910</point><point>-5.7190 -5.1610</point><point>-5.7630 -5.1340</point><point>-5.8290 -5.2460</point><point>-5.9590 -5.2810</point><point>-6.7650 -4.8150</point><point>-6.8000 -4.6860</point><point>-6.7350 -4.5740</point><height>0.150</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="bunker_3">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-10.2610 6.4000</point><point>-12.0010 6.4010</point><point>-12.0010 3.9990</point><point>-10.2610 3.9990</point><height>0.150</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-10.2610 6.4000</point><point>-12.0010 6.4010</point><point>-12.0010 3.9990</point><point>-10.2610 3.9990</point><height>0.150</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="bunker_4">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>10.2620 -3.9990</point><point>10.2610 -6.4010</point><point>12.0010 -6.4010</point><point>12.0010 -3.9990</point><height>0.150</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>10.2620 -3.9990</point><point>10.2610 -6.4010</point><point>12.0010 -6.4010</point><point>12.0010 -3.9990</point><height>0.150</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="bunker_5">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>5.5640 5.1660</point><point>4.0110 2.4800</point><point>5.3120 1.7280</point><point>6.8630 4.4150</point><height>0.150</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>5.5640 5.1660</point><point>4.0110 2.4800</point><point>5.3120 1.7280</point><point>6.8630 4.4150</point><height>0.150</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="bunker_6">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>5.9660 5.3380</point><point>5.7940 5.2920</point><point>5.7190 5.1600</point><point>5.7640 5.1340</point><point>5.8290 5.2460</point><point>5.9580 5.2810</point><point>6.7650 4.8150</point><point>6.8000 4.6860</point><point>6.7350 4.5740</point><point>6.7810 4.5480</point><point>6.8560 4.6780</point><point>6.8100 4.8500</point><height>0.150</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>5.9660 5.3380</point><point>5.7940 5.2920</point><point>5.7190 5.1600</point><point>5.7640 5.1340</point><point>5.8290 5.2460</point><point>5.9580 5.2810</point><point>6.7650 4.8150</point><point>6.8000 4.6860</point><point>6.7350 4.5740</point><point>6.7810 4.5480</point><point>6.8560 4.6780</point><point>6.8100 4.8500</point><height>0.150</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_1">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-0.6680 0.3830</point><point>-0.0090 0.0010</point><point>-0.0050 0.0060</point><point>-0.6640 0.3880</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-0.6680 0.3830</point><point>-0.0090 0.0010</point><point>-0.0050 0.0060</point><point>-0.6640 0.3880</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_2">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-1.7820 -5.9790</point><point>-1.7740 -5.9780</point><point>-1.7750 -5.2170</point><point>-1.7820 -5.2180</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-1.7820 -5.9790</point><point>-1.7740 -5.9780</point><point>-1.7750 -5.2170</point><point>-1.7820 -5.2180</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_3">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-1.7810 -5.1150</point><point>-1.8430 -5.0780</point><point>-1.8480 -5.0840</point><point>-1.7900 -5.1190</point><point>-1.7880 -5.1870</point><point>-1.7810 -5.1860</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-1.7810 -5.1150</point><point>-1.8430 -5.0780</point><point>-1.8480 -5.0840</point><point>-1.7900 -5.1190</point><point>-1.7880 -5.1870</point><point>-1.7810 -5.1860</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_4">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-2.5080 -4.7100</point><point>-2.5120 -4.7170</point><point>-1.8520 -5.0960</point><point>-1.8500 -5.0900</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-2.5080 -4.7100</point><point>-2.5120 -4.7170</point><point>-1.8520 -5.0960</point><point>-1.8500 -5.0900</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_5">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-3.2010 -4.3100</point><point>-3.2050 -4.3170</point><point>-2.5450 -4.6960</point><point>-2.5430 -4.6900</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-3.2010 -4.3100</point><point>-3.2050 -4.3170</point><point>-2.5450 -4.6960</point><point>-2.5430 -4.6900</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_6">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-3.8940 -3.9100</point><point>-3.8980 -3.9170</point><point>-3.2370 -4.2960</point><point>-3.2350 -4.2900</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-3.8940 -3.9100</point><point>-3.8980 -3.9170</point><point>-3.2370 -4.2960</point><point>-3.2350 -4.2900</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_7">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-4.5880 -3.5160</point><point>-3.9290 -3.8980</point><point>-3.9250 -3.8930</point><point>-4.5840 -3.5110</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-4.5880 -3.5160</point><point>-3.9290 -3.8980</point><point>-3.9250 -3.8930</point><point>-4.5840 -3.5110</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_8">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-6.1470 2.3250</point><point>-7.8980 -0.7060</point><point>-8.7630 -0.2060</point><point>-8.8390 -0.3380</point><point>-7.8410 -0.9140</point><point>-6.0160 2.2480</point><height>1.000</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-6.1470 2.3250</point><point>-7.8980 -0.7060</point><point>-8.7630 -0.2060</point><point>-8.8390 -0.3380</point><point>-7.8410 -0.9140</point><point>-6.0160 2.2480</point><height>1.000</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_9">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-6.8130 2.5310</point><point>-6.8270 2.5820</point><point>-7.2140 2.4780</point><point>-8.6640 -0.0360</point><point>-8.6190 -0.0600</point><point>-7.1790 2.4330</point><height>1.000</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-6.8130 2.5310</point><point>-6.8270 2.5820</point><point>-7.2140 2.4780</point><point>-8.6640 -0.0360</point><point>-8.6190 -0.0600</point><point>-7.1790 2.4330</point><height>1.000</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_10">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>7.8420 0.9140</point><point>6.0160 -2.2480</point><point>6.1460 -2.3250</point><point>7.8980 0.7060</point><point>8.7630 0.2060</point><point>8.8390 0.3370</point><height>1.000</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>7.8420 0.9140</point><point>6.0160 -2.2480</point><point>6.1460 -2.3250</point><point>7.8980 0.7060</point><point>8.7630 0.2060</point><point>8.8390 0.3370</point><height>1.000</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_11">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>8.6200 0.0610</point><point>7.1790 -2.4330</point><point>6.8130 -2.5310</point><point>6.8260 -2.5820</point><point>7.2140 -2.4780</point><point>8.6640 0.0340</point><height>1.000</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>8.6200 0.0610</point><point>7.1790 -2.4330</point><point>6.8130 -2.5310</point><point>6.8260 -2.5820</point><point>7.2140 -2.4780</point><point>8.6640 0.0340</point><height>1.000</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_12">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>3.9290 3.8980</point><point>3.9250 3.8910</point><point>4.5850 3.5120</point><point>4.5870 3.5180</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>3.9290 3.8980</point><point>3.9250 3.8910</point><point>4.5850 3.5120</point><point>4.5870 3.5180</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_13">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>3.2350 4.2920</point><point>3.8930 3.9100</point><point>3.8980 3.9150</point><point>3.2390 4.2970</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>3.2350 4.2920</point><point>3.8930 3.9100</point><point>3.8980 3.9150</point><point>3.2390 4.2970</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_14">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>2.5420 4.6920</point><point>3.2010 4.3100</point><point>3.2050 4.3150</point><point>2.5460 4.6970</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>2.5420 4.6920</point><point>3.2010 4.3100</point><point>3.2050 4.3150</point><point>2.5460 4.6970</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_15">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>1.8490 5.0920</point><point>2.5080 4.7100</point><point>2.5120 4.7150</point><point>1.8540 5.0970</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>1.8490 5.0920</point><point>2.5080 4.7100</point><point>2.5120 4.7150</point><point>1.8540 5.0970</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_16">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>1.7890 5.1860</point><point>1.7800 5.1860</point><point>1.7800 5.1140</point><point>1.8440 5.0780</point><point>1.8470 5.0860</point><point>1.7890 5.1190</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>1.7890 5.1860</point><point>1.7800 5.1860</point><point>1.7800 5.1140</point><point>1.8440 5.0780</point><point>1.8470 5.0860</point><point>1.7890 5.1190</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_17">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>1.7750 5.9800</point><point>1.7740 5.2180</point><point>1.7800 5.2170</point><point>1.7820 5.9780</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>1.7750 5.9800</point><point>1.7740 5.2180</point><point>1.7800 5.2170</point><point>1.7820 5.9780</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="wall_18">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>0.0250 -0.0170</point><point>0.6830 -0.3990</point><point>0.6880 -0.3940</point><point>0.0290 -0.0120</point><height>0.840</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>0.0250 -0.0170</point><point>0.6830 -0.3990</point><point>0.6880 -0.3940</point><point>0.0290 -0.0120</point><height>0.840</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="spot_1">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-6.5380 2.5500</point><point>-7.7380 0.4700</point><point>-7.3470 0.2440</point><point>-6.1460 2.3250</point><height>0.950</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-6.5380 2.5500</point><point>-7.7380 0.4700</point><point>-7.3470 0.2440</point><point>-6.1460 2.3250</point><height>0.950</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="spot_2">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>7.3460 -0.2440</point><point>6.1450 -2.3230</point><point>6.5370 -2.5500</point><point>7.7380 -0.4690</point><height>0.950</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>7.3460 -0.2440</point><point>6.1450 -2.3230</point><point>6.5370 -2.5500</point><point>7.7380 -0.4690</point><height>0.950</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="holder_1">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-7.1640 0.6090</point><point>-7.5120 0.8110</point><point>-7.5260 0.7880</point><point>-7.1790 0.5860</point><height>0.450</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-7.1640 0.6090</point><point>-7.5120 0.8110</point><point>-7.5260 0.7880</point><point>-7.1790 0.5860</point><height>0.450</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="holder_2">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-7.2300 0.4960</point><point>-7.5770 0.6980</point><point>-7.5910 0.6750</point><point>-7.2440 0.4730</point><height>0.450</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-7.2300 0.4960</point><point>-7.5770 0.6980</point><point>-7.5910 0.6750</point><point>-7.2440 0.4730</point><height>0.450</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="holder_3">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-7.6190 0.6750</point><point>-8.1380 -0.2230</point><point>-7.7470 -0.4490</point><point>-7.3420 0.2520</point><point>-7.3630 0.2650</point><point>-7.3560 0.2800</point><point>-7.5410 0.3870</point><point>-7.4360 0.5690</point><height>0.450</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-7.6190 0.6750</point><point>-8.1380 -0.2230</point><point>-7.7470 -0.4490</point><point>-7.3420 0.2520</point><point>-7.3630 0.2650</point><point>-7.3560 0.2800</point><point>-7.5410 0.3870</point><point>-7.4360 0.5690</point><height>0.450</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="holder_4">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>7.7480 0.4490</point><point>7.3410 -0.2520</point><point>7.3630 -0.2650</point><point>7.3550 -0.2800</point><point>7.5400 -0.3870</point><point>7.4360 -0.5690</point><point>7.6190 -0.6750</point><point>8.1380 0.2230</point><height>0.450</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>7.7480 0.4490</point><point>7.3410 -0.2520</point><point>7.3630 -0.2650</point><point>7.3550 -0.2800</point><point>7.5400 -0.3870</point><point>7.4360 -0.5690</point><point>7.6190 -0.6750</point><point>8.1380 0.2230</point><height>0.450</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="holder_5">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>7.5910 -0.6750</point><point>7.2440 -0.4730</point><point>7.2290 -0.4960</point><point>7.5770 -0.6980</point><height>0.450</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>7.5910 -0.6750</point><point>7.2440 -0.4730</point><point>7.2290 -0.4960</point><point>7.5770 -0.6980</point><height>0.450</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="holder_6">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>7.1770 -0.5860</point><point>7.1650 -0.6110</point><point>7.5130 -0.8100</point><point>7.5250 -0.7860</point><height>0.450</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>7.1770 -0.5860</point><point>7.1650 -0.6110</point><point>7.5130 -0.8100</point><point>7.5250 -0.7860</point><height>0.450</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="holder_7">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-4.6390 -3.5620</point><point>-1.8470 -5.1760</point><point>-1.8470 -6.0000</point><point>-1.6190 -6.0010</point><point>-1.6190 -4.7840</point><point>-4.4120 -3.1710</point><height>0.450</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-4.6390 -3.5620</point><point>-1.8470 -5.1760</point><point>-1.8470 -6.0000</point><point>-1.6190 -6.0010</point><point>-1.6190 -4.7840</point><point>-4.4120 -3.1710</point><height>0.450</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="holder_8">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>1.6200 6.0020</point><point>1.6190 4.7840</point><point>4.4140 3.1720</point><point>4.6390 3.5640</point><point>1.8460 5.1760</point><point>1.8460 6.0000</point><height>0.450</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>1.6200 6.0020</point><point>1.6190 4.7840</point><point>4.4140 3.1720</point><point>4.6390 3.5640</point><point>1.8460 5.1760</point><point>1.8460 6.0000</point><height>0.450</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="holder_9">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-0.9180 0.7910</point><point>-1.1440 0.3990</point><point>0.9350 -0.8010</point><point>1.1620 -0.4110</point><height>0.450</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-0.9180 0.7910</point><point>-1.1440 0.3990</point><point>0.9350 -0.8010</point><point>1.1620 -0.4110</point><height>0.450</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="base_flap_1">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-9.3080 5.9140</point><point>-9.6150 5.6090</point><point>-9.2820 5.2750</point><point>-9.2670 5.2890</point><point>-9.2520 5.2750</point><point>-9.2010 5.3260</point><point>-9.2020 5.2720</point><point>-9.2180 5.2700</point><point>-9.2180 5.0900</point><point>-9.2020 5.0890</point><point>-9.2010 5.0340</point><point>-9.2520 5.0850</point><point>-9.2670 5.0710</point><point>-9.2820 5.0850</point><point>-9.6150 4.7500</point><point>-9.3090 4.4450</point><point>-8.9760 4.7780</point><point>-8.9890 4.7930</point><point>-8.9760 4.8080</point><point>-9.0260 4.8590</point><point>-8.7340 4.8590</point><point>-8.7990 4.7930</point><point>-8.4500 4.4460</point><point>-8.1460 4.7510</point><point>-8.4930 5.0990</point><point>-8.5590 5.0340</point><point>-8.5590 5.0890</point><point>-8.5400 5.0900</point><point>-8.5400 5.2700</point><point>-8.5590 5.2720</point><point>-8.5590 5.3260</point><point>-8.4930 5.2610</point><point>-8.1460 5.6100</point><point>-8.4510 5.9150</point><point>-8.7990 5.5670</point><point>-8.7340 5.5010</point><point>-9.0260 5.5010</point><point>-8.9760 5.5520</point><point>-8.9890 5.5670</point><point>-8.9760 5.5820</point><height>0.080</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-9.3080 5.9140</point><point>-9.6150 5.6090</point><point>-9.2820 5.2750</point><point>-9.2670 5.2890</point><point>-9.2520 5.2750</point><point>-9.2010 5.3260</point><point>-9.2020 5.2720</point><point>-9.2180 5.2700</point><point>-9.2180 5.0900</point><point>-9.2020 5.0890</point><point>-9.2010 5.0340</point><point>-9.2520 5.0850</point><point>-9.2670 5.0710</point><point>-9.2820 5.0850</point><point>-9.6150 4.7500</point><point>-9.3090 4.4450</point><point>-8.9760 4.7780</point><point>-8.9890 4.7930</point><point>-8.9760 4.8080</point><point>-9.0260 4.8590</point><point>-8.7340 4.8590</point><point>-8.7990 4.7930</point><point>-8.4500 4.4460</point><point>-8.1460 4.7510</point><point>-8.4930 5.0990</point><point>-8.5590 5.0340</point><point>-8.5590 5.0890</point><point>-8.5400 5.0900</point><point>-8.5400 5.2700</point><point>-8.5590 5.2720</point><point>-8.5590 5.3260</point><point>-8.4930 5.2610</point><point>-8.1460 5.6100</point><point>-8.4510 5.9150</point><point>-8.7990 5.5670</point><point>-8.7340 5.5010</point><point>-9.0260 5.5010</point><point>-8.9760 5.5520</point><point>-8.9890 5.5670</point><point>-8.9760 5.5820</point><height>0.080</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="base_tower_1">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-8.7530 4.8080</point><point>-8.6950 4.8660</point><point>-8.6760 4.8490</point><point>-8.5490 4.9760</point><point>-8.5660 4.9950</point><point>-8.5080 5.0530</point><point>-8.4530 4.9980</point><point>-8.6990 4.7530</point><height>1.085</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-8.7530 4.8080</point><point>-8.6950 4.8660</point><point>-8.6760 4.8490</point><point>-8.5490 4.9760</point><point>-8.5660 4.9950</point><point>-8.5080 5.0530</point><point>-8.4530 4.9980</point><point>-8.6990 4.7530</point><height>1.085</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="base_tower_2">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>-8.5490 5.3820</point><point>-8.6760 5.5110</point><point>-8.6950 5.4940</point><point>-8.7530 5.5520</point><point>-8.6990 5.6070</point><point>-8.4530 5.3620</point><point>-8.5080 5.3070</point><point>-8.5660 5.3650</point><height>1.085</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>-8.5490 5.3820</point><point>-8.6760 5.5110</point><point>-8.6950 5.4940</point><point>-8.7530 5.5520</point><point>-8.6990 5.6070</point><point>-8.4530 5.3620</point><point>-8.5080 5.3070</point><point>-8.5660 5.3650</point><height>1.085</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="base_flap_2">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>8.1460 -4.7500</point><point>8.4920 -5.0990</point><point>8.5590 -5.0340</point><point>8.5580 -5.0890</point><point>8.5400 -5.0900</point><point>8.5400 -5.2700</point><point>8.5580 -5.2720</point><point>8.5590 -5.3260</point><point>8.4920 -5.2610</point><point>8.1450 -5.6090</point><point>8.4500 -5.9140</point><point>8.7990 -5.5670</point><point>8.7340 -5.5010</point><point>9.0260 -5.5010</point><point>8.9750 -5.5520</point><point>8.9890 -5.5670</point><point>8.9750 -5.5820</point><point>9.3090 -5.9150</point><point>9.6140 -5.6100</point><point>9.2810 -5.2750</point><point>9.2660 -5.2890</point><point>9.2520 -5.2750</point><point>9.2010 -5.3260</point><point>9.2010 -5.2720</point><point>9.2180 -5.2700</point><point>9.2180 -5.0900</point><point>9.2010 -5.0890</point><point>9.2010 -5.0340</point><point>9.2520 -5.0850</point><point>9.2660 -5.0710</point><point>9.2810 -5.0850</point><point>9.6140 -4.7510</point><point>9.3100 -4.4460</point><point>8.9750 -4.7780</point><point>8.9890 -4.7930</point><point>8.9750 -4.8080</point><point>9.0260 -4.8590</point><point>8.7340 -4.8590</point><point>8.7990 -4.7930</point><point>8.4510 -4.4450</point><height>0.080</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>8.1460 -4.7500</point><point>8.4920 -5.0990</point><point>8.5590 -5.0340</point><point>8.5580 -5.0890</point><point>8.5400 -5.0900</point><point>8.5400 -5.2700</point><point>8.5580 -5.2720</point><point>8.5590 -5.3260</point><point>8.4920 -5.2610</point><point>8.1450 -5.6090</point><point>8.4500 -5.9140</point><point>8.7990 -5.5670</point><point>8.7340 -5.5010</point><point>9.0260 -5.5010</point><point>8.9750 -5.5520</point><point>8.9890 -5.5670</point><point>8.9750 -5.5820</point><point>9.3090 -5.9150</point><point>9.6140 -5.6100</point><point>9.2810 -5.2750</point><point>9.2660 -5.2890</point><point>9.2520 -5.2750</point><point>9.2010 -5.3260</point><point>9.2010 -5.2720</point><point>9.2180 -5.2700</point><point>9.2180 -5.0900</point><point>9.2010 -5.0890</point><point>9.2010 -5.0340</point><point>9.2520 -5.0850</point><point>9.2660 -5.0710</point><point>9.2810 -5.0850</point><point>9.6140 -4.7510</point><point>9.3100 -4.4460</point><point>8.9750 -4.7780</point><point>8.9890 -4.7930</point><point>8.9750 -4.8080</point><point>9.0260 -4.8590</point><point>8.7340 -4.8590</point><point>8.7990 -4.7930</point><point>8.4510 -4.4450</point><height>0.080</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="base_tower_3">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>8.6980 -4.7530</point><point>8.7530 -4.8080</point><point>8.6950 -4.8660</point><point>8.6760 -4.8490</point><point>8.5490 -4.9760</point><point>8.5650 -4.9950</point><point>8.5070 -5.0530</point><point>8.4530 -4.9980</point><height>1.085</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>8.6980 -4.7530</point><point>8.7530 -4.8080</point><point>8.6950 -4.8660</point><point>8.6760 -4.8490</point><point>8.5490 -4.9760</point><point>8.5650 -4.9950</point><point>8.5070 -5.0530</point><point>8.4530 -4.9980</point><height>1.085</height></polyline></geometry></visual>
+      </link>
+    </model>
+    <model name="base_tower_4">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><polyline><point>8.5650 -5.3650</point><point>8.5480 -5.3840</point><point>8.6760 -5.5110</point><point>8.6950 -5.4940</point><point>8.7530 -5.5520</point><point>8.6980 -5.6070</point><point>8.4530 -5.3620</point><point>8.5070 -5.3070</point><height>1.085</height></polyline></geometry></collision>
+        <visual name="visual"><geometry><polyline><point>8.5650 -5.3650</point><point>8.5480 -5.3840</point><point>8.6760 -5.5110</point><point>8.6950 -5.4940</point><point>8.7530 -5.5520</point><point>8.6980 -5.6070</point><point>8.4530 -5.3620</point><point>8.5070 -5.3070</point><height>1.085</height></polyline></geometry></visual>
+      </link>
+    </model>
+  </world>
+</sdf>

@@ -47,7 +47,7 @@ def generate_launch_description() -> LaunchDescription:
         'random_target_points', 'imu_source', 'point_extraction', 'exclude_regions_file',
         'lio_self_filter', 'rear_lidar', 'composition', 'localization_params_file',
         'lidar_roll', 'body_height', 'lidar_scan_motion', 'lidar_no_return_points',
-        'state_source',
+        'state_source', 'field_file',
     )
     # 実機と同じく、手動と自動の指令は control_mode_manager を通して /control/cmd_vel へ出す
     control_mode_manager = Node(
@@ -93,6 +93,11 @@ def generate_launch_description() -> LaunchDescription:
             'scenario_file', default_value=str(sim_share / 'scenarios' / 'crowd_9r2h.yaml'),
         ),
         DeclareLaunchArgument('map_path', default_value=str(share / 'maps' / 'arena_sim.pcd')),
+        DeclareLaunchArgument(
+            'field_file', default_value='',
+            description='フィールドの範囲・静止物の高さ・入らない範囲を config/field.yaml の後から重ねる設定ファイル'
+                        '（空なら重ねない。CoRE-1 の試験のフィールドは config/field_core1_2027.yaml）',
+        ),
         DeclareLaunchArgument(
             'occupancy_map', default_value='',
             description='UI に送る占有地図（map_server の yaml）。空なら map_path と同じ名前の .yaml',
@@ -147,6 +152,7 @@ def generate_launch_description() -> LaunchDescription:
                 launch_arguments={
                     'use_sim_time': 'true', 'map_path': map_path,
                     'composition': LaunchConfiguration('composition'),
+                    'field_file': LaunchConfiguration('field_file'),
                 }.items(),
             ),
         ]),

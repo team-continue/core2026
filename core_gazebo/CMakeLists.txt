@@ -80,11 +80,12 @@ install(
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
-install(DIRECTORY config launch rviz scenarios urdf worlds DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config fields launch rviz scenarios urdf worlds DESTINATION share/${PROJECT_NAME})
 install(
   PROGRAMS
     scripts/build_truth_map.py
     scripts/check_sim.py
+    scripts/make_core1_field.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

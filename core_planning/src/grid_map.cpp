@@ -16,8 +16,6 @@ namespace
 {
 // 地図のうち、固定物として扱う範囲。柵は別に格子の外周として持つ
 constexpr double kStaticFieldInsetM = 0.1;
-constexpr double kStaticMinHeightM = 0.15;
-constexpr double kStaticMaxHeightM = 2.0;
 
 // 1 次元の距離変換（Felzenszwalb）。input は各セルのコスト、output は変換後
 void distanceTransform1d(
@@ -197,14 +195,90 @@ DistanceField computeDistanceField(const OccupancyGrid & grid)
 }
 
 DistanceField buildDistanceField(
-  const FieldBounds & field, const double resolution, const std::string & map_path)
+  const FieldBounds & field, const double resolution, const std::string & map_path,
+  const StaticMapOptions & options)
 {
   auto grid = makeFieldGrid(field, resolution);
   if (!map_path.empty()) {
     addStaticObstacles(
-      grid, map_path, field, kStaticFieldInsetM, kStaticMinHeightM, kStaticMaxHeightM);
+      grid, map_path, field, kStaticFieldInsetM, options.min_height_m, options.max_height_m);
   }
+  addPolygons(grid, options.keep_out);
   return computeDistanceField(grid);
+}
+
+void addPolygons(OccupancyGrid & grid, const std::vector<Polygon> & polygons)
+{
+  const GridInfo & info = grid.info();
+  for (const Polygon & polygon : polygons) {
+    if (polygon.size() < 3U) {
+      continue;
+    }
+    double x_min = polygon.front()[0];
+    double x_max = x_min;
+    double y_min = polygon.front()[1];
+    double y_max = y_min;
+    for (const auto & point : polygon) {
+      x_min = std::min(x_min, point[0]);
+      x_max = std::max(x_max, point[0]);
+      y_min = std::min(y_min, point[1]);
+      y_max = std::max(y_max, point[1]);
+    }
+    const GridCell low = info.cellAt(x_min, y_min);
+    const GridCell high = info.cellAt(x_max, y_max);
+    for (int cy = std::max(low.y, 0); cy <= std::min(high.y, info.height - 1); ++cy) {
+      for (int cx = std::max(low.x, 0); cx <= std::min(high.x, info.width - 1); ++cx) {
+        // 偶奇規則（セルの中心から +x 向きの半直線が辺と交わる数）
+        const double x = info.centerX(cx);
+        const double y = info.centerY(cy);
+        bool inside = false;
+        for (std::size_t i = 0, j = polygon.size() - 1; i < polygon.size(); j = i++) {
+          const auto & a = polygon[i];
+          const auto & b = polygon[j];
+          if ((a[1] > y) != (b[1] > y) &&
+            x < a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]))
+          {
+            inside = !inside;
+          }
+        }
+        if (inside) {
+          grid.setOccupied(GridCell{cx, cy});
+        }
+      }
+    }
+  }
+}
+
+std::vector<Polygon> polygonsFromArrays(
+  const std::vector<double> & xs, const std::vector<double> & ys, const std::vector<std::int64_t> & counts)
+{
+  if (xs.size() != ys.size()) {
+    throw std::invalid_argument("keep_out.x と keep_out.y の数が違います");
+  }
+  std::vector<Polygon> polygons;
+  std::size_t start = 0;
+  for (const std::int64_t count : counts) {
+    if (count < 3) {
+      throw std::invalid_argument("keep_out.counts は 3 以上にしてください");
+    }
+    const auto end = start + static_cast<std::size_t>(count);
+    if (end > xs.size()) {
+      throw std::invalid_argument("keep_out.counts の合計が keep_out.x の数より多いです");
+    }
+    Polygon polygon;
+    for (std::size_t i = start; i < end; ++i) {
+      if (!std::isfinite(xs[i]) || !std::isfinite(ys[i])) {
+        throw std::invalid_argument("keep_out の頂点に有限でない値があります");
+      }
+      polygon.push_back({xs[i], ys[i]});
+    }
+    polygons.push_back(std::move(polygon));
+    start = end;
+  }
+  if (start != xs.size()) {
+    throw std::invalid_argument("keep_out.counts の合計が keep_out.x の数と合いません");
+  }
+  return polygons;
 }
 
 double planningInflationRadius(

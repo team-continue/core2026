@@ -1,0 +1,8 @@
+# make_core1_field.py が作った、UI に出す占有地図（構造物と進入禁止ゾーンが占有）
+image: core1_2027.png
+resolution: 0.05
+origin: [-13.0, -8.5, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196
+mode: trinary

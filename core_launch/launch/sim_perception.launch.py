@@ -27,7 +27,7 @@ def generate_launch_description() -> LaunchDescription:
         'random_target_points', 'imu_source', 'point_extraction', 'exclude_regions_file',
         'lio_self_filter', 'rear_lidar', 'composition', 'localization_params_file',
         'lidar_roll', 'body_height', 'lidar_scan_motion', 'lidar_no_return_points',
-        'state_source',
+        'state_source', 'field_file',
     )
     return LaunchDescription([
         DeclareLaunchArgument('x', default_value='-6.0'),
@@ -64,6 +64,11 @@ def generate_launch_description() -> LaunchDescription:
             'scenario_file', default_value=str(sim_share / 'scenarios' / 'crowd_9r2h.yaml'),
         ),
         DeclareLaunchArgument('map_path', default_value=str(share / 'maps' / 'arena_sim.pcd')),
+        DeclareLaunchArgument(
+            'field_file', default_value='',
+            description='フィールドの範囲・静止物の高さ・入らない範囲を config/field.yaml の後から重ねる設定ファイル'
+                        '（空なら重ねない。CoRE-1 の試験のフィールドは config/field_core1_2027.yaml）',
+        ),
         DeclareLaunchArgument('filter_layout', default_value='map_matching'),
         DeclareLaunchArgument('every_n_frames', default_value='1'),
         DeclareLaunchArgument('voxel_enabled', default_value='true'),
@@ -115,6 +120,7 @@ def generate_launch_description() -> LaunchDescription:
                     'use_sim_time': 'true', 'map_path': map_path,
                     'rear_lidar': LaunchConfiguration('rear_lidar'),
                     'composition': LaunchConfiguration('composition'),
+                    'field_file': LaunchConfiguration('field_file'),
                     # 点群の変換のコンテナは sim_localization.launch.py が起動する
                     'container': LIDAR_CONTAINER,
                 }.items(),
