@@ -1,7 +1,8 @@
 // 接触を検知するノード。
 //
 // 次のどちらかで接触とし、hold_s の間 in_contact を保つ。
-// - Damiao IMU の水平加速度が閾値を超える（衝突の衝撃）
+// - Damiao IMU の水平加速度が閾値を超える（衝突の衝撃）。機体が止まっている間は数えない
+//   （impact_min_speed_mps、contact_detection.hpp）
 // - 速度指令と実際の速度の差が閾値を超え、差が縮まらないまま続く（押し付けている状態）
 // 加速中も一時的に差が開くので、差が縮まっている間は接触に数えない。
 
@@ -22,6 +23,7 @@
 #include <sensor_msgs/msg/imu.hpp>
 
 #include "core_nav_common/parameters.hpp"
+#include "core_planning/contact_detection.hpp"
 
 namespace core_planning
 {
@@ -43,6 +45,7 @@ struct ContactParams
   double velocity_error_mps{1.0};
   double velocity_error_hold_s{0.3};
   double hold_s{1.0};
+  double impact_min_speed_mps{0.1};
 };
 }  // namespace
 
@@ -62,6 +65,9 @@ public:
     declareDouble(
       *this, "contact_detection.velocity_error_hold_s", 0.3, 0.0, 10.0, "速度の差が続く時間");
     declareDouble(*this, "contact_detection.hold_s", 1.0, 0.0, 60.0, "接触の状態を保つ時間");
+    declareDouble(
+      *this, "contact_detection.impact_min_speed_mps", 0.1, 0.0, 10.0,
+      "実際の速さも指令の速さもこれ未満の間は、IMU の衝撃を接触として数えない（0 で速さによらず数える）");
     loadParams();
     parameter_callback_ = add_post_set_parameters_callback(
       [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
@@ -72,7 +78,10 @@ public:
       std::bind(&ContactMonitorNode::onImu, this, std::placeholders::_1));
     cmd_subscription_ = create_subscription<Twist>(
       "/control/cmd_vel", rclcpp::QoS(10),
-      [this](const Twist::ConstSharedPtr & cmd) {latest_cmd_ = cmd;});
+      [this](const Twist::ConstSharedPtr & cmd) {
+        latest_cmd_ = cmd;
+        command_speed_ = std::hypot(cmd->linear.x, cmd->linear.y);
+      });
     odometry_subscription_ = create_subscription<Odometry>(
       "/localization/lio/odom", rclcpp::QoS(10),
       std::bind(&ContactMonitorNode::onOdometry, this, std::placeholders::_1));
@@ -91,6 +100,7 @@ private:
     params.velocity_error_hold_s =
       get_parameter("contact_detection.velocity_error_hold_s").as_double();
     params.hold_s = get_parameter("contact_detection.hold_s").as_double();
+    params.impact_min_speed_mps = get_parameter("contact_detection.impact_min_speed_mps").as_double();
     params_ = params;
   }
 
@@ -104,13 +114,17 @@ private:
   {
     const double accel = std::hypot(imu->linear_acceleration.x, imu->linear_acceleration.y);
     peak_accel_ = std::max(peak_accel_, accel);
-    if (params_.enabled && accel > params_.accel_threshold_mps2) {
+    if (params_.enabled &&
+      countsAsImpact(
+        accel, params_.accel_threshold_mps2, speed_, command_speed_, params_.impact_min_speed_mps))
+    {
       trigger("水平加速度が閾値を超えた");
     }
   }
 
   void onOdometry(const Odometry::ConstSharedPtr & odometry)
   {
+    speed_ = std::hypot(odometry->twist.twist.linear.x, odometry->twist.twist.linear.y);
     if (!latest_cmd_) {
       return;
     }
@@ -153,6 +167,9 @@ private:
   double error_at_window_start_{0.0};
   double peak_accel_{0.0};
   double velocity_error_{0.0};
+  // 最新の実際の速さ（LIO）と指令の速さ [m/s]
+  double speed_{0.0};
+  double command_speed_{0.0};
   std::string reason_;
   rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
   rclcpp::Publisher<ContactStatus>::SharedPtr publisher_;

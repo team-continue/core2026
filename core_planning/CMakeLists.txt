@@ -101,7 +101,8 @@ install(TARGETS tracking_bench DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  foreach(name test_drive_delay test_footprint test_jps test_keep_out test_mppi test_path_smoother test_safety
+  foreach(name test_contact_detection test_drive_delay test_footprint test_jps test_keep_out test_mppi
+    test_path_smoother test_safety
     test_traction_estimator
     test_tracks_sync)
     ament_add_gtest(${name} test/${name}.cpp)
