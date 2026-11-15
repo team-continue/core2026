@@ -7,7 +7,8 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
+from launch import LaunchContext, LaunchDescriptionEntity
+from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -16,6 +17,24 @@ from core_nav_launch.imu_source import DEFAULT_IMU_SOURCE, IMU_SOURCES
 from core_nav_launch.point_extraction import DEFAULT_POINT_EXTRACTION, POINT_EXTRACTION_MODES
 from core_nav_launch.self_filter import DEFAULT_LIO_SELF_FILTER, LIO_SELF_FILTER_MODES
 from core_nav_launch.state_source import DEFAULT_STATE_SOURCE, STATE_SOURCES
+
+
+def map_publisher(context: LaunchContext) -> list[LaunchDescriptionEntity]:
+    """地図（map_path と同じ名前の yaml）を /map と /map/name に出す。操縦の UI が ros2_ws_bridge 経由で読む."""
+    occupancy = LaunchConfiguration('occupancy_map').perform(context)
+    if not occupancy:
+        candidate = Path(LaunchConfiguration('map_path').perform(context)).with_suffix('.yaml')
+        if not candidate.is_file():
+            # 占有地図のない地図（arena_obstacles など）は出さない。UI は地図を描かない
+            return []
+        occupancy = str(candidate)
+    return [Node(
+        package='core_launch',
+        executable='map_publisher_node.py',
+        name='map_publisher',
+        output='screen',
+        parameters=[{'map_yaml': occupancy, 'use_sim_time': True}],
+    )]
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -74,6 +93,10 @@ def generate_launch_description() -> LaunchDescription:
             'scenario_file', default_value=str(sim_share / 'scenarios' / 'crowd_9r2h.yaml'),
         ),
         DeclareLaunchArgument('map_path', default_value=str(share / 'maps' / 'arena_sim.pcd')),
+        DeclareLaunchArgument(
+            'occupancy_map', default_value='',
+            description='UI に送る占有地図（map_server の yaml）。空なら map_path と同じ名前の .yaml',
+        ),
         DeclareLaunchArgument('filter_layout', default_value='map_matching'),
         DeclareLaunchArgument('every_n_frames', default_value='1'),
         DeclareLaunchArgument('voxel_enabled', default_value='true'),
@@ -128,4 +151,5 @@ def generate_launch_description() -> LaunchDescription:
             ),
         ]),
         control_mode_manager,
+        OpaqueFunction(function=map_publisher),
     ])

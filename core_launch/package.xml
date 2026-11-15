@@ -35,6 +35,7 @@
   <exec_depend>rosbag2_py</exec_depend>
   <exec_depend>rosidl_runtime_py</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-pil</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>joint_state_publisher</exec_depend>

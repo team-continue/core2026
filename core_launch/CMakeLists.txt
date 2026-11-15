@@ -38,6 +38,7 @@ install(PROGRAMS
   scripts/check_planning.py
   scripts/run_scenario.py
   scripts/setup_thirdparty.sh
+  scripts/map_publisher_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -67,6 +68,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_livox_bag test/test_livox_bag.py)
   # 自己位置の出し方（state_source:=ekf の gyro_odometer、ekf_localizer、融合した IMU）
   ament_add_pytest_test(test_state_source test/test_state_source.py)
+  # 起動した地図の占有地図（map_publisher_node.py）
+  ament_add_pytest_test(test_occupancy_map test/test_occupancy_map.py)
 endif()
 
 ament_package()

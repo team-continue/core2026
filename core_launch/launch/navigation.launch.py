@@ -141,6 +141,20 @@ def _launch_nodes(context):
                 f"PCD map not found: '{map_path}'. "
                 f"Place core_launch/maps/{preset['pcd']} or pass map_path:=<pcd>.")
         field_file = os.path.join(core_launch_share, 'config', preset['field'])
+        # 起動した地図を /map と /map/name に出す（操縦の UI が ros2_ws_bridge 経由で読む）
+        actions.append(Node(
+            package='core_launch',
+            executable='map_publisher_node.py',
+            name='map_publisher',
+            output='screen',
+            parameters=[{
+                'map_name': map_name,
+                'image_path': os.path.join(core_launch_share, 'maps', preset['image']),
+                'resolution': float(preset['resolution']),
+                'origin_x': float(preset['origin_x']),
+                'origin_y': float(preset['origin_y']),
+            }],
+        ))
         # init_yaw を指定しなければ、プリセットの向き
         init_yaw = context.launch_configurations['init_yaw'] or str(preset['init_yaw'])
         composition = context.launch_configurations['composition']
