@@ -21,22 +21,31 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 # ── Map presets ──────────────────────────────────────────────────────
+# map_name で、地図の PCD（core_launch/maps/<pcd>）、初期姿勢（地図上の位置と向き）、
+# フィールドの範囲（config/<field> を config/field.yaml に重ねる）をまとめて選ぶ。
+# image・resolution・origin は占有地図の画像の値（フィールドの範囲の目安）
 MAP_PRESETS = {
     'core1_field': {
+        'pcd': 'core1_field.pcd',
+        'field': 'field_core1_field.yaml',
         'image': 'core1_field.png',
         'resolution': 0.025,
         'origin_x': -13.675,
         'origin_y': -9.15,
         'init_x': -10.7,
         'init_y': 5.9,
+        'init_yaw': 0.0,
     },
     'curious_house': {
+        'pcd': 'curious_house.pcd',
+        'field': 'field_curious_house.yaml',
         'image': 'curious_house.png',
         'resolution': 0.025,
         'origin_x': -4.5,
         'origin_y': -7.5,
         'init_x': 0.0,
         'init_y': 0.0,
+        'init_yaw': 0.0,
     },
 }
 
@@ -120,16 +129,20 @@ def _launch_nodes(context):
                 'robot_description': ParameterValue(
                     Command(['xacro ', robot_xacro]), value_type=str),
             }],
-            remappings=[('joint_states', '/hardware/joint_states')],
+            # 腰の角度（base_to_chassis）は chassis_joint_state が関節名を付けて出す
+            remappings=[('joint_states', '/control/chassis/joint_states')],
         ))
 
         map_path = context.launch_configurations.get('map_path', '')
         if not map_path:
-            map_path = os.path.join(core_launch_share, 'maps', f'{map_name}.pcd')
+            map_path = os.path.join(core_launch_share, 'maps', preset['pcd'])
         if not os.path.isfile(map_path):
             raise RuntimeError(
                 f"PCD map not found: '{map_path}'. "
-                f"Place core_launch/maps/{map_name}.pcd or pass map_path:=<pcd>.")
+                f"Place core_launch/maps/{preset['pcd']} or pass map_path:=<pcd>.")
+        field_file = os.path.join(core_launch_share, 'config', preset['field'])
+        # init_yaw を指定しなければ、プリセットの向き
+        init_yaw = context.launch_configurations['init_yaw'] or str(preset['init_yaw'])
         composition = context.launch_configurations['composition']
 
         def include(name, arguments):
@@ -143,14 +156,15 @@ def _launch_nodes(context):
             'map_path': map_path,
             'initial_x': str(preset['init_x']),
             'initial_y': str(preset['init_y']),
-            'initial_yaw': context.launch_configurations['init_yaw'],
+            'initial_yaw': init_yaw,
+            'field_file': field_file,
             'composition': composition,
         }))
         actions.append(include('perception.launch.py', {
-            'map_path': map_path, 'composition': composition,
+            'map_path': map_path, 'field_file': field_file, 'composition': composition,
         }))
         actions.append(include('planning.launch.py', {
-            'map_path': map_path, 'composition': composition,
+            'map_path': map_path, 'field_file': field_file, 'composition': composition,
         }))
     else:
         # Unity シミュレーションは自律移動を起動しない（Gazebo は sim_nav.launch.py を使う）
@@ -205,8 +219,8 @@ def generate_launch_description():
             description=f"Map preset: {', '.join(MAP_PRESETS.keys())}",
         ),
         DeclareLaunchArgument(
-            'init_yaw', default_value='0.0',
-            description='Initial yaw on the map [rad]',
+            'init_yaw', default_value='',
+            description='Initial yaw on the map [rad] (empty: the map preset value)',
         ),
         DeclareLaunchArgument(
             'use_rviz', default_value='true',

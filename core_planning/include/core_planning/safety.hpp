@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "core_planning/blind_side.hpp"
+#include "core_planning/footprint.hpp"
 #include "core_planning/grid_map.hpp"
 
 namespace core_planning::safety
@@ -60,6 +61,8 @@ struct Footprint
 {
   double half_length_m{0.4};
   double half_width_m{0.4};
+  // 駆動部の形（orientFootprint で決める）。大きさが 0 なら上の長方形を base_link の向きのまま使う
+  ChassisShape chassis{};
 };
 
 // 相手の到達範囲で確かめる設定

@@ -22,6 +22,7 @@
 #include <core_msgs/msg/tracked_object.hpp>
 #include <core_msgs/msg/tracked_object_array.hpp>
 #include <nav_msgs/msg/path.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <tf2/exceptions.h>
@@ -102,6 +103,16 @@ PlanarPose toPlanarPose(const geometry_msgs::msg::TransformStamped & transform)
   return PlanarPose{
     transform.transform.translation.x, transform.transform.translation.y,
     std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))};
+}
+
+// frame（map から見た姿勢 frame_in_map）で表した pose を、map で表す
+PlanarPose toMapFrame(const PlanarPose & frame_in_map, const PlanarPose & pose)
+{
+  const double c = std::cos(frame_in_map.yaw);
+  const double s = std::sin(frame_in_map.yaw);
+  return PlanarPose{
+    frame_in_map.x + c * pose.x - s * pose.y, frame_in_map.y + s * pose.x + c * pose.y,
+    std::atan2(std::sin(frame_in_map.yaw + pose.yaw), std::cos(frame_in_map.yaw + pose.yaw))};
 }
 
 // 止まっている相手を map 座標系で返す
@@ -308,6 +319,8 @@ public:
 
     path_publisher_ = create_publisher<Path>("/planning/plan", rclcpp::QoS(1).transient_local());
     status_publisher_ = create_publisher<NavigationStatus>("/planning/planner/status", rclcpp::QoS(10));
+    // ゴールに着いたら 1 回だけ true を出す（行動の決定に知らせる）
+    goal_reached_publisher_ = create_publisher<std_msgs::msg::Bool>("/behavior/goal_reached", rclcpp::QoS(10));
     goal_subscription_ = create_subscription<PoseStamped>(
       "/behavior/goal_pose", rclcpp::QoS(10),
       std::bind(&GlobalPlannerNode::onGoal, this, std::placeholders::_1));
@@ -474,11 +487,16 @@ private:
   void onGoal(const PoseStamped::ConstSharedPtr & goal)
   {
     const std::string map_frame = get_parameter("map_frame").as_string();
+    // map 以外の座標系（odom など）のゴールは、今の TF で map に直す
+    std::optional<PlanarPose> frame_in_map;
     if (!goal->header.frame_id.empty() && goal->header.frame_id != map_frame) {
-      RCLCPP_ERROR(
-        get_logger(), "ゴールは %s 座標系で指定してください: %s", map_frame.c_str(),
-        goal->header.frame_id.c_str());
-      return;
+      frame_in_map = lookupPose(map_frame, goal->header.frame_id);
+      if (!frame_in_map.has_value()) {
+        RCLCPP_ERROR(
+          get_logger(), "ゴールの座標系 %s を %s に直せないので、ゴールを捨てます",
+          goal->header.frame_id.c_str(), map_frame.c_str());
+        return;
+      }
     }
     goal_wait_start_.reset();
     alternative_.reset();
@@ -490,9 +508,10 @@ private:
       return;
     }
     const auto & q = goal->pose.orientation;
-    goal_ = PlanarPose{
+    const PlanarPose pose{
       goal->pose.position.x, goal->pose.position.y,
       std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))};
+    goal_ = frame_in_map.has_value() ? toMapFrame(*frame_in_map, pose) : pose;
     plan();
   }
 
@@ -536,6 +555,9 @@ private:
     {
       goal_.reset();
       publishStatus(NavigationStatus::STATE_REACHED, 0.0, 0.0);
+      std_msgs::msg::Bool reached;
+      reached.data = true;
+      goal_reached_publisher_->publish(reached);
     }
   }
 
@@ -649,6 +671,7 @@ private:
   rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
   rclcpp::Publisher<Path>::SharedPtr path_publisher_;
   rclcpp::Publisher<NavigationStatus>::SharedPtr status_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_publisher_;
   rclcpp::Subscription<PoseStamped>::SharedPtr goal_subscription_;
   rclcpp::Subscription<TrackedObjectArray>::SharedPtr tracks_subscription_;
   rclcpp::Subscription<NavigationStatus>::SharedPtr navigation_subscription_;

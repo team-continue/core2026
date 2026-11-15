@@ -39,6 +39,11 @@ class SelfFilterError(RuntimeError):
     """自機の除去の設定（機体の形、ロボットの記述、launch 引数）が正しくないときの例外."""
 
 
+# 自機の除去の形（footprint.yaml の footprint.self_filter_shape）。検出の perception_node と同じ値
+SELF_FILTER_BOX: Final = 'box'
+SELF_FILTER_CYLINDER: Final = 'cylinder'
+SELF_FILTER_SHAPES: Final = (SELF_FILTER_BOX, SELF_FILTER_CYLINDER)
+
 @dataclass(frozen=True)
 class SelfBox:
     """base_link の座標軸に沿った箱。xy は半分の長さ、top_height_m は上面の床からの高さ [m]."""
@@ -46,6 +51,8 @@ class SelfBox:
     half_length_m: float
     half_width_m: float
     top_height_m: float
+    # 0 より大きければ、xy は箱ではなくこの半径の円柱（footprint.self_filter_shape: cylinder）
+    radius_m: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -140,7 +147,14 @@ def load_self_box(footprint_config: Path) -> SelfBox:
         raise SelfFilterError(
             f'{footprint_config} の footprint.self_filter_margin_m は 0 以上にしてください: {margin}'
         )
-    return SelfBox(0.5 * length + margin, 0.5 * width + margin, height + margin)
+    shape = footprint.get('self_filter_shape', SELF_FILTER_BOX)
+    if shape not in SELF_FILTER_SHAPES:
+        raise SelfFilterError(
+            f'{footprint_config} の footprint.self_filter_shape は {" / ".join(SELF_FILTER_SHAPES)} の'
+            f'どれかにしてください: {shape!r}'
+        )
+    radius = math.hypot(0.5 * length, 0.5 * width) + margin if shape == SELF_FILTER_CYLINDER else 0.0
+    return SelfBox(0.5 * length + margin, 0.5 * width + margin, height + margin, radius)
 
 
 def parse_xacro_args(text: str) -> dict[str, str]:
@@ -265,6 +279,7 @@ def self_filter_parameters(box: SelfBox, base_from_lidar: Transform) -> dict[str
         'preprocess.self_filter.half_length': box.half_length_m,
         'preprocess.self_filter.half_width': box.half_width_m,
         'preprocess.self_filter.top_height': box.top_height_m,
+        'preprocess.self_filter.radius': box.radius_m,
         'preprocess.self_filter.extrinsic_T': list(base_from_lidar.translation),
         'preprocess.self_filter.extrinsic_R': list(base_from_lidar.rotation),
     }

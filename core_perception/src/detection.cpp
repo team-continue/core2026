@@ -347,6 +347,26 @@ SelfFilterParams selfFilterFromFootprint(
   return params;
 }
 
+SelfFilterParams cylinderSelfFilterFromFootprint(
+  const double length_m, const double width_m, const double height_m, const double margin_m)
+{
+  SelfFilterParams params = selfFilterFromFootprint(length_m, width_m, height_m, margin_m);
+  params.radius_m = std::hypot(0.5 * length_m, 0.5 * width_m) + margin_m;
+  return params;
+}
+
+bool insideSelf(const Eigen::Vector3f & base, const SelfFilterParams & params)
+{
+  if (base.z() > params.top_height_m) {
+    return false;
+  }
+  if (params.radius_m > 0.0) {
+    return static_cast<double>(base.x()) * base.x() + static_cast<double>(base.y()) * base.y() <=
+           params.radius_m * params.radius_m;
+  }
+  return std::abs(base.x()) <= params.half_length_m && std::abs(base.y()) <= params.half_width_m;
+}
+
 std::vector<ObstaclePoint> selectObstaclePoints(
   const std::vector<FramePoint> & points, const FrameTransforms & transforms,
   const DetectionParams & params, const StaticMap & static_map, SelectionCounts & counts)
@@ -363,10 +383,7 @@ std::vector<ObstaclePoint> selectObstaclePoints(
       continue;
     }
     const Eigen::Vector3f base = transforms.base_to_lidar * point.lidar;
-    if (std::abs(base.x()) <= params.self.half_length_m &&
-      std::abs(base.y()) <= params.self.half_width_m &&
-      base.z() <= params.self.top_height_m)
-    {
+    if (insideSelf(base, params.self)) {
       continue;
     }
     ++counts.after_self;

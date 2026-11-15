@@ -19,6 +19,8 @@ from typing import Final, Mapping
 
 import yaml
 
+from core_nav_launch.composition import field_overlay
+
 POINT_EXTRACTION_OFF: Final = 'off'
 POINT_EXTRACTION_CEILING: Final = 'ceiling'
 POINT_EXTRACTION_FIELD_OBJECTS: Final = 'field_objects'
@@ -128,7 +130,7 @@ def region_parameters(regions: tuple[ExcludeRegion, ...]) -> dict[str, object]:
 
 
 def point_extraction_parameters(
-    mode: str, config_dir: Path, exclude_regions_file: Path,
+    mode: str, config_dir: Path, exclude_regions_file: Path, field_file: str = '',
 ) -> list[object]:
     """scan_filter に渡す点群抽出のパラメータ（設定ファイルと上書き）.
 
@@ -141,6 +143,7 @@ def point_extraction_parameters(
         str(config_dir / 'point_extraction.yaml'),
         # field_objects の残す範囲と ceiling の柵の外の帯は、検出と同じフィールドの範囲から作る
         str(config_dir / 'field.yaml'),
+        *field_overlay(field_file),
         {'point_extraction.mode': selected},
     ]
     if selected == POINT_EXTRACTION_CEILING:

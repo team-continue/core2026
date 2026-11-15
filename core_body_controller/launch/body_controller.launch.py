@@ -148,6 +148,23 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
+    # 手動（/control/manual/cmd_vel）と自動（/control/auto/cmd_vel）のどちらを
+    # /control/cmd_vel へ通すかを決める。UI の auto で自動に入り、到達・失敗・停止で手動に戻る
+    # 腰の角度に関節名を付けて /control/chassis/joint_states に出す（robot_state_publisher が読む）
+    chassis_joint_state = Node(
+        package="core_body_controller",
+        executable="chassis_joint_state_node",
+        name="chassis_joint_state",
+        output="screen",
+    )
+
+    control_mode_manager = Node(
+        package="core_body_controller",
+        executable="control_mode_manager_node",
+        name="control_mode_manager",
+        output="screen",
+    )
+
     return LaunchDescription(
         [
             acceleration_arg,
@@ -172,6 +189,8 @@ def generate_launch_description() -> LaunchDescription:
                 PushRosNamespace("control"),
                 body_control,
                 target_angle,
+                control_mode_manager,
+                chassis_joint_state,
             ]),
         ]
     )

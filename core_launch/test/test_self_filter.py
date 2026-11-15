@@ -194,3 +194,21 @@ def test_fast_lio_yaml_blind_is_sensor_minimum() -> None:
     # 自機は箱で除くので、blind は Mid-360 の最短距離だけにする
     document = yaml.safe_load((CONFIG / 'fast_lio.yaml').read_text())
     assert document['/**']['ros__parameters']['preprocess']['blind'] == pytest.approx(0.1)
+
+
+def test_cylinder_self_filter_from_footprint(tmp_path: Path) -> None:
+    # 駆動部が回る機体は、外接円の円柱で自機を除く。半径は長さと幅の半分の外接円に余裕を足す
+    config = tmp_path / 'footprint.yaml'
+    config.write_text(
+        '/**:\n  ros__parameters:\n    footprint:\n      length_m: 0.8\n      width_m: 0.6\n'
+        '      height_m: 0.8\n      self_filter_margin_m: 0.05\n      self_filter_shape: cylinder\n',
+        encoding='utf-8',
+    )
+    box = load_self_box(config)
+    assert box.radius_m == pytest.approx(math.hypot(0.4, 0.3) + 0.05)
+    parameters = fast_lio_self_filter_parameters('box', config, ROBOT_XACRO, FRONT_MOUNT)
+    assert parameters['preprocess.self_filter.radius'] == pytest.approx(math.hypot(0.4, 0.3) + 0.05)
+    config.write_text(config.read_text().replace('cylinder', 'sphere'), encoding='utf-8')
+    with pytest.raises(SelfFilterError, match='self_filter_shape'):
+        load_self_box(config)
+

@@ -730,6 +730,38 @@ struct KeepOutPoint
 };
 
 // 機体の 4 隅と中心のうち、静的な障害物に最も近い点を返す
+// 静止物の距離の場を調べる機体の点（base_link）。長方形なら 4 隅、回転中は外接円の上の 8 点
+std::vector<Point2> footprintProbePoints(const RolloutContext & context)
+{
+  const FootprintParams & footprint = context.params.footprint;
+  const ChassisShape & chassis = footprint.chassis;
+  if (!footprint.enabled || chassis.half_length <= 0.0 || chassis.half_width <= 0.0) {
+    return {
+      {-context.half_length, -context.half_width}, {-context.half_length, context.half_width},
+      {context.half_length, -context.half_width}, {context.half_length, context.half_width}};
+  }
+  std::vector<Point2> points;
+  if (chassis.circle) {
+    constexpr int kCirclePoints = 8;
+    const double radius = std::hypot(chassis.half_length, chassis.half_width);
+    points.reserve(kCirclePoints);
+    for (int i = 0; i < kCirclePoints; ++i) {
+      const double angle = 2.0 * M_PI * static_cast<double>(i) / kCirclePoints;
+      points.push_back({radius * std::cos(angle), radius * std::sin(angle)});
+    }
+    return points;
+  }
+  const double c = std::cos(chassis.yaw);
+  const double s = std::sin(chassis.yaw);
+  points.reserve(4U);
+  for (const double along : {-chassis.half_length, chassis.half_length}) {
+    for (const double side : {-chassis.half_width, chassis.half_width}) {
+      points.push_back({c * along - s * side, s * along + c * side});
+    }
+  }
+  return points;
+}
+
 KeepOutPoint keepOutPoint(
   const RolloutContext & context, const double x, const double y, const double yaw)
 {
@@ -746,16 +778,14 @@ KeepOutPoint keepOutPoint(
   }
   const double c = std::cos(yaw + context.map_from_odom.yaw);
   const double s = std::sin(yaw + context.map_from_odom.yaw);
-  for (const double along : {-context.half_length, context.half_length}) {
-    for (const double side : {-context.half_width, context.half_width}) {
-      const double corner_x = map_x + c * along - s * side;
-      const double corner_y = map_y + s * along + c * side;
-      const double distance = static_cast<double>(context.field->at(corner_x, corner_y));
-      if (distance < closest.distance) {
-        closest = KeepOutPoint{
-          distance, corner_x, corner_y, c * along - s * side, s * along + c * side,
-          context.circumscribed_radius};
-      }
+  for (const Point2 & corner : footprintProbePoints(context)) {
+    const double corner_x = map_x + c * corner.x - s * corner.y;
+    const double corner_y = map_y + s * corner.x + c * corner.y;
+    const double distance = static_cast<double>(context.field->at(corner_x, corner_y));
+    if (distance < closest.distance) {
+      closest = KeepOutPoint{
+        distance, corner_x, corner_y, c * corner.x - s * corner.y, s * corner.x + c * corner.y,
+        context.circumscribed_radius};
     }
   }
   return closest;
@@ -1015,8 +1045,9 @@ double rolloutCost(const RolloutContext & context, const double * controls, bool
       if (evaluate_object && near_squared <= reach * reach) {
         const double local_x = c * near_x + s * near_y;
         const double local_y = -s * near_x + c * near_y;
-        const double distance = signedDistanceToRectangle(
-          local_x, local_y, context.half_length, context.half_width) - object.radius - hard_margin;
+        const double distance = signedDistanceToFootprint(
+          local_x, local_y, params.footprint.enabled ? params.footprint : FootprintParams{false, 0.0, 0.0}) -
+          object.radius - hard_margin;
         if (distance <= 0.0) {
           cost += params.weight_collision * discount;
           collision = true;
@@ -1468,7 +1499,12 @@ MppiCommand MppiController::solve(
   const FootprintParams & footprint = params.footprint;
   const double half_length = footprint.enabled ? footprint.half_length_m : 0.0;
   const double half_width = footprint.enabled ? footprint.half_width_m : 0.0;
-  const double circumscribed_radius = std::hypot(half_length, half_width);
+  // 駆動部の形が決まっていれば、その外接円（囲む長方形の外接円より小さい）
+  const bool chassis_known = footprint.enabled && footprint.chassis.half_length > 0.0 &&
+    footprint.chassis.half_width > 0.0;
+  const double circumscribed_radius = chassis_known ?
+    std::hypot(footprint.chassis.half_length, footprint.chassis.half_width) :
+    std::hypot(half_length, half_width);
   // 系列の速度は今の速度から上限の中の指令へ近づくだけなので、機体の点の速さはこれを超えない
   const double point_speed_bound = std::max(limit, std::hypot(state.vx, state.vy)) +
     std::max(params.max_angular_speed_radps, std::abs(state.wz)) * circumscribed_radius;

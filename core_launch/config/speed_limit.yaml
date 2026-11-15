@@ -4,7 +4,9 @@
     speed_limit:
       enabled: true
       reaction_time_s: 0.2
-      max_decel_mps2: 3.0
+      # core2026 の足回り（body_control_node）は減速も acceleration 2.0m/s² で制限するので、それ以上で止まれる
+      # 前提にしない（lidar_nav では 3.0）
+      max_decel_mps2: 2.0
       density_radius_m: 3.0
       # 近くの相手 1 台ごとに掛ける倍率。相手が避けてくれない場合、遅いほど相手の通り道に長く留まり、
       # 接触が増える。crowd_goals で 0.7→0.9 にすると crowd_stats で約 1.0→約 0.3 回/100秒、

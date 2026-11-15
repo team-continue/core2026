@@ -1,4 +1,5 @@
 diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+index 9efe7ad..59ae11b 100644
 --- a/src/laserMapping.cpp
 +++ b/src/laserMapping.cpp
 @@ -40,6 +40,7 @@
@@ -9,7 +10,7 @@ diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
  #include <Python.h>
  #include <so3_math.h>
  #include <rclcpp/rclcpp.hpp>
-@@ -74,6 +75,8 @@
+@@ -74,6 +75,8 @@ double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_pl
  double match_time = 0, solve_time = 0, solve_const_H_time = 0;
  int    kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
  double accel_clip = 0.0;
@@ -18,7 +19,7 @@ diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
  bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extrinsic_est_en = true, path_en = true;
  /**************************/
  
-@@ -449,9 +452,66 @@
+@@ -449,9 +452,66 @@ bool sync_packages(MeasureGroup &meas)
      return true;
  }
  
@@ -85,7 +86,7 @@ diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
      PointVector PointToAdd;
      PointVector PointNoNeedDownsample;
      PointToAdd.reserve(feats_down_size);
-@@ -853,10 +913,19 @@
+@@ -853,10 +913,20 @@ public:
          this->declare_parameter<int>("preprocess.scan_line", 16);
          this->declare_parameter<int>("preprocess.timestamp_unit", US);
          this->declare_parameter<int>("preprocess.scan_rate", 10);
@@ -94,6 +95,7 @@ diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
 +        this->declare_parameter<double>("preprocess.self_filter.half_length", 0.0);
 +        this->declare_parameter<double>("preprocess.self_filter.half_width", 0.0);
 +        this->declare_parameter<double>("preprocess.self_filter.top_height", 0.0);
++        this->declare_parameter<double>("preprocess.self_filter.radius", 0.0);
 +        this->declare_parameter<vector<double>>("preprocess.self_filter.extrinsic_T", vector<double>());
 +        this->declare_parameter<vector<double>>("preprocess.self_filter.extrinsic_R", vector<double>());
          this->declare_parameter<int>("point_filter_num", 2);
@@ -105,7 +107,7 @@ diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
          this->declare_parameter<bool>("pcd_save.pcd_save_en", false);
          this->declare_parameter<int>("pcd_save.interval", -1);
          this->declare_parameter<vector<double>>("mapping.extrinsic_T", vector<double>());
-@@ -894,11 +963,46 @@
+@@ -894,11 +964,47 @@ public:
          this->get_parameter_or<bool>("feature_extract_enable", p_pre->feature_enabled, false);
          this->get_parameter_or<bool>("runtime_pos_log_enable", runtime_pos_log, 0);
          this->get_parameter_or<bool>("mapping.extrinsic_est_en", extrinsic_est_en, true);
@@ -123,6 +125,7 @@ diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
 +            this->get_parameter_or<double>("preprocess.self_filter.half_length", p_pre->self_filter.half_length, 0.0);
 +            this->get_parameter_or<double>("preprocess.self_filter.half_width", p_pre->self_filter.half_width, 0.0);
 +            this->get_parameter_or<double>("preprocess.self_filter.top_height", p_pre->self_filter.top_height, 0.0);
++            this->get_parameter_or<double>("preprocess.self_filter.radius", p_pre->self_filter.radius, 0.0);
 +            this->get_parameter_or<vector<double>>("preprocess.self_filter.extrinsic_T", self_T, vector<double>());
 +            this->get_parameter_or<vector<double>>("preprocess.self_filter.extrinsic_R", self_R, vector<double>());
 +            string error;
@@ -140,8 +143,8 @@ diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
 +            }
 +            p_pre->self_filter.T_base_lidar << VEC_FROM_ARRAY(self_T);
 +            p_pre->self_filter.R_base_lidar << MAT_FROM_ARRAY(self_R);
-+            RCLCPP_INFO(this->get_logger(), "自機の除去: 箱の半分 %.3f x %.3f m、上面 %.3f m、base_link での LiDAR の位置 [%.3f %.3f %.3f]",
-+                        p_pre->self_filter.half_length, p_pre->self_filter.half_width,
++            RCLCPP_INFO(this->get_logger(), "自機の除去: 箱の半分 %.3f x %.3f m（円柱の半径 %.3f m、0 なら箱）、上面 %.3f m、base_link での LiDAR の位置 [%.3f %.3f %.3f]",
++                        p_pre->self_filter.half_length, p_pre->self_filter.half_width, p_pre->self_filter.radius,
 +                        p_pre->self_filter.top_height, self_T[0], self_T[1], self_T[2]);
 +        }
 +
@@ -153,9 +156,10 @@ diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
  
          path.header.stamp = this->get_clock()->now();
 diff --git a/src/preprocess.cpp b/src/preprocess.cpp
+index 5f171a3..a20a1cc 100644
 --- a/src/preprocess.cpp
 +++ b/src/preprocess.cpp
-@@ -46,6 +46,18 @@
+@@ -46,6 +46,21 @@ void Preprocess::set(bool feat_en, int lid_type, double bld, int pfilt_num)
    point_filter_num = pfilt_num;
  }
  
@@ -167,14 +171,17 @@ diff --git a/src/preprocess.cpp b/src/preprocess.cpp
 +  if (!self_filter.enabled)
 +    return false;
 +  const Eigen::Vector3d base = self_filter.R_base_lidar * Eigen::Vector3d(pt.x, pt.y, pt.z) + self_filter.T_base_lidar;
-+  return std::abs(base.x()) <= self_filter.half_length && std::abs(base.y()) <= self_filter.half_width &&
-+         base.z() <= self_filter.top_height;
++  if (base.z() > self_filter.top_height)
++    return false;
++  if (self_filter.radius > 0.0)
++    return base.x() * base.x() + base.y() * base.y() <= self_filter.radius * self_filter.radius;
++  return std::abs(base.x()) <= self_filter.half_length && std::abs(base.y()) <= self_filter.half_width;
 +}
 +
  void Preprocess::process(const livox_ros_driver2::msg::CustomMsg::UniquePtr &msg, PointCloudXYZI::Ptr& pcl_out)
  {
    avia_handler(msg);
-@@ -185,7 +197,8 @@
+@@ -185,7 +200,8 @@ void Preprocess::avia_handler(const livox_ros_driver2::msg::CustomMsg::UniquePtr
            if (((abs(pl_full[i].x - pl_full[i - 1].x) > 1e-7)
                || (abs(pl_full[i].y - pl_full[i - 1].y) > 1e-7)
                || (abs(pl_full[i].z - pl_full[i - 1].z) > 1e-7))
@@ -185,9 +192,10 @@ diff --git a/src/preprocess.cpp b/src/preprocess.cpp
              pl_surf.push_back(pl_full[i]);
            }
 diff --git a/src/preprocess.h b/src/preprocess.h
+index d4d6ddc..4e42017 100644
 --- a/src/preprocess.h
 +++ b/src/preprocess.h
-@@ -132,6 +132,21 @@
+@@ -132,6 +132,23 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(livox_ros::LivoxPointXyzrtl,
      (uint8_t, line, line)
  )
  
@@ -201,6 +209,8 @@ diff --git a/src/preprocess.h b/src/preprocess.h
 +  double half_width = 0.0;
 +  // base_link（床に投影した機体中心）での箱の上面の高さ [m]（機体の上面と余裕）
 +  double top_height = 0.0;
++  // 0 より大きければ、xy は箱ではなくこの半径 [m] の円柱で判定する（上部の下で駆動部が回る機体）
++  double radius = 0.0;
 +  // LiDAR の点を base_link へ移す変換（p_base = R p_lidar + T）。T は base_link で表した LiDAR の位置
 +  Eigen::Matrix3d R_base_lidar = Eigen::Matrix3d::Identity();
 +  Eigen::Vector3d T_base_lidar = Eigen::Vector3d::Zero();
@@ -209,7 +219,7 @@ diff --git a/src/preprocess.h b/src/preprocess.h
  class Preprocess
  {
    public:
-@@ -152,9 +167,11 @@
+@@ -152,9 +169,11 @@ class Preprocess
    int lidar_type, point_filter_num, N_SCANS, SCAN_RATE, time_unit;
    double blind;
    bool feature_enabled, given_offset_time;

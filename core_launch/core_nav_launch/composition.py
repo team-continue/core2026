@@ -15,6 +15,7 @@ FAST-LIO（component にできない）と安全停止（計画が止まって�
 """
 
 from collections.abc import Sequence
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Final
 
@@ -146,3 +147,12 @@ def launch_nodes(
     if not composition:
         return [standalone_node(spec) for spec in specs]
     return [container(container_name, specs)]
+
+
+def field_overlay(field_file: str) -> list[str]:
+    """フィールドの範囲を重ねる設定ファイル（launch 引数 field_file）。空なら何も重ねない."""
+    if not field_file:
+        return []
+    if not Path(field_file).is_file():
+        raise RuntimeError(f'フィールドの範囲の設定ファイル {field_file} がありません')
+    return [field_file]

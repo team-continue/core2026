@@ -176,6 +176,9 @@ public:
     declareDouble(*this, "footprint.height_m", 0.8, 0.1, 5.0, "機体の上面の床からの高さ（自機の除去に使う）");
     // FAST-LIO の前処理と同じ箱にするため、機体の形と同じ footprint.yaml に置く
     declareDouble(*this, "footprint.self_filter_margin_m", 0.05, 0.0, 1.0, "自機の除去の余裕");
+    declareString(
+      *this, "footprint.self_filter_shape", "box",
+      "自機の除去の形（box: base_link の向きの箱、cylinder: 外接円の円柱）");
     declareDouble(
       *this, "min_range_m", 0.1, 0.0, 5.0, "LiDAR からこの距離未満の点（返りのない (0,0,0) の点を含む）を除く");
 
@@ -268,7 +271,13 @@ private:
   void loadParams()
   {
     DetectionParams detection;
-    detection.self = selfFilterFromFootprint(
+    const std::string self_shape = get_parameter("footprint.self_filter_shape").as_string();
+    if (self_shape != "box" && self_shape != "cylinder") {
+      throw std::invalid_argument(
+              "footprint.self_filter_shape は box か cylinder にしてください: " + self_shape);
+    }
+    const bool cylinder = self_shape == "cylinder";
+    detection.self = (cylinder ? cylinderSelfFilterFromFootprint : selfFilterFromFootprint)(
       get_parameter("footprint.length_m").as_double(),
       get_parameter("footprint.width_m").as_double(),
       get_parameter("footprint.height_m").as_double(),

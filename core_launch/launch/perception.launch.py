@@ -20,6 +20,7 @@ from core_nav_launch.composition import (
     COMPOSITION_MODES,
     container,
     DEFAULT_COMPOSITION,
+    field_overlay,
     LIDAR_CONTAINER,
     load_into,
     NodeSpec,
@@ -82,6 +83,7 @@ def build_nodes(context: LaunchContext) -> list[LaunchDescriptionEntity]:
                     'perception',
                 )
             ),
+            *field_overlay(LaunchConfiguration('field_file').perform(context)),
             perception_overrides,
         ),
     )
@@ -99,6 +101,11 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('map_path', description='地図の PCD'),
+        DeclareLaunchArgument(
+            'field_file', default_value='',
+            description='フィールドの範囲（field.x_min など）を config/field.yaml の後から重ねる設定ファイル'
+                        '（空なら重ねない。navigation.launch.py は map_name のプリセットで選ぶ）',
+        ),
         DeclareLaunchArgument(
             'rear_lidar', default_value='false', choices=['true', 'false'],
             description='2 台目の LiDAR の点群を合わせて検出の入力にする（lidar_merge）',

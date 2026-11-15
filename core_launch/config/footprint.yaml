@@ -3,6 +3,15 @@
   ros__parameters:
     footprint:
       enabled: true
+      # core2026 は上部（base_link）の下で駆動部（chassis_link）が回る。衝突の形（長さと幅の長方形）を、
+      # TF の base_link → chassis_link（腰の角度）に合わせて回す。/control/rotation が 0 以外の間と、
+      # 角度が分からない間は外接円にする（局所計画と安全停止）
+      rotate_with_chassis: true
+      base_frame: base_link
+      chassis_frame: chassis_link
+      # 自機の除去の形（検出と FAST-LIO）。box: base_link の向きの箱、cylinder: 外接円の円柱（駆動部が
+      # 回っても自機の点を残さない）。円柱の半径は、長さと幅の半分の外接円に self_filter_margin_m を足す
+      self_filter_shape: cylinder
       length_m: 0.8
       width_m: 0.8
       margin_m: 0.1

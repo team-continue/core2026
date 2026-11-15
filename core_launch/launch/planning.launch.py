@@ -15,6 +15,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 from core_nav_launch.composition import (
     COMPOSITION_MODES,
     DEFAULT_COMPOSITION,
+    field_overlay,
     launch_nodes,
     NodeSpec,
     parse_composition,
@@ -42,6 +43,7 @@ def build_nodes(context: LaunchContext) -> list[LaunchDescriptionEntity]:
     config = Path(get_package_share_directory('core_launch')) / 'config'
     parameters = (
         *(str(config / f'{name}.yaml') for name in CONFIG_NAMES),
+        *field_overlay(LaunchConfiguration('field_file').perform(context)),
         {
             'use_sim_time': ParameterValue(LaunchConfiguration('use_sim_time'), value_type=bool),
             'map_path': LaunchConfiguration('map_path'),
@@ -65,6 +67,11 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('map_path', description='地図の PCD'),
+        DeclareLaunchArgument(
+            'field_file', default_value='',
+            description='フィールドの範囲（field.x_min など）を config/field.yaml の後から重ねる設定ファイル'
+                        '（空なら重ねない。navigation.launch.py は map_name のプリセットで選ぶ）',
+        ),
         DeclareLaunchArgument(
             'composition', default_value=DEFAULT_COMPOSITION, choices=list(COMPOSITION_MODES),
             description='安全停止以外の計画のノードを 1 つのプロセス（コンテナ）にまとめる',

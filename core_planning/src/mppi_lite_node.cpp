@@ -45,6 +45,7 @@
 
 #include "core_nav_common/field_bounds.hpp"
 #include "core_nav_common/parameters.hpp"
+#include "core_planning/chassis_tracker.hpp"
 #include "core_planning/drive_delay.hpp"
 #include "core_planning/grid_map.hpp"
 #include "core_planning/mppi.hpp"
@@ -183,7 +184,8 @@ public:
   explicit MppiLiteNode(const rclcpp::NodeOptions & options)
   : Node("mppi_lite", options),
     tf_buffer_(get_clock()),
-    tf_listener_(tf_buffer_)
+    tf_listener_(tf_buffer_),
+    chassis_(*this, tf_buffer_)
   {
     declareParameters();
     validateSide(get_parameter("passing_rule.side").as_string());
@@ -1020,6 +1022,15 @@ private:
       };
 
     const auto map_from_odom = lookupMapFromOdom();
+    // 駆動部の向き（腰の角度）に合わせて、機体の形を回す（回転モードの間は外接円）
+    if (mppi_params_.footprint.enabled) {
+      if (const auto shape = chassis_.shape(
+          0.5 * get_parameter("footprint.length_m").as_double(),
+          0.5 * get_parameter("footprint.width_m").as_double()))
+      {
+        orientFootprint(mppi_params_.footprint, *shape);
+      }
+    }
     if (!map_from_odom.has_value() || plan_map_.empty()) {
       publishCommand(state, stop());
       publishStatus(odometry->header.stamp, 0.0, 0.0, start);
@@ -1248,6 +1259,7 @@ private:
 
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
+  ChassisTracker chassis_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_validation_;
   rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr command_publisher_;

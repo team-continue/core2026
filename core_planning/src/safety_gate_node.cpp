@@ -42,6 +42,7 @@
 
 #include "core_nav_common/field_bounds.hpp"
 #include "core_nav_common/parameters.hpp"
+#include "core_planning/chassis_tracker.hpp"
 #include "core_planning/grid_map.hpp"
 #include "core_planning/safety.hpp"
 #include "core_planning/track_motion.hpp"
@@ -181,7 +182,8 @@ public:
   explicit SafetyGateNode(const rclcpp::NodeOptions & options)
   : Node("safety_gate", options),
     tf_buffer_(get_clock()),
-    tf_listener_(tf_buffer_)
+    tf_listener_(tf_buffer_),
+    chassis_(*this, tf_buffer_)
   {
     using core_nav_common::declareBool;
     using core_nav_common::declareDouble;
@@ -277,7 +279,8 @@ public:
       [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
     buildStaticField();
 
-    cmd_publisher_ = create_publisher<Twist>("/control/cmd_vel", rclcpp::QoS(10));
+    // 自動の指令。control_mode_manager が自動のときだけ /control/cmd_vel へ通す
+    cmd_publisher_ = create_publisher<Twist>("/control/auto/cmd_vel", rclcpp::QoS(10));
     status_publisher_ = create_publisher<SafetyStatus>("/planning/safety/status", rclcpp::QoS(10));
     cmd_subscription_ = create_subscription<Twist>(
       "/planning/cmd_vel_nav", rclcpp::QoS(10),
@@ -481,6 +484,13 @@ private:
 
   GateDecision decide(const rclcpp::Time & time)
   {
+    // 駆動部の向き（腰の角度）に合わせて、機体の形を回す（回転モードの間は外接円）
+    if (const auto shape = chassis_.shape(
+        0.5 * get_parameter("footprint.length_m").as_double(),
+        0.5 * get_parameter("footprint.width_m").as_double()))
+    {
+      orientFootprint(params_.footprint, *shape);
+    }
     if (params_.watchdog.enabled) {
       const auto stale = staleInput(time);
       if (stale.has_value()) {
@@ -613,6 +623,7 @@ private:
   GateParams params_;
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
+  ChassisTracker chassis_;
   std::optional<DistanceField> distance_field_;
   // 距離の場がない理由
   std::string static_field_unavailable_;

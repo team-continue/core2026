@@ -9,7 +9,9 @@
       # うち 5 件で、0.25〜0.70 秒で当たる指令をこの理由で通していた）
       ttc_stop_s: 0.6
       footprint_margin_m: 0.1
-      max_decel_mps2: 3.0
+      # core2026 の足回り（body_control_node）は減速も acceleration 2.0m/s² で制限するので、それ以上で止まれる
+      # 前提にしない（lidar_nav では 3.0）
+      max_decel_mps2: 2.0
       # 相手の到達範囲（方向別の受動安全）。相手を、追跡の位置と速度の予測に、推定の遅れ（追跡の時刻から
       # 今まで）、速度の不確かさ（追跡の velocity_sigma）、加速度の上限の分を足して広げた円として扱う。
       # 指令を commit_time_s 保ったあと max_decel で止まる軌道か、指令を保ち続ける軌道のどちらかで、

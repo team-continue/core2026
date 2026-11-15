@@ -132,6 +132,7 @@ def build_nodes(context: LaunchContext) -> list[LaunchDescriptionEntity]:
     # 点群抽出は地図照合の入力（scan_filter）だけにかける
     extraction_parameters = point_extraction_parameters(
         arg('point_extraction'), share / 'config', Path(arg('exclude_regions_file')),
+        arg('field_file'),
     )
 
     fast_lio_overrides: dict[str, object] = {
@@ -277,6 +278,11 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('map_path', description='地図の PCD'),
+        DeclareLaunchArgument(
+            'field_file', default_value='',
+            description='フィールドの範囲（field.x_min など）を config/field.yaml の後から重ねる設定ファイル'
+                        '（空なら重ねない。navigation.launch.py は map_name のプリセットで選ぶ）',
+        ),
         DeclareLaunchArgument('initial_x', default_value='0.0', description='地図上の初期位置 x [m]'),
         DeclareLaunchArgument('initial_y', default_value='0.0', description='地図上の初期位置 y [m]'),
         DeclareLaunchArgument('initial_yaw', default_value='0.0', description='地図上の初期方位 [rad]'),

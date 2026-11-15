@@ -18,6 +18,8 @@ using core_perception::FramePoint;
 using core_perception::FrameTransforms;
 using core_perception::selectObstaclePoints;
 using core_perception::SelectionCounts;
+using core_perception::cylinderSelfFilterFromFootprint;
+using core_perception::insideSelf;
 using core_perception::selfFilterFromFootprint;
 using core_perception::StaticMap;
 
@@ -142,6 +144,22 @@ TEST(SelfFilter, FootprintGivesSameBoxAsBefore)
   EXPECT_DOUBLE_EQ(rectangle.half_length_m, 0.6);
   EXPECT_DOUBLE_EQ(rectangle.half_width_m, 0.4);
   EXPECT_DOUBLE_EQ(rectangle.top_height_m, 0.6);
+}
+
+TEST(SelfFilter, CylinderCoversRotatedChassis)
+{
+  // 0.8m 角の外接円 0.566m に余裕 0.05m。箱の角の外（x = y = 0.42m）も、駆動部が 45 度回ったときの角
+  // （x = 0.6m）も自機に含める
+  const auto cylinder = cylinderSelfFilterFromFootprint(0.8, 0.8, 0.8, 0.05);
+  EXPECT_NEAR(cylinder.radius_m, std::hypot(0.4, 0.4) + 0.05, 1e-12);
+  EXPECT_TRUE(insideSelf(Eigen::Vector3f(0.42F, 0.42F, 0.3F), cylinder));
+  EXPECT_TRUE(insideSelf(Eigen::Vector3f(0.6F, 0.0F, 0.3F), cylinder));
+  EXPECT_FALSE(insideSelf(Eigen::Vector3f(0.65F, 0.0F, 0.3F), cylinder));
+  // 上面より上は自機に数えない
+  EXPECT_FALSE(insideSelf(Eigen::Vector3f(0.0F, 0.0F, 0.9F), cylinder));
+  // 箱では、45 度回った駆動部の角を自機として除けない
+  const auto box = selfFilterFromFootprint(0.8, 0.8, 0.8, 0.05);
+  EXPECT_FALSE(insideSelf(Eigen::Vector3f(0.6F, 0.0F, 0.3F), box));
 }
 
 TEST(SelfFilter, RemovesPointsInsideBoxBelowLidar)

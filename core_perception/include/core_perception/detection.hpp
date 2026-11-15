@@ -21,6 +21,8 @@ struct SelfFilterParams
   double half_width_m{0.45};
   // base_link（床に投影した機体中心）での箱の上面の高さ（機体の上面 0.8m と余裕 0.05m）
   double top_height_m{0.85};
+  // 0 より大きければ、xy は箱ではなくこの半径 [m] の円柱で判定する（上部の下で駆動部が回る機体）
+  double radius_m{0.0};
   // LiDAR からこの距離 [m] 未満の点を、箱とは別に除く。実機のドライバは返りのない向きの点を (0,0,0) で出す
   // （2026-03 の実機の bag では 1 回の約 35%）。箱だけに頼ると、LiDAR を箱の外に付けたとき、その点が LiDAR の
   // 位置の障害物になる。Mid-360 の最短距離 0.1m。0 で使わない
@@ -122,6 +124,13 @@ struct SelectionCounts
 // 上面を機体の高さ（footprint.height_m）に余裕を足した値にした箱。FAST-LIO の前処理も launch で同じ値を受け取る
 SelfFilterParams selfFilterFromFootprint(
   double length_m, double width_m, double height_m, double margin_m);
+
+// 上の箱の xy を、長さと幅の半分の外接円に余裕を足した半径の円柱にする（footprint.self_filter_shape: cylinder）
+SelfFilterParams cylinderSelfFilterFromFootprint(
+  double length_m, double width_m, double height_m, double margin_m);
+
+// base_link の点が自機の形（箱か円柱）の中にあるか
+bool insideSelf(const Eigen::Vector3f & base, const SelfFilterParams & params);
 
 // 自機、地面、フィールド外、固定物、外れ値を除いた点を返す。自機は base_link で xy が箱の中にあり、
 // 高さが箱の上面以下の点（LiDAR は機体の前の端の低い所にあるので、LiDAR より上の機体の面も除く）

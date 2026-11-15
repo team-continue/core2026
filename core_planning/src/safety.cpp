@@ -87,8 +87,7 @@ double gapAt(
   const double dy = obstacle.y + obstacle.vy * t - pose.y;
   const double c = std::cos(pose.yaw);
   const double s = std::sin(pose.yaw);
-  return signedDistanceToRectangle(
-    c * dx + s * dy, -s * dx + c * dy, footprint.half_length_m, footprint.half_width_m) -
+  return signedDistanceToFootprint(c * dx + s * dy, -s * dx + c * dy, footprint) -
          obstacleRadius(obstacle.kind) - margin;
 }
 
@@ -252,8 +251,7 @@ Clearance reachableClearance(
       if (approach <= kApproachSpeedMps) {
         continue;
       }
-      const double gap = signedDistanceToRectangle(
-        c * dx + s * dy, -s * dx + c * dy, footprint.half_length_m, footprint.half_width_m) -
+      const double gap = signedDistanceToFootprint(c * dx + s * dy, -s * dx + c * dy, footprint) -
         reachableRadius(obstacle, sample.t, params);
       clearance.min_gap = std::min(clearance.min_gap, gap);
       if (gap <= 0.0 && !clearance.violation.has_value()) {
@@ -511,8 +509,7 @@ std::optional<Contact> firstContact(
     const double elapsed = sample.t + obstacle.age_s;
     const double dx = obstacle.x + obstacle.vx * elapsed - sample.position.x;
     const double dy = obstacle.y + obstacle.vy * elapsed - sample.position.y;
-    const double gap = signedDistanceToRectangle(
-      c * dx + s * dy, -s * dx + c * dy, footprint.half_length_m, footprint.half_width_m) -
+    const double gap = signedDistanceToFootprint(c * dx + s * dy, -s * dx + c * dy, footprint) -
       obstacleRadius(obstacle.kind);
     if (gap > 0.0) {
       continue;

@@ -10,6 +10,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 from core_nav_launch.composition import COMPOSITION_MODES, DEFAULT_COMPOSITION
 from core_nav_launch.imu_source import DEFAULT_IMU_SOURCE, IMU_SOURCES
 from core_nav_launch.point_extraction import DEFAULT_POINT_EXTRACTION, POINT_EXTRACTION_MODES
@@ -28,6 +29,15 @@ def generate_launch_description() -> LaunchDescription:
         'lio_self_filter', 'rear_lidar', 'composition', 'localization_params_file',
         'lidar_roll', 'body_height', 'lidar_scan_motion', 'lidar_no_return_points',
         'state_source',
+    )
+    # 実機と同じく、手動と自動の指令は control_mode_manager を通して /control/cmd_vel へ出す
+    control_mode_manager = Node(
+        package='core_body_controller',
+        executable='control_mode_manager_node',
+        name='control_mode_manager',
+        namespace='control',
+        output='screen',
+        parameters=[{'use_sim_time': True}],
     )
     return LaunchDescription([
         DeclareLaunchArgument('x', default_value='-6.0'),
@@ -117,4 +127,5 @@ def generate_launch_description() -> LaunchDescription:
                 }.items(),
             ),
         ]),
+        control_mode_manager,
     ])

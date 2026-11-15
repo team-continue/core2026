@@ -19,6 +19,7 @@ find_package(PCL REQUIRED COMPONENTS common io)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(Threads REQUIRED)
@@ -57,6 +58,7 @@ target_link_libraries(${PROJECT_NAME}_nodes
   rclcpp::rclcpp
   rclcpp_components::component
   ${sensor_msgs_TARGETS}
+  ${std_msgs_TARGETS}
   tf2::tf2
   tf2_ros::tf2_ros
 )
@@ -99,7 +101,8 @@ install(TARGETS tracking_bench DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  foreach(name test_drive_delay test_jps test_mppi test_path_smoother test_safety test_traction_estimator
+  foreach(name test_drive_delay test_footprint test_jps test_mppi test_path_smoother test_safety
+    test_traction_estimator
     test_tracks_sync)
     ament_add_gtest(${name} test/${name}.cpp)
     target_link_libraries(${name} ${PROJECT_NAME}_core)

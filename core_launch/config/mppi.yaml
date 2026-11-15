@@ -26,9 +26,11 @@
       # （3.0、reference_decel_mps2 2.0、曲がりの上限なし、planner の extra_clearance_m 0.3）は静止物に
       # 触れた（5m/s の obstacle_goals 16 回で 4 回）。今の組み合わせで 0 回。滑らない床では周回が延びる
       # （下の curve を参照）
-      max_accel_mps2: 2.5
+      # core2026 の足回り（body_control_node の acceleration 2.0m/s²、rotation_acceleration 1.0rad/s²）に
+      # 合わせる（lidar_nav では 2.5m/s²・6.0rad/s²）。足回りが計画より遅く加速すると、予測とずれる
+      max_accel_mps2: 2.0
       max_angular_speed_radps: 1.5
-      max_angular_accel_radps2: 6.0
+      max_angular_accel_radps2: 1.0
       # 向きの目標（heading.mode で決める）へ回る速さの、向きの誤差に対する比。向きはサンプルせず、この比で決める
       yaw_gain_per_s: 1.5
       # 参照軌道の減速度。max_accel_mps2 と同じ理由で、滑る床でも止まれる値にする（2.0→1.8）
@@ -66,9 +68,10 @@
         predict_delay: false
         dead_time_s: 0.0
         time_constant_s: 0.0
-        # 駆動の加速度の上限（先を読むときに使う）。シミュレーションの omni_force_drive と同じ値
-        max_accel_mps2: 5.0
-        max_angular_accel_radps2: 10.0
+        # 駆動の加速度の上限（先を読むときに使う）。足回りの body_control_node と、シミュレーションの
+        # omni_force_drive と同じ値
+        max_accel_mps2: 2.0
+        max_angular_accel_radps2: 1.0
         # 予測にも time_constant_s の一次遅れを入れる
         lag_in_rollout: true
       # 到達後や行き詰まりの間（待つ・下がる）も、向かってくる相手を避けるか。止まっている自機に

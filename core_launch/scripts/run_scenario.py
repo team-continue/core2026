@@ -93,7 +93,7 @@ WORLD_TO_MAP: Final = {
 }
 # 点群を除いて記録する
 BAG_TOPICS: Final = (
-    '/behavior/goal_pose', '/planning/plan', '/control/cmd_vel', '/planning/cmd_vel_nav', '/ground_truth/odom', '/localization/lio/odom', '/tf',
+    '/behavior/goal_pose', '/ui/auto/start', '/control/mode', '/planning/plan', '/control/cmd_vel', '/planning/cmd_vel_nav', '/ground_truth/odom', '/localization/lio/odom', '/tf',
     '/tf_static', '/perception/tracks', '/perception/stats', '/planning/navigation/status',
     '/planning/planner/status', '/planning/safety/status', '/planning/contact/status', '/localization/health', '/clock',
 )
@@ -291,7 +291,8 @@ class ScenarioNode(DriveNode):
         self.contact: list[tuple[float, bool]] = []
         self.health_level: int | None = None
         self.perception_ms: list[float] = []
-        self._goal_publisher = self.create_publisher(PoseStamped, '/behavior/goal_pose', 10)
+        # 操縦の UI と同じく、目標を渡して auto を押す（control_mode_manager が自動に入り、計画へ渡す）
+        self._goal_publisher = self.create_publisher(PoseStamped, '/ui/auto/start', 10)
         self.create_subscription(NavigationStatus, '/planning/navigation/status', self._on_navigation, 50)
         self.create_subscription(NavigationStatus, '/planning/planner/status', self._on_planner, 50)
         self.create_subscription(SafetyStatus, '/planning/safety/status', self._on_safety, 50)
