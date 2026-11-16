@@ -21,6 +21,7 @@
 #include "core_shooter/can_command.hpp"
 #include "core_shooter/parameter_utils.hpp"
 #include "core_shooter/test_mode_gate.hpp"
+#include "core_shooter/tracking_controller.hpp"
 
 using namespace std::chrono_literals;
 
@@ -28,7 +29,14 @@ namespace
 {
 constexpr double kDegToRad = M_PI / 180.0;
 
+using core_shooter::AxisPair;
+using core_shooter::AxisTrackingGains;
+using core_shooter::AxisTrackingState;
 using core_shooter::BallisticTable;
+using core_shooter::JointStateHistory;
+using core_shooter::TargetTrack;
+using core_shooter::TargetVelocityFilter;
+using core_shooter::TimedAngles;
 using core_shooter::DirectionAngles;
 using core_shooter::Vector3;
 using core_shooter::isFinite;
@@ -136,10 +144,21 @@ public:
     target_lead_time_sec_ = core_shooter::declareAndGet<double>(*this, "target_lead_time_sec", 0.0);
     target_velocity_min_dt_sec_ = core_shooter::declareAndGet<double>(
       *this, "target_velocity_min_dt_sec", 0.01);
-    target_velocity_max_px_per_sec_ = core_shooter::declareAndGet<double>(
-      *this, "target_velocity_max_px_per_sec", 1500.0);
     target_velocity_ema_alpha_ = core_shooter::declareAndGet<double>(
       *this, "target_velocity_ema_alpha", 0.25);
+    image_latency_sec_ = core_shooter::declareAndGet<double>(*this, "image_latency_sec", 0.0);
+    joint_state_history_sec_ = core_shooter::declareAndGet<double>(
+      *this, "joint_state_history_sec", 1.0);
+    velocity_ff_gain_ = core_shooter::declareAndGet<double>(
+      *this, "tracking.velocity_ff_gain", 0.0);
+    target_yaw_rate_max_ = core_shooter::declareAndGet<double>(
+      *this, "tracking.target_velocity_max.yaw_rad_per_sec", 5.0);
+    target_pitch_rate_max_ = core_shooter::declareAndGet<double>(
+      *this, "tracking.target_velocity_max.pitch_rad_per_sec", 5.0);
+    measured_velocity_ema_alpha_ = core_shooter::declareAndGet<double>(
+      *this, "tracking.measured_velocity_ema_alpha", 0.3);
+    yaw_tracking_gains_ = declareAxisTrackingGains("tracking.yaw");
+    pitch_tracking_gains_ = declareAxisTrackingGains("tracking.pitch");
     max_yaw_rate_ = core_shooter::declareAndGet<double>(*this, "max_yaw_rate", 0.5);
     max_pitch_rate_ = core_shooter::declareAndGet<double>(*this, "max_pitch_rate", 0.5);
     yaw_image_gain_ = core_shooter::declareAndGet<double>(*this, "yaw_image_gain", 0.5);
@@ -258,19 +277,41 @@ public:
       test_yaw_gain_ < 0.0 || test_pitch_gain_ < 0.0 ||
       image_tolerance_x_ < 0.0 || image_tolerance_y_ < 0.0 || target_timeout_sec_ < 0.0 ||
       target_lost_return_to_startup_delay_sec_ < 0.0 || target_lead_time_sec_ < 0.0 ||
-      target_velocity_min_dt_sec_ < 0.0 || target_velocity_max_px_per_sec_ < 0.0 ||
+      target_velocity_min_dt_sec_ < 0.0 ||
       max_yaw_rate_ < 0.0 || max_pitch_rate_ < 0.0)
     {
       RCLCPP_FATAL(
         get_logger(),
-        "Invalid image params: image_width=%f, image_height=%f, horizontal_fov_deg=%f, test_yaw_gain=%f, test_pitch_gain=%f, image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f, target_lost_return_to_startup_delay_sec=%f, target_lead_time_sec=%f, target_velocity_min_dt_sec=%f, target_velocity_max_px_per_sec=%f, max_yaw_rate=%f, max_pitch_rate=%f",
+        "Invalid image params: image_width=%f, image_height=%f, horizontal_fov_deg=%f, test_yaw_gain=%f, test_pitch_gain=%f, image_tolerance_x=%f, image_tolerance_y=%f, target_timeout_sec=%f, target_lost_return_to_startup_delay_sec=%f, target_lead_time_sec=%f, target_velocity_min_dt_sec=%f, max_yaw_rate=%f, max_pitch_rate=%f",
         image_width_, image_height_, horizontal_fov_deg_, test_yaw_gain_, test_pitch_gain_,
         image_tolerance_x_, image_tolerance_y_, target_timeout_sec_,
         target_lost_return_to_startup_delay_sec_, target_lead_time_sec_,
-        target_velocity_min_dt_sec_, target_velocity_max_px_per_sec_,
+        target_velocity_min_dt_sec_,
         max_yaw_rate_, max_pitch_rate_);
       throw std::runtime_error("invalid aimbot image parameters");
     }
+    if (!(image_latency_sec_ >= 0.0) || !(joint_state_history_sec_ > 0.0) ||
+      !std::isfinite(velocity_ff_gain_) || velocity_ff_gain_ < 0.0 ||
+      !(target_yaw_rate_max_ >= 0.0) || !(target_pitch_rate_max_ >= 0.0) ||
+      !(measured_velocity_ema_alpha_ > 0.0 && measured_velocity_ema_alpha_ <= 1.0))
+    {
+      RCLCPP_FATAL(
+        get_logger(),
+        "Invalid tracking params: image_latency_sec=%f (>=0), joint_state_history_sec=%f (>0), tracking.velocity_ff_gain=%f (>=0), tracking.target_velocity_max=(yaw=%f, pitch=%f) (>=0), tracking.measured_velocity_ema_alpha=%f (0<alpha<=1)",
+        image_latency_sec_, joint_state_history_sec_, velocity_ff_gain_,
+        target_yaw_rate_max_, target_pitch_rate_max_, measured_velocity_ema_alpha_);
+      throw std::runtime_error("invalid aimbot tracking parameters");
+    }
+    for (const auto & [axis, gains] :
+      {std::pair{"yaw", yaw_tracking_gains_}, std::pair{"pitch", pitch_tracking_gains_}})
+    {
+      if (const auto gains_error = core_shooter::validateAxisTrackingGains(gains)) {
+        RCLCPP_FATAL(
+          get_logger(), "Invalid tracking.%s gains: %s", axis, gains_error->c_str());
+        throw std::runtime_error("invalid aimbot tracking gains");
+      }
+    }
+    joint_state_history_ = JointStateHistory(joint_state_history_sec_);
     if (target_velocity_ema_alpha_ < 0.0 || target_velocity_ema_alpha_ > 1.0) {
       RCLCPP_FATAL(
         get_logger(),
@@ -457,13 +498,18 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "AimBot started. target_input_mode=image, target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), image_shoot_tolerance=(%.1f, %.1f)px, shoot_fullauto published when turret_auto, target_lead_time=%.3fs, target_velocity_filter=(min_dt=%.3fs,max=%.1fpx/s,alpha=%.2f), return_rate=(yaw=%.3f,pitch=%.3f)rad/s, target_lost_return_delay=%.2fs, test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
+      "AimBot started. target_input_mode=image, target_image_position=PointStamped(center-origin x/y px, z:0=detected 1=none), image_size=(%.0f x %.0f), target_center_norm=(%.3f, %.3f), target_center_px=(%.1f, %.1f), tracking=%s, hfov=%.1fdeg, image_tolerance=(%.3f, %.3f), image_shoot_tolerance=(%.1f, %.1f)px, shoot_fullauto published when turret_auto, target_lead_time=%.3fs, target_velocity_filter=(min_dt=%.3fs,max=(yaw=%.2f,pitch=%.2f)rad/s,alpha=%.2f), image_latency(stamp missing)=%.3fs, velocity_ff_gain=%.2f, tracking_yaw=(kp=%.3f,ki=%.3f,kd=%.3f,i_limit=%.3f), tracking_pitch=(kp=%.3f,ki=%.3f,kd=%.3f,i_limit=%.3f), return_rate=(yaw=%.3f,pitch=%.3f)rad/s, target_lost_return_delay=%.2fs, test_mode_default=%s(topic override supported), startup_release_target=(%.3f, %.3f)",
       image_width_, image_height_, image_center_x_, image_center_y_,
       getImageTargetCenterX(), getImageTargetCenterY(),
       use_fov_image_tracking_ ? "fov" : "gain",
       horizontal_fov_deg_, image_tolerance_x_, image_tolerance_y_,
       image_shoot_tolerance_x_px_, image_shoot_tolerance_y_px_, target_lead_time_sec_,
-      target_velocity_min_dt_sec_, target_velocity_max_px_per_sec_, target_velocity_ema_alpha_,
+      target_velocity_min_dt_sec_, target_yaw_rate_max_, target_pitch_rate_max_,
+      target_velocity_ema_alpha_, image_latency_sec_, velocity_ff_gain_,
+      yaw_tracking_gains_.kp, yaw_tracking_gains_.ki, yaw_tracking_gains_.kd,
+      yaw_tracking_gains_.integral_limit,
+      pitch_tracking_gains_.kp, pitch_tracking_gains_.ki, pitch_tracking_gains_.kd,
+      pitch_tracking_gains_.integral_limit,
       max_yaw_rate_, max_pitch_rate_,
       target_lost_return_to_startup_delay_sec_,
       enable_test_mode_ ? "true" : "false",
@@ -553,12 +599,94 @@ private:
       return;
     }
 
-    const rclcpp::Time sample_time = getTargetSampleTime(*msg);
     target_image_x_ = msg->point.x;
     target_image_y_ = msg->point.y;
     has_target_ = true;
-    updateTargetMotionPrediction(msg->point.x, msg->point.y, sample_time);
+    updateImageTargetTrack(getImageCaptureTime(*msg));
     last_target_time_ = this->now();
+  }
+
+  /// 画像の撮影時刻。stamp が無い入力は image_latency_sec だけ前に撮ったものとみなす。
+  rclcpp::Time getImageCaptureTime(const geometry_msgs::msg::PointStamped & msg) const
+  {
+    if (msg.header.stamp.sec == 0 && msg.header.stamp.nanosec == 0) {
+      return this->now() - rclcpp::Duration::from_seconds(image_latency_sec_);
+    }
+    return rclcpp::Time(msg.header.stamp, this->get_clock()->get_clock_type());
+  }
+
+  /// 画像誤差[px]を、撮影時刻の砲塔の向きからのずれ角[rad]に直す。不感帯内は 0。
+  AxisPair imageErrorToAngleOffset(double x_error, double y_error) const
+  {
+    AxisPair offset;
+    if (use_fov_image_tracking_) {
+      const double horizontal_fov_rad = horizontal_fov_deg_ * kDegToRad;
+      const double vertical_fov_rad = horizontal_fov_rad * (image_height_ / image_width_);
+      if (std::fabs(x_error) > image_tolerance_x_) {
+        // rectilinear camera assumption:
+        // x_px in [-image_width/2, image_width/2] -> yaw offset in [-hfov/2, hfov/2]
+        const double x_norm = std::clamp((2.0 * x_error) / image_width_, -1.0, 1.0);
+        offset.yaw = yaw_direction_ * std::atan(x_norm * std::tan(0.5 * horizontal_fov_rad));
+      }
+      if (std::fabs(y_error) > image_tolerance_y_) {
+        // Vertical FOV is derived from horizontal FOV by image aspect ratio.
+        const double y_norm = std::clamp((2.0 * y_error) / image_height_, -1.0, 1.0);
+        offset.pitch = pitch_direction_ * std::atan(y_norm * std::tan(0.5 * vertical_fov_rad));
+      }
+      return offset;
+    }
+    if (std::fabs(x_error) > image_tolerance_x_) {
+      offset.yaw = yaw_direction_ * yaw_image_gain_ * x_error;
+    }
+    if (std::fabs(y_error) > image_tolerance_y_) {
+      offset.pitch = pitch_direction_ * pitch_image_gain_ * y_error;
+    }
+    return offset;
+  }
+
+  /// 撮影時刻の関節角に画像誤差を足して的の絶対角を求め、角速度の推定を更新する。
+  ///
+  /// 現在角に足すと、検出遅延のあいだに砲塔が回った分だけ目標が二重にずれる。
+  /// 撮影時刻の角度を基準にすれば、遅延があっても目標角は正しい。
+  void updateImageTargetTrack(const rclcpp::Time & capture_time)
+  {
+    const double capture_sec = capture_time.seconds();
+    const auto lookup = joint_state_history_.at(capture_sec);
+    if (!lookup) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "target received but joint_states history is empty: cannot compute target angle");
+      has_target_track_ = false;
+      return;
+    }
+    // 最新の joint_states より少し新しいのは正常（10ms 周期の隙間）。
+    // それを大きく超えるずれは時計の不一致か遅延の見込み違い。
+    constexpr double kCaptureTimeToleranceSec = 0.05;
+    if (std::fabs(lookup->outside_sec) > kCaptureTimeToleranceSec) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "image capture time is outside joint_states history by %.3fs (capture-now=%.3fs, "
+        "history=%.2fs): using the nearest sample. Check image stamp clock / image_latency_sec",
+        lookup->outside_sec, capture_sec - this->now().seconds(), joint_state_history_sec_);
+    }
+
+    const AxisPair offset = imageErrorToAngleOffset(
+      target_image_x_ - getImageTargetCenterX(),
+      target_image_y_ - getImageTargetCenterY());
+    // 指令空間に揃える。pitch の指令は「関節角 + pitch_offset」。
+    const TimedAngles sample{
+      capture_sec,
+      AxisPair{
+        lookup->angles.yaw + offset.yaw,
+        lookup->angles.pitch + pitch_offset_ + offset.pitch}};
+
+    const TargetVelocityFilter filter{
+      target_velocity_min_dt_sec_, target_yaw_rate_max_, target_pitch_rate_max_,
+      target_velocity_ema_alpha_};
+    target_track_ = has_target_track_ ?
+      core_shooter::updateTargetTrack(target_track_, sample, filter) :
+      core_shooter::startTargetTrack(sample);
+    has_target_track_ = true;
   }
 
   void targetPoint3dCallback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
@@ -654,9 +782,27 @@ private:
       return;
     }
 
-    yaw_angle_ = msg->position[yaw_motor_id_];
-    pitch_angle_ = msg->position[pitch_motor_id_];
+    const double sample_sec = (msg->header.stamp.sec == 0 && msg->header.stamp.nanosec == 0) ?
+      this->now().seconds() :
+      rclcpp::Time(msg->header.stamp, this->get_clock()->get_clock_type()).seconds();
+    const double yaw = msg->position[yaw_motor_id_];
+    const double pitch = msg->position[pitch_motor_id_];
+
+    // D 項に使う実角速度。joint_states の velocity は単位が保証されないので角度差分から取る。
+    const double dt = sample_sec - last_joint_state_sec_;
+    if (has_joint_state_ && dt > 0.0) {
+      const double keep = 1.0 - measured_velocity_ema_alpha_;
+      measured_velocity_ = AxisPair{
+        keep * measured_velocity_.yaw + measured_velocity_ema_alpha_ * (yaw - yaw_angle_) / dt,
+        keep * measured_velocity_.pitch +
+        measured_velocity_ema_alpha_ * (pitch - pitch_angle_) / dt};
+    }
+
+    yaw_angle_ = yaw;
+    pitch_angle_ = pitch;
+    last_joint_state_sec_ = sample_sec;
     has_joint_state_ = true;
+    joint_state_history_.push(TimedAngles{sample_sec, AxisPair{yaw, pitch}});
   }
 
   void timerCallback()
@@ -683,6 +829,7 @@ private:
       auto_track_timeout_active_ = false;
       auto_track_timeout_returned_to_startup_ = false;
       startup_release_hold_active_ = false;
+      resetTrackingControllerState();
     }
 
     const bool entering_mode = setActiveControlMode(mode);
@@ -884,9 +1031,8 @@ private:
         // 入力は中心原点のピクセル座標。image_center_x/y で狙う画像中心をずらし、
         // その中心からの誤差で追尾する。
         {
-          const auto [predicted_target_x, predicted_target_y] = getPredictedTargetImagePosition();
-          const double x_error = predicted_target_x - getImageTargetCenterX();
-          const double y_error = predicted_target_y - getImageTargetCenterY();
+          const double x_error = target_image_x_ - getImageTargetCenterX();
+          const double y_error = target_image_y_ - getImageTargetCenterY();
 
           // 狙っている画像中心にターゲットが十分近ければ発射を許す。
           // 判定基準は image_center_x/y（= 実際に狙っている点）なので、
@@ -900,48 +1046,64 @@ private:
               x_error, y_error, image_shoot_tolerance_x_px_, image_shoot_tolerance_y_px_);
           }
 
-          const double yaw_base = has_joint_state_ ? yaw_angle_ : command_yaw_angle_;
-          const double pitch_base = has_joint_state_ ?
-            (pitch_angle_ + pitch_offset_) :
-            command_pitch_angle_;
-
-          // AutoTrack は現在角ベースの比例補正にして、画像ノイズでのドリフトを防ぐ。
-          double yaw_target = yaw_base;
-          double pitch_target = pitch_base;
-
-          if (use_fov_image_tracking_) {
-            const double horizontal_fov_rad = horizontal_fov_deg_ * kDegToRad;
-            const double vertical_fov_rad = horizontal_fov_rad * (image_height_ / image_width_);
-            const double half_hfov_rad = 0.5 * horizontal_fov_rad;
-            const double half_vfov_rad = 0.5 * vertical_fov_rad;
-
-            if (std::fabs(x_error) > image_tolerance_x_) {
-              // rectilinear camera assumption:
-              // x_px in [-image_width/2, image_width/2] -> yaw offset in [-hfov/2, hfov/2]
-              const double x_norm = std::clamp((2.0 * x_error) / image_width_, -1.0, 1.0);
-              const double yaw_offset_rad = std::atan(x_norm * std::tan(half_hfov_rad));
-              yaw_target = yaw_base + yaw_direction_ * yaw_offset_rad;
-            }
-            if (std::fabs(y_error) > image_tolerance_y_) {
-              // Vertical FOV is derived from horizontal FOV by image aspect ratio.
-              const double y_norm = std::clamp((2.0 * y_error) / image_height_, -1.0, 1.0);
-              const double pitch_offset_rad = std::atan(y_norm * std::tan(half_vfov_rad));
-              pitch_target = pitch_base + pitch_direction_ * pitch_offset_rad;
-            }
-          } else {
-            if (std::fabs(x_error) > image_tolerance_x_) {
-              yaw_target = yaw_base + yaw_direction_ * yaw_image_gain_ * x_error;
-            }
-            if (std::fabs(y_error) > image_tolerance_y_) {
-              pitch_target = pitch_base + pitch_direction_ * pitch_image_gain_ * y_error;
-            }
-          }
-
-          setCommandTarget(yaw_target, pitch_target);
-          publishCommandTarget();
+          publishImageTrackingCommand();
           return;
         }
     }
+  }
+
+  /// 的の予測角へ速度 FF + PD で追従する指令を発行する（画像入力）。
+  ///
+  /// 目標角は撮影時刻基準で求めた的の絶対角を、推定角速度で現在時刻
+  /// （+ target_lead_time_sec）まで伸ばしたもの。次の画像が届くまで同じ推定を使うので、
+  /// 同じ画像誤差を毎周期足し込んで行き過ぎることがない。
+  void publishImageTrackingCommand()
+  {
+    if (!has_target_track_) {
+      publishCommandHold("auto track skipped: target angle not available yet");
+      return;
+    }
+
+    const double ff_gain = target_track_.has_velocity ? velocity_ff_gain_ : 0.0;
+    const AxisPair target = core_shooter::predictTargetAngles(
+      target_track_, this->now().seconds() + target_lead_time_sec_, ff_gain);
+    const AxisPair target_velocity{
+      ff_gain * target_track_.velocity.yaw, ff_gain * target_track_.velocity.pitch};
+
+    if (!has_joint_state_) {
+      setCommandTarget(target.yaw, target.pitch);
+      publishCommandTarget();
+      return;
+    }
+
+    const double dt_sec = 1.0 / rate_;
+    const auto yaw_result = core_shooter::stepAxisTracking(
+      yaw_tracking_gains_, yaw_tracking_state_,
+      {target.yaw, target_velocity.yaw, yaw_angle_, measured_velocity_.yaw, dt_sec});
+    const auto pitch_result = core_shooter::stepAxisTracking(
+      pitch_tracking_gains_, pitch_tracking_state_,
+      {target.pitch, target_velocity.pitch, pitch_angle_ + pitch_offset_,
+        measured_velocity_.pitch, dt_sec});
+    yaw_tracking_state_ = yaw_result.state;
+    pitch_tracking_state_ = pitch_result.state;
+
+    setCommandTarget(yaw_result.command, pitch_result.command);
+    publishCommandTarget();
+  }
+
+  void resetTrackingControllerState()
+  {
+    yaw_tracking_state_ = AxisTrackingState{};
+    pitch_tracking_state_ = AxisTrackingState{};
+  }
+
+  AxisTrackingGains declareAxisTrackingGains(const std::string & prefix)
+  {
+    return AxisTrackingGains{
+      core_shooter::declareAndGet<double>(*this, prefix + ".kp", 0.0),
+      core_shooter::declareAndGet<double>(*this, prefix + ".ki", 0.0),
+      core_shooter::declareAndGet<double>(*this, prefix + ".kd", 0.0),
+      core_shooter::declareAndGet<double>(*this, prefix + ".integral_limit", 0.0)};
   }
 
   /// 発射を許可する水平距離かどうか。max_shoot_range_m が 0 以下なら制限なし。
@@ -1459,10 +1621,10 @@ private:
   void resetTargetMotionPrediction()
   {
     has_target_velocity_ = false;
-    target_image_velocity_x_ = 0.0;
-    target_image_velocity_y_ = 0.0;
     target_point_velocity_ = Vector3{};
     has_previous_target_sample_ = false;
+    has_target_track_ = false;
+    resetTrackingControllerState();
   }
 
   void clearPoint3dTarget()
@@ -1470,72 +1632,6 @@ private:
     has_target_ = false;
     target_point_ = Vector3{};
     resetTargetMotionPrediction();
-  }
-
-  void storeTargetSample(double x, double y, const rclcpp::Time & sample_time)
-  {
-    previous_target_image_x_ = x;
-    previous_target_image_y_ = y;
-    previous_target_sample_time_ = sample_time;
-    has_previous_target_sample_ = true;
-  }
-
-  void updateTargetMotionPrediction(double x, double y, const rclcpp::Time & sample_time)
-  {
-    if (!has_previous_target_sample_) {
-      storeTargetSample(x, y, sample_time);
-      return;
-    }
-
-    const double dt = (sample_time - previous_target_sample_time_).seconds();
-    if (dt <= 0.0) {
-      resetTargetMotionPrediction();
-      storeTargetSample(x, y, sample_time);
-      return;
-    }
-    if (dt < target_velocity_min_dt_sec_) {
-      return;
-    }
-
-    const double instant_velocity_x = std::clamp(
-      (x - previous_target_image_x_) / dt,
-      -target_velocity_max_px_per_sec_,
-      target_velocity_max_px_per_sec_);
-    const double instant_velocity_y = std::clamp(
-      (y - previous_target_image_y_) / dt,
-      -target_velocity_max_px_per_sec_,
-      target_velocity_max_px_per_sec_);
-
-    if (!has_target_velocity_ || target_velocity_ema_alpha_ >= 1.0) {
-      target_image_velocity_x_ = instant_velocity_x;
-      target_image_velocity_y_ = instant_velocity_y;
-    } else if (target_velocity_ema_alpha_ <= 0.0) {
-      target_image_velocity_x_ = 0.0;
-      target_image_velocity_y_ = 0.0;
-    } else {
-      const double keep = 1.0 - target_velocity_ema_alpha_;
-      target_image_velocity_x_ =
-        keep * target_image_velocity_x_ + target_velocity_ema_alpha_ * instant_velocity_x;
-      target_image_velocity_y_ =
-        keep * target_image_velocity_y_ + target_velocity_ema_alpha_ * instant_velocity_y;
-    }
-    has_target_velocity_ = true;
-    storeTargetSample(x, y, sample_time);
-  }
-
-  std::pair<double, double> getPredictedTargetImagePosition() const
-  {
-    double predicted_x = target_image_x_;
-    double predicted_y = target_image_y_;
-    if (has_target_velocity_ && target_lead_time_sec_ > 0.0) {
-      predicted_x += target_image_velocity_x_ * target_lead_time_sec_;
-      predicted_y += target_image_velocity_y_ * target_lead_time_sec_;
-    }
-    const double half_width = 0.5 * image_width_;
-    const double half_height = 0.5 * image_height_;
-    predicted_x = std::clamp(predicted_x, -half_width, half_width);
-    predicted_y = std::clamp(predicted_y, -half_height, half_height);
-    return {predicted_x, predicted_y};
   }
 
   void storeTargetPoint3dSample(const Vector3 & point, const rclcpp::Time & sample_time)
@@ -1668,10 +1764,13 @@ private:
   double pitch_angle_ = 0.0;
   double target_image_x_ = 0.0;
   double target_image_y_ = 0.0;
-  double previous_target_image_x_ = 0.0;
-  double previous_target_image_y_ = 0.0;
-  double target_image_velocity_x_ = 0.0;
-  double target_image_velocity_y_ = 0.0;
+  double last_joint_state_sec_ = 0.0;
+  AxisPair measured_velocity_;
+  JointStateHistory joint_state_history_{1.0};
+  TargetTrack target_track_;
+  bool has_target_track_ = false;
+  AxisTrackingState yaw_tracking_state_;
+  AxisTrackingState pitch_tracking_state_;
   Vector3 target_point_;
   Vector3 previous_target_point_;
   Vector3 target_point_velocity_;
@@ -1739,7 +1838,14 @@ private:
   double image_tolerance_y_;
   double target_lead_time_sec_;
   double target_velocity_min_dt_sec_;
-  double target_velocity_max_px_per_sec_;
+  double image_latency_sec_ = 0.0;
+  double joint_state_history_sec_ = 1.0;
+  double velocity_ff_gain_ = 0.0;
+  double target_yaw_rate_max_ = 5.0;
+  double target_pitch_rate_max_ = 5.0;
+  double measured_velocity_ema_alpha_ = 0.3;
+  AxisTrackingGains yaw_tracking_gains_;
+  AxisTrackingGains pitch_tracking_gains_;
   double target_velocity_ema_alpha_;
   double max_yaw_rate_;
   double max_pitch_rate_;

@@ -1,0 +1,59 @@
+# ============================================================================
+# aim_bot 画像追尾の仮想テスト（aim_bot_tracking_sim.launch.py）の設定
+#
+# 仮想砲塔・仮想カメラの条件と、シミュレーション時だけ使う aim_bot の上書き値を置く。
+# 画像サイズ・image_gain・モータ ID などは launch が shooter.params.yaml から読んで渡すので、
+# ここには書かない（aim_bot と仮想カメラで換算がずれないようにするため）。
+# ============================================================================
+
+/**/aim_bot_tracking_sim:
+  ros__parameters:
+    duration_sec: 15.0 # この秒数で終了して結果を表示する
+    metrics_start_sec: 3.0 # 誤差の集計を始める時刻[s]（最初の捕捉を除く）
+    csv_path: "" # 空でなければ全サンプルを CSV に保存する
+
+    # 仮想モータ（むだ時間 + 2次遅れ）。値は仮。実機で同定したら差し替える
+    plant:
+      joint_states_rate_hz: 100.0
+      joint_noise_std_rad: 0.0
+      yaw:
+        natural_frequency_rad_per_sec: 20.0
+        damping_ratio: 0.8
+        delay_sec: 0.03
+        rate_limit_rad_per_sec: 5.0 # 0以下で無効
+      pitch:
+        natural_frequency_rad_per_sec: 20.0
+        damping_ratio: 0.8
+        delay_sec: 0.03
+        rate_limit_rad_per_sec: 5.0
+
+    # 仮想カメラ（検出結果 target_pose を出すまでを含む）
+    camera:
+      fps: 30.0
+      latency_sec: 0.06 # 撮影から target_pose が届くまで[s]
+      latency_jitter_sec: 0.01 # 遅延のばらつき（一様分布の半幅）[s]
+      noise_std_px: 1.0 # 検出位置のノイズ[px]
+      gain_scale_error: 1.0 # 実際の換算 / aim_bot の image_gain。換算のずれへの強さを見る
+      stamp_mode: "capture" # capture: 撮影時刻を stamp に入れる / none: stamp=0（image_latency_sec を使う）
+
+    # 仮想の的（モータ角, 砲塔の初期角 0 基準）
+    target:
+      scenario: "triangle" # static / step / triangle / sine
+      yaw_amplitude_rad: 0.05 # yaw_image_gain=0.0005, 幅320px だと視野は ±0.08rad 程度
+      pitch_amplitude_rad: 0.1
+      period_sec: 4.0
+      yaw_offset_rad: 0.01
+      pitch_offset_rad: 0.02
+
+# シミュレーション時だけ効く aim_bot の上書き。shooter.params.yaml より優先される。
+# 例: ゲインを変えて比べるときはここを書き換える
+/**/aim_bot:
+  ros__parameters:
+    tracking:
+      velocity_ff_gain: 0.0
+      yaw:
+        kp: 0.0
+        kd: 0.0
+      pitch:
+        kp: 0.0
+        kd: 0.0
