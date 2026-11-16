@@ -1,6 +1,8 @@
 #include <core_hardware/core_hardware.hpp>
+#include <core_hardware/led_command.hpp>
 
 #include <chrono>
+#include <stdexcept>
 #include <utility>
 
 using std::placeholders::_1;
@@ -10,6 +12,11 @@ CoreHardware::CoreHardware()
     : rclcpp::Node("core_hardware") {
   declare_parameter("socket_path", std::string(core_hardware::kDefaultSocketPath));
   socket_path_ = get_parameter("socket_path").as_string();
+  const int64_t led_timeout_ms = declare_parameter<int64_t>("led_timeout_ms", 1000);
+  if (led_timeout_ms <= 0) {
+    throw std::invalid_argument("led_timeout_ms must be positive");
+  }
+  led_timeout_ = std::chrono::milliseconds(led_timeout_ms);
 
   can_pub_ = create_publisher<core_msgs::msg::CANArray>("can/rx", 10);
   joint_pub_ = create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
@@ -21,10 +28,12 @@ CoreHardware::CoreHardware()
 
   can_sub_ = create_subscription<core_msgs::msg::CANArray>(
       "can/tx", 10, std::bind(&CoreHardware::can_cb, this, _1));
-  led_upper_sub_ = create_subscription<std_msgs::msg::UInt8>(
-      "led/upper", 10, std::bind(&CoreHardware::led_upper_cb, this, _1));
-  led_bottom_sub_ = create_subscription<std_msgs::msg::UInt8>(
-      "led/bottom", 10, std::bind(&CoreHardware::led_bottom_cb, this, _1));
+  led_upper_sub_ = create_subscription<core_msgs::msg::LedCommand>(
+      "led/upper", 10,
+      [this](const core_msgs::msg::LedCommand::SharedPtr msg) { store_led_command(0U, *msg); });
+  led_bottom_sub_ = create_subscription<core_msgs::msg::LedCommand>(
+      "led/bottom", 10,
+      [this](const core_msgs::msg::LedCommand::SharedPtr msg) { store_led_command(1U, *msg); });
   led_bottom2_sub_ = create_subscription<std_msgs::msg::UInt8>(
       "led/bottom2", 10, std::bind(&CoreHardware::led_bottom2_cb, this, _1));
   timer_ = create_wall_timer(10ms, std::bind(&CoreHardware::timer_cb, this));
@@ -38,6 +47,7 @@ CoreHardware::CoreHardware()
 void CoreHardware::timer_cb() {
   try {
     ensure_connected();
+    update_led_tape();
     const auto payload = core_hardware::encode_snapshot(latest_command_);
     client_.send(core_hardware::IpcMessageType::kCommandSnapshot, sequence_++, payload);
     while (client_.poll_once([this](core_hardware::IpcMessageType type, uint32_t seq, const std::vector<uint8_t>& msg_payload) {
@@ -179,12 +189,17 @@ void CoreHardware::handle_uint8_packet(uint8_t id, const std::vector<uint8_t>& d
   }
 }
 
-void CoreHardware::led_upper_cb(const std_msgs::msg::UInt8::SharedPtr msg) {
-  latest_command_.led_tape[0] = msg->data;
+void CoreHardware::store_led_command(std::size_t slot, const core_msgs::msg::LedCommand& msg) {
+  led_last_value_[slot] = core_hardware::pack_led_command(msg.pattern, msg.color);
+  led_last_rx_tp_[slot] = std::chrono::steady_clock::now();
 }
 
-void CoreHardware::led_bottom_cb(const std_msgs::msg::UInt8::SharedPtr msg) {
-  latest_command_.led_tape[1] = msg->data;
+void CoreHardware::update_led_tape() {
+  const auto now_tp = std::chrono::steady_clock::now();
+  for (std::size_t slot = 0; slot < led_last_value_.size(); ++slot) {
+    latest_command_.led_tape[slot] = core_hardware::led_tape_output(
+        led_last_value_[slot], led_last_rx_tp_[slot], now_tp, led_timeout_);
+  }
 }
 
 void CoreHardware::led_bottom2_cb(const std_msgs::msg::UInt8::SharedPtr msg) {

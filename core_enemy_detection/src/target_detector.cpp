@@ -34,6 +34,9 @@ void targetDetector::changeTarget(const std_msgs::msg::UInt8::SharedPtr msg){
 void targetDetector::detectEnemy(const sensor_msgs::msg::Image::ConstSharedPtr imgMsg){
     resetDamagePanelInfo();
 
+    // 撮影時刻を検出結果まで引き継ぐ。aim_bot はこの時刻の砲塔角を基準に目標角を求める。
+    timeStamp = rclcpp::Time(imgMsg->header.stamp);
+
     // subscribeされたイメージ取得
     rawImage = cv_bridge::toCvShare(imgMsg, "bgr8")->image;
 

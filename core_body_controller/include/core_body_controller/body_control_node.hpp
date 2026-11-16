@@ -24,6 +24,8 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
     joint_state_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr body_omega_;
+  // 車体の回転のうち、無限回転 (rotation_mode) を除いた操作・自律移動の分 [rad/s]
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr body_omega_manual_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rotation_flag_sub_;
 
   void timer_callback();
@@ -34,11 +36,17 @@ private:
   void emergency_stop();
 
   geometry_msgs::msg::Twist cmd_vel_;
+  // 車体の回転を、無限回転の分と操作の分に分けて加速度を制限する (cmd_vel_.angular.z はその和)
+  double spin_omega_ = 0.0;
+  double manual_omega_ = 0.0;
   geometry_msgs::msg::Twist latest_twist_;
   bool emergency_stop_flag_ = true;
   bool has_received_cmd_vel_ = false;
   int rotation_mode_ = 0;
   double latest_body_angle_ = 0;
+  // 腰 (joint_states の ID 4) が車体の正面を向くときの角度 [rad] と、回る向き (1 / -1)
+  double waist_front_offset_ = 3.7822790145874023;
+  double waist_joint_direction_ = 1.0;
   std::chrono::steady_clock::time_point last_cmd_vel_time_;
 
   double ACCELERATION = 2;  // m/s^2

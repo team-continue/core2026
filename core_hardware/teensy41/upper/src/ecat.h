@@ -13,6 +13,8 @@ bool ecat_setInt32(const uint8_t id, const int *data, const int int_len);
 void ecat_begin();
 void ecat_update();
 void ecat_send();
+// EtherCAT の port 0 に物理リンクがあるか (ESC の DL Status を SPI で読む)。loop() から呼ぶ
+bool ecat_link_up();
 
 void ecat_FrameCallBack();
 void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len);

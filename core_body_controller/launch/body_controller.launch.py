@@ -64,6 +64,23 @@ def generate_launch_description() -> LaunchDescription:
         description="Launch control_mode_manager (false when the caller launches its own)",
     )
     use_sim_time = ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool)
+    waist_front_offset_arg = DeclareLaunchArgument(
+        "waist_front_offset",
+        default_value="3.7822790145874023",
+        description="Waist motor position when the upper body faces the chassis front [rad]",
+    )
+    waist_joint_direction_arg = DeclareLaunchArgument(
+        "waist_joint_direction",
+        default_value="1.0",
+        description="1.0 if a positive waist motor position turns the upper body to positive yaw, "
+        "otherwise -1.0",
+    )
+    yaw_mode_arg = DeclareLaunchArgument(
+        "yaw_mode",
+        default_value="1",
+        description="Initial waist yaw mode (0: front, 1: turret); "
+        "switch at runtime with /control/yaw_mode",
+    )
     use_damiao_imu_arg = DeclareLaunchArgument(
         "use_damiao_imu",
         default_value="true",
@@ -132,6 +149,12 @@ def generate_launch_description() -> LaunchDescription:
                 "high_rotation_velocity": LaunchConfiguration("high_rotation_velocity"),
                 "cmd_vel_timeout_sec": LaunchConfiguration("cmd_vel_timeout_sec"),
                 "use_sim_time": use_sim_time,
+                "waist_front_offset": ParameterValue(
+                    LaunchConfiguration("waist_front_offset"), value_type=float
+                ),
+                "waist_joint_direction": ParameterValue(
+                    LaunchConfiguration("waist_joint_direction"), value_type=float
+                ),
             }
         ],
     )
@@ -145,6 +168,7 @@ def generate_launch_description() -> LaunchDescription:
             ("imu", "/sensing/imu"),
             ("can/tx", "/hardware/can/tx"),
             ("/rotation", "/control/rotation"),
+            ("joint_states", "/hardware/joint_states"),
         ],
         parameters=[
             {
@@ -158,6 +182,15 @@ def generate_launch_description() -> LaunchDescription:
                     "body_omega_timeout_sec"
                 ),
                 "use_sim_time": use_sim_time,
+                "yaw_mode": ParameterValue(
+                    LaunchConfiguration("yaw_mode"), value_type=int
+                ),
+                "waist_front_offset": ParameterValue(
+                    LaunchConfiguration("waist_front_offset"), value_type=float
+                ),
+                "waist_joint_direction": ParameterValue(
+                    LaunchConfiguration("waist_joint_direction"), value_type=float
+                ),
             }
         ],
     )
@@ -195,6 +228,9 @@ def generate_launch_description() -> LaunchDescription:
             body_omega_timeout_arg,
             use_sim_time_arg,
             use_control_mode_manager_arg,
+            waist_front_offset_arg,
+            waist_joint_direction_arg,
+            yaw_mode_arg,
             use_damiao_imu_arg,
             imu_port_arg,
             imu_baudrate_arg,
