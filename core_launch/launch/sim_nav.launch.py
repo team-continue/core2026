@@ -8,7 +8,9 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch import LaunchContext, LaunchDescriptionEntity
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, OpaqueFunction, Shutdown,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -58,6 +60,26 @@ def generate_launch_description() -> LaunchDescription:
         namespace='control',
         output='screen',
         parameters=[{'use_sim_time': True}],
+    )
+    # 緊急停止の判定（core_mode の emergency_handler。実機では mode.launch.py が起動する）。操縦の UI の緊急停止
+    # （ros2_ws_bridge が /system/emergency/software_emergency に出す）を /system/emergency/hazard_status にし、
+    # control_mode_manager が自動をやめて手動に戻す。マイコンと bridge の死活監視（diagnostic）は、
+    # シミュレーションにはマイコンが無く常に通信断になるので起動しない。
+    # 起動時の緊急停止のラッチは外す（UI を繋がずに RViz や run_scenario.py から目標を送れるように。
+    # UI は繋いだときに緊急停止を入れるので、UI から使うときは実機と同じく解除してから走る）
+    emergency_handler = Node(
+        package='core_mode',
+        executable='emergency_handler',
+        name='emergency_handler',
+        namespace='system/emergency',
+        output='screen',
+        parameters=[{'use_sim_time': True, 'start_latched': False}],
+        remappings=[
+            ('emergency_switch', '/hardware/hardware_emergency'),
+            ('destroy', '/hardware/destroy'),
+        ],
+        # 実機と同じく、緊急停止の判定が止まったまま走り続けないよう、落ちたら全体を止める
+        on_exit=Shutdown(reason='emergency_handler exited'),
     )
     # RViz の機体に重ねる自己位置の状態（床の色の円と評価値の文字）。RViz を別に開いても見えるよう、常に起動する
     localization_status = Node(
@@ -182,6 +204,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
         ]),
         control_mode_manager,
+        emergency_handler,
         OpaqueFunction(function=map_publisher),
         localization_status,
         rviz,
