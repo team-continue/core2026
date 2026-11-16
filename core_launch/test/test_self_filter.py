@@ -24,7 +24,9 @@ CONFIG = Path(__file__).resolve().parents[1] / 'config'
 ROBOT_XACRO = Path(get_package_share_directory('core_launch')) / 'urdf' / 'core2026.urdf.xacro'
 
 # 機体の前の端、床から 0.25m、正立（lidar_nav の既定の取り付け。変換の計算を確かめる）
-FRONT_MOUNT: dict[str, str] = {'lidar_x': '0.44', 'lidar_height': '0.25', 'lidar_roll': '0.0'}
+FRONT_MOUNT: dict[str, str] = {
+    'lidar_x': '0.44', 'lidar_y': '0.0', 'lidar_height': '0.25',
+    'lidar_roll': '0.0', 'lidar_pitch': '0.0', 'lidar_yaw': '0.0'}
 
 def apply(transform: Transform, point: tuple[float, float, float]) -> tuple[float, ...]:
     r, t = transform.rotation, transform.translation
@@ -64,11 +66,11 @@ def test_compose_applies_inner_first() -> None:
 
 
 def test_robot_xacro_gives_lidar_mount() -> None:
-    # core2026.urdf.xacro の base_to_livox は (lidar_x, 0, lidar_height)、前後の軸まわりに lidar_roll。
-    # 既定は core2026 の実機（機体の中心、床から 0.5m、上下逆さ）
+    # core2026.urdf.xacro の base_to_livox は (lidar_x, lidar_y, lidar_height)、回転は (lidar_roll, lidar_pitch,
+    # lidar_yaw)。既定は Unity の機体の Mid-360 の計測点（前へ 0.132m、床から 0.484m、上下逆さ）
     default = fixed_transform(load_robot_description(ROBOT_XACRO, {}), 'base_link', 'livox_frame')
-    assert_close(default.translation, (0.0, 0.0, 0.5))
-    assert_close(default.rotation, rpy_matrix(math.pi, 0.0, 0.0))
+    assert_close(default.translation, (0.1321, 0.000149, 0.484173))
+    assert_close(default.rotation, rpy_matrix(3.14159, 0.0, 0.00113))
     front = fixed_transform(load_robot_description(ROBOT_XACRO, FRONT_MOUNT), 'base_link', 'livox_frame')
     assert_close(front.translation, (0.44, 0.0, 0.25))
     assert_close(front.rotation, IDENTITY.rotation)
@@ -121,12 +123,12 @@ def test_fixed_transform_errors(description: str, message: str) -> None:
 
 
 def test_detection_box_is_unchanged() -> None:
-    # 移す前の検出の箱: footprint 0.8m の半分 + perception.yaml の self_filter_margin_m 0.05
+    # 検出の箱: footprint 0.70m（Unity の機体）の半分 + self_filter_margin_m 0.05
     box = load_self_box(CONFIG / 'footprint.yaml')
-    assert box.half_length_m == pytest.approx(0.45)
-    assert box.half_width_m == pytest.approx(0.45)
-    # 上面は機体の高さ 0.8m に余裕 0.05m（以前の LiDAR の高さ 0.85m と同じ）
-    assert box.top_height_m == pytest.approx(0.85)
+    assert box.half_length_m == pytest.approx(0.40)
+    assert box.half_width_m == pytest.approx(0.40)
+    # 上面は機体の高さ 0.95m に余裕 0.05m
+    assert box.top_height_m == pytest.approx(1.00)
     # 余裕は footprint.yaml の 1 か所だけに置く
     perception = yaml.safe_load((CONFIG / 'perception.yaml').read_text())['/**']['ros__parameters']
     assert 'self_filter_margin_m' not in perception
@@ -177,9 +179,9 @@ def test_robot_description_errors(tmp_path: Path) -> None:
 def test_fast_lio_parameters_for_each_mode() -> None:
     box = fast_lio_self_filter_parameters('box', CONFIG / 'footprint.yaml', ROBOT_XACRO, FRONT_MOUNT)
     assert box['preprocess.self_filter.enabled'] is True
-    assert box['preprocess.self_filter.half_length'] == pytest.approx(0.45)
-    assert box['preprocess.self_filter.half_width'] == pytest.approx(0.45)
-    assert box['preprocess.self_filter.top_height'] == pytest.approx(0.85)
+    assert box['preprocess.self_filter.half_length'] == pytest.approx(0.40)
+    assert box['preprocess.self_filter.half_width'] == pytest.approx(0.40)
+    assert box['preprocess.self_filter.top_height'] == pytest.approx(1.00)
     assert_close(tuple(box['preprocess.self_filter.extrinsic_T']), (0.44, 0.0, 0.25))
     assert_close(tuple(box['preprocess.self_filter.extrinsic_R']), IDENTITY.rotation)
     assert 'preprocess.blind' not in box

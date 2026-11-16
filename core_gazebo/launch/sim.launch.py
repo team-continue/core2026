@@ -218,17 +218,17 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument('x', default_value='-6.0', description='初期位置 x [m]'),
         DeclareLaunchArgument('y', default_value='-2.5', description='初期位置 y [m]'),
         DeclareLaunchArgument('yaw', default_value='0.0', description='初期方位 [rad]'),
-        # Mid-360 は機体の前の端（前の面 0.4m の 4cm 外）、床から 0.25m。以前の機体の中心の上は
-        # lidar_x:=0.0 lidar_height:=0.85
-        DeclareLaunchArgument('lidar_x', default_value='0.0', description='LiDARの前後の位置（base_link の x）[m]'),
-        DeclareLaunchArgument('lidar_height', default_value='0.5', description='LiDARの床からの高さ [m]'),
+        # Mid-360 の既定は Unity の機体の取り付け（core2026.urdf.xacro の既定値と同じ）
+        DeclareLaunchArgument('lidar_x', default_value='0.1321', description='LiDARの前後の位置（base_link の x）[m]'),
+        DeclareLaunchArgument('lidar_height', default_value='0.484173', description='LiDARの床からの高さ [m]'),
         DeclareLaunchArgument(
-            'lidar_roll', default_value='3.141592653589793',
-            description='LiDAR の前後の軸まわりの回転 [rad]。3.14159 で上下逆さ（2026-03 の実機の bag の付け方）',
+            'lidar_roll', default_value='3.14159',
+            description='LiDAR の前後の軸まわりの回転 [rad]。3.14159 で上下逆さ（既定。Unity の機体と 2026-03 の'
+                        '実機の bag の付け方）。左右の位置・ほかの軸の回転は URDF の既定値',
         ),
         DeclareLaunchArgument(
-            'body_height', default_value='0.3',
-            description='シミュレーションの機体の箱の高さ [m]（LiDAR を機体の中心の低い所に付けるときに下げる）',
+            'body_height', default_value='0.95',
+            description='機体の上面の床からの高さ [m]（points_to_livox で車体に当たった点を見分ける）',
         ),
         DeclareLaunchArgument(
             'rear_lidar', default_value='false', choices=['true', 'false'],

@@ -25,9 +25,13 @@ import yaml
 CONFIG = Path(__file__).resolve().parents[1] / 'config' / 'imu_source.yaml'
 ROBOT_XACRO = Path(get_package_share_directory('core_launch')) / 'urdf' / 'core2026.urdf.xacro'
 # 今の取り付け（機体の前の端、床から 0.25m。xacro の既定）と、以前の取り付け（機体の中心の上 0.85m）
-# 取り付けは明示する（core2026.urdf.xacro の既定は core2026 の実機の、機体の中心・0.5m・上下逆さ）
-FRONT_MOUNT: dict[str, str] = {'lidar_x': '0.44', 'lidar_height': '0.25', 'lidar_roll': '0.0'}
-CENTER_MOUNT = {'lidar_x': '0.0', 'lidar_height': '0.85', 'lidar_roll': '0.0'}
+# 取り付けは明示する（core2026.urdf.xacro の既定は Unity の機体の、床から 0.484m・上下逆さ。Damiao も Unity の
+# IMU の位置なので、ここでは以前の (0, 0, 0.4)m・回転なしにする）
+UPRIGHT: dict[str, str] = {
+    'lidar_y': '0.0', 'lidar_pitch': '0.0', 'lidar_yaw': '0.0',
+    'damiao_imu_x': '0.0', 'damiao_imu_y': '0.0', 'damiao_imu_z': '0.4', 'damiao_imu_roll': '0.0'}
+FRONT_MOUNT: dict[str, str] = {**UPRIGHT, 'lidar_x': '0.44', 'lidar_height': '0.25', 'lidar_roll': '0.0'}
+CENTER_MOUNT = {**UPRIGHT, 'lidar_x': '0.0', 'lidar_height': '0.85', 'lidar_roll': '0.0'}
 # FAST-LIO の mid360.yaml の値（IMU から見た LiDAR の位置）
 LIVOX_EXTRINSIC_T = (-0.011, -0.02329, 0.04412)
 

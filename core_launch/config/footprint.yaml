@@ -12,13 +12,14 @@
       # 自機の除去の形（検出と FAST-LIO）。box: base_link の向きの箱、cylinder: 外接円の円柱（駆動部が
       # 回っても自機の点を残さない）。円柱の半径は、長さと幅の半分の外接円に self_filter_margin_m を足す
       self_filter_shape: cylinder
-      length_m: 0.8
-      width_m: 0.8
+      # Unity の機体（core2026.urdf.xacro）の外形 0.70m 角
+      length_m: 0.70
+      width_m: 0.70
       margin_m: 0.1
       # 機体の上面の床からの高さ [m]。自機の除去だけに使う
-      height_m: 0.8
+      height_m: 0.95
       # 自機の除去の余裕 [m]。検出（perception_node）と FAST-LIO の前処理は、base_link（床に投影した機体中心）で
       # xy が長さと幅の半分にこの値を足した箱の中にあり、高さが height_m にこの値を足した値以下の点を自機として
-      # 除く（FAST-LIO の値は launch がここと URDF から作る）。LiDAR は機体の前の端の低い所（床から 0.25m）に
+      # 除く（FAST-LIO の値は launch がここと URDF から作る）。LiDAR は機体の中ほど（床から 0.48m）に
       # あるので、機体の上面までを除く。enabled は衝突判定だけの切り替えで、自機の除去には効かない
       self_filter_margin_m: 0.05
