@@ -36,12 +36,18 @@ jobs:
           mkdir -p /ros2_ws/src
           cp -r $GITHUB_WORKSPACE /ros2_ws/src/core2026
           find /ros2_ws/src -name '_codeql*' -exec rm -rf {} + 2>/dev/null || true
+          # 自律移動が使う livox_ros_driver2 は、メッセージ定義だけのパッケージを置く（core_launch/scripts/setup_thirdparty.sh
+          # と同じ）。core_launch の中にあると rosdep と colcon が探さないので、ワークスペースの別の場所へ写す
+          mkdir -p /ros2_ws/src/thirdparty/livox_ros_driver2
+          cp -r /ros2_ws/src/core2026/core_launch/thirdparty/livox_ros_driver2_msgs/. /ros2_ws/src/thirdparty/livox_ros_driver2/
+          rm -f /ros2_ws/src/thirdparty/livox_ros_driver2/COLCON_IGNORE
 
       - name: Install dependencies
         run: |
           apt-get update &&
           rosdep update &&
-          rosdep install --from-paths /ros2_ws/src -i -y --rosdistro ${{ matrix.rosdistro }}
+          rosdep install --from-paths /ros2_ws/src -i -y --rosdistro ${{ matrix.rosdistro }} \
+            --skip-keys "fast_lio lidar_localization_ros2"
 
       - name: Install diagnostic-updater
         run: apt-get install -y ros-${{ matrix.rosdistro }}-diagnostic-updater
@@ -70,18 +76,17 @@ jobs:
           cd /ros2_ws &&
           colcon test --packages-select \
             core_body_controller \
-            core_cmd_vel_smoother \
-            core_costmap_builder \
             core_damiao_imu \
             core_hardware \
             core_launch \
-            core_mppi \
+            core_localization \
             core_msgs \
+            core_nav_common \
             core_path_follower \
-            core_path_planner \
+            core_perception \
+            core_planning \
             core_test \
-            core_tools \
-            ros_tcp_endpoint &&
+            core_tools &&
           colcon test-result --verbose
 
       - name: Format with ament_clang_format
