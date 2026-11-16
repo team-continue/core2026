@@ -68,6 +68,8 @@ struct PlannerParams
 {
   double blocked_speed_mps{0.3};
   double reached_clear_radius_m{0.5};
+  // ジャンプポイントの間のセルにも直線で飛ぶ（shortcutPath）。false でジャンプポイントの間だけ（simplifyPath）
+  bool any_angle_shortcut{true};
 };
 
 struct GoalHandlingParams
@@ -174,9 +176,11 @@ std::optional<PlanarPose> findAlternativeGoal(
   return best;
 }
 
-// 格子で経路を探す。始点と終点が占有の中なら、近くの空きセルから探す
+// 格子で経路を探す。始点と終点が占有の中なら、近くの空きセルから探す。any_angle_shortcut なら、
+// ジャンプポイントの間のセルにも見通しで飛んで短くする（shortcutPath。false なら simplifyPath）
 std::optional<std::vector<GridCell>> planOnGrid(
-  const OccupancyGrid & grid, const PlanarPose & robot, const PlanarPose & target)
+  const OccupancyGrid & grid, const PlanarPose & robot, const PlanarPose & target,
+  const bool any_angle_shortcut)
 {
   const GridInfo & info = grid.info();
   const int radius_cells = static_cast<int>(std::ceil(kNearestFreeRadiusM / info.resolution));
@@ -189,7 +193,7 @@ std::optional<std::vector<GridCell>> planOnGrid(
   if (!path.has_value()) {
     return std::nullopt;
   }
-  return simplifyPath(grid, *path);
+  return any_angle_shortcut ? shortcutPath(grid, *path) : simplifyPath(grid, *path);
 }
 
 geometry_msgs::msg::Pose makePose(const double x, const double y, const double yaw)
@@ -288,6 +292,9 @@ public:
     declareDouble(*this, "planner.blocked_speed_mps", 0.3, 0.0, 5.0, "止まっているとみなす速度");
     declareDouble(
       *this, "planner.reached_clear_radius_m", 0.5, 0.01, 5.0, "到達でゴールを解除する距離");
+    declareBool(
+      *this, "planner.any_angle_shortcut", true,
+      "ジャンプポイントの間のセルにも直線で飛び、直線で行ける所の折れを除く");
     declareBool(*this, "planner.smoothing.enabled", true, "静止物の周りで経路を曲線にする");
     declareDouble(*this, "planner.smoothing.spacing_m", 0.1, 0.02, 1.0, "曲線の点の間隔");
     declareDouble(
@@ -343,6 +350,7 @@ private:
     planner_params_.blocked_speed_mps = get_parameter("planner.blocked_speed_mps").as_double();
     planner_params_.reached_clear_radius_m =
       get_parameter("planner.reached_clear_radius_m").as_double();
+    planner_params_.any_angle_shortcut = get_parameter("planner.any_angle_shortcut").as_bool();
     goal_params_.enabled = get_parameter("goal_handling.enabled").as_bool();
     goal_params_.occupied_radius_m = get_parameter("goal_handling.occupied_radius_m").as_double();
     goal_params_.wait_s = get_parameter("goal_handling.wait_s").as_double();
@@ -630,10 +638,10 @@ private:
 
     // 相手を避ける経路がなければ、固定物だけで計画する。塞がれていれば局所計画が止まる
     const OccupancyGrid * used_grid = &blocked;
-    auto cells = planOnGrid(blocked, *robot, *target);
+    auto cells = planOnGrid(blocked, *robot, *target, planner_params_.any_angle_shortcut);
     if (!cells.has_value()) {
       used_grid = &inflated_;
-      cells = planOnGrid(inflated_, *robot, *target);
+      cells = planOnGrid(inflated_, *robot, *target, planner_params_.any_angle_shortcut);
     }
     if (!cells.has_value()) {
       RCLCPP_WARN_THROTTLE(

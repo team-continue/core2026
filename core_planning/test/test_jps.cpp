@@ -2,6 +2,7 @@
 #include <limits>
 #include <queue>
 #include <random>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -19,6 +20,8 @@ using core_planning::GridInfo;
 using core_planning::hasLineOfSight;
 using core_planning::OccupancyGrid;
 using core_planning::pathLength;
+using core_planning::expandPath;
+using core_planning::shortcutPath;
 using core_planning::simplifyPath;
 
 OccupancyGrid emptyGrid(const int width, const int height)
@@ -127,6 +130,40 @@ TEST(SimplifyPath, RemovesPointsWithLineOfSight)
   const auto simplified = simplifyPath(grid, path);
   ASSERT_EQ(simplified.size(), 2U);
   EXPECT_EQ(simplified.back(), path.back());
+}
+
+TEST(ShortcutPath, CutsAcrossJumpPointsWhereSimplifyKeepsABend)
+{
+  // 8 方向の経路 (0,0)→(10,10)→(30,10)。(0,0) から (30,10) は壁でふさがるが、(0,0) から辺の途中の
+  // (20,10) へは見通しがある。simplifyPath はジャンプポイントにしか飛べないので 45° の曲がりが残る
+  auto grid = emptyGrid(40, 20);
+  for (int x = 22; x <= 30; ++x) {
+    grid.setOccupied(GridCell{x, 5});
+    grid.setOccupied(GridCell{x, 6});
+    grid.setOccupied(GridCell{x, 7});
+  }
+  const std::vector<GridCell> path{{0, 0}, {10, 10}, {30, 10}};
+  ASSERT_FALSE(hasLineOfSight(grid, path.front(), path.back()));
+  const auto simplified = simplifyPath(grid, path);
+  EXPECT_EQ(simplified, path);
+  const auto shortcut = shortcutPath(grid, path);
+  ASSERT_EQ(shortcut.size(), 3U);
+  EXPECT_EQ(shortcut.front(), path.front());
+  EXPECT_EQ(shortcut.back(), path.back());
+  // 曲がる所はジャンプポイント (10,10) より先の辺の上
+  EXPECT_EQ(shortcut[1].y, 10);
+  EXPECT_GT(shortcut[1].x, 10);
+  for (std::size_t i = 1U; i < shortcut.size(); ++i) {
+    EXPECT_TRUE(hasLineOfSight(grid, shortcut[i - 1U], shortcut[i]));
+  }
+}
+
+TEST(ExpandPath, ListsEveryCellAndRejectsNonOctileSegments)
+{
+  const auto cells = expandPath({{0, 0}, {2, 2}, {2, 5}});
+  const std::vector<GridCell> expected{{0, 0}, {1, 1}, {2, 2}, {2, 3}, {2, 4}, {2, 5}};
+  EXPECT_EQ(cells, expected);
+  EXPECT_THROW(expandPath({{0, 0}, {3, 1}}), std::invalid_argument);
 }
 
 TEST(HasLineOfSight, DetectsWall)

@@ -237,6 +237,8 @@ struct BenchParams
   // true なら、曲線化の目標の余裕を、狭い通路を使わない半径（外接円 + 余裕）に extra_clearance_m を
   // 足した距離にする（global_planner_node と同じ）
   bool smoothing_keep_clearance{true};
+  // global_planner と同じ（planner.any_angle_shortcut）
+  bool any_angle_shortcut{true};
 };
 
 double toDouble(const std::string & text)
@@ -368,6 +370,10 @@ bool applyBenchParameter(BenchParams & params, const std::string & name, const s
     params.smoothing.iterations = static_cast<int>(toDouble(value));
     return true;
   }
+  if (name == "planner.any_angle_shortcut") {
+    params.any_angle_shortcut = toBool(value);
+    return true;
+  }
   if (name == "planner.smoothing.enabled") {
     params.smoothing.enabled = toBool(value);
     return true;
@@ -470,7 +476,7 @@ class GlobalPlanner
 {
 public:
   GlobalPlanner(const BenchParams & params, const std::string & map_path)
-  : smoothing_(params.smoothing)
+  : smoothing_(params.smoothing), any_angle_shortcut_(params.any_angle_shortcut)
   {
     OccupancyGrid grid =
       core_planning::makeFieldGrid(params.stack.field, params.planner_resolution_m);
@@ -505,7 +511,9 @@ public:
     if (!found.has_value()) {
       return std::nullopt;
     }
-    const auto cells = core_planning::simplifyPath(inflated_, *found);
+    const auto cells = any_angle_shortcut_ ?
+      core_planning::shortcutPath(inflated_, *found) :
+      core_planning::simplifyPath(inflated_, *found);
     std::vector<std::pair<double, double>> points;
     points.emplace_back(robot.x, robot.y);
     for (std::size_t i = 1U; i < cells.size(); ++i) {
@@ -544,6 +552,7 @@ public:
 
 private:
   core_planning::SmoothingParams smoothing_;
+  bool any_angle_shortcut_{true};
   DistanceField distance_;
   OccupancyGrid inflated_;
   double radius_{0.0};

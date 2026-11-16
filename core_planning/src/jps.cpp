@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <limits>
 #include <queue>
+#include <stdexcept>
 #include <utility>
 
 namespace core_planning
@@ -236,6 +237,33 @@ std::vector<GridCell> simplifyPath(const OccupancyGrid & grid, const std::vector
     anchor = next;
   }
   return simplified;
+}
+
+std::vector<GridCell> expandPath(const std::vector<GridCell> & path)
+{
+  if (path.empty()) {
+    return path;
+  }
+  std::vector<GridCell> cells{path.front()};
+  for (std::size_t i = 1U; i < path.size(); ++i) {
+    const GridCell & from = path[i - 1U];
+    const GridCell & to = path[i];
+    const int dx = to.x - from.x;
+    const int dy = to.y - from.y;
+    if (dx != 0 && dy != 0 && std::abs(dx) != std::abs(dy)) {
+      throw std::invalid_argument("expandPath: 区間が 8 方向の直線ではありません");
+    }
+    const int steps = std::max(std::abs(dx), std::abs(dy));
+    for (int k = 1; k <= steps; ++k) {
+      cells.push_back(GridCell{from.x + sign(dx) * k, from.y + sign(dy) * k});
+    }
+  }
+  return cells;
+}
+
+std::vector<GridCell> shortcutPath(const OccupancyGrid & grid, const std::vector<GridCell> & path)
+{
+  return simplifyPath(grid, expandPath(path));
 }
 
 std::optional<GridCell> nearestFreeCell(
