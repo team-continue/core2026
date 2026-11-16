@@ -565,7 +565,7 @@ private:
   }
 
   // 追跡結果の時刻から今までの時間。負なら 0、上限を超えれば警告して上限にする
-  double tracksAge(const rclcpp::Time & time) const
+  double tracksAge(const rclcpp::Time & time)
   {
     const double age =
       (time - rclcpp::Time(latest_tracks_->header.stamp, time.get_clock_type())).seconds();
