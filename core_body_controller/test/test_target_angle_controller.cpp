@@ -178,17 +178,18 @@ TEST(TargetAngleControllerTest, StepTowardAngleMovesSlowlyAlongTheShorterWay)
   EXPECT_NEAR(core_body_controller::step_toward_angle(0.3, 1.0, 0.0), 0.3, 1e-12);
 }
 
-TEST(TargetAngleControllerTest, FrontTargetRemovesTheWaistOffsetFromTheUpperBodyYaw)
+TEST(TargetAngleControllerTest, FrontTargetAddsTheWaistAngleToTheUpperBodyYaw)
 {
-  // 上半身が 1.0 rad、腰が車体の正面から 0.4 rad 回っていれば、車体の正面は 0.6 rad
-  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.0, 1.0), 0.6, 1e-12);
+  // 上半身が 1.0 rad、腰の角度（車体 − 上半身。body_control_node と同じ決め方）が 0.4 rad なら、
+  // 車体の正面は 1.4 rad
+  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.0, 1.0), 1.4, 1e-12);
   // 腰の角度 0 が正面からずれている (オフセット 0.1 rad)
-  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.1, 1.0), 0.7, 1e-12);
+  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.1, 1.0), 1.3, 1e-12);
   // モータの正の向きがワールドの yaw と逆
-  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.0, -1.0), 1.4, 1e-12);
+  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.0, -1.0), 0.6, 1e-12);
   // 角度は -π〜π に収める
   EXPECT_NEAR(
-    core_body_controller::front_world_target(-3.0, 0.5, 0.0, 1.0), 2.7831853071795862,
+    core_body_controller::front_world_target(3.0, 0.5, 0.0, 1.0), -2.7831853071795862,
     1e-12);
 }
 

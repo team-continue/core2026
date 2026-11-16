@@ -55,12 +55,14 @@ inline double step_toward_angle(double current, double goal, double max_step)
 }
 
 // 腰を車体の正面に向ける目標の向き [rad]。IMU は上半身にあるので、
-// 車体の正面の向き = 上半身の向き - 腰の角度 (車体の正面からのずれ)
+// 車体の正面の向き = 上半身の向き + 腰の角度。腰の角度は waist_direction × (waist_position −
+// waist_front_offset) で、上半身から見た車体の向き（車体 − 上半身）。body_control_node が上半身の座標の
+// 指令を車体の座標へ回す角度（invert_kinematics_calc）と同じ決め方
 // waist_direction は腰のモータの角度の正の向きが、ワールドの yaw の正の向きと同じなら 1、逆なら -1
 inline double front_world_target(
   double world_angle, double waist_position, double waist_front_offset, double waist_direction)
 {
-  return normalize_angle(world_angle - waist_direction * (waist_position - waist_front_offset));
+  return normalize_angle(world_angle + waist_direction * (waist_position - waist_front_offset));
 }
 
 // 腰のモータの回る速さに足す先回り [rad/s]。車体の回転のうち、上半身に伝えない分を腰で打ち消す。
