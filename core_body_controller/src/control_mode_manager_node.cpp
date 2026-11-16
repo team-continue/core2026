@@ -70,10 +70,14 @@ public:
 
     manual_sub_ = create_subscription<geometry_msgs::msg::Twist>(
       "/control/manual/cmd_vel", rclcpp::QoS(10),
-      [this](const geometry_msgs::msg::Twist::SharedPtr msg) {forward(*msg, CommandSource::kManual);});
+      [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
+        forward(*msg, CommandSource::kManual);
+      });
     auto_sub_ = create_subscription<geometry_msgs::msg::Twist>(
       "/control/auto/cmd_vel", rclcpp::QoS(10),
-      [this](const geometry_msgs::msg::Twist::SharedPtr msg) {forward(*msg, CommandSource::kAuto);});
+      [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
+        forward(*msg, CommandSource::kAuto);
+      });
     start_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
       "/ui/auto/start", rclcpp::QoS(10),
       [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {onStart(*msg);});

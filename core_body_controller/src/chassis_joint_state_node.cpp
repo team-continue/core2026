@@ -36,7 +36,8 @@ public:
               "joint_name は空でない値にしてください");
     }
 
-    publisher_ = create_publisher<sensor_msgs::msg::JointState>("chassis/joint_states", rclcpp::QoS(10));
+    publisher_ =
+      create_publisher<sensor_msgs::msg::JointState>("chassis/joint_states", rclcpp::QoS(10));
     subscription_ = create_subscription<sensor_msgs::msg::JointState>(
       "/hardware/joint_states", rclcpp::SensorDataQoS(),
       [this](const sensor_msgs::msg::JointState::ConstSharedPtr & msg) {onJointStates(*msg);});

@@ -14,16 +14,17 @@
 namespace core_body_controller
 {
 
-enum class ControlMode : std::uint8_t { kManual, kAuto };
+enum class ControlMode : std::uint8_t {kManual, kAuto};
 
 // 自動の走行の状態（core_msgs/NavigationStatus の state を、このクラスで使う区分にまとめたもの）
-enum class NavigationPhase : std::uint8_t {
+enum class NavigationPhase : std::uint8_t
+{
   kIdle,     // ゴールなし・到達済み
   kActive,   // 走行中（DRIVING・STUCK_WAIT・BACKOFF・GOAL_WAIT）
   kFailed,   // 失敗
 };
 
-enum class CommandSource : std::uint8_t { kManual, kAuto };
+enum class CommandSource : std::uint8_t {kManual, kAuto};
 
 inline std::string toString(const ControlMode mode)
 {
