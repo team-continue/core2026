@@ -1,0 +1,24 @@
+# sim（sim_nav.launch.py）だけで、地図照合（lidar_localization）に既定の設定の後から重ねる設定。実機では読まない。
+# 地図照合を NDT（ndt_resolution 2.0m）から small_gicp の GICP にする。
+# NDT は 2m の升ごとに地図の点を 1 つの分布にまとめるので、厚い構造物の裏側の面も分布に入り、LiDAR に見える手前の面と
+# 合わない。core1 のフィールドでは答えが世界の座標で南へ約 0.11m（場所により 0.02〜0.2m）偏り、見える物が変わると
+# 0.1m ほど跳んで「地図照合の補正が大きい（跳び）」で DEGRADED になり、MPPI の速さが 1.0m/s に抑えられていた
+# （走りの 5.6%）。地図と Gazebo のワールドは 1cm 以内で一致していて、真値の姿勢から NDT で照合し直しても 0.12m 動く。
+# 分解能を変えても、2 段にしても直らない（1.5m で 0.09m、0.5〜1.0m では 0.3〜0.6m に悪化）。
+# GICP は点と面の近さで比べるので偏らない。sim（core1_goals、約 110 秒走行）で、ずれ 中央 0.12→0.003m・最大 0.22→0.02m、
+# DEGRADED 5.6%→0、照合 1 回 中央 0.8→1.0ms・最大 10→5.3ms、9.9 回/秒、sim の速さは同じ。
+# small_gicp（thirdparty/small_gicp v1.0.1）を入れて lidar_localization_ros2 をビルドし直す必要がある。入っていなければ
+# sim_nav.launch.py はこのファイルを使わず NDT のまま起動する。
+# 実機に入れる前に、実機の地図（LiDAR で作った地図）と実機の CPU で、NDT との補正の大きさと計算時間を測る
+/**:
+  ros__parameters:
+    registration_method: SMALL_GICP
+    gicp_max_correspondence_distance: 1.0
+    # GICP 系は周りの地図を切り出して使う（lidar_localization の usesFilteredTarget）。切り出し直す距離が 0 だと
+    # 照合のたびに地図の共分散を作り直す（1 回 約 270ms）。裏のスレッドで作り直すには、使い回せる上限
+    # max(local_map_update_distance, local_map_radius − scan_max_range) が作り直す距離より長い必要がある（50 − 35 = 15m）。
+    # フィールドは 24×15m なので、35m より遠い点は使わなくてよい
+    scan_max_range: 35.0
+    local_map_radius: 50.0
+    local_map_update_distance: 3.0
+    local_map_async_rebuild: true

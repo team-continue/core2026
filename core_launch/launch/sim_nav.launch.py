@@ -4,8 +4,9 @@ composition:=true なら、ノードを処理の段ごとのコンテナ（1 つ
 """
 
 from pathlib import Path
+import sys
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
 from launch import LaunchContext, LaunchDescriptionEntity
 from launch.actions import (
@@ -39,6 +40,23 @@ def map_publisher(context: LaunchContext) -> list[LaunchDescriptionEntity]:
         output='screen',
         parameters=[{'map_yaml': occupancy, 'use_sim_time': True}],
     )]
+
+
+def sim_localization_params(share: Path) -> str:
+    """sim の地図照合の設定（config/sim_localization.yaml）。lidar_localization_ros2 が small_gicp つきで
+    ビルドされていなければ空（NDT のまま）にする。small_gicp なしで SMALL_GICP を選ぶと、照合のノードが起動時に止まる."""
+    library = (Path(get_package_prefix('lidar_localization_ros2')) / 'lib' /
+               'liblidar_localization_component.so')
+    try:
+        built_with_small_gicp = b'small_gicp15RegistrationPCL' in library.resolve().read_bytes()
+    except OSError as error:
+        print(f'[sim_nav] {library} を読めないので、地図照合は NDT のままにします: {error}', file=sys.stderr)
+        return ''
+    if not built_with_small_gicp:
+        print('[sim_nav] lidar_localization_ros2 が small_gicp なしでビルドされているので、地図照合は NDT のままにします'
+              '（thirdparty/small_gicp を入れてビルドし直すと small_gicp の GICP を使います）', file=sys.stderr)
+        return ''
+    return str(share / 'config' / 'sim_localization.yaml')
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -165,6 +183,11 @@ def generate_launch_description() -> LaunchDescription:
                         'false なら安全停止の指令をそのまま通す',
         ),
         DeclareLaunchArgument(
+            'planning_params_file', default_value=str(share / 'config' / 'sim_drive.yaml'),
+            description='計画のノードに既定の設定の後から重ねるパラメータファイル（sim の駆動の遅れなど）。'
+                        '空なら重ねない（実機と同じ設定）',
+        ),
+        DeclareLaunchArgument(
             'occupancy_map', default_value='',
             description='UI に送る占有地図（map_server の yaml）。空なら map_path と同じ名前の .yaml',
         ),
@@ -200,8 +223,10 @@ def generate_launch_description() -> LaunchDescription:
             description='自己位置の出し方（lio / ekf: 車輪の速度・IMU・地図照合の EKF も起動する）',
         ),
         DeclareLaunchArgument(
-            'localization_params_file', default_value='',
-            description='地図照合と localization_health に、既定の設定の後から重ねるパラメータファイル（試験用）',
+            'localization_params_file', default_value=sim_localization_params(share),
+            description='地図照合と localization_health に、既定の設定の後から重ねるパラメータファイル。既定は '
+                        'config/sim_localization.yaml（small_gicp の GICP。lidar_localization_ros2 が small_gicp '
+                        'つきでビルドされていなければ空で、NDT のまま）',
         ),
         GroupAction([
             IncludeLaunchDescription(
@@ -219,6 +244,7 @@ def generate_launch_description() -> LaunchDescription:
                     'use_sim_time': 'true', 'map_path': map_path,
                     'composition': LaunchConfiguration('composition'),
                     'field_file': LaunchConfiguration('field_file'),
+                    'planning_params_file': LaunchConfiguration('planning_params_file'),
                     'auto_cmd_topic': '/control/auto/cmd_vel_raw',
                 }.items(),
             ),
