@@ -22,6 +22,7 @@
 #include <rclcpp_components/register_node_macro.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 
+#include "core_nav_common/parameter_updates.hpp"
 #include "core_nav_common/parameters.hpp"
 #include "core_planning/contact_detection.hpp"
 
@@ -69,8 +70,8 @@ public:
       *this, "contact_detection.impact_min_speed_mps", 0.1, 0.0, 10.0,
       "実際の速さも指令の速さもこれ未満の間は、IMU の衝撃を接触として数えない（0 で速さによらず数える）");
     loadParams();
-    parameter_callback_ = add_post_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
+    parameter_callback_ = core_nav_common::onParametersSet(
+      *this, [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
 
     publisher_ = create_publisher<ContactStatus>("/planning/contact/status", rclcpp::QoS(10));
     imu_subscription_ = create_subscription<Imu>(
@@ -171,7 +172,7 @@ private:
   double speed_{0.0};
   double command_speed_{0.0};
   std::string reason_;
-  rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
+  core_nav_common::ParameterUpdateHandle parameter_callback_;
   rclcpp::Publisher<ContactStatus>::SharedPtr publisher_;
   rclcpp::Subscription<Imu>::SharedPtr imu_subscription_;
   rclcpp::Subscription<Twist>::SharedPtr cmd_subscription_;

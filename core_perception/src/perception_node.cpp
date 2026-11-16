@@ -33,6 +33,7 @@
 #include <tf2_ros/transform_listener.h>
 #include <visualization_msgs/msg/marker.hpp>
 
+#include "core_nav_common/parameter_updates.hpp"
 #include "core_nav_common/parameters.hpp"
 #include "core_perception/detection.hpp"
 #include "core_perception/pose_timing.hpp"
@@ -225,8 +226,8 @@ public:
     declareDouble(*this, "classification.human_max_width_m", 0.7, 0.1, 5.0, "人の幅の上限");
 
     loadParams();
-    parameter_callback_ = add_post_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
+    parameter_callback_ = core_nav_common::onParametersSet(
+      *this, [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
 
     FieldBounds field;
     field.x_min = get_parameter("field.x_min").as_double();
@@ -511,7 +512,7 @@ private:
   std::optional<std::uint64_t> last_stamp_ns_;
   std::deque<CustomMsg::ConstSharedPtr> clouds_;
   std::uint32_t skipped_frames_{0U};
-  rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
+  core_nav_common::ParameterUpdateHandle parameter_callback_;
   rclcpp::Publisher<TrackedObjectArray>::SharedPtr tracks_publisher_;
   rclcpp::Publisher<ProcessStats>::SharedPtr stats_publisher_;
   rclcpp::Publisher<Marker>::SharedPtr detections_publisher_;

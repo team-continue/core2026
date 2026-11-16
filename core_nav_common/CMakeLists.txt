@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.8)
 project(core_nav_common)
 
 find_package(ament_cmake REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
 
 add_library(${PROJECT_NAME} INTERFACE)
@@ -16,12 +17,14 @@ install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 install(TARGETS ${PROJECT_NAME} EXPORT export_${PROJECT_NAME})
 
 ament_export_targets(export_${PROJECT_NAME})
-ament_export_dependencies(rclcpp)
+ament_export_dependencies(rcl_interfaces rclcpp)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_point_filters test/test_point_filters.cpp)
   target_link_libraries(test_point_filters ${PROJECT_NAME})
+  ament_add_gtest(test_parameter_updates test/test_parameter_updates.cpp)
+  target_link_libraries(test_parameter_updates ${PROJECT_NAME})
 endif()
 
 ament_package()

@@ -27,11 +27,12 @@
 #include <core_msgs/msg/process_stats.hpp>
 #include <core_msgs/msg/tracked_object_array.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <tf2/time.hpp>
-#include <tf2_ros/buffer.hpp>
-#include <tf2_ros/transform_listener.hpp>
+#include <tf2/time.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
 #include "core_localization/point_extraction.hpp"
+#include "core_nav_common/parameter_updates.hpp"
 
 namespace core_localization
 {
@@ -111,7 +112,7 @@ private:
   rclcpp::Subscription<core_msgs::msg::TrackedObjectArray>::SharedPtr tracks_subscription_;
   core_msgs::msg::TrackedObjectArray::ConstSharedPtr latest_tracks_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr validate_callback_;
-  rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr update_callback_;
+  core_nav_common::ParameterUpdateHandle update_callback_;
   rclcpp::Publisher<core_msgs::msg::ProcessStats>::SharedPtr stats_publisher_;
 };
 }  // namespace core_localization

@@ -31,6 +31,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include "core_nav_common/field_bounds.hpp"
+#include "core_nav_common/parameter_updates.hpp"
 #include "core_nav_common/parameters.hpp"
 #include "core_planning/grid_map.hpp"
 #include "core_planning/static_map_params.hpp"
@@ -397,8 +398,8 @@ public:
 
     loadParams();
     buildGrid();
-    parameter_callback_ = add_post_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> &) {
+    parameter_callback_ = core_nav_common::onParametersSet(
+      *this, [this](const std::vector<rclcpp::Parameter> &) {
         loadParams();
         // 機体の大きさが変わったら、占有を広げ直す
         const double radius = inflationRadius();
@@ -907,7 +908,7 @@ private:
   TrackedObjectArray::ConstSharedPtr latest_tracks_;
   std::vector<GridCell> current_cells_;
   std::vector<StuckBlock> stuck_blocks_;
-  rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
+  core_nav_common::ParameterUpdateHandle parameter_callback_;
   rclcpp::Publisher<Path>::SharedPtr path_publisher_;
   rclcpp::Publisher<NavigationStatus>::SharedPtr status_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_publisher_;
