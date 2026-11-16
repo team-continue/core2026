@@ -263,6 +263,7 @@ class TestBodyControllerNodes(unittest.TestCase):
             "yaw_rotation_velocity",
             "yaw_rotation_acceleration",
             "body_omega_timeout_sec",
+            "yaw_mode",
         ]
         future = parameter_client.call_async(request)
         deadline = time.monotonic() + 2.0
@@ -273,6 +274,8 @@ class TestBodyControllerNodes(unittest.TestCase):
         self.assertAlmostEqual(values[0].double_value, 1.0)
         self.assertAlmostEqual(values[1].double_value, 1000.0)
         self.assertAlmostEqual(values[2].double_value, 0.15)
+        # 既定の起動時モードは TURRET (1)
+        self.assertEqual(values[3].integer_value, 1)
 
         false_msg = Bool(data=False)
         zero_twist = Twist()
