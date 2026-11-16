@@ -396,6 +396,10 @@ private:
     declareDouble(
       *this, "mppi.tracks_wait_s", 0.02, 0.0, 0.2,
       "姿勢と同じスキャンの追跡結果を待つ上限 [s]。0 なら待たない", true);
+    declareDouble(
+      *this, "mppi.tracks_stamp_lag_s", 0.0, 0.0, 0.2,
+      "追跡結果の時刻（点群のヘッダ）が姿勢の時刻（走査の終わり）よりこれだけ早くても同じスキャンとみなす [s]",
+      true);
     declareDouble(*this, "mppi.backoff_speed_mps", 0.5, 0.0, 3.0, "下がるときの速度");
     declareDouble(*this, "mppi.keep_out_range_m", 0.5, 0.01, 5.0, "静的な障害物の罰の範囲");
     declareDouble(
@@ -762,7 +766,8 @@ private:
     tracks_max_age_s_ = get_parameter("mppi.tracks_max_age_s").as_double();
     // 使える古さより古い追跡結果しかないときは、検出が止まっているとみなして待たない
     tracks_wait_params_ = TracksWaitParams{
-      get_parameter("mppi.tracks_wait_s").as_double(), tracks_max_age_s_};
+      get_parameter("mppi.tracks_wait_s").as_double(), tracks_max_age_s_,
+      get_parameter("mppi.tracks_stamp_lag_s").as_double()};
     backoff_speed_mps_ = get_parameter("mppi.backoff_speed_mps").as_double();
     degraded_speed_mps_ = get_parameter("localization_health.degraded_speed_mps").as_double();
   }
@@ -927,7 +932,8 @@ private:
     tracks_ = tracks;
     if (pending_odometry_ != nullptr &&
       isTracksForPose(
-        toNanoseconds(tracks->header.stamp), toNanoseconds(pending_odometry_->header.stamp)))
+        toNanoseconds(tracks->header.stamp), toNanoseconds(pending_odometry_->header.stamp),
+        stampLagNs(tracks_wait_params_)))
     {
       computePending();
     }

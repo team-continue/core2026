@@ -61,4 +61,29 @@ TEST(TracksSync, DisabledWithZeroWait)
   EXPECT_FALSE(shouldWaitForTracks(kPoseNs - kScanPeriodNs, kPoseNs, TracksWaitParams{0.0, 1.0}));
 }
 
+TEST(TracksSync, StampLagAcceptsTracksStampedAtScanStart)
+{
+  // 点群のヘッダが走査の始め（姿勢は走査の終わり）。sim の点群は最後の点を走査の終わりの 10µs 前に置く
+  const TracksWaitParams params{0.02, 1.0, 0.105};
+  const std::int64_t lag_ns = core_planning::stampLagNs(params);
+  EXPECT_EQ(lag_ns, 105'000'000LL);
+  const std::int64_t scan_start_ns = kPoseNs - kScanPeriodNs + 10'000LL;
+  EXPECT_TRUE(isTracksForPose(scan_start_ns, kPoseNs, lag_ns));
+  EXPECT_TRUE(isTracksForPose(kPoseNs - kScanPeriodNs, kPoseNs, lag_ns));
+  // 1 つ前のスキャン（2 走査前の始め）は同じとみなさない
+  EXPECT_FALSE(isTracksForPose(kPoseNs - 2 * kScanPeriodNs, kPoseNs, lag_ns));
+  // 同じスキャンの追跡結果が届いていれば待たず、1 つ前のスキャンなら待つ
+  EXPECT_FALSE(shouldWaitForTracks(scan_start_ns, kPoseNs, params));
+  EXPECT_TRUE(shouldWaitForTracks(kPoseNs - 2 * kScanPeriodNs, kPoseNs, params));
+}
+
+TEST(TracksSync, ZeroStampLagKeepsExactMatching)
+{
+  // stamp_lag_s が 0（既定）なら前の動き: 走査の始めの時刻の追跡結果では待つ
+  EXPECT_EQ(core_planning::stampLagNs(TracksWaitParams{}), 0);
+  EXPECT_TRUE(shouldWaitForTracks(kPoseNs - kScanPeriodNs + 10'000LL, kPoseNs, TracksWaitParams{}));
+  // 負の値は 0 として扱う
+  EXPECT_EQ(core_planning::stampLagNs(TracksWaitParams{0.02, 1.0, -0.1}), 0);
+}
+
 }  // namespace
