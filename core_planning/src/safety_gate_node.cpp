@@ -41,6 +41,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include "core_nav_common/field_bounds.hpp"
+#include "core_nav_common/parameter_updates.hpp"
 #include "core_nav_common/parameters.hpp"
 #include "core_planning/chassis_tracker.hpp"
 #include "core_planning/grid_map.hpp"
@@ -277,8 +278,8 @@ public:
     declareDouble(
       *this, "heading.blind_side.speed_mps", 0.5, 0.0, 10.0, "見えない側へ向かう候補の速さの上限 [m/s]");
     loadParams();
-    parameter_callback_ = add_post_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
+    parameter_callback_ = core_nav_common::onParametersSet(
+      *this, [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
     buildStaticField();
 
     // 自動の指令。control_mode_manager が自動のときだけ /control/cmd_vel へ通す
@@ -673,7 +674,7 @@ private:
   std::optional<rclcpp::Time> last_contact_time_;
   std::optional<rclcpp::Time> contact_stop_until_;
   std::optional<rclcpp::Time> last_tick_;
-  rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
+  core_nav_common::ParameterUpdateHandle parameter_callback_;
   rclcpp::Publisher<Twist>::SharedPtr cmd_publisher_;
   rclcpp::Publisher<SafetyStatus>::SharedPtr status_publisher_;
   rclcpp::Subscription<Twist>::SharedPtr cmd_subscription_;

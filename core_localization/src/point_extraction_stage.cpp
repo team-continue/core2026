@@ -15,9 +15,9 @@
 #include <utility>
 #include <vector>
 
-#include <tf2/exceptions.hpp>
+#include <tf2/exceptions.h>
 #include <tf2_eigen/tf2_eigen.hpp>
-#include <tf2_ros/buffer_interface.hpp>
+#include <tf2_ros/buffer_interface.h>
 
 #include "core_nav_common/field_bounds.hpp"
 #include "core_nav_common/parameters.hpp"
@@ -277,8 +277,8 @@ PointExtractionStage::PointExtractionStage(rclcpp::Node & node)
       }
       return result;
     });
-  update_callback_ = node_.add_post_set_parameters_callback(
-    [this](const std::vector<rclcpp::Parameter> & parameters) {
+  update_callback_ = core_nav_common::onParametersSet(
+    node_, [this](const std::vector<rclcpp::Parameter> & parameters) {
       if (!touchesParams(parameters)) {
         return;
       }

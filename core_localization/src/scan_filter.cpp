@@ -22,6 +22,7 @@
 
 #include "core_localization/point_extraction_stage.hpp"
 #include "core_localization/filter_params.hpp"
+#include "core_nav_common/parameter_updates.hpp"
 
 namespace core_localization
 {
@@ -95,8 +96,8 @@ public:
     output_frame_ = core_nav_common::declareString(
       *this, "output_frame", "livox_imu_link", "出力する点群のフレーム", true);
     params_ = readFilterParams(*this);
-    parameter_callback_ = add_post_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> &) {params_ = readFilterParams(*this);});
+    parameter_callback_ = core_nav_common::onParametersSet(
+      *this, [this](const std::vector<rclcpp::Parameter> &) {params_ = readFilterParams(*this);});
     extraction_ = std::make_unique<PointExtractionStage>(*this);
 
     publisher_ = create_publisher<PointCloud2>("output", rclcpp::QoS(1));
@@ -141,7 +142,7 @@ private:
   std::uint64_t frame_count_{0U};
   // 同じ入力なら同じ結果になるよう、シードは固定する
   std::mt19937 random_{0U};
-  rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
+  core_nav_common::ParameterUpdateHandle parameter_callback_;
   rclcpp::Publisher<PointCloud2>::SharedPtr publisher_;
   rclcpp::Publisher<ProcessStats>::SharedPtr stats_publisher_;
   rclcpp::Subscription<PointCloud2>::SharedPtr subscription_;

@@ -17,6 +17,7 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include "core_localization/filter_params.hpp"
+#include "core_nav_common/parameter_updates.hpp"
 
 namespace core_localization
 {
@@ -32,8 +33,8 @@ public:
   {
     declareFilterParams(*this);
     params_ = readFilterParams(*this);
-    parameter_callback_ = add_post_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> &) {params_ = readFilterParams(*this);});
+    parameter_callback_ = core_nav_common::onParametersSet(
+      *this, [this](const std::vector<rclcpp::Parameter> &) {params_ = readFilterParams(*this);});
 
     publisher_ = create_publisher<CustomMsg>("output", rclcpp::QoS(10));
     stats_publisher_ = create_publisher<ProcessStats>("~/stats", rclcpp::QoS(10));
@@ -73,7 +74,7 @@ private:
   std::uint64_t frame_count_{0U};
   // 同じ入力なら同じ結果になるよう、シードは固定する
   std::mt19937 random_{0U};
-  rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
+  core_nav_common::ParameterUpdateHandle parameter_callback_;
   rclcpp::Publisher<CustomMsg>::SharedPtr publisher_;
   rclcpp::Publisher<ProcessStats>::SharedPtr stats_publisher_;
   rclcpp::Subscription<CustomMsg>::SharedPtr subscription_;
