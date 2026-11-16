@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <optional>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -1872,6 +1874,86 @@ TEST(Heading, AlignsWithGoalYawNearGoal)
   EXPECT_LT(max_abs_yaw_far, 1e-9);
   EXPECT_NEAR(state.yaw, M_PI / 2.0, 0.05);
   EXPECT_NEAR(state.x, 6.0, 0.2);
+}
+
+TEST(Heading, FixedModeKeepsFixedYawUntilNearGoal)
+{
+  // heading.mode: fixed では、遠い間は fixed_yaw を保ち、ゴールの 1m 以内でゴールの向きへ回る
+  MppiParams params;
+  params.heading.mode = HeadingMode::kFixed;
+  params.heading.fixed_yaw = 1.0;
+  const ReferencePath path({Point2{0.0, 0.0}, Point2{10.0, 0.0}, Point2{10.0, 10.0}}, M_PI);
+  for (const double x : {0.0, 9.5}) {
+    EXPECT_NEAR(*headingTarget(stateAt(x, 0.0, 0.3), path, params), 1.0, 1e-12) << x;
+  }
+  EXPECT_NEAR(*headingTarget(stateAt(10.0, 9.2, 0.3), path, params), M_PI, 1e-12);
+  // ゴールの向きがなければ、ゴールの近くでも保つ向きのまま
+  const ReferencePath no_yaw({Point2{0.0, 0.0}, Point2{10.0, 0.0}});
+  EXPECT_NEAR(*headingTarget(stateAt(9.5, 0.0, 0.3), no_yaw, params), 1.0, 1e-12);
+  // 保つ向きが決まっていなければ、今の向きを保つ
+  params.heading.fixed_yaw.reset();
+  EXPECT_FALSE(headingTarget(stateAt(5.0, 0.0, 0.3), path, params).has_value());
+}
+
+TEST(Heading, FixedModeDrivesWithoutTurning)
+{
+  // 前（+x）を向いて止まった機体に、左（+y）へ進む経路を与える。fixed（保つ向き 0）では回らずに横へ進む
+  const ReferencePath path({Point2{0.0, 0.0}, Point2{0.0, 20.0}});
+  MppiParams params;
+  params.heading.mode = HeadingMode::kFixed;
+  params.heading.fixed_yaw = 0.0;
+  MppiController controller;
+  MppiState state;
+  double max_abs_yaw = 0.0;
+  for (int i = 0; i < 40; ++i) {
+    const auto command = controller.solve(state, path, {}, nullptr, SE2{}, params, 3.0);
+    state = step(state, command, params.dt);
+    max_abs_yaw = std::max(max_abs_yaw, std::abs(state.yaw));
+  }
+  EXPECT_LT(max_abs_yaw, 1e-9);
+  EXPECT_GT(state.y, 5.0);
+}
+
+TEST(Heading, ForwardModeLimitsSpeedWhileTurning)
+{
+  MppiParams params;
+  params.heading.mode = HeadingMode::kForward;
+  const MppiState state = stateAt(0.0, 0.0, 0.0);
+  // 向きの差が 45° を超える間だけ 0.5m/s までに抑える。差の符号と、元の上限が小さいときも見る
+  EXPECT_DOUBLE_EQ(core_planning::forwardTurnSpeedLimit(state, M_PI / 2.0, params, 3.0), 0.5);
+  EXPECT_DOUBLE_EQ(core_planning::forwardTurnSpeedLimit(state, -M_PI / 2.0, params, 3.0), 0.5);
+  EXPECT_DOUBLE_EQ(core_planning::forwardTurnSpeedLimit(state, M_PI / 2.0, params, 0.3), 0.3);
+  EXPECT_DOUBLE_EQ(core_planning::forwardTurnSpeedLimit(state, M_PI / 6.0, params, 3.0), 3.0);
+  EXPECT_DOUBLE_EQ(core_planning::forwardTurnSpeedLimit(state, std::nullopt, params, 3.0), 3.0);
+  // travel では抑えない
+  MppiParams travel;
+  EXPECT_DOUBLE_EQ(core_planning::forwardTurnSpeedLimit(state, M_PI / 2.0, travel, 3.0), 3.0);
+
+  // 前（+x）を向いて止まった機体に、左（+y）へ進む経路を与える。向きの差が 45° 以下になるまでは 0.5m/s
+  // 程度で進み、向いてからは速く走る。travel は回りながら速く走る
+  const ReferencePath path({Point2{0.0, 0.0}, Point2{0.0, 20.0}}, 0.0);
+  const auto run = [&path](const MppiParams & run_params) {
+      MppiController controller;
+      MppiState current;
+      double turning_max_speed = 0.0;
+      double max_speed = 0.0;
+      for (int i = 0; i < 60; ++i) {
+        const auto command = controller.solve(current, path, {}, nullptr, SE2{}, run_params, 3.0);
+        current = step(current, command, run_params.dt);
+        const double speed = std::hypot(current.vx, current.vy);
+        if (std::abs(wrapAngle(M_PI / 2.0 - current.yaw)) > M_PI / 4.0 + 0.1) {
+          turning_max_speed = std::max(turning_max_speed, speed);
+        }
+        max_speed = std::max(max_speed, speed);
+      }
+      return std::tuple<double, double, MppiState>{turning_max_speed, max_speed, current};
+    };
+  const auto [forward_turning, forward_max, forward_end] = run(params);
+  EXPECT_LT(forward_turning, 0.5 + 0.2 + 1e-9);
+  EXPECT_GT(forward_max, 2.5);
+  EXPECT_NEAR(forward_end.yaw, M_PI / 2.0, 0.05);
+  const auto [travel_turning, travel_max, travel_end] = run(travel);
+  EXPECT_GT(travel_turning, 1.0);
 }
 
 TEST(Heading, GoalModeKeepsPreviousBehavior)

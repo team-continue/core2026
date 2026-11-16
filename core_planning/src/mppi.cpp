@@ -1185,6 +1185,12 @@ std::optional<HeadingMode> parseHeadingMode(const std::string & text)
   if (text == "goal") {
     return HeadingMode::kGoal;
   }
+  if (text == "forward") {
+    return HeadingMode::kForward;
+  }
+  if (text == "fixed") {
+    return HeadingMode::kFixed;
+  }
   return std::nullopt;
 }
 
@@ -1196,6 +1202,13 @@ std::optional<double> headingTarget(
   }
   const double s = path.project(state.x, state.y);
   const double to_goal = std::max(path.length() - s, 0.0) + path.distanceBeyondEnd();
+  if (params.heading.mode == HeadingMode::kFixed) {
+    // ゴールの向きの指定がなければ、着くまで保つ向きのまま
+    if (to_goal <= params.heading.goal_align_distance_m && path.goalYaw().has_value()) {
+      return path.goalYaw();
+    }
+    return params.heading.fixed_yaw;
+  }
   if (to_goal <= params.heading.goal_align_distance_m) {
     return path.goalYaw();
   }
@@ -1210,6 +1223,18 @@ std::optional<double> headingTarget(
     return std::nullopt;
   }
   return std::atan2(last.y, last.x);
+}
+
+double forwardTurnSpeedLimit(
+  const MppiState & state, const std::optional<double> & target_yaw, const MppiParams & params,
+  const double speed_limit)
+{
+  if (params.heading.mode != HeadingMode::kForward || !target_yaw.has_value() ||
+    !(std::abs(wrapAngle(*target_yaw - state.yaw)) > params.heading.forward_turn_angle_rad))
+  {
+    return speed_limit;
+  }
+  return std::min(speed_limit, std::max(params.heading.forward_turn_speed_mps, 0.0));
 }
 
 std::optional<std::string> staticMarginError(const MppiParams & params, const double max_speed_mps)
@@ -1430,8 +1455,6 @@ MppiCommand MppiController::solve(
   const std::vector<PredictedObject> & objects, const DistanceField * field,
   const SE2 & map_from_odom, const MppiParams & params, const double speed_limit)
 {
-  const double limit = std::max(speed_limit, 0.0);
-
   if (path.empty() || params.horizon_steps <= 0 || params.samples <= 0) {
     mean_.clear();
     last_trajectory_.clear();
@@ -1443,7 +1466,12 @@ MppiCommand MppiController::solve(
   const auto samples = static_cast<std::size_t>(std::max(params.samples, 3));
 
   // 向きはすべての系列で同じ。先に決めて、各ステップの機体の前の向きで見えない側の上限をかける
-  const auto yaw_rates = makeYawRates(state, headingTarget(state, path, params), params);
+  const auto target_yaw = headingTarget(state, path, params);
+  // forward では、向きの差が大きい間は並進を抑えて、その場で向いてから走る。回りながら速く走ると、
+  // 機体座標で保たれる指令の速度が向きと一緒に回り、指令の変化の上限（limitCommand）をその引きずりで
+  // 使い切って、経路から外れる（Gazebo の CoRE-1 のフィールド、北向きで走り出して東へ進む経路で 0.8〜1.2m）
+  const double limit = forwardTurnSpeedLimit(state, target_yaw, params, std::max(speed_limit, 0.0));
+  const auto yaw_rates = makeYawRates(state, target_yaw, params);
   const auto forward = forwardDirections(state, yaw_rates, params.dt);
   const BlindSideLimit blind(params.blind_side);
 

@@ -6,6 +6,7 @@
 #ifndef CORE_PLANNING__MPPI_HPP_
 #define CORE_PLANNING__MPPI_HPP_
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -220,6 +221,11 @@ enum class HeadingMode : std::uint8_t
   kTravel,
   // ゴールの向きがあればそちらへ回り、なければ今の向きを保つ（前の動き）
   kGoal,
+  // kTravel と同じ向きへ回り、その向きとの差が forward_turn_angle_rad を超える間は、並進の速さを
+  // forward_turn_speed_mps までに抑える（その場で向いてから走る）
+  kForward,
+  // 走っている間は fixed_yaw を保ち、ゴールの近くではゴールの向きへ回る。fixed_yaw がなければ今の向きを保つ
+  kFixed,
 };
 
 struct HeadingParams
@@ -230,6 +236,12 @@ struct HeadingParams
   // ゴールまでの経路に沿った残りがこの距離以下なら、ゴールの向きへ回る [m]。ゴールの向きがなければ
   // 今の向きを保つ
   double goal_align_distance_m{1.0};
+  // kForward で、向きの目標との差がこの角度を超える間、並進の速さを抑える [rad]
+  double forward_turn_angle_rad{M_PI / 4.0};
+  // kForward で、向きの差が大きい間の並進の速さの上限 [m/s]
+  double forward_turn_speed_mps{0.5};
+  // kFixed で保つ向き（odom の座標系）[rad]。ノードがゴールを受けたときの向きを入れる
+  std::optional<double> fixed_yaw;
 };
 
 // 経路の曲がりで、参照軌道の速さを横の加速度の上限まで落とす。曲率 κ の所の速さを √(上限 / κ) までにし、
@@ -344,16 +356,24 @@ double pathCurvature(const ReferencePath & path, double s, double window_m);
 // 曲率 curvature で横の加速度を curve.max_lateral_accel_mps2 に収める速さ [m/s]。無効か直線なら無限大
 double curveSpeedLimit(double curvature, const MppiParams & params);
 
-// "travel" か "goal" を HeadingMode に直す。それ以外は nullopt
+// "travel"・"goal"・"forward"・"fixed" を HeadingMode に直す。それ以外は nullopt
 std::optional<HeadingMode> parseHeadingMode(const std::string & text);
 
 // 機体の向きの目標 [rad]。nullopt なら今の向きを保つ。
 // heading.mode が kGoal なら、ゴールの向き（なければ nullopt）。
-// kTravel なら、ゴールまでの残り（経路に沿った残りと distanceBeyondEnd の和）が goal_align_distance_m
+// kFixed なら、ゴールまでの残りが goal_align_distance_m 以下でゴールの向き（なければ fixed_yaw）。
+// それより遠ければ fixed_yaw（なければ nullopt）。
+// kTravel と kForward なら、ゴールまでの残り（経路に沿った残りと distanceBeyondEnd の和）が goal_align_distance_m
 // 以下でゴールの向き（なければ nullopt）。それより遠ければ、経路の今の位置から lookahead_m 先までの弦の
 // 向き。経路の終わり（ゴールの手前で待つ位置）で弦が短ければ、経路の終わりの区間の向き
 std::optional<double> headingTarget(
   const MppiState & state, const ReferencePath & path, const MppiParams & params);
+
+// heading.mode が kForward で、向きの目標 target_yaw と今の向きの差が forward_turn_angle_rad を超えるなら、
+// speed_limit を forward_turn_speed_mps までに下げて返す。それ以外は speed_limit のまま
+double forwardTurnSpeedLimit(
+  const MppiState & state, const std::optional<double> & target_yaw, const MppiParams & params,
+  double speed_limit);
 
 // 機体の 4 隅を調べる範囲に足す距離 [m]。中心が静止物からこの分と機体の外接円、余裕、罰の範囲を
 // 足したより離れていれば、4 隅を調べない。静止物の余裕に足す「速さ × static_margin_time_s」より大きくする

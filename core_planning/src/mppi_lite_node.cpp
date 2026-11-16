@@ -525,6 +525,12 @@ private:
       *this, "heading.goal_align_distance_m", 1.0, 0.0, 20.0,
       "ゴールまでの経路に沿った残りがこれ以下なら、ゴールの向きへ回る [m]");
     // 安全停止（safety_gate）も同じ値を読み、退避の候補にかける。設定ファイルは全ノードで共通
+    declareDouble(
+      *this, "heading.forward.turn_angle_deg", 45.0, 0.0, 180.0,
+      "forward で、向きの目標との差がこの角度を超える間は並進を抑える [deg]");
+    declareDouble(
+      *this, "heading.forward.turn_speed_mps", 0.5, 0.0, 10.0,
+      "forward で、向きの差が大きい間の並進の速さの上限 [m/s]");
     declareBool(
       *this, "heading.blind_side.enabled", true, "見えない側（機体の後ろ）へ進むときの速さを抑える");
     declareDouble(
@@ -539,7 +545,7 @@ private:
     if (parseHeadingMode(mode).has_value()) {
       return std::nullopt;
     }
-    return "heading.mode は travel か goal を指定してください: " + mode;
+    return "heading.mode は travel・goal・forward・fixed のどれかを指定してください: " + mode;
   }
 
   // 変更後の値で staticMarginError を確かめる。変更しない値は今の設定を使う
@@ -651,6 +657,9 @@ private:
     }
     mppi.heading.lookahead_m = get_parameter("heading.lookahead_m").as_double();
     mppi.heading.goal_align_distance_m = get_parameter("heading.goal_align_distance_m").as_double();
+    mppi.heading.forward_turn_angle_rad =
+      get_parameter("heading.forward.turn_angle_deg").as_double() * M_PI / 180.0;
+    mppi.heading.forward_turn_speed_mps = get_parameter("heading.forward.turn_speed_mps").as_double();
     mppi.blind_side.enabled = get_parameter("heading.blind_side.enabled").as_bool();
     mppi.blind_side.visible_half_angle_deg =
       get_parameter("heading.blind_side.visible_half_angle_deg").as_double();
@@ -734,11 +743,28 @@ private:
     degraded_speed_mps_ = get_parameter("localization_health.degraded_speed_mps").as_double();
   }
 
+  // heading.mode: fixed の向きを決めて、MPPI の設定（odom の座標系）に入れる。fixed でなければ忘れる
+  void updateFixedYaw(const MppiState & state, const SE2 & map_from_odom)
+  {
+    if (mppi_params_.heading.mode != HeadingMode::kFixed) {
+      fixed_yaw_map_.reset();
+      mppi_params_.heading.fixed_yaw.reset();
+      return;
+    }
+    if (!fixed_yaw_map_.has_value()) {
+      fixed_yaw_map_ = wrapAngle(state.yaw + map_from_odom.yaw);
+      RCLCPP_INFO(
+        get_logger(), "走行中は今の向き（地図で %.0f°）を保ちます", *fixed_yaw_map_ * 180.0 / M_PI);
+    }
+    mppi_params_.heading.fixed_yaw = wrapAngle(*fixed_yaw_map_ - map_from_odom.yaw);
+  }
+
   void onPlan(const Path::ConstSharedPtr & plan)
   {
     if (plan->poses.empty()) {
       plan_map_.clear();
       goal_yaw_map_.reset();
+      fixed_yaw_map_.reset();
       navigation_state_ = NavigationStatus::STATE_IDLE;
       controller_.reset();
       stuck_monitor_.reset();
@@ -758,6 +784,8 @@ private:
 
     // 同じゴールへの計画のし直しでは、到着や失敗の状態を変えない
     if (goal_changed) {
+      // fixed で保つ向きは、新しいゴールで最初に姿勢を受けたときの向きにする
+      fixed_yaw_map_.reset();
       navigation_state_ = NavigationStatus::STATE_DRIVING;
       controller_.reset();
       stuck_monitor_.reset();
@@ -1040,6 +1068,7 @@ private:
     }
 
     const ReferencePath path = makeOdomPath(*map_from_odom);
+    updateFixedYaw(state, *map_from_odom);
     const double remaining = path.remaining(state.x, state.y);
     const Point2 & goal = path.points().back();
     const double speed = std::hypot(state.vx, state.vy);
@@ -1250,6 +1279,8 @@ private:
   bool controller_used_{false};
   std::vector<Point2> plan_map_;
   std::optional<double> goal_yaw_map_;
+  // heading.mode: fixed で保つ向き（map の座標系）。ゴールが変わったときと、fixed に切り替えたときに覚え直す
+  std::optional<double> fixed_yaw_map_;
   GoalHoldMonitor goal_hold_monitor_;
   OncomingMonitor oncoming_monitor_;
   bool oncoming_yielding_{false};

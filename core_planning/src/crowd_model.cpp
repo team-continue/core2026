@@ -75,7 +75,7 @@ HeadingMode toHeadingMode(const std::string & text)
   if (const auto mode = parseHeadingMode(text)) {
     return *mode;
   }
-  throw std::invalid_argument("travel か goal ではありません");
+  throw std::invalid_argument("travel・goal・forward・fixed のどれでもありません");
 }
 
 bool toSideRight(const std::string & text)
@@ -194,6 +194,11 @@ const std::map<std::string, Setter> & parameterTable()
     {"track_motion.persist_s", [](P & p, const S & v) {p.motion_filter.persist_s = toDouble(v);}},
     {"heading.mode", [](P & p, const S & v) {p.mppi.heading.mode = toHeadingMode(v);}},
     {"heading.lookahead_m", [](P & p, const S & v) {p.mppi.heading.lookahead_m = toDouble(v);}},
+    {"heading.forward.turn_angle_deg", [](P & p, const S & v) {
+        p.mppi.heading.forward_turn_angle_rad = toDouble(v) * M_PI / 180.0;
+      }},
+    {"heading.forward.turn_speed_mps",
+      [](P & p, const S & v) {p.mppi.heading.forward_turn_speed_mps = toDouble(v);}},
     {"mppi.curve.max_lateral_accel_mps2",
       [](P & p, const S & v) {p.mppi.curve.max_lateral_accel_mps2 = toDouble(v);}},
     {"mppi.curve.window_m", [](P & p, const S & v) {p.mppi.curve.window_m = toDouble(v);}},
