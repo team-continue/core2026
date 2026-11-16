@@ -9,6 +9,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch import LaunchContext, LaunchDescriptionEntity
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -58,7 +59,30 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
         parameters=[{'use_sim_time': True}],
     )
+    # RViz の機体に重ねる自己位置の状態（床の色の円と評価値の文字）。RViz を別に開いても見えるよう、常に起動する
+    localization_status = Node(
+        package='core_launch',
+        executable='localization_status_marker_node.py',
+        name='localization_status_marker',
+        namespace='localization',
+        output='screen',
+        parameters=[{'use_sim_time': True}],
+    )
+    # 自律移動を見る RViz（地図・経路・検出・ゴール）。2D Goal Pose で /ui/auto/start に目標を送ると自動で走る
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        arguments=['-d', str(share / 'rviz' / 'nav.rviz')],
+        parameters=[{'use_sim_time': True}],
+        condition=IfCondition(LaunchConfiguration('rviz')),
+    )
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'rviz', default_value='false', choices=['true', 'false'],
+            description='自律移動を見る RViz（rviz/nav.rviz）を起動する',
+        ),
         DeclareLaunchArgument('x', default_value='-6.0'),
         DeclareLaunchArgument('y', default_value='-2.5'),
         DeclareLaunchArgument('yaw', default_value='0.0'),
@@ -159,4 +183,6 @@ def generate_launch_description() -> LaunchDescription:
         ]),
         control_mode_manager,
         OpaqueFunction(function=map_publisher),
+        localization_status,
+        rviz,
     ])

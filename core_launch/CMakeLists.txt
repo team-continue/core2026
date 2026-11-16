@@ -39,6 +39,7 @@ install(PROGRAMS
   scripts/run_scenario.py
   scripts/setup_thirdparty.sh
   scripts/map_publisher_node.py
+  scripts/localization_status_marker_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -70,6 +71,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_state_source test/test_state_source.py)
   # 起動した地図の占有地図（map_publisher_node.py）
   ament_add_pytest_test(test_occupancy_map test/test_occupancy_map.py)
+  # RViz に出す自己位置の状態の文字と色（localization_status_marker_node.py）
+  ament_add_pytest_test(test_localization_status test/test_localization_status.py)
 endif()
 
 ament_package()

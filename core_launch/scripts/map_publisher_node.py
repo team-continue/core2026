@@ -17,6 +17,7 @@ from core_nav_launch.occupancy_map import (
 )
 from nav_msgs.msg import OccupancyGrid
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import String
@@ -77,7 +78,8 @@ def main() -> int:
         return 1
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    # Ctrl+C（launch の SIGINT）や SIGTERM では、rclpy が止めて ExternalShutdownException になる
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
