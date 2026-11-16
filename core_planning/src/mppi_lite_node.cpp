@@ -1401,7 +1401,7 @@ private:
     MppiState state, const MppiState & measured, const double stamp_s,
     const double rate_radps) const
   {
-    const double ahead_s = std::max(get_clock()->now().seconds() + last_compute_s_ - stamp_s, 0.0);
+    const double ahead_s = std::max(now().seconds() + last_compute_s_ - stamp_s, 0.0);
     state.yaw = wrapAngle(measured.yaw + measured.wz * std::min(ahead_s, kMaxYawHoldAheadS));
     state.wz = rate_radps;
     return state;
