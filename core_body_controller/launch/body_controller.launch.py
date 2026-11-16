@@ -203,7 +203,17 @@ def generate_launch_description() -> LaunchDescription:
         executable="chassis_joint_state_node",
         name="chassis_joint_state",
         output="screen",
-        parameters=[{"use_sim_time": use_sim_time}],
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+                "waist_front_offset": ParameterValue(
+                    LaunchConfiguration("waist_front_offset"), value_type=float
+                ),
+                "waist_joint_direction": ParameterValue(
+                    LaunchConfiguration("waist_joint_direction"), value_type=float
+                ),
+            }
+        ],
     )
 
     control_mode_manager = Node(
