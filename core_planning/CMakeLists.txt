@@ -34,6 +34,7 @@ add_library(${PROJECT_NAME}_core STATIC
   src/path_smoother.cpp
   src/safety.cpp
   src/traction_estimator.cpp
+  src/yaw_hold.cpp
 )
 target_compile_features(${PROJECT_NAME}_core PUBLIC cxx_std_17)
 target_include_directories(${PROJECT_NAME}_core PUBLIC include ${PCL_INCLUDE_DIRS})
@@ -44,6 +45,7 @@ target_link_libraries(${PROJECT_NAME}_core PUBLIC
 
 # component のノード。同じ名前の実行ファイル（別のプロセスで動かすとき）は rclcpp_components が作る
 add_library(${PROJECT_NAME}_nodes SHARED
+  src/cmd_yaw_hold_node.cpp
   src/contact_monitor_node.cpp
   src/global_planner_node.cpp
   src/mppi_lite_node.cpp
@@ -71,6 +73,8 @@ rclcpp_components_register_node(${PROJECT_NAME}_nodes
   PLUGIN "core_planning::SafetyGateNode" EXECUTABLE safety_gate)
 rclcpp_components_register_node(${PROJECT_NAME}_nodes
   PLUGIN "core_planning::ContactMonitorNode" EXECUTABLE contact_monitor)
+rclcpp_components_register_node(${PROJECT_NAME}_nodes
+  PLUGIN "core_planning::CmdYawHoldNode" EXECUTABLE cmd_yaw_hold)
 
 # 接触の頻度を Gazebo を使わずに統計で比べるコマンド。ノードは yaml-cpp を使わないので分ける
 add_library(${PROJECT_NAME}_crowd_model STATIC src/crowd_model.cpp)
@@ -106,6 +110,7 @@ if(BUILD_TESTING)
     test_path_smoother test_safety
     test_traction_estimator
     test_tracks_sync
+    test_yaw_hold
     test_hybrid_astar)
     ament_add_gtest(${name} test/${name}.cpp)
     target_link_libraries(${name} ${PROJECT_NAME}_core)

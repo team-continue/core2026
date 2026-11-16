@@ -37,6 +37,8 @@ PLANNING_NODES: Final = (
     ('contact_monitor', 'core_planning::ContactMonitorNode'),
 )
 SAFETY_NODE: Final = ('safety_gate', 'core_planning::SafetyGateNode')
+# 安全停止（safety_gate）が自動の指令を出す話題
+DEFAULT_AUTO_CMD_TOPIC: Final = '/control/auto/cmd_vel'
 
 
 def build_nodes(context: LaunchContext) -> list[LaunchDescriptionEntity]:
@@ -50,16 +52,23 @@ def build_nodes(context: LaunchContext) -> list[LaunchDescriptionEntity]:
         },
     )
 
-    def spec(executable: str, plugin: str) -> NodeSpec:
+    def spec(
+        executable: str, plugin: str, remappings: tuple[tuple[str, str], ...] = ()
+    ) -> NodeSpec:
         return NodeSpec(
             package='core_planning', executable=executable, plugin=plugin, name=executable,
-            parameters=parameters, namespace=PLANNING_NS,
+            parameters=parameters, namespace=PLANNING_NS, remappings=remappings,
         )
+
+    # 安全停止の出力先。sim_nav.launch.py は cmd_yaw_hold を挟むので /control/auto/cmd_vel_raw にする
+    auto_cmd_topic = LaunchConfiguration('auto_cmd_topic').perform(context)
+    safety_remappings = (
+        (DEFAULT_AUTO_CMD_TOPIC, auto_cmd_topic),) if auto_cmd_topic != DEFAULT_AUTO_CMD_TOPIC else ()
 
     composition = parse_composition(LaunchConfiguration('composition').perform(context))
     return [
         *launch_nodes(composition, PLANNING_CONTAINER, [spec(*node) for node in PLANNING_NODES]),
-        standalone_node(spec(*SAFETY_NODE)),
+        standalone_node(spec(*SAFETY_NODE, remappings=safety_remappings)),
     ]
 
 
@@ -71,6 +80,11 @@ def generate_launch_description() -> LaunchDescription:
             'field_file', default_value='',
             description='フィールドの範囲（field.x_min など）を config/field.yaml の後から重ねる設定ファイル'
                         '（空なら重ねない。navigation.launch.py は map_name のプリセットで選ぶ）',
+        ),
+        DeclareLaunchArgument(
+            'auto_cmd_topic', default_value=DEFAULT_AUTO_CMD_TOPIC,
+            description='安全停止（safety_gate）が自動の指令を出す話題（sim_nav.launch.py は cmd_yaw_hold を挟む'
+                        'ので /control/auto/cmd_vel_raw）',
         ),
         DeclareLaunchArgument(
             'composition', default_value=DEFAULT_COMPOSITION, choices=list(COMPOSITION_MODES),

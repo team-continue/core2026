@@ -15,6 +15,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from core_nav_launch.composition import COMPOSITION_MODES, DEFAULT_COMPOSITION
 from core_nav_launch.imu_source import DEFAULT_IMU_SOURCE, IMU_SOURCES
 from core_nav_launch.point_extraction import DEFAULT_POINT_EXTRACTION, POINT_EXTRACTION_MODES
@@ -51,6 +52,19 @@ def generate_launch_description() -> LaunchDescription:
         'lio_self_filter', 'rear_lidar', 'composition', 'localization_params_file',
         'lidar_roll', 'body_height', 'lidar_scan_motion', 'lidar_no_return_points',
         'state_source', 'field_file',
+    )
+    # 安全停止の後の自動の指令の並進の向きを、IMU の速い周期で世界の座標に保って出し直す（sim だけ。
+    # 実機に入れる前に、実機の IMU の周期と遅れ、足回りの応答を測る）。cmd_yaw_hold:=false ならそのまま通す
+    cmd_yaw_hold = Node(
+        package='core_planning', executable='cmd_yaw_hold', name='cmd_yaw_hold', namespace='planning',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'enabled': ParameterValue(LaunchConfiguration('cmd_yaw_hold'), value_type=bool),
+            'input_topic': '/control/auto/cmd_vel_raw',
+            'output_topic': '/control/auto/cmd_vel',
+            'imu_topic': '/sensing/livox/imu',
+        }],
     )
     # 実機と同じく、手動と自動の指令は control_mode_manager を通して /control/cmd_vel へ出す
     control_mode_manager = Node(
@@ -146,6 +160,11 @@ def generate_launch_description() -> LaunchDescription:
                         '（空なら重ねない。CoRE-1 の試験のフィールドは config/field_core1_2027.yaml）',
         ),
         DeclareLaunchArgument(
+            'cmd_yaw_hold', default_value='true',
+            description='自動の指令の並進の向きを IMU で世界の座標に保つ（core_planning の cmd_yaw_hold）。'
+                        'false なら安全停止の指令をそのまま通す',
+        ),
+        DeclareLaunchArgument(
             'occupancy_map', default_value='',
             description='UI に送る占有地図（map_server の yaml）。空なら map_path と同じ名前の .yaml',
         ),
@@ -200,9 +219,11 @@ def generate_launch_description() -> LaunchDescription:
                     'use_sim_time': 'true', 'map_path': map_path,
                     'composition': LaunchConfiguration('composition'),
                     'field_file': LaunchConfiguration('field_file'),
+                    'auto_cmd_topic': '/control/auto/cmd_vel_raw',
                 }.items(),
             ),
         ]),
+        cmd_yaw_hold,
         control_mode_manager,
         emergency_handler,
         OpaqueFunction(function=map_publisher),
