@@ -52,8 +52,9 @@ HIGH_WALL_NEAR_M: Final = 1.5
 SURFACE_STEP_M: Final = 0.05
 TOP_STEP_M: Final = 0.1
 FLOOR_STEP_M: Final = 0.2
-# 静止物として使う点の高さの下限 [m]（フェンス 0.14m・バンカー 0.15m を拾う。床の点は拾わない）
-STATIC_MIN_HEIGHT_M: Final = 0.08
+# 静止物として使う点の高さの下限 [m]（陣地の羽根 0.08m・フェンス 0.14m・バンカー 0.15m を拾う。床の点は拾わない）。
+# PCD の高さは float なので、羽根の上の面の点は 0.08 より僅かに低い（0.0799…）。羽根の高さより低くしておく
+STATIC_MIN_HEIGHT_M: Final = 0.07
 # UI の占有地図
 MAP_RESOLUTION_M: Final = 0.05
 MAP_MARGIN_M: Final = 1.0
@@ -340,7 +341,7 @@ def write_field_config(keep_out: list[Polygon], out: Path) -> None:
     out.write_text(
         '# CoRE-1 の試験のフィールド（make_core1_field.py が作る。手で直さず、スクリプトで作り直す）。\n'
         '# navigation.launch.py の map_name:=core1_2027 と sim_nav.launch.py の field_file で config/field.yaml に重ねる。\n'
-        '# - static_map.min_height_m: フェンス 0.14m・バンカー 0.15m を静止物として拾う\n'
+        '# - static_map.min_height_m: 陣地の羽根 0.08m・フェンス 0.14m・バンカー 0.15m を静止物として拾う\n'
         '# - keep_out: 進入禁止ゾーン（3.2）。計画はここを壁として扱う\n'
         + yaml.safe_dump(document, sort_keys=False, allow_unicode=True), encoding='utf-8')
 
