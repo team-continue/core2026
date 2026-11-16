@@ -55,8 +55,8 @@ void oakdTargetDetector::detectEnemy(const core_msgs::msg::DetectedPanelInfoArra
     dpMsg.array = damagePanels;
     dpInfoPub->publish(dpMsg);
 
-    // publishImage("raw_image", rawImage, "bgr8");
-    // publishResultImage();
+    publishImage("raw_image", rawImage, "bgr8");
+    publishResultImage();
 
     
     return;
@@ -116,7 +116,7 @@ void oakdTargetDetector::detectDamagePanel(){
             }
         }
 
-        if(count > 1){
+        if(count > -1){ // 0にすると、LEDが1つも検出されなかった場合はダメージパネルとして認識しない
             core_msgs::msg::DamagePanelInfo dp;
             dp.left = (int)(minX);
             dp.top = (int)(minY);

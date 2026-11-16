@@ -14,7 +14,7 @@ def generate_launch_description():
     # コマンドラインのmodel_path:=...をOAK-Dノードの文字列パラメータへ渡す。
     model_path_arg = DeclareLaunchArgument(
         'model_path',
-        default_value=os.path.join(pkg_dir, 'config', 'best.rvc2.tar.xz'),
+        default_value=os.path.join(pkg_dir, 'config', 'best_yolov8n.rvc2.tar.xz'),
         description='Absolute path to the DepthAI NN Archive',
     )
 
@@ -68,7 +68,7 @@ def generate_launch_description():
     #       ↓
     # target_selector
     # =========================================================
-    LEFT_NS = 'perception/enemy_detection/left'
+    LEFT_NS = 'perception/enemy_detection/right'
 
     target_detector = Node(
         package='core_enemy_detection',
@@ -78,7 +78,7 @@ def generate_launch_description():
         parameters=[param_file],
         output='screen',
         remappings=[
-            ('raw_image', '/sensing/turret_camera_left/color/image'),
+            ('raw_image', '/sensing/turret_camera_right/color/image'),
             ('color', '/hardware/color'),
         ],
     )
