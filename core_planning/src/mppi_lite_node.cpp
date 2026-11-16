@@ -38,7 +38,9 @@
 #include <core_msgs/msg/tracked_object_array.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
+#include <std_msgs/msg/float64.hpp>
 #include <std_msgs/msg/int32.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <tf2/exceptions.h>
@@ -291,6 +293,22 @@ public:
     yaw_mode_subscription_ = create_subscription<std_msgs::msg::Int32>(
       "/control/yaw_mode", rclcpp::QoS(10),
       [this](const std_msgs::msg::Int32::ConstSharedPtr & mode) {onYawMode(mode->data);});
+    // 操作が上半身を回しているか（0 でない速さを最後に受けた時刻。target_angle_node と同じ決め方）
+    operator_rate_subscription_ = create_subscription<std_msgs::msg::Float64>(
+      "/control/yaw_target_rate", rclcpp::QoS(10),
+      [this](const std_msgs::msg::Float64::ConstSharedPtr & rate) {
+        if (std::isfinite(rate->data) && std::abs(rate->data) > kOperatorRateThreshold) {
+          last_operator_active_ = std::chrono::steady_clock::now();
+        }
+      });
+    control_mode_subscription_ = create_subscription<std_msgs::msg::String>(
+      "/control/mode", rclcpp::QoS(1).reliable().transient_local(),
+      [this](const std_msgs::msg::String::ConstSharedPtr & mode) {
+        auto_mode_ = mode->data == "auto";
+      });
+    // TURRET で操作がない間に、上半身を回す速さ（target_angle_node が操作の代わりに使う）
+    auto_yaw_rate_publisher_ =
+      create_publisher<std_msgs::msg::Float64>("/control/auto/yaw_target_rate", rclcpp::QoS(10));
     RCLCPP_INFO(
       get_logger(), "腰のモードは %s から始めます（heading.follow_yaw_mode %s）",
       yaw_mode_ == kTurretYawMode ? "TURRET" : "FRONT", follow_yaw_mode_ ? "true" : "false");
@@ -589,6 +607,20 @@ private:
     declareBool(
       *this, "heading.follow_yaw_mode", true,
       "腰のモード（/control/yaw_mode）に従う。TURRET（1）の間は上半身の向きを操作に任せ、向きを指令しない");
+    declareDouble(
+      *this, "heading.operator_hold_s", 1.0, 0.0, 10.0,
+      "操作の /control/yaw_target_rate を止めてから、自律移動が上半身の向きを決めるのに戻すまでの時間 [s]"
+      "（target_angle_node の operator_hold_sec と同じ値）");
+    declareBool(
+      *this, "heading.chassis_face.enabled", true,
+      "腰の TURRET で、足回りの面を進む向きにそろえる（4 つの面のうち近い面を正面にする）");
+    declareDouble(
+      *this, "heading.chassis_face.gain_per_s", 1.5, 0.0, 20.0, "足回りの向きの差に対する回る速さの比 [1/s]");
+    declareDouble(
+      *this, "heading.chassis_face.max_rate_radps", 1.0, 0.0, 10.0, "足回りをそろえる回る速さの上限 [rad/s]");
+    declareDouble(
+      *this, "heading.chassis_face.min_speed_mps", 0.3, 0.0, 5.0,
+      "これより遅いときは足回りを回さない [m/s]");
     declareInt(
       *this, "heading.initial_yaw_mode", 1, 0, 1,
       "/control/yaw_mode を受けるまでの腰のモード（0: FRONT、1: TURRET）。body_controller の yaw_mode と"
@@ -721,6 +753,13 @@ private:
       get_parameter("heading.blind_side.visible_half_angle_deg").as_double();
     mppi.blind_side.speed_mps = get_parameter("heading.blind_side.speed_mps").as_double();
     follow_yaw_mode_ = get_parameter("heading.follow_yaw_mode").as_bool();
+    operator_hold_s_ = get_parameter("heading.operator_hold_s").as_double();
+    chassis_face_params_.enabled = get_parameter("heading.chassis_face.enabled").as_bool();
+    chassis_face_params_.gain_per_s = get_parameter("heading.chassis_face.gain_per_s").as_double();
+    chassis_face_params_.max_rate_radps =
+      get_parameter("heading.chassis_face.max_rate_radps").as_double();
+    chassis_face_params_.min_speed_mps =
+      get_parameter("heading.chassis_face.min_speed_mps").as_double();
     DriveParams drive;
     drive.predict_delay = get_parameter("mppi.drive.predict_delay").as_bool();
     drive.dead_time_s = get_parameter("mppi.drive.dead_time_s").as_double();
@@ -923,8 +962,14 @@ private:
     geometry_msgs::msg::Twist twist;
     twist.linear.x = c * command.vx + s * command.vy;
     twist.linear.y = -s * command.vx + c * command.vy;
-    twist.angular.z = command.wz;
+    // TURRET では wz は足回りだけを回すので、足回りの面をそろえる速さにする。上半身を回す速さは
+    // 操作が動いていない自動の運転の間だけ target_angle_node へ出す（それ以外は 0。上半身は向きを保つ）
+    twist.angular.z = turret_cycle_ ? chassis_rate_cmd_ : command.wz;
     command_publisher_->publish(twist);
+    std_msgs::msg::Float64 upper_rate;
+    upper_rate.data = turret_auto_cycle_ && auto_mode_ ? command.wz : 0.0;
+    auto_yaw_rate_publisher_->publish(upper_rate);
+    upper_rate_cmd_ = upper_rate.data;
     // 次の周期で、計算の時間として見込む
     last_compute_s_ = std::clamp(
       std::chrono::duration<double>(std::chrono::steady_clock::now() - odometry_start_).count(), 0.0,
@@ -1125,10 +1170,22 @@ private:
       measured, time_s, *prediction_s, sent_commands_, drive_params_,
       traction_params_.enabled ? floorFor(traction_state_.friction()) : FloorTraction{}) :
       toState(*odometry, latency_compensation_s_);
-    // 腰が TURRET の間は上半身の向きを指令しない（向きの目標なし、回る速さの指令 0）
-    mppi_params_.heading.yaw_free = yawFree();
-    const MppiState state =
-      mppi_params_.heading.yaw_free ? yawHeldState(predicted, measured, time_s) : predicted;
+    // 腰が TURRET の間: 操作が上半身を回していれば向きを指令しない（向きの目標なし、回る速さ 0）。
+    // 操作がなければ、上半身の向きは FRONT と同じく決め、その回る速さは target_angle_node へ、足回りは
+    // 面を進む向きにそろえる速さを cmd_vel の wz で出す。どちらでも、上半身は自律移動の指令（wz）では
+    // 回らないので、向きは駆動の遅れの先読みで進めず、測った向きを使う
+    turret_cycle_ = turretMode();
+    turret_auto_cycle_ = turret_cycle_ && !operatorActive();
+    mppi_params_.heading.yaw_free = turret_cycle_ && !turret_auto_cycle_;
+    // 自律移動が上半身を回すときの今の回る速さは、測った値でなく直前に出した指令にする。target_angle_node は
+    // 指令の速さを先回りで腰に伝え、ずれを帰還で詰めるので、測った速さには帰還の分が乗る。それを今の速さとして
+    // 加速度の上限の分だけ変えた値を指令すると、帰還の分が周期ごとに積み上がり、上限の速さを超えて回り続ける
+    const double held_rate = turret_auto_cycle_ ? upper_rate_cmd_ : 0.0;
+    const MppiState state = turret_cycle_ ?
+      yawHeldState(predicted, measured, time_s, held_rate) : predicted;
+    chassis_rate_cmd_ = turret_cycle_ ? chassisFaceRateFor(state) : 0.0;
+    mppi_params_.chassis_decoupled = turret_cycle_;
+    mppi_params_.chassis_rate_radps = chassis_rate_cmd_;
     const auto stop = [&]() {
         return limitCommand(state, 0.0, 0.0, 0.0, mppi_params_);
       };
@@ -1292,6 +1349,12 @@ private:
         get_logger(), *get_clock(), 1000, "知らない腰のモード %d を無視します（0: FRONT、1: TURRET）", mode);
       return;
     }
+    // 回転モード中は TURRET から FRONT へ切り替えない（target_angle_node と同じ）
+    if (yaw_mode_ == kTurretYawMode && mode == kFrontYawMode && chassis_.rotating()) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000, "回転モード中なので、FRONT への切り替えを無視します（TURRET のまま）");
+      return;
+    }
     if (mode != yaw_mode_) {
       RCLCPP_INFO(
         get_logger(), "腰のモードが %s になりました%s", mode == kTurretYawMode ? "TURRET" : "FRONT",
@@ -1300,17 +1363,46 @@ private:
     yaw_mode_ = mode;
   }
 
-  // 上半身の向きを指令しないか（腰が TURRET で、heading.follow_yaw_mode のとき）
-  bool yawFree() const {return follow_yaw_mode_ && yaw_mode_ == kTurretYawMode;}
+  // 腰が TURRET で、heading.follow_yaw_mode のとき
+  bool turretMode() const {return follow_yaw_mode_ && yaw_mode_ == kTurretYawMode;}
+
+  // 操作が上半身を回しているか（止めてから heading.operator_hold_s の間も含む）
+  bool operatorActive() const
+  {
+    if (!last_operator_active_.has_value()) {
+      return false;
+    }
+    const double since_s = std::chrono::duration<double>(
+      std::chrono::steady_clock::now() - *last_operator_active_).count();
+    return since_s <= operator_hold_s_;
+  }
+
+  // TURRET で、足回りの面を進む向きにそろえる回る速さ。回転モード中と、腰の角度が分からないときは 0
+  double chassisFaceRateFor(const MppiState & state)
+  {
+    if (chassis_.rotating()) {
+      return 0.0;
+    }
+    const auto waist = chassis_.chassisYaw();
+    if (!waist.has_value()) {
+      return 0.0;
+    }
+    return chassisFaceRate(
+      wrapAngle(state.yaw + *waist), std::atan2(state.vy, state.vx), std::hypot(state.vx, state.vy),
+      chassis_face_params_);
+  }
 
   // 向きを指令しないときの計画の状態。上半身は操作で回るので、計画の間は向きを保つとみなす（回る速さ 0）。
   // 向きは、指令を出す時刻（今 + 計算の時間）の向きにする。cmd_yaw_hold はその時の向きを基準に、並進を
   // 世界の座標に保ち直す。駆動の遅れの先読み（predictDelayedState）で進めた向きは使わない
-  MppiState yawHeldState(MppiState state, const MppiState & measured, const double stamp_s) const
+  // 回る速さは rate_radps（TURRET で自律移動が上半身を回すときは直前の指令、それ以外は 0）
+  MppiState yawHeldState(
+    MppiState state, const MppiState & measured, const double stamp_s,
+    const double rate_radps) const
   {
     const double ahead_s = std::max(get_clock()->now().seconds() + last_compute_s_ - stamp_s, 0.0);
     state.yaw = wrapAngle(measured.yaw + measured.wz * std::min(ahead_s, kMaxYawHoldAheadS));
-    state.wz = 0.0;
+    state.wz = rate_radps;
     return state;
   }
 
@@ -1483,6 +1575,22 @@ private:
   int yaw_mode_{kTurretYawMode};
   bool follow_yaw_mode_{true};
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr yaw_mode_subscription_;
+  // 操作の上半身の回し（/control/yaw_target_rate）を見て、動いている間は自律移動が向きを決めない
+  static constexpr double kOperatorRateThreshold = 1e-3;
+  double operator_hold_s_{1.0};
+  std::optional<std::chrono::steady_clock::time_point> last_operator_active_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr operator_rate_subscription_;
+  // 運転モード（/control/mode）が auto か。auto でなければ上半身を回す速さを出さない
+  bool auto_mode_{false};
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr control_mode_subscription_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr auto_yaw_rate_publisher_;
+  // 足回りの面をそろえる設定と、この周期の TURRET の状態・足回りを回す速さ
+  ChassisFaceParams chassis_face_params_;
+  bool turret_cycle_{false};
+  bool turret_auto_cycle_{false};
+  double chassis_rate_cmd_{0.0};
+  // 直前に target_angle_node へ出した上半身の回る速さ（/control/auto/yaw_target_rate）
+  double upper_rate_cmd_{0.0};
   GoalHoldMonitor goal_hold_monitor_;
   OncomingMonitor oncoming_monitor_;
   bool oncoming_yielding_{false};

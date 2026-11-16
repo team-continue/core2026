@@ -17,6 +17,8 @@
 
 namespace
 {
+using core_planning::ChassisFaceParams;
+using core_planning::chassisFaceRate;
 using core_planning::chooseBackoffDirection;
 using core_planning::computeDistanceField;
 using core_planning::computeSpeedLimit;
@@ -2864,6 +2866,26 @@ TEST(Heading, YawFreeHasNoHeadingTarget)
     params.heading.yaw_free = true;
     EXPECT_FALSE(headingTarget(state, path, params).has_value());
   }
+}
+
+// 足回りの面を進む向きにそろえる: 4 つの面のうち近い面へ、差は ±45° に収める
+TEST(ChassisFace, TurnsTheNearestFaceTowardTheTravelDirection)
+{
+  const ChassisFaceParams params;  // 比 1.5、上限 1.0rad/s、0.3m/s 未満は回さない
+  // 進む向きが足回りから +20°: 近い面（前）へ +20° 回す
+  const double degree = M_PI / 180.0;
+  EXPECT_NEAR(chassisFaceRate(0.0, 20.0 * degree, 1.0, params), 1.5 * 20.0 * degree, 1e-9);
+  // +80°: 左の面（+90°）が近いので −10° 回す
+  EXPECT_NEAR(chassisFaceRate(0.0, 80.0 * degree, 1.0, params), -1.5 * 10.0 * degree, 1e-9);
+  // 180° 逆（後ろの面が正面）なら回さない。差が大きいと上限で抑える
+  EXPECT_NEAR(chassisFaceRate(0.3, 0.3 + M_PI, 1.0, params), 0.0, 1e-9);
+  EXPECT_NEAR(chassisFaceRate(0.0, 44.0 * degree, 1.0, params), 1.0, 1e-9);
+  // 遅いとき、差が小さいとき、無効のときは回さない
+  EXPECT_DOUBLE_EQ(chassisFaceRate(0.0, 0.5, 0.2, params), 0.0);
+  EXPECT_DOUBLE_EQ(chassisFaceRate(0.0, 0.01, 1.0, params), 0.0);
+  ChassisFaceParams off = params;
+  off.enabled = false;
+  EXPECT_DOUBLE_EQ(chassisFaceRate(0.0, 0.5, 1.0, off), 0.0);
 }
 
 // heading.yaw_free では回る速さを指令せずにゴールへ着く。向きを指令するときは、ゴールの向きへ回る

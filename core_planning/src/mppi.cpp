@@ -948,6 +948,8 @@ double rolloutCost(const RolloutContext & context, const double * controls, bool
   double x = state.x;
   double y = state.y;
   double yaw = state.yaw;
+  // 衝突判定の形を置く向き。腰の TURRET では足回りの向きで、上半身の回り（wz）では回さない
+  double footprint_yaw = state.yaw;
   double vx = state.vx;
   double vy = state.vy;
   double wz = state.wz;
@@ -974,6 +976,9 @@ double rolloutCost(const RolloutContext & context, const double * controls, bool
     x += vx * dt;
     y += vy * dt;
     yaw += wz * dt;
+    // 形の角が回る速さ（余裕の見積もりに使う）
+    const double footprint_rate = params.chassis_decoupled ? params.chassis_rate_radps : wz;
+    footprint_yaw = params.chassis_decoupled ? footprint_yaw + footprint_rate * dt : yaw;
 
     const auto index = static_cast<std::size_t>(k);
     const Point2 & target = context.reference[index];
@@ -981,8 +986,8 @@ double rolloutCost(const RolloutContext & context, const double * controls, bool
       (x - target.x) * (x - target.x) + (y - target.y) * (y - target.y);
     cost += params.weight_tracking * tracking;
 
-    const double c = std::cos(yaw);
-    const double s = std::sin(yaw);
+    const double c = std::cos(footprint_yaw);
+    const double s = std::sin(footprint_yaw);
     const double speed = std::hypot(vx, vy);
 
     if (context.field != nullptr) {
@@ -990,15 +995,15 @@ double rolloutCost(const RolloutContext & context, const double * controls, bool
       // 静止物へ近づく向きの速さだけを見る（壁と平行に走っても余裕を増やさない）。
       // 入れる通路の中では、両側の壁は経路と平行なので、経路に直角な速さ（と回転で角が動く速さ）だけを
       // 見る。通路の速さの上限（passageSpeedLimit）は参照軌道にかけている
-      const KeepOutPoint point = keepOutPoint(context, x, y, yaw);
+      const KeepOutPoint point = keepOutPoint(context, x, y, footprint_yaw);
       const auto passage = enterablePassage(context, index);
       double margin_speed = 0.0;
       if (passage.has_value()) {
         const Point2 & normal = context.passage_normal[index];
         margin_speed = std::abs(vx * normal.x + vy * normal.y) +
-          std::abs(wz) * context.circumscribed_radius;
+          std::abs(footprint_rate) * context.circumscribed_radius;
       } else {
-        margin_speed = staticMarginSpeed(context, point, vx, vy, wz, speed);
+        margin_speed = staticMarginSpeed(context, point, vx, vy, footprint_rate, speed);
       }
       const double static_margin = hard_margin + margin_speed * params.static_margin_time_s;
       const double distance = point.distance;
@@ -1224,6 +1229,24 @@ std::optional<double> headingTarget(
     return std::nullopt;
   }
   return std::atan2(last.y, last.x);
+}
+
+double chassisFaceRate(
+  const double chassis_yaw, const double travel_yaw, const double speed,
+  const ChassisFaceParams & params)
+{
+  if (!params.enabled || !(speed >= params.min_speed_mps)) {
+    return 0.0;
+  }
+  // 4 つの面のうち近い面へ（差を ±45° に収める）
+  const double quarter = M_PI / 2.0;
+  double error = wrapAngle(travel_yaw - chassis_yaw);
+  error -= quarter * std::round(error / quarter);
+  if (std::abs(error) <= params.deadband_rad) {
+    return 0.0;
+  }
+  const double limit = std::max(params.max_rate_radps, 0.0);
+  return std::clamp(params.gain_per_s * error, -limit, limit);
 }
 
 double yawRateToward(const double error, const MppiParams & params)

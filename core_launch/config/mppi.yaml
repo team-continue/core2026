@@ -247,6 +247,18 @@
       # /control/yaw_mode を受けるまでの腰のモード。実機の body_controller の既定（TURRET）と同じ。
       # launch の yaw_mode で上書きする（腰の無い sim は 0）
       initial_yaw_mode: 1
+      # 操作の /control/yaw_target_rate を止めてから、自律移動が上半身の向きを決めるのに戻すまでの時間 [s]
+      # （target_angle_node の operator_hold_sec と同じ値）
+      operator_hold_s: 1.0
+      # 腰の TURRET で、足回り（四角）の面を進む向きにそろえる。4 つの面のうち進む向きに近い面を正面にし
+      # （差は ±45° に収める）、gain_per_s × 差 の速さ（max_rate_radps まで）で回す。min_speed_mps より遅い
+      # ときと回転モード中は回さない。TURRET で操作がない間、上半身（砲塔）は FRONT と同じく進む向き・
+      # ゴールの向きへ回り、その速さは /control/auto/yaw_target_rate で target_angle_node へ出す（2026-11-16）
+      chassis_face:
+        enabled: true
+        gain_per_s: 1.5
+        max_rate_radps: 1.0
+        min_speed_mps: 0.3
       # forward の並進の抑え。向きの目標との差が turn_angle_deg [deg] を超える間、並進の速さを
       # turn_speed_mps [m/s] までにする
       forward:

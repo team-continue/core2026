@@ -248,6 +248,25 @@ struct HeadingParams
   bool yaw_free{false};
 };
 
+// 腰の TURRET で、足回りの面を進む向きにそろえる（chassisFaceRate）
+struct ChassisFaceParams
+{
+  bool enabled{true};
+  // 向きの差に対する回る速さの比 [1/s] と、回る速さの上限 [rad/s]
+  double gain_per_s{1.5};
+  double max_rate_radps{1.0};
+  // これより遅いときは回さない（進む向きが定まらない）[m/s]
+  double min_speed_mps{0.3};
+  // 差がこれ以下なら回さない [rad]
+  double deadband_rad{0.035};
+};
+
+// 足回りの面を進む向きにそろえる回る速さ [rad/s]。足回りは四角なので、4 つの面のうち進む向き travel_yaw に
+// 近い面を正面にする（差は ±45° に収める）。chassis_yaw と travel_yaw は同じ座標系。speed が
+// min_speed_mps 未満、差が deadband_rad 以下、enabled でなければ 0
+double chassisFaceRate(
+  double chassis_yaw, double travel_yaw, double speed, const ChassisFaceParams & params);
+
 // 経路の曲がりで、参照軌道の速さを横の加速度の上限まで落とす。曲率 κ の所の速さを √(上限 / κ) までにし、
 // その手前から reference_decel_mps2 で落とす（狭い通路の速さと同じ後ろ向きの計算）。
 // 全方位移動の機体は向きを変えずに曲がれるが、速度の向きを変えるのに要る加速度（v² × κ）は変わらない。
@@ -300,6 +319,10 @@ struct MppiParams
   // 回る速さを、この角加速度で落として誤差の分を回るうちに止まりきれる速さまでに抑える（yawRateToward）。
   // 1 では、指令から機体が応えるまでの遅れ（数十 ms）の分だけ減速が足りずに行き過ぎる
   double yaw_brake_accel_ratio{0.7};
+  // 衝突判定の形（駆動部）を、上半身（base_link）の向きと別に回す（腰の TURRET）。true なら予測の中で、
+  // 形は今の向き（上半身の向き + 腰の角度）から chassis_rate_radps で回るとし、上半身の回りでは回さない
+  bool chassis_decoupled{false};
+  double chassis_rate_radps{0.0};
   // 参照軌道がゴールの手前で減速するときの減速度
   double reference_decel_mps2{2.0};
   double keep_out_range_m{0.5};

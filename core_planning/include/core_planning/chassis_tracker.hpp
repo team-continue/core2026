@@ -46,6 +46,12 @@ public:
     return chassisShape(half_length, half_width, lookupYaw(), rotating_);
   }
 
+  // 回転モード（/control/rotation が 0 以外）か
+  bool rotating() const {return rotating_;}
+
+  // base_link から見た駆動部の向き [rad]（腰の角度）。分からなければ nullopt
+  std::optional<double> chassisYaw() {return lookupYaw();}
+
 private:
   std::optional<double> lookupYaw()
   {
