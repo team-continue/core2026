@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from run_scenario import (  # noqa: E402
     analyze_static,
     box_distance,
+    chassis_samples,
     footprint_outline,
     OWN_HALF_M,
     StaticBox,
@@ -128,3 +129,20 @@ def test_structures_count_gap_and_contacts(tmp_path: Path) -> None:
     assert result['structure_contacts'] == 1
     # field.sdf には入らない範囲がない
     assert result['keep_out_entries'] == 0
+
+
+def test_chassis_samples_keep_yaw_without_waist() -> None:
+    poses = [Pose(0.0, 1.0, 2.0, 0.0, 0.3), Pose(0.1, 1.0, 2.0, 0.0, 0.4)]
+    assert chassis_samples(poses, []) == poses
+
+
+def test_chassis_samples_add_latest_waist_angle() -> None:
+    # 腰のある機体では、外周の向きは上半身の向き + 直前に受けた腰の角度。最初に受けるより前は最初の値
+    poses = [Pose(0.0, 0.0, 0.0, 0.0, 0.5), Pose(1.0, 0.0, 0.0, 0.0, 0.5), Pose(2.5, 0.0, 0.0, 0.0, 3.0)]
+    waist = [(0.5, -0.2), (2.0, 0.5)]
+    yaws = [p.yaw for p in chassis_samples(poses, waist)]
+    assert math.isclose(yaws[0], 0.3)
+    assert math.isclose(yaws[1], 0.3)
+    # 3.5 rad は -π〜π に折り返す
+    assert math.isclose(yaws[2], 3.5 - 2.0 * math.pi)
+    assert [(p.t, p.x, p.y) for p in chassis_samples(poses, waist)] == [(p.t, p.x, p.y) for p in poses]

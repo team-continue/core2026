@@ -14,7 +14,8 @@
 """
 
 import argparse
-from dataclasses import asdict, dataclass
+import bisect
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 import json
 import math
@@ -55,6 +56,7 @@ from rcl_interfaces.msg import SetParametersResult
 from rcl_interfaces.srv import SetParameters
 import rclpy
 from rclpy.parameter import Parameter
+from tf2_msgs.msg import TFMessage
 import yaml
 
 ParamValue = bool | int | float | str
@@ -65,6 +67,10 @@ ResultDict = dict[str, object]
 FIELD_X_M: Final = 12.0
 FIELD_Y_M: Final = 7.5
 OWN_HALF_M: Final = 0.4
+# 腰のある機体（sim_nav.launch.py の waist:=true）では、外周（足回り）は上半身（base_link）から腰の角度だけ
+# 回っている。/tf のこの 2 つの間の向きを、真値の向きに足して外周を置く
+BASE_FRAME: Final = 'base_link'
+CHASSIS_FRAME: Final = 'chassis_link'
 
 # 接触の直前の見る範囲と、自機に原因があるとみなす速度
 FAULT_WINDOW_S: Final = 0.5
@@ -300,6 +306,8 @@ class ScenarioNode(DriveNode):
         self.contact: list[tuple[float, bool]] = []
         self.health_level: int | None = None
         self.perception_ms: list[float] = []
+        # 腰の角度（BASE_FRAME から見た CHASSIS_FRAME の向き）。腰のない機体では空のまま
+        self.waist: list[tuple[float, float]] = []
         # 操縦の UI と同じく、目標を渡して auto を押す（control_mode_manager が自動に入り、計画へ渡す）
         self._goal_publisher = self.create_publisher(PoseStamped, '/ui/auto/start', 10)
         self.create_subscription(NavigationStatus, '/planning/navigation/status', self._on_navigation, 50)
@@ -308,6 +316,7 @@ class ScenarioNode(DriveNode):
         self.create_subscription(ContactStatus, '/planning/contact/status', self._on_contact, 50)
         self.create_subscription(LocalizationHealth, '/localization/health', self._on_health, 50)
         self.create_subscription(ProcessStats, '/perception/stats', self._on_perception, 50)
+        self.create_subscription(TFMessage, '/tf', self._on_tf, 100)
 
     def received_at(self) -> float:
         """受信した時点の真値の時刻。各メッセージの時刻の付け方に依存しないようにする."""
@@ -337,6 +346,18 @@ class ScenarioNode(DriveNode):
 
     def _on_perception(self, msg: ProcessStats) -> None:
         self.perception_ms.append(msg.processing_ms)
+
+    def _on_tf(self, msg: TFMessage) -> None:
+        # 真値を受ける前は時刻が付けられない
+        if not self.truth:
+            return
+        for transform in msg.transforms:
+            if transform.header.frame_id == BASE_FRAME and transform.child_frame_id == CHASSIS_FRAME:
+                q = transform.transform.rotation
+                self.waist.append((
+                    self.received_at(),
+                    math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z)),
+                ))
 
     def wait_sim(self, duration_s: float) -> None:
         """指令を出さずにシミュレーション時間で待つ."""
@@ -623,6 +644,21 @@ def thin_samples(truth: Sequence[Pose], stride: int) -> list[Pose]:
     return list(truth[::stride])
 
 
+def chassis_samples(samples: Sequence[Pose], waist: Sequence[tuple[float, float]]) -> list[Pose]:
+    """真値の向きに腰の角度を足して、外周（足回り）の向きにする.
+
+    腰の角度は各時刻の直前に受けた値（最初に受けるより前は最初の値）。腰の角度がなければそのまま返す
+    """
+    if not waist:
+        return list(samples)
+    times = [t for t, _ in waist]
+
+    def chassis_yaw(pose: Pose) -> float:
+        q = waist[max(bisect.bisect_right(times, pose.t) - 1, 0)][1]
+        return math.atan2(math.sin(pose.yaw + q), math.cos(pose.yaw + q))
+    return [replace(pose, yaw=chassis_yaw(pose)) for pose in samples]
+
+
 def analyze_obstacles(
     samples: Sequence[Pose], obstacles: Sequence[Obstacle], warn_m: float,
 ) -> ResultDict:
@@ -792,7 +828,9 @@ def analyze_run(
     truth = [p for p in list(node.truth) if start <= p.t <= end]
     if len(truth) < 2:
         raise CheckError('走行中の真値がほとんどありません')
-    samples = thin_samples(truth, stride)
+    # 機体の外周での距離は足回りの向きで測る（腰のない機体では真値の向きのまま）
+    waist = list(node.waist)
+    samples = chassis_samples(thin_samples(truth, stride), waist)
     times = np.array([p.t for p in samples])
     speeds = np.hypot(
         np.gradient(np.array([p.x for p in samples]), times),
@@ -831,6 +869,7 @@ def analyze_run(
         'speed_limit_min_mps': min(limits) if limits else None,
         'speed_limit_max_mps': max(limits) if limits else None,
         'contact_events': contact_events,
+        'footprint_frame': CHASSIS_FRAME if waist else BASE_FRAME,
     }
     # 観客（フィールドの外の人）は柵の向こうにいて機体と当たらないので、接触と最小距離から除く
     result.update(analyze_obstacles(samples, field_obstacles(spec.obstacles), warn_m))
