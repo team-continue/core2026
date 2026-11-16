@@ -49,6 +49,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include "core_nav_common/field_bounds.hpp"
+#include "core_nav_common/parameter_updates.hpp"
 #include "core_nav_common/parameters.hpp"
 #include "core_planning/chassis_tracker.hpp"
 #include "core_planning/drive_delay.hpp"
@@ -243,8 +244,8 @@ public:
         }
         return result;
       });
-    parameter_callback_ = add_post_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
+    parameter_callback_ = core_nav_common::onParametersSet(
+      *this, [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
 
     FieldBounds field;
     field.x_min = get_parameter("field.x_min").as_double();
@@ -1695,7 +1696,7 @@ private:
   tf2_ros::TransformListener tf_listener_;
   ChassisTracker chassis_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_validation_;
-  rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
+  core_nav_common::ParameterUpdateHandle parameter_callback_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr command_publisher_;
   rclcpp::Publisher<NavigationStatus>::SharedPtr status_publisher_;
   rclcpp::Publisher<Path>::SharedPtr local_plan_publisher_;

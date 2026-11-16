@@ -22,6 +22,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include "core_nav_common/parameter_updates.hpp"
 #include "core_nav_common/parameters.hpp"
 #include "core_localization/imu_fusion.hpp"
 
@@ -138,8 +139,8 @@ public:
         result.reason = error.value_or("");
         return result;
       });
-    update_callback_ = add_post_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> &) {
+    update_callback_ = core_nav_common::onParametersSet(
+      *this, [this](const std::vector<rclcpp::Parameter> &) {
         params_ = readParams({});
         if (fusion_.has_value()) {
           fusion_->setParams(params_);
@@ -397,7 +398,7 @@ private:
   bool primary_unit_reported_{false};
   bool secondary_unit_reported_{false};
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr validation_callback_;
-  rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr update_callback_;
+  core_nav_common::ParameterUpdateHandle update_callback_;
   rclcpp::Publisher<Imu>::SharedPtr publisher_;
   rclcpp::Subscription<Imu>::SharedPtr primary_subscription_;
   rclcpp::Subscription<Imu>::SharedPtr secondary_subscription_;

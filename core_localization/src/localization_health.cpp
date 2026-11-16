@@ -25,6 +25,7 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 
+#include "core_nav_common/parameter_updates.hpp"
 #include "core_nav_common/parameters.hpp"
 #include "core_localization/health_policy.hpp"
 
@@ -152,8 +153,8 @@ public:
       *this, "localization_health.align_gyro_with_lio", false,
       "LIO と Damiao の角速度を、LIO の 2 つのスキャンの時刻の区間でそろえて比べる（回り始めと止まるときの誤報を防ぐ）");
     loadParams();
-    parameter_callback_ = add_post_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
+    parameter_callback_ = core_nav_common::onParametersSet(
+      *this, [this](const std::vector<rclcpp::Parameter> &) {loadParams();});
 
     publisher_ = create_publisher<LocalizationHealth>("/localization/health", rclcpp::QoS(10));
     const auto sensor_qos = rclcpp::SensorDataQoS();
@@ -380,7 +381,7 @@ private:
   std::deque<StampedRate> damiao_history_;
   std::optional<double> aligned_worst_ratio_;
   double aligned_worst_difference_{0.0};
-  rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
+  core_nav_common::ParameterUpdateHandle parameter_callback_;
   rclcpp::Publisher<LocalizationHealth>::SharedPtr publisher_;
   rclcpp::Subscription<DiagnosticArray>::SharedPtr alignment_subscription_;
   rclcpp::Subscription<Imu>::SharedPtr livox_imu_subscription_;
