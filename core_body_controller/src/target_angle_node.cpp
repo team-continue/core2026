@@ -270,7 +270,7 @@ TargetAngleNode::TargetAngleNode()
         return;
       }
       latest_auto_target_rate_ =
-        std::clamp(msg->data, -yaw_rotation_velocity_, yaw_rotation_velocity_);
+      std::clamp(msg->data, -yaw_rotation_velocity_, yaw_rotation_velocity_);
       last_auto_target_rate_time_ = std::chrono::steady_clock::now();
       has_received_auto_target_rate_ = true;
     });
