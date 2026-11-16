@@ -86,6 +86,7 @@ def generate_launch_description() -> LaunchDescription:
                 'lidar_roll': LaunchConfiguration('lidar_roll'),
                 'body_height': LaunchConfiguration('body_height'),
                 'rear_lidar': LaunchConfiguration('rear_lidar'),
+                'waist': LaunchConfiguration('waist'),
                 'headless': LaunchConfiguration('headless'),
                 'world': LaunchConfiguration('world'),
                 'scenario_file': LaunchConfiguration('scenario_file'),
@@ -161,6 +162,11 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument(
             'rear_lidar', default_value='false', choices=['true', 'false'],
             description='検出のための 2 台目の LiDAR を機体の後ろの端に付ける（LIO と地図照合は 1 台目だけ）',
+        ),
+        DeclareLaunchArgument(
+            'waist', default_value='false', choices=['true', 'false'],
+            description='腰（足回りと上半身の間）を回る関節にし、実機と同じ body_controller の指令で足回りと腰を動かす'
+                        '（sim だけ。false なら機体全体を一つの塊として動かす）',
         ),
         DeclareLaunchArgument('headless', default_value='true', description='GazeboのGUIを出さない'),
         DeclareLaunchArgument(

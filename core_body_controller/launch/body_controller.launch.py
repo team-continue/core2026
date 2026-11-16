@@ -52,6 +52,18 @@ def generate_launch_description() -> LaunchDescription:
         default_value="0.2",
         description="Maximum accepted age of body_omega feedforward [s]",
     )
+    # sim（core_launch の sim_nav.launch.py の waist:=true）から使うときの設定。実機の既定は変えない
+    use_sim_time_arg = DeclareLaunchArgument(
+        "use_sim_time",
+        default_value="false",
+        description="Use the simulation clock (sim only)",
+    )
+    use_control_mode_manager_arg = DeclareLaunchArgument(
+        "use_control_mode_manager",
+        default_value="true",
+        description="Launch control_mode_manager (false when the caller launches its own)",
+    )
+    use_sim_time = ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool)
     use_damiao_imu_arg = DeclareLaunchArgument(
         "use_damiao_imu",
         default_value="true",
@@ -119,6 +131,7 @@ def generate_launch_description() -> LaunchDescription:
                 "auto_rotation_velocity": LaunchConfiguration("auto_rotation_velocity"),
                 "high_rotation_velocity": LaunchConfiguration("high_rotation_velocity"),
                 "cmd_vel_timeout_sec": LaunchConfiguration("cmd_vel_timeout_sec"),
+                "use_sim_time": use_sim_time,
             }
         ],
     )
@@ -144,6 +157,7 @@ def generate_launch_description() -> LaunchDescription:
                 "body_omega_timeout_sec": LaunchConfiguration(
                     "body_omega_timeout_sec"
                 ),
+                "use_sim_time": use_sim_time,
             }
         ],
     )
@@ -156,6 +170,7 @@ def generate_launch_description() -> LaunchDescription:
         executable="chassis_joint_state_node",
         name="chassis_joint_state",
         output="screen",
+        parameters=[{"use_sim_time": use_sim_time}],
     )
 
     control_mode_manager = Node(
@@ -163,6 +178,8 @@ def generate_launch_description() -> LaunchDescription:
         executable="control_mode_manager_node",
         name="control_mode_manager",
         output="screen",
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(LaunchConfiguration("use_control_mode_manager")),
     )
 
     return LaunchDescription(
@@ -176,6 +193,8 @@ def generate_launch_description() -> LaunchDescription:
             cmd_vel_timeout_arg,
             imu_timeout_arg,
             body_omega_timeout_arg,
+            use_sim_time_arg,
+            use_control_mode_manager_arg,
             use_damiao_imu_arg,
             imu_port_arg,
             imu_baudrate_arg,

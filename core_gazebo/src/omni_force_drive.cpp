@@ -20,6 +20,11 @@
 // - <noise_ratio> <noise_time>: 目標の速度に足す、時間相関のある雑音（床のむら）の大きさ（目標の速さに対する
 //   割合、標準偏差。止まっていれば 0）と相関時間 [s]
 // - <seed>: 雑音の乱数の種
+//
+// 力とトルクはモデルの基準リンク（base_link）に加える。モデルに基準リンクのほかのリンクがあるとき（腰を回る
+// 関節にした sim の足回り）は、全部のリンクの質量と、基準リンクの重心まわりにまとめた慣性で求める。
+// ほかのリンクは関節で付いて一緒に動くので、基準リンクだけの質量で押すと加速度が足りない。
+// 腰の関節は回る速さを決められているので、腰が加速していない間はこの慣性でちょうどよい
 
 #include <gz/msgs/twist.pb.h>
 
@@ -51,6 +56,7 @@ namespace core_gazebo
 {
 namespace
 {
+using gz::math::Matrix3d;
 using gz::math::Vector3d;
 
 struct BodyVelocity
@@ -127,6 +133,22 @@ public:
     link.EnableVelocityChecks(ecm);
     link_ = link;
     mass_ = inertial->Data().MassMatrix().Mass();
+    for (const gz::sim::Entity other : model.Links(ecm)) {
+      if (other == link.Entity()) {
+        continue;
+      }
+      const auto * other_inertial = ecm.Component<gz::sim::components::Inertial>(other);
+      if (other_inertial == nullptr) {
+        continue;
+      }
+      other_links_.emplace_back(other);
+      other_masses_.push_back(other_inertial->Data().MassMatrix().Mass());
+      mass_ += other_masses_.back();
+    }
+    if (!other_links_.empty()) {
+      gzmsg << "OmniForceDrive: 基準リンクのほかに " << other_links_.size() <<
+        " 個のリンクがあるので、全体の質量 " << mass_ << " kg と、まとめた慣性で押します。\n";
+    }
     max_linear_accel_ = max_linear_accel;
     max_angular_accel_ = max_angular_accel;
     slip_ = slip;
@@ -142,7 +164,7 @@ public:
     const auto pose = link_->WorldPose(ecm);
     const auto linear_velocity = link_->WorldLinearVelocity(ecm);
     const auto angular_velocity = link_->WorldAngularVelocity(ecm);
-    const auto inertia = link_->WorldInertiaMatrix(ecm);
+    const auto inertia = combinedInertia(ecm);
     if (dt <= 0.0 || !pose || !linear_velocity || !angular_velocity || !inertia) {
       return;
     }
@@ -182,6 +204,31 @@ public:
   }
 
 private:
+  // 基準リンクの重心まわりの、モデル全体の慣性（世界の座標）。ほかのリンクは平行軸の定理で足す
+  std::optional<Matrix3d> combinedInertia(const gz::sim::EntityComponentManager & ecm) const
+  {
+    const auto base = link_->WorldInertiaMatrix(ecm);
+    const auto base_pose = link_->WorldInertialPose(ecm);
+    if (!base || !base_pose) {
+      return std::nullopt;
+    }
+    Matrix3d total = *base;
+    for (std::size_t i = 0; i < other_links_.size(); ++i) {
+      const auto inertia = other_links_[i].WorldInertiaMatrix(ecm);
+      const auto pose = other_links_[i].WorldInertialPose(ecm);
+      if (!inertia || !pose) {
+        return std::nullopt;
+      }
+      const Vector3d r = pose->Pos() - base_pose->Pos();
+      const Matrix3d outer(
+        r.X() * r.X(), r.X() * r.Y(), r.X() * r.Z(),
+        r.Y() * r.X(), r.Y() * r.Y(), r.Y() * r.Z(),
+        r.Z() * r.X(), r.Z() * r.Y(), r.Z() * r.Z());
+      total = total + *inertia + (Matrix3d::Identity * r.Dot(r) - outer) * other_masses_[i];
+    }
+    return total;
+  }
+
   void onCommand(const gz::msgs::Twist & msg)
   {
     const std::lock_guard<std::mutex> lock(command_mutex_);
@@ -202,6 +249,9 @@ private:
 
   gz::transport::Node node_;
   std::optional<gz::sim::Link> link_;
+  // 基準リンクのほかのリンク（関節で付いて一緒に動く）と、その質量
+  std::vector<gz::sim::Link> other_links_;
+  std::vector<double> other_masses_;
   std::optional<double> hold_height_;
   double mass_{0.0};
   double max_linear_accel_{0.0};

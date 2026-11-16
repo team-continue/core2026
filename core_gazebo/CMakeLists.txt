@@ -17,12 +17,14 @@ find_package(gz-plugin REQUIRED COMPONENTS register)
 find_package(gz-sim REQUIRED)
 find_package(gz-transport REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(core_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -50,19 +52,22 @@ target_link_libraries(moving_obstacles PRIVATE
 
 # launch の composition:=true で検出と同じプロセス（コンテナ）に入れられるよう、component にする。
 # 同じ名前の実行ファイル（別のプロセスで動かすとき）は rclcpp_components が作る
-add_library(${PROJECT_NAME}_nodes SHARED src/points_to_livox.cpp src/wheel_odometry_sim.cpp)
+add_library(${PROJECT_NAME}_nodes SHARED
+  src/points_to_livox.cpp src/sim_hardware.cpp src/wheel_odometry_sim.cpp)
 target_compile_features(${PROJECT_NAME}_nodes PRIVATE cxx_std_17)
 target_include_directories(${PROJECT_NAME}_nodes PRIVATE include)
 # 足りないリンクを、読み込むときではなくビルドで見つける
 target_link_options(${PROJECT_NAME}_nodes PRIVATE -Wl,--no-undefined)
 target_link_libraries(${PROJECT_NAME}_nodes
   Eigen3::Eigen
+  ${core_msgs_TARGETS}
   ${geometry_msgs_TARGETS}
   ${livox_ros_driver2_TARGETS}
   ${nav_msgs_TARGETS}
   rclcpp::rclcpp
   rclcpp_components::component
   ${sensor_msgs_TARGETS}
+  ${std_msgs_TARGETS}
   tf2::tf2
   tf2_eigen::tf2_eigen
   tf2_ros::tf2_ros
@@ -72,6 +77,9 @@ rclcpp_components_register_node(${PROJECT_NAME}_nodes
 # 実機の足回りが返す車輪の速度の代わり（EKF の自己位置、launch の state_source:=ekf で使う）
 rclcpp_components_register_node(${PROJECT_NAME}_nodes
   PLUGIN "core_gazebo::WheelOdometrySim" EXECUTABLE wheel_odometry_sim)
+# 足回りと腰のハードウェアの代わり（launch の waist:=true。body_controller の CAN の指令で Gazebo を動かす）
+rclcpp_components_register_node(${PROJECT_NAME}_nodes
+  PLUGIN "core_gazebo::SimHardware" EXECUTABLE sim_hardware)
 
 install(TARGETS moving_obstacles omni_force_drive LIBRARY DESTINATION lib/${PROJECT_NAME})
 install(
@@ -100,6 +108,8 @@ if(BUILD_TESTING)
   target_include_directories(test_slip_model PRIVATE include)
   ament_add_gtest(test_command_delay test/test_command_delay.cpp)
   target_include_directories(test_command_delay PRIVATE include)
+  ament_add_gtest(test_sim_hardware_model test/test_sim_hardware_model.cpp)
+  target_include_directories(test_sim_hardware_model PRIVATE include)
 endif()
 
 ament_package()

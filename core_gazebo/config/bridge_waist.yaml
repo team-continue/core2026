@@ -1,0 +1,18 @@
+# 腰を回す sim（waist:=true）だけで使う橋渡し。sim_hardware と Gazebo の間
+- ros_topic_name: "/sim/upper_cmd_vel"
+  gz_topic_name: "/sim/upper_cmd_vel"
+  ros_type_name: "geometry_msgs/msg/Twist"
+  gz_type_name: "gz.msgs.Twist"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/sim/waist_cmd"
+  gz_topic_name: "/sim/waist_cmd"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/sim/joint_states"
+  gz_topic_name: "/sim/joint_states"
+  ros_type_name: "sensor_msgs/msg/JointState"
+  gz_type_name: "gz.msgs.Model"
+  direction: GZ_TO_ROS

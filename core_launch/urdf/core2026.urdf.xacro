@@ -21,6 +21,9 @@
   <xacro:arg name="damiao_imu_roll" default="3.14159"/>
   <!-- Gazebo で使うとき true。可動の関節（腰・砲塔・車輪）を固定にし、シミュレーションの定義を読む -->
   <xacro:arg name="gazebo" default="false"/>
+  <!-- Gazebo で、腰（base_to_chassis）だけは回る関節にする（sim の waist:=true）。足回りは body_controller の
+       指令で動き、上半身は腰で向きを保つ（core_gazebo の sim_hardware）。gazebo が false なら使わない -->
+  <xacro:arg name="sim_waist" default="false"/>
   <!-- 以前の衝突の箱の高さ。今の形は Unity の機体の形なので使わない（launch が渡すので引数だけ残す） -->
   <xacro:arg name="body_height" default="0.95"/>
   <!-- 以下は Gazebo（core2026.gazebo.xacro）だけで使う -->
@@ -39,6 +42,9 @@
 
   <!-- 引数は文字列なので、式で使えるよう真偽値にする -->
   <xacro:property name="gazebo" value="${'$(arg gazebo)'.lower() == 'true'}"/>
+  <xacro:property name="sim_waist" value="${'$(arg sim_waist)'.lower() == 'true'}"/>
+  <!-- 腰を固定にするか（Gazebo で sim_waist でないとき） -->
+  <xacro:property name="waist_fixed" value="${gazebo and not sim_waist}"/>
   <xacro:property name="rear_lidar" value="${'$(arg rear_lidar)'.lower() == 'true'}"/>
   <!-- FAST-LIO の mid360.yaml の extrinsic_T の符号を反転した値（LiDAR 座標系での IMU の位置） -->
   <xacro:property name="livox_imu_x" value="0.011"/>
@@ -464,11 +470,11 @@
       <inertia ixx="0.622492" ixy="0" ixz="0" iyy="0.622492" iyz="0" izz="1.22698"/>
     </inertial>
   </link>
-  <joint name="base_to_chassis" type="${'fixed' if gazebo else 'continuous'}">
+  <joint name="base_to_chassis" type="${'fixed' if waist_fixed else 'continuous'}">
     <parent link="base_link"/>
     <child link="chassis_link"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
-    <xacro:unless value="${gazebo}">
+    <xacro:unless value="${waist_fixed}">
       <axis xyz="0 0 1"/>
     </xacro:unless>
   </joint>

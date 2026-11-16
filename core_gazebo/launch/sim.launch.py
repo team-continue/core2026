@@ -122,6 +122,7 @@ def generate_launch_description() -> LaunchDescription:
             ' body_height:=', LaunchConfiguration('body_height'),
             ' rear_lidar:=', LaunchConfiguration('rear_lidar'),
             ' gazebo:=true',
+            ' sim_waist:=', LaunchConfiguration('waist'),
             *[part for name in SLIP_ARGUMENTS for part in (f' {name}:=', LaunchConfiguration(name))],
         ]),
         value_type=str,
@@ -145,6 +146,9 @@ def generate_launch_description() -> LaunchDescription:
         executable='robot_state_publisher',
         output='screen',
         parameters=[{'robot_description': robot_description, 'use_sim_time': True}],
+        # 腰の角度（base_to_chassis）は、実機（navigation.launch.py）と同じく chassis_joint_state が出す。
+        # waist:=false では腰が固定の関節なので使わない
+        remappings=[('joint_states', '/control/chassis/joint_states')],
     )
 
     spawn_robot = Node(
@@ -168,6 +172,25 @@ def generate_launch_description() -> LaunchDescription:
         name='sim_bridge',
         output='screen',
         parameters=[{'config_file': str(share / 'config' / 'bridge.yaml')}],
+    )
+
+    # 腰を回す sim（waist:=true）。実機の core_hardware の代わりに、body_controller の CAN の指令で足回りと腰を動かし、
+    # 腰の角度を /hardware/joint_states で返す
+    waist_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='sim_waist_bridge',
+        output='screen',
+        parameters=[{'config_file': str(share / 'config' / 'bridge_waist.yaml')}],
+        condition=IfCondition(LaunchConfiguration('waist')),
+    )
+    sim_hardware = Node(
+        package='core_gazebo',
+        executable='sim_hardware',
+        name='sim_hardware',
+        output='screen',
+        parameters=[{'use_sim_time': True}],
+        condition=IfCondition(LaunchConfiguration('waist')),
     )
 
     # 手順2以降は FAST-LIO が odom→base_link を出すので、真値のTFは切り替えられるようにする
@@ -234,6 +257,11 @@ def generate_launch_description() -> LaunchDescription:
             'rear_lidar', default_value='false', choices=['true', 'false'],
             description='検出のための 2 台目の LiDAR を機体の後ろの端に付ける（取り付けは URDF の rear_lidar_*）',
         ),
+        DeclareLaunchArgument(
+            'waist', default_value='false', choices=['true', 'false'],
+            description='腰（足回りと上半身の間）を回る関節にし、/hardware/can/tx の指令（body_controller）で足回りと'
+                        '腰を動かす（sim_hardware）。false なら機体全体を /control/cmd_vel で一つの塊として動かす',
+        ),
         *[
             DeclareLaunchArgument(name, default_value=default, description=description)
             for name, (default, description) in SLIP_ARGUMENTS.items()
@@ -262,6 +290,8 @@ def generate_launch_description() -> LaunchDescription:
         robot_state_publisher,
         spawn_robot,
         bridge,
+        waist_bridge,
+        sim_hardware,
         rear_points_bridge,
         ground_truth_tf_bridge,
         wheel_odometry,

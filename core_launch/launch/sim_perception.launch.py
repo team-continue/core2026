@@ -27,7 +27,7 @@ def generate_launch_description() -> LaunchDescription:
         'random_target_points', 'imu_source', 'point_extraction', 'exclude_regions_file',
         'lio_self_filter', 'rear_lidar', 'composition', 'localization_params_file',
         'lidar_roll', 'body_height', 'lidar_scan_motion', 'lidar_no_return_points',
-        'state_source', 'field_file',
+        'state_source', 'field_file', 'waist',
     )
     return LaunchDescription([
         DeclareLaunchArgument('x', default_value='-6.0'),
@@ -58,6 +58,11 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument(
             'rear_lidar', default_value='false', choices=['true', 'false'],
             description='検出のための 2 台目の LiDAR を後ろの端に付け、検出の入力を 2 台の合成にする',
+        ),
+        DeclareLaunchArgument(
+            'waist', default_value='false', choices=['true', 'false'],
+            description='腰（足回りと上半身の間）を回る関節にし、実機と同じ body_controller の指令で足回りと腰を動かす'
+                        '（sim だけ。false なら機体全体を一つの塊として動かす）',
         ),
         DeclareLaunchArgument('headless', default_value='true'),
         DeclareLaunchArgument('world', default_value=str(sim_share / 'worlds' / 'field.sdf')),

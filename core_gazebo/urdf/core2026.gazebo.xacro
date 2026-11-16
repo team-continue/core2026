@@ -102,11 +102,15 @@
 
   <gazebo>
     <!-- 加減速度の上限は、実機の足回り（body_control_node の acceleration 2.0m/s²、
-         rotation_acceleration 1.0rad/s²）と同じ値 -->
+         rotation_acceleration 1.0rad/s²）と同じ値。
+         sim_waist（腰を回す）では、sim_hardware が body_controller の CAN の指令から作った上半身の速度の指令
+         （/sim/upper_cmd_vel）で動かす。足回りの加減速度は body_control_node が、上半身の向きは target_angle_node が
+         決めるので、回る加速度の上限は、腰の速さの上限（yaw_rotation_acceleration 9.42rad/s²）より大きくして
+         邪魔しないようにする -->
     <plugin filename="omni_force_drive" name="core_gazebo::OmniForceDrive">
-      <topic>/sim/cmd_vel</topic>
+      <topic>${'/sim/upper_cmd_vel' if sim_waist else '/sim/cmd_vel'}</topic>
       <max_linear_accel>2.0</max_linear_accel>
-      <max_angular_accel>1.0</max_angular_accel>
+      <max_angular_accel>${20.0 if sim_waist else 1.0}</max_angular_accel>
       <dead_time>$(arg drive_dead_time)</dead_time>
       <longitudinal_ratio>$(arg slip_longitudinal_ratio)</longitudinal_ratio>
       <lateral_ratio>$(arg slip_lateral_ratio)</lateral_ratio>
@@ -117,6 +121,20 @@
       <noise_ratio>$(arg slip_noise_ratio)</noise_ratio>
       <noise_time>$(arg slip_noise_time)</noise_time>
     </plugin>
+    <xacro:if value="${sim_waist}">
+      <!-- 腰の回る速さ（dq/dt）の指令。sim_hardware が target_angle_node の CAN の指令（id 4）から出す -->
+      <plugin filename="gz-sim-joint-controller-system" name="gz::sim::systems::JointController">
+        <joint_name>base_to_chassis</joint_name>
+        <topic>/sim/waist_cmd</topic>
+        <initial_velocity>0.0</initial_velocity>
+      </plugin>
+      <!-- 腰の角度。sim_hardware が実機と同じ形の /hardware/joint_states にする -->
+      <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+        <joint_name>base_to_chassis</joint_name>
+        <topic>/sim/joint_states</topic>
+        <update_rate>200</update_rate>
+      </plugin>
+    </xacro:if>
     <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
       <odom_frame>world</odom_frame>
       <robot_base_frame>base_link</robot_base_frame>

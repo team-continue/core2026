@@ -69,7 +69,7 @@ def generate_launch_description() -> LaunchDescription:
         'random_target_points', 'imu_source', 'point_extraction', 'exclude_regions_file',
         'lio_self_filter', 'rear_lidar', 'composition', 'localization_params_file',
         'lidar_roll', 'body_height', 'lidar_scan_motion', 'lidar_no_return_points',
-        'state_source', 'field_file',
+        'state_source', 'field_file', 'waist',
     )
     # 安全停止の後の自動の指令の並進の向きを、IMU の速い周期で世界の座標に保って出し直す（sim だけ。
     # 実機に入れる前に、実機の IMU の周期と遅れ、足回りの応答を測る）。cmd_yaw_hold:=false ならそのまま通す
@@ -92,6 +92,25 @@ def generate_launch_description() -> LaunchDescription:
         namespace='control',
         output='screen',
         parameters=[{'use_sim_time': True}],
+    )
+    # 腰を回す sim（waist:=true）では、実機と同じ body_controller を起動する。足回りの body_control_node が
+    # /control/cmd_vel を腰の角度で足回りの向きに回して車輪の指令にし、target_angle_node が上半身の向きを腰で保ち、
+    # chassis_joint_state が腰の角度を TF にする。CAN の指令は core_gazebo の sim_hardware が Gazebo へ渡す。
+    # control_mode_manager はこの launch のもの（上）を使い、IMU は sim の /sensing/imu を使う
+    body_controller = GroupAction(
+        [
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    str(Path(get_package_share_directory('core_body_controller')) / 'launch' /
+                        'body_controller.launch.py')),
+                launch_arguments={
+                    'use_damiao_imu': 'false',
+                    'use_sim_time': 'true',
+                    'use_control_mode_manager': 'false',
+                }.items(),
+            ),
+        ],
+        condition=IfCondition(LaunchConfiguration('waist')),
     )
     # 緊急停止の判定（core_mode の emergency_handler。実機では mode.launch.py が起動する）。操縦の UI の緊急停止
     # （ros2_ws_bridge が /system/emergency/software_emergency に出す）を /system/emergency/hazard_status にし、
@@ -165,6 +184,11 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument(
             'rear_lidar', default_value='false', choices=['true', 'false'],
             description='検出のための 2 台目の LiDAR を後ろの端に付け、検出の入力を 2 台の合成にする',
+        ),
+        DeclareLaunchArgument(
+            'waist', default_value='false', choices=['true', 'false'],
+            description='腰（足回りと上半身の間）を回る関節にし、実機と同じ body_controller の指令で足回りと腰を動かす'
+                        '（sim だけ。false なら機体全体を一つの塊として動かす）',
         ),
         DeclareLaunchArgument('headless', default_value='true'),
         DeclareLaunchArgument('world', default_value=str(sim_share / 'worlds' / 'field.sdf')),
@@ -251,6 +275,7 @@ def generate_launch_description() -> LaunchDescription:
         ]),
         cmd_yaw_hold,
         control_mode_manager,
+        body_controller,
         emergency_handler,
         OpaqueFunction(function=map_publisher),
         localization_status,
