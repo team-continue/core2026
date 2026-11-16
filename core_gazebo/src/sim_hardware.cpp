@@ -4,7 +4,8 @@
 //   上半身（base_link）の座標の速度の指令（Gazebo の omni_force_drive）と、腰の関節の回る速さ（Gazebo の
 //   JointController）を出す。換算と向きの約束は core_gazebo/sim_hardware_model.hpp
 // - Gazebo の腰の角度（JointStatePublisher）を、実機と同じ形の /hardware/joint_states（名前なし、CAN の番号順、
-//   5 番目が腰の角度 + 初期角）にして出す。chassis_joint_state と body_control_node がこれを読む
+//   5 番目が腰のモータの角度）にして出す。chassis_joint_state・body_control_node・target_angle_node がこれを読む。
+//   モータの角度 = waist_front_offset + waist_joint_direction × 腰の角度（body_controller と同じ決め方）
 // - 実機の core_hardware がマイコンから受けて出し続ける非常停止スイッチの状態（/hardware/hardware_emergency）を、
 //   押されていない（false）として出し続ける。emergency_handler はこれを受けるたびに /system/emergency/hazard_status
 //   を出し直す。target_angle_node は起動時に緊急停止の印を立てて始め、hazard_status の false を受けるまで腰を
@@ -61,14 +62,18 @@ public:
     geometry_{declarePositive(*this, "wheel_radius_m", sh::WheelGeometry{}.wheel_radius_m),
       declarePositive(*this, "body_width_m", sh::WheelGeometry{}.body_width_m)},
     command_timeout_s_(declarePositive(*this, "command_timeout_s", 0.2)),
-    // body_control_node の INITIAL_ANGLE、chassis_joint_state の initial_angle と同じ値
-    waist_initial_angle_(declare_parameter<double>("waist_initial_angle", 3.7822790145874023)),
+    // body_controller.launch.py の waist_front_offset・waist_joint_direction と同じ値にする
+    waist_front_offset_(declare_parameter<double>("waist_front_offset", 3.7822790145874023)),
+    waist_joint_direction_(declare_parameter<double>("waist_joint_direction", 1.0)),
     waist_joint_name_(declare_parameter<std::string>("waist_joint_name", "base_to_chassis")),
     joint_count_(declare_parameter<int>("joint_count", 15))
   {
-    if (!std::isfinite(waist_initial_angle_) || waist_joint_name_.empty() || joint_count_ <= sh::kWaistId) {
+    if (!std::isfinite(waist_front_offset_) || waist_joint_name_.empty() || joint_count_ <= sh::kWaistId ||
+      (waist_joint_direction_ != 1.0 && waist_joint_direction_ != -1.0))
+    {
       throw std::invalid_argument(
-              "waist_initial_angle は有限、waist_joint_name は空でない値、joint_count は " +
+              "waist_front_offset は有限、waist_joint_direction は 1 か -1、waist_joint_name は空でない値、"
+              "joint_count は " +
               std::to_string(sh::kWaistId + 1) + " 以上にしてください");
     }
     const double watchdog_hz = declarePositive(*this, "watchdog_rate_hz", 20.0);
@@ -118,7 +123,8 @@ private:
         wheels_[index] = command->value;
         wheel_received_[index] = now;
       } else {
-        waist_rate_ = command->value;
+        // 腰の指令はモータの回る速さ。腰の角度の回る速さはその waist_joint_direction 倍
+        waist_rate_ = waist_joint_direction_ * command->value;
         waist_received_ = now;
       }
       updated = true;
@@ -176,14 +182,15 @@ private:
     for (std::size_t i = 0; i < last_wheels_.size(); ++i) {
       out.velocity[i] = last_wheels_[i];
     }
-    out.position[sh::kWaistId] = *waist_angle_ + waist_initial_angle_;
-    out.velocity[sh::kWaistId] = waist_velocity;
+    out.position[sh::kWaistId] = waist_front_offset_ + waist_joint_direction_ * *waist_angle_;
+    out.velocity[sh::kWaistId] = waist_joint_direction_ * waist_velocity;
     joint_publisher_->publish(out);
   }
 
   const sh::WheelGeometry geometry_;
   const double command_timeout_s_;
-  const double waist_initial_angle_;
+  const double waist_front_offset_;
+  const double waist_joint_direction_;
   const std::string waist_joint_name_;
   const int joint_count_;
 
