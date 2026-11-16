@@ -14,7 +14,7 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from core_nav_launch.composition import COMPOSITION_MODES, DEFAULT_COMPOSITION
@@ -107,6 +107,7 @@ def generate_launch_description() -> LaunchDescription:
                     'use_damiao_imu': 'false',
                     'use_sim_time': 'true',
                     'use_control_mode_manager': 'false',
+                    'yaw_mode': LaunchConfiguration('yaw_mode'),
                 }.items(),
             ),
         ],
@@ -190,6 +191,11 @@ def generate_launch_description() -> LaunchDescription:
             description='腰（足回りと上半身の間）を回る関節にし、実機と同じ body_controller の指令で足回りと腰を動かす'
                         '（sim だけ。false なら機体全体を一つの塊として動かす）',
         ),
+        DeclareLaunchArgument(
+            'yaw_mode', default_value='1', choices=['0', '1'],
+            description='waist:=true のときの腰の起動時のモード（0: FRONT、1: TURRET。body_controller の既定と同じ 1）。'
+                        '/control/yaw_mode で切り替える。TURRET の間は、局所計画は上半身の向きを指令しない',
+        ),
         DeclareLaunchArgument('headless', default_value='true'),
         DeclareLaunchArgument('world', default_value=str(sim_share / 'worlds' / 'field.sdf')),
         DeclareLaunchArgument(
@@ -269,6 +275,12 @@ def generate_launch_description() -> LaunchDescription:
                     'composition': LaunchConfiguration('composition'),
                     'field_file': LaunchConfiguration('field_file'),
                     'planning_params_file': LaunchConfiguration('planning_params_file'),
+                    # 腰の無い sim（waist:=false）は上半身と足回りが一体なので FRONT。腰を回す sim は
+                    # body_controller と同じモードから始める
+                    'yaw_mode': PythonExpression([
+                        "'", LaunchConfiguration('yaw_mode'), "' if '", LaunchConfiguration('waist'),
+                        "' == 'true' else '0'",
+                    ]),
                     'auto_cmd_topic': '/control/auto/cmd_vel_raw',
                 }.items(),
             ),

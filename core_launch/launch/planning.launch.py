@@ -50,12 +50,22 @@ def params_overlay(params_file: str) -> list[str]:
     return [params_file]
 
 
+def yaw_mode_overlay(yaw_mode: str) -> list[dict[str, int]]:
+    """局所計画が /control/yaw_mode を受けるまでの腰のモード（launch 引数 yaw_mode）。空なら設定ファイルのまま."""
+    if not yaw_mode:
+        return []
+    if yaw_mode not in ('0', '1'):
+        raise RuntimeError(f'yaw_mode は 0（FRONT）か 1（TURRET）にしてください: {yaw_mode}')
+    return [{'heading.initial_yaw_mode': int(yaw_mode)}]
+
+
 def build_nodes(context: LaunchContext) -> list[LaunchDescriptionEntity]:
     config = Path(get_package_share_directory('core_launch')) / 'config'
     parameters = (
         *(str(config / f'{name}.yaml') for name in CONFIG_NAMES),
         *field_overlay(LaunchConfiguration('field_file').perform(context)),
         *params_overlay(LaunchConfiguration('planning_params_file').perform(context)),
+        *yaw_mode_overlay(LaunchConfiguration('yaw_mode').perform(context)),
         {
             'use_sim_time': ParameterValue(LaunchConfiguration('use_sim_time'), value_type=bool),
             'map_path': LaunchConfiguration('map_path'),
@@ -95,6 +105,11 @@ def generate_launch_description() -> LaunchDescription:
             'auto_cmd_topic', default_value=DEFAULT_AUTO_CMD_TOPIC,
             description='安全停止（safety_gate）が自動の指令を出す話題（sim_nav.launch.py は cmd_yaw_hold を挟む'
                         'ので /control/auto/cmd_vel_raw）',
+        ),
+        DeclareLaunchArgument(
+            'yaw_mode', default_value='',
+            description='局所計画が /control/yaw_mode を受けるまでの腰のモード（0: FRONT、1: TURRET）。'
+                        '空なら設定（mppi.yaml の heading.initial_yaw_mode。実機の body_controller と同じ TURRET）',
         ),
         DeclareLaunchArgument(
             'planning_params_file', default_value='',

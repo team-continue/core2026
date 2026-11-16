@@ -2847,4 +2847,49 @@ TEST(Heading, TurnsInPlaceAtGoalWithoutOvershoot)
   // 逆回りも同じ
   EXPECT_LT(turnInPlace(params, -2.0).overshoot, 0.01);
 }
+
+// 腰が TURRET（heading.yaw_free）の間は、mode によらず向きの目標を持たない
+TEST(Heading, YawFreeHasNoHeadingTarget)
+{
+  const ReferencePath path({Point2{0.0, 0.0}, Point2{5.0, 0.0}}, M_PI / 2.0);
+  for (const HeadingMode mode :
+    {HeadingMode::kTravel, HeadingMode::kGoal, HeadingMode::kForward, HeadingMode::kFixed})
+  {
+    MppiParams params;
+    params.heading.mode = mode;
+    params.heading.fixed_yaw = 0.3;
+    MppiState state;
+    state.x = 4.5;  // ゴールの向きへ切り替える距離の内
+    EXPECT_TRUE(headingTarget(state, path, params).has_value());
+    params.heading.yaw_free = true;
+    EXPECT_FALSE(headingTarget(state, path, params).has_value());
+  }
+}
+
+// heading.yaw_free では回る速さを指令せずにゴールへ着く。向きを指令するときは、ゴールの向きへ回る
+TEST(Heading, YawFreeDrivesToGoalWithoutTurning)
+{
+  const ReferencePath path({Point2{0.0, 0.0}, Point2{6.0, 0.0}}, M_PI / 2.0);
+  const auto run = [&](const bool yaw_free) {
+      MppiParams params;
+      params.heading.yaw_free = yaw_free;
+      MppiController controller;
+      MppiState state;
+      double max_abs_wz = 0.0;
+      for (int i = 0; i < 80; ++i) {
+        const auto command = controller.solve(state, path, {}, nullptr, SE2{}, params, 3.0);
+        max_abs_wz = std::max(max_abs_wz, std::abs(command.wz));
+        state = step(state, command, params.dt);
+      }
+      return std::make_pair(state, max_abs_wz);
+    };
+  const auto [free_state, free_wz] = run(true);
+  EXPECT_DOUBLE_EQ(free_wz, 0.0);
+  EXPECT_DOUBLE_EQ(free_state.yaw, 0.0);
+  EXPECT_NEAR(free_state.x, 6.0, 0.2);
+  EXPECT_NEAR(free_state.y, 0.0, 0.2);
+  const auto [held_state, held_wz] = run(false);
+  EXPECT_GT(held_wz, 0.1);
+  EXPECT_GT(held_state.yaw, 0.5);
+}
 }  // namespace

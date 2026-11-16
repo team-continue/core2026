@@ -38,6 +38,7 @@
 #include <core_msgs/msg/tracked_object_array.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
+#include <std_msgs/msg/int32.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <tf2/exceptions.h>
@@ -198,6 +199,7 @@ public:
       throw std::invalid_argument(*error);
     }
     loadParams();
+    yaw_mode_ = static_cast<int>(get_parameter("heading.initial_yaw_mode").as_int());
     if (const auto error = staticMarginError(mppi_params_, max_speed_mps_)) {
       throw std::invalid_argument(*error);
     }
@@ -285,6 +287,13 @@ public:
     sent_command_subscription_ = create_subscription<geometry_msgs::msg::Twist>(
       "/control/cmd_vel", rclcpp::QoS(10),
       [this](const geometry_msgs::msg::Twist::ConstSharedPtr & twist) {onSentCommand(*twist);});
+    // 腰のモード（操縦の UI が切り替える。target_angle_node と同じ値）
+    yaw_mode_subscription_ = create_subscription<std_msgs::msg::Int32>(
+      "/control/yaw_mode", rclcpp::QoS(10),
+      [this](const std_msgs::msg::Int32::ConstSharedPtr & mode) {onYawMode(mode->data);});
+    RCLCPP_INFO(
+      get_logger(), "腰のモードは %s から始めます（heading.follow_yaw_mode %s）",
+      yaw_mode_ == kTurretYawMode ? "TURRET" : "FRONT", follow_yaw_mode_ ? "true" : "false");
   }
 
 private:
@@ -577,6 +586,13 @@ private:
       "機体の前から測った、見える範囲の半角 [deg]");
     declareDouble(
       *this, "heading.blind_side.speed_mps", 0.5, 0.0, 10.0, "見えない側へ進むときの速さの上限 [m/s]");
+    declareBool(
+      *this, "heading.follow_yaw_mode", true,
+      "腰のモード（/control/yaw_mode）に従う。TURRET（1）の間は上半身の向きを操作に任せ、向きを指令しない");
+    declareInt(
+      *this, "heading.initial_yaw_mode", 1, 0, 1,
+      "/control/yaw_mode を受けるまでの腰のモード（0: FRONT、1: TURRET）。body_controller の yaw_mode と"
+      "同じ値にする（腰の無い sim は 0）", true);
   }
 
   static std::optional<std::string> headingModeError(const std::string & mode)
@@ -704,6 +720,7 @@ private:
     mppi.blind_side.visible_half_angle_deg =
       get_parameter("heading.blind_side.visible_half_angle_deg").as_double();
     mppi.blind_side.speed_mps = get_parameter("heading.blind_side.speed_mps").as_double();
+    follow_yaw_mode_ = get_parameter("heading.follow_yaw_mode").as_bool();
     DriveParams drive;
     drive.predict_delay = get_parameter("mppi.drive.predict_delay").as_bool();
     drive.dead_time_s = get_parameter("mppi.drive.dead_time_s").as_double();
@@ -1103,11 +1120,15 @@ private:
     const MppiState measured = toState(*odometry, 0.0);
     updateTraction(odometry->header.stamp, measured);
     const std::optional<double> prediction_s = predictionTime(time_s);
-    const MppiState state = prediction_s.has_value() ?
+    const MppiState predicted = prediction_s.has_value() ?
       predictDelayedState(
       measured, time_s, *prediction_s, sent_commands_, drive_params_,
       traction_params_.enabled ? floorFor(traction_state_.friction()) : FloorTraction{}) :
       toState(*odometry, latency_compensation_s_);
+    // 腰が TURRET の間は上半身の向きを指令しない（向きの目標なし、回る速さの指令 0）
+    mppi_params_.heading.yaw_free = yawFree();
+    const MppiState state =
+      mppi_params_.heading.yaw_free ? yawHeldState(predicted, measured, time_s) : predicted;
     const auto stop = [&]() {
         return limitCommand(state, 0.0, 0.0, 0.0, mppi_params_);
       };
@@ -1263,11 +1284,43 @@ private:
 
   // ゴールに着いたかを判定し、着いたら（向きが合わないまま待つ時間が切れたときも）REACHED にする。
   // 位置に着いて回り始めるときと、向きが合わないまま着いたとするときを記録に出す
+  // 腰のモードを受ける。0（FRONT）と 1（TURRET）のほかは無視する（target_angle_node と同じ）
+  void onYawMode(const int mode)
+  {
+    if (mode != kFrontYawMode && mode != kTurretYawMode) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000, "知らない腰のモード %d を無視します（0: FRONT、1: TURRET）", mode);
+      return;
+    }
+    if (mode != yaw_mode_) {
+      RCLCPP_INFO(
+        get_logger(), "腰のモードが %s になりました%s", mode == kTurretYawMode ? "TURRET" : "FRONT",
+        mode == kTurretYawMode && follow_yaw_mode_ ? "。上半身の向きは指令しません" : "");
+    }
+    yaw_mode_ = mode;
+  }
+
+  // 上半身の向きを指令しないか（腰が TURRET で、heading.follow_yaw_mode のとき）
+  bool yawFree() const {return follow_yaw_mode_ && yaw_mode_ == kTurretYawMode;}
+
+  // 向きを指令しないときの計画の状態。上半身は操作で回るので、計画の間は向きを保つとみなす（回る速さ 0）。
+  // 向きは、指令を出す時刻（今 + 計算の時間）の向きにする。cmd_yaw_hold はその時の向きを基準に、並進を
+  // 世界の座標に保ち直す。駆動の遅れの先読み（predictDelayedState）で進めた向きは使わない
+  MppiState yawHeldState(MppiState state, const MppiState & measured, const double stamp_s) const
+  {
+    const double ahead_s = std::max(get_clock()->now().seconds() + last_compute_s_ - stamp_s, 0.0);
+    state.yaw = wrapAngle(measured.yaw + measured.wz * std::min(ahead_s, kMaxYawHoldAheadS));
+    state.wz = 0.0;
+    return state;
+  }
+
   GoalArrival updateArrival(
     const double time_s, const MppiState & state, const ReferencePath & path)
   {
     const Point2 & goal = path.points().back();
-    const std::optional<double> & goal_yaw = path.goalYaw();
+    // 向きを指令しない間は、ゴールの向きを待たない（位置と速さだけで着いたとする）
+    const std::optional<double> goal_yaw =
+      mppi_params_.heading.yaw_free ? std::nullopt : path.goalYaw();
     const bool was_at_position = arrival_monitor_.positionReachedAt().has_value();
     const GoalArrival arrival =
       arrival_monitor_.update(time_s, state, goal, goal_yaw, goal_arrival_params_);
@@ -1422,6 +1475,14 @@ private:
   std::optional<double> goal_yaw_map_;
   // heading.mode: fixed で保つ向き（map の座標系）。ゴールが変わったときと、fixed に切り替えたときに覚え直す
   std::optional<double> fixed_yaw_map_;
+  // 腰のモード（/control/yaw_mode）と、それに従うか
+  static constexpr int kFrontYawMode = 0;
+  static constexpr int kTurretYawMode = 1;
+  // 向きを保つときに、姿勢の時刻から先へ進める時間の上限 [s]（時計がずれたときに向きを飛ばさない）
+  static constexpr double kMaxYawHoldAheadS = 0.3;
+  int yaw_mode_{kTurretYawMode};
+  bool follow_yaw_mode_{true};
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr yaw_mode_subscription_;
   GoalHoldMonitor goal_hold_monitor_;
   OncomingMonitor oncoming_monitor_;
   bool oncoming_yielding_{false};

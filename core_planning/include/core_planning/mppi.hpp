@@ -242,6 +242,10 @@ struct HeadingParams
   double forward_turn_speed_mps{0.5};
   // kFixed で保つ向き（odom の座標系）[rad]。ノードがゴールを受けたときの向きを入れる
   std::optional<double> fixed_yaw;
+  // 上半身（base_link）の向きを指令しない（腰の TURRET。上半身の向きは操作の yaw_target_rate で決まり、
+  // 回る速さの指令は足回りだけを回す）。mode によらず向きの目標を持たず、回る速さの指令を 0 にする。
+  // 並進は今の向きのまま計画するので、指令の間に上半身が回った分は cmd_yaw_hold が世界の座標に保ち直す
+  bool yaw_free{false};
 };
 
 // 経路の曲がりで、参照軌道の速さを横の加速度の上限まで落とす。曲率 κ の所の速さを √(上限 / κ) までにし、
@@ -369,7 +373,8 @@ std::optional<HeadingMode> parseHeadingMode(const std::string & text);
 // それより遠ければ fixed_yaw（なければ nullopt）。
 // kTravel と kForward なら、ゴールまでの残り（経路に沿った残りと distanceBeyondEnd の和）が goal_align_distance_m
 // 以下でゴールの向き（なければ nullopt）。それより遠ければ、経路の今の位置から lookahead_m 先までの弦の
-// 向き。経路の終わり（ゴールの手前で待つ位置）で弦が短ければ、経路の終わりの区間の向き
+// 向き。経路の終わり（ゴールの手前で待つ位置）で弦が短ければ、経路の終わりの区間の向き。
+// heading.yaw_free なら、mode によらず nullopt（向きを指令しない）
 std::optional<double> headingTarget(
   const MppiState & state, const ReferencePath & path, const MppiParams & params);
 

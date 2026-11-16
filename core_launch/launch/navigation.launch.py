@@ -190,9 +190,27 @@ def _launch_nodes(context):
         actions.append(include('perception.launch.py', {
             'map_path': map_path, 'field_file': field_file, 'composition': composition,
         }))
-        actions.append(include('planning.launch.py', {
+        # 腰のモードは body_controller と同じ値から始める（TURRET の間、局所計画は上半身の向きを指令しない）
+        yaw_mode = context.launch_configurations['yaw_mode']
+        planning_arguments = {
             'map_path': map_path, 'field_file': field_file, 'composition': composition,
-        }))
+            'yaw_mode': yaw_mode,
+        }
+        if context.launch_configurations['cmd_yaw_hold'].lower() == 'true':
+            # 安全停止の出力を cmd_yaw_hold で受け、指令の間に上半身が回った分だけ並進を戻して出し直す。
+            # TURRET では上半身が操作で回るので、指令の並進の向きが世界の座標でずれる。実機の Livox の IMU の
+            # 周期・遅れ・零点のずれと、足回りの応答を測ってから既定にする（要測定）
+            planning_arguments['auto_cmd_topic'] = '/control/auto/cmd_vel_raw'
+            actions.append(Node(
+                package='core_planning', executable='cmd_yaw_hold', name='cmd_yaw_hold',
+                namespace='planning', output='screen',
+                parameters=[{
+                    'input_topic': '/control/auto/cmd_vel_raw',
+                    'output_topic': '/control/auto/cmd_vel',
+                    'imu_topic': '/sensing/livox/imu',
+                }],
+            ))
+        actions.append(include('planning.launch.py', planning_arguments))
     else:
         # Unity シミュレーションは自律移動を起動しない（Gazebo は sim_nav.launch.py を使う）
         actions.append(Node(
@@ -219,6 +237,7 @@ def _launch_nodes(context):
             'imu_frame_id': context.launch_configurations['imu_frame_id'],
             'imu_output_rate_hz': context.launch_configurations[
                 'imu_output_rate_hz'],
+            'yaw_mode': context.launch_configurations['yaw_mode'],
         }.items(),
     ))
 
@@ -285,6 +304,16 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'imu_output_rate_hz', default_value='200',
             description='DM-IMU-L1 output rate [Hz]',
+        ),
+        DeclareLaunchArgument(
+            'yaw_mode', default_value='1', choices=['0', '1'],
+            description='腰の起動時のモード（0: FRONT、1: TURRET）。body_controller と局所計画に渡す。'
+                        'TURRET の間、局所計画は上半身の向きを指令しない',
+        ),
+        DeclareLaunchArgument(
+            'cmd_yaw_hold', default_value='false', choices=['true', 'false'],
+            description='自動の指令の並進の向きを Livox の IMU で世界の座標に保つ（core_planning の cmd_yaw_hold）。'
+                        'TURRET で上半身を回しながら自動で走るときに要る。実機で IMU と足回りを測ってから既定にする',
         ),
         OpaqueFunction(function=_launch_nodes),
     ])

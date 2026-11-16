@@ -240,6 +240,13 @@
       # 約 2m/s で、着くまで約 1 秒。ゴールの向きが進む向きと大きく違うと回り終わる前に位置に着くので、
       # その位置を保ってその場で回りきってから着いたとする（mppi.goal_yaw_tolerance_deg など）
       goal_align_distance_m: 1.0
+      # 腰のモード（/control/yaw_mode。操縦の UI が切り替える）に従う。TURRET（1）の間は、上半身（base_link）
+      # の向きを操作に任せ、mode によらず向きを指令しない（回る速さ 0、ゴールの向きを待たない）。並進は今の
+      # 上半身の向きで出すので、指令の間に上半身が回った分は cmd_yaw_hold が直す（2026-11-16）
+      follow_yaw_mode: true
+      # /control/yaw_mode を受けるまでの腰のモード。実機の body_controller の既定（TURRET）と同じ。
+      # launch の yaw_mode で上書きする（腰の無い sim は 0）
+      initial_yaw_mode: 1
       # forward の並進の抑え。向きの目標との差が turn_angle_deg [deg] を超える間、並進の速さを
       # turn_speed_mps [m/s] までにする
       forward:

@@ -1195,6 +1195,9 @@ std::optional<HeadingMode> parseHeadingMode(const std::string & text)
 std::optional<double> headingTarget(
   const MppiState & state, const ReferencePath & path, const MppiParams & params)
 {
+  if (params.heading.yaw_free) {
+    return std::nullopt;
+  }
   if (params.heading.mode == HeadingMode::kGoal || path.points().size() < 2U) {
     return path.goalYaw();
   }
