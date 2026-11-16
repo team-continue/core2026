@@ -193,18 +193,18 @@ TEST(TargetAngleControllerTest, FrontTargetAddsTheWaistAngleToTheUpperBodyYaw)
     1e-12);
 }
 
-TEST(TargetAngleControllerTest, FeedforwardCancelsOnlyTheSpinInFrontMode)
+TEST(TargetAngleControllerTest, FeedforwardTurnsTheUpperBodyAtTheWantedRate)
 {
-  using core_body_controller::YawMode;
   using core_body_controller::waist_feedforward;
-  // 無限回転 -3.14 rad/s と操作 0.5 rad/s: FRONT は無限回転の分だけ、TURRET は全部を打ち消す
-  EXPECT_NEAR(waist_feedforward(YawMode::kFront, -2.64, 0.5), -3.14, 1e-12);
-  EXPECT_NEAR(waist_feedforward(YawMode::kTurret, -2.64, 0.5), -2.64, 1e-12);
+  // FRONT: 無限回転 -3.14 rad/s と操作 0.5 rad/s（車体 -2.64 rad/s）。上半身は操作の 0.5 rad/s で回す
+  EXPECT_NEAR(waist_feedforward(-2.64, 0.5), -3.14, 1e-12);
   // 無限回転なしの FRONT は打ち消さない（上半身は車体と一緒に回る）
-  EXPECT_NEAR(waist_feedforward(YawMode::kFront, 0.5, 0.5), 0.0, 1e-12);
-  // 操作の分が届いていなければ、FRONT でも全部を打ち消す。車体の回転がなければ 0
-  EXPECT_NEAR(waist_feedforward(YawMode::kFront, 0.5, std::nullopt), 0.5, 1e-12);
-  EXPECT_NEAR(waist_feedforward(YawMode::kTurret, std::nullopt, 0.5), 0.0, 1e-12);
+  EXPECT_NEAR(waist_feedforward(0.5, 0.5), 0.0, 1e-12);
+  // TURRET: 車体 -2.64 rad/s の間に、操作で上半身を -0.8 rad/s で回す
+  EXPECT_NEAR(waist_feedforward(-2.64, -0.8), -1.84, 1e-12);
+  // 回したい速さが届いていなければ、車体の回転を全部打ち消す。車体の回転がなければ 0
+  EXPECT_NEAR(waist_feedforward(0.5, std::nullopt), 0.5, 1e-12);
+  EXPECT_NEAR(waist_feedforward(std::nullopt, 0.5), 0.0, 1e-12);
 }
 
 }  // namespace

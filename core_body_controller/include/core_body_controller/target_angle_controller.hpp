@@ -65,19 +65,20 @@ inline double front_world_target(
   return normalize_angle(world_angle + waist_direction * (waist_position - waist_front_offset));
 }
 
-// 腰のモータの回る速さに足す先回り [rad/s]。車体の回転のうち、上半身に伝えない分を腰で打ち消す。
-// TURRET は車体の回転（body_omega）を全部打ち消して、上半身のワールドでの向きを保つ。FRONT は無限回転の
-// 分（body_omega − body_omega_manual）だけを打ち消し、操作の回転は上半身にそのまま伝えて車体と一緒に回す。
-// FRONT でも全部を打ち消すと、上半身は帰還だけで目標を追うので遅れる（比例 2.0 で、0.5rad/s に約 0.25rad）。
-// body_omega がなければ 0、FRONT で body_omega_manual がなければ body_omega を全部打ち消す
-inline double waist_feedforward(
-  YawMode mode, std::optional<double> body_omega, std::optional<double> body_omega_manual)
+// 腰のモータの回る速さに足す先回り [rad/s] = 車体の回転（body_omega）− 上半身を回したい速さ。
+// 上半身の回る速さ = 車体の回る速さ − 腰の回る速さ なので、上半身は回したい速さで回り始め、帰還は残りの
+// ずれだけを詰める。先回りが車体の回転だけだと、上半身は帰還（比例 2.0）だけで目標を追い、回したい速さの
+// 約半分 [rad] 遅れる（0.5rad/s で約 0.25rad）。
+// 上半身を回したい速さは、FRONT なら操作の回転（body_omega_manual。無限回転の分は打ち消す）、TURRET なら
+// 操作の yaw_target_rate（車体が回ってもワールドでの向きを保つ）。届いていなければ nullopt を渡し、車体の
+// 回転を全部打ち消す。body_omega がなければ 0
+inline double waist_feedforward(std::optional<double> body_omega, std::optional<double> upper_rate)
 {
   if (!body_omega || !std::isfinite(*body_omega)) {
     return 0.0;
   }
-  if (mode == YawMode::kFront && body_omega_manual && std::isfinite(*body_omega_manual)) {
-    return *body_omega - *body_omega_manual;
+  if (upper_rate && std::isfinite(*upper_rate)) {
+    return *body_omega - *upper_rate;
   }
   return *body_omega;
 }

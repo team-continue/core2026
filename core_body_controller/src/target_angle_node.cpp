@@ -360,14 +360,20 @@ double TargetAngleNode::gimbal_control(
     core_body_controller::normalize_angle(world_target_angle_ - latest_world_angle_);
   // 車体の回転 (body_omega) の打ち消しは回転モードに関係なく効かせる。モードの切り替えの瞬間に補正を切ると、
   // 加速・減速中 (body_control_node の加速度の制限で数秒かかる) に腰が車体と一緒に回されて前を向かなくなる。
-  // FRONT は無限回転の分だけを打ち消し、操作の回転は上半身を車体と一緒に回す (waist_feedforward)
-  const bool body_omega_manual_is_fresh_for_feedforward = is_fresh(
-    last_body_omega_manual_time_, has_received_body_omega_manual_, body_omega_timeout_sec_);
+  // 上半身を回したい速さ（FRONT は操作の回転、TURRET は yaw_target_rate）は先回りで腰に伝え、
+  // 帰還は残りのずれだけを詰める (waist_feedforward)
+  std::optional<double> upper_rate;
+  if (yaw_mode_ == core_body_controller::YawMode::kFront) {
+    if (is_fresh(
+        last_body_omega_manual_time_, has_received_body_omega_manual_, body_omega_timeout_sec_))
+    {
+      upper_rate = latest_body_omega_manual_;
+    }
+  } else if (target_rate_is_fresh) {
+    upper_rate = latest_target_rate_;
+  }
   const double feedforward = core_body_controller::waist_feedforward(
-    yaw_mode_,
-    body_omega_is_fresh ? std::optional<double>(latest_body_omega_) : std::nullopt,
-    body_omega_manual_is_fresh_for_feedforward ?
-    std::optional<double>(latest_body_omega_manual_) : std::nullopt);
+    body_omega_is_fresh ? std::optional<double>(latest_body_omega_) : std::nullopt, upper_rate);
   return controller_->update(world_angle_error, feedforward, dt);
 }
 
