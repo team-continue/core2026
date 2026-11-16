@@ -33,6 +33,7 @@
 #include "core_nav_common/parameters.hpp"
 #include "core_planning/grid_map.hpp"
 #include "core_planning/static_map_params.hpp"
+#include "core_planning/hybrid_astar.hpp"
 #include "core_planning/jps.hpp"
 #include "core_planning/path_smoother.hpp"
 
@@ -70,6 +71,10 @@ struct PlannerParams
   double reached_clear_radius_m{0.5};
   // ジャンプポイントの間のセルにも直線で飛ぶ（shortcutPath）。false でジャンプポイントの間だけ（simplifyPath）
   bool any_angle_shortcut{true};
+  // 探索の方法（planner.search）
+  SearchMethod search{SearchMethod::kJps};
+  // planner.hybrid.*（search が hybrid_astar のとき）
+  HybridAStarParams hybrid;
 };
 
 struct GoalHandlingParams
@@ -176,11 +181,33 @@ std::optional<PlanarPose> findAlternativeGoal(
   return best;
 }
 
-// 格子で経路を探す。始点と終点が占有の中なら、近くの空きセルから探す。any_angle_shortcut なら、
-// ジャンプポイントの間のセルにも見通しで飛んで短くする（shortcutPath。false なら simplifyPath）
-std::optional<std::vector<GridCell>> planOnGrid(
+// 探した経路。cells は折れ点のセル（塞がれたかの確かめに使う）。hybrid_astar のときは、points に
+// 円弧をたどる点の列（始点と終点のセルの中心から）が入る
+struct PlannedRoute
+{
+  std::vector<GridCell> cells;
+  std::optional<std::vector<std::pair<double, double>>> points;
+};
+
+// 点の列が通るセルの列（続けて同じセルは 1 つにする）
+std::vector<GridCell> cellsAlong(
+  const OccupancyGrid & grid, const std::vector<std::pair<double, double>> & points)
+{
+  std::vector<GridCell> cells;
+  for (const auto & [x, y] : points) {
+    const GridCell cell = grid.info().cellAt(x, y);
+    if (cells.empty() || !(cells.back() == cell)) {
+      cells.push_back(cell);
+    }
+  }
+  return cells;
+}
+
+// 格子で経路を探す。始点と終点が占有の中なら、近くの空きセルから探す。hybrid_astar で見つからなければ
+// JPS で探す
+std::optional<PlannedRoute> planOnGrid(
   const OccupancyGrid & grid, const PlanarPose & robot, const PlanarPose & target,
-  const bool any_angle_shortcut)
+  const SearchMethod search, const bool any_angle_shortcut, const HybridAStarParams & hybrid)
 {
   const GridInfo & info = grid.info();
   const int radius_cells = static_cast<int>(std::ceil(kNearestFreeRadiusM / info.resolution));
@@ -189,11 +216,20 @@ std::optional<std::vector<GridCell>> planOnGrid(
   if (!start.has_value() || !goal.has_value()) {
     return std::nullopt;
   }
-  const auto path = findPath(grid, *start, *goal);
-  if (!path.has_value()) {
+  if (search == SearchMethod::kHybridAStar) {
+    auto points = findPathHybridAStar(
+      grid, {info.centerX(start->x), info.centerY(start->y)},
+      {info.centerX(goal->x), info.centerY(goal->y)}, hybrid);
+    if (points.has_value()) {
+      std::vector<GridCell> cells = cellsAlong(grid, *points);
+      return PlannedRoute{std::move(cells), std::move(points)};
+    }
+  }
+  auto cells = searchPath(grid, *start, *goal, search, any_angle_shortcut);
+  if (!cells.has_value()) {
     return std::nullopt;
   }
-  return any_angle_shortcut ? shortcutPath(grid, *path) : simplifyPath(grid, *path);
+  return PlannedRoute{std::move(*cells), std::nullopt};
 }
 
 geometry_msgs::msg::Pose makePose(const double x, const double y, const double yaw)
@@ -294,8 +330,22 @@ public:
       *this, "planner.reached_clear_radius_m", 0.5, 0.01, 5.0, "到達でゴールを解除する距離");
     declareBool(
       *this, "planner.any_angle_shortcut", true,
-      "ジャンプポイントの間のセルにも直線で飛び、直線で行ける所の折れを除く");
+      "ジャンプポイントの間のセルにも直線で飛び、直線で行ける所の折れを除く（search が jps のとき）");
+    declareString(
+      *this, "planner.search", "jps", "探索の方法（jps / theta_star / jps_theta / hybrid_astar）",
+      true);
+    declareDouble(*this, "planner.hybrid.step_m", 0.3, 0.01, 5.0, "Hybrid A* の 1 歩の円弧の長さ", true);
+    declareDouble(*this, "planner.hybrid.min_radius_m", 1.0, 0.05, 100.0, "Hybrid A* の最小の曲がりの半径", true);
+    declareDouble(*this, "planner.hybrid.curvature_weight", 0.5, 0.0, 100.0, "Hybrid A* の曲率の重み", true);
+    declareDouble(
+      *this, "planner.hybrid.curvature_change_weight", 0.5, 0.0, 100.0, "Hybrid A* の曲率の変化の重み", true);
+    declareInt(*this, "planner.hybrid.max_expansions", 100000, 1, 10000000, "Hybrid A* で調べる状態の上限", true);
     declareBool(*this, "planner.smoothing.enabled", true, "静止物の周りで経路を曲線にする");
+    declareString(
+      *this, "planner.smoothing.mode", "laplacian", "点を動かす方法（laplacian / bending）", true);
+    declareDouble(
+      *this, "planner.smoothing.bending_length_m", 1.0, 0.05, 20.0,
+      "bending で曲がりを広げる長さの目安");
     declareDouble(*this, "planner.smoothing.spacing_m", 0.1, 0.02, 1.0, "曲線の点の間隔");
     declareDouble(
       *this, "planner.smoothing.extra_clearance_m", 0.3, 0.0, 2.0, "膨らみの外にさらに取る余裕");
@@ -351,12 +401,23 @@ private:
     planner_params_.reached_clear_radius_m =
       get_parameter("planner.reached_clear_radius_m").as_double();
     planner_params_.any_angle_shortcut = get_parameter("planner.any_angle_shortcut").as_bool();
+    planner_params_.search = parseSearchMethod(get_parameter("planner.search").as_string());
+    planner_params_.hybrid.step_m = get_parameter("planner.hybrid.step_m").as_double();
+    planner_params_.hybrid.min_radius_m = get_parameter("planner.hybrid.min_radius_m").as_double();
+    planner_params_.hybrid.curvature_weight = get_parameter("planner.hybrid.curvature_weight").as_double();
+    planner_params_.hybrid.curvature_change_weight =
+      get_parameter("planner.hybrid.curvature_change_weight").as_double();
+    planner_params_.hybrid.max_expansions =
+      static_cast<int>(get_parameter("planner.hybrid.max_expansions").as_int());
     goal_params_.enabled = get_parameter("goal_handling.enabled").as_bool();
     goal_params_.occupied_radius_m = get_parameter("goal_handling.occupied_radius_m").as_double();
     goal_params_.wait_s = get_parameter("goal_handling.wait_s").as_double();
     goal_params_.alternative_radius_m =
       get_parameter("goal_handling.alternative_radius_m").as_double();
     smoothing_params_.enabled = get_parameter("planner.smoothing.enabled").as_bool();
+    smoothing_params_.mode = parseSmoothingMode(get_parameter("planner.smoothing.mode").as_string());
+    smoothing_params_.bending_length_m =
+      get_parameter("planner.smoothing.bending_length_m").as_double();
     smoothing_params_.spacing_m = get_parameter("planner.smoothing.spacing_m").as_double();
     smoothing_params_.extra_clearance_m =
       get_parameter("planner.smoothing.extra_clearance_m").as_double();
@@ -638,12 +699,16 @@ private:
 
     // 相手を避ける経路がなければ、固定物だけで計画する。塞がれていれば局所計画が止まる
     const OccupancyGrid * used_grid = &blocked;
-    auto cells = planOnGrid(blocked, *robot, *target, planner_params_.any_angle_shortcut);
-    if (!cells.has_value()) {
+    auto route = planOnGrid(
+      blocked, *robot, *target, planner_params_.search, planner_params_.any_angle_shortcut,
+      planner_params_.hybrid);
+    if (!route.has_value()) {
       used_grid = &inflated_;
-      cells = planOnGrid(inflated_, *robot, *target, planner_params_.any_angle_shortcut);
+      route = planOnGrid(
+        inflated_, *robot, *target, planner_params_.search, planner_params_.any_angle_shortcut,
+        planner_params_.hybrid);
     }
-    if (!cells.has_value()) {
+    if (!route.has_value()) {
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 2000, "ゴール (%.2f, %.2f) への経路がありません", goal.x, goal.y);
       publishEmptyPath();
@@ -651,10 +716,19 @@ private:
       return;
     }
 
-    current_cells_ = *cells;
+    current_cells_ = route->cells;
+    // hybrid_astar の点の列は、始点と終点をセルの中心から機体とゴールの位置に置き換える
+    std::vector<std::pair<double, double>> raw_points;
+    if (route->points.has_value()) {
+      raw_points = *route->points;
+      raw_points.front() = {robot->x, robot->y};
+      raw_points.back() = {target->x, target->y};
+    } else {
+      raw_points = toPoints(*used_grid, route->cells, *robot, *target);
+    }
     // 固定物だけで計画し直した経路は相手を通るので、固定物だけの距離場で曲線にする
     const auto points = smoothedPoints(
-      toPoints(*used_grid, *cells, *robot, *target),
+      raw_points,
       used_grid == &blocked ? obstacles : std::vector<SlowObstacle>{});
     path_publisher_->publish(
       makePath(points, target->yaw, get_parameter("map_frame").as_string(), now()));

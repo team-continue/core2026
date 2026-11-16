@@ -1,5 +1,6 @@
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <queue>
 #include <random>
 #include <stdexcept>
@@ -23,6 +24,11 @@ using core_planning::pathLength;
 using core_planning::expandPath;
 using core_planning::shortcutPath;
 using core_planning::simplifyPath;
+using core_planning::findPathJpsTheta;
+using core_planning::findPathThetaStar;
+using core_planning::parseSearchMethod;
+using core_planning::SearchMethod;
+using core_planning::searchPath;
 
 OccupancyGrid emptyGrid(const int width, const int height)
 {
@@ -121,6 +127,101 @@ TEST(FindPath, MatchesDijkstraOnRandomGrids)
     ++compared;
   }
   EXPECT_GT(compared, 50);
+}
+
+// 任意の角度の探索（Theta* と JPS + Theta*）
+using AnyAngleSearch = std::optional<std::vector<GridCell>> (*)(
+  const OccupancyGrid &, const GridCell &, const GridCell &);
+const std::vector<std::pair<const char *, AnyAngleSearch>> kAnyAngleSearches{
+  {"theta_star", &findPathThetaStar}, {"jps_theta", &findPathJpsTheta}};
+
+TEST(AnyAngleSearch, StraightLineOnEmptyGrid)
+{
+  const auto grid = emptyGrid(20, 10);
+  for (const auto & [name, search] : kAnyAngleSearches) {
+    const auto path = search(grid, GridCell{1, 1}, GridCell{17, 6});
+    ASSERT_TRUE(path.has_value()) << name;
+    ASSERT_EQ(path->size(), 2U) << name;
+    EXPECT_EQ(path->front(), (GridCell{1, 1})) << name;
+    EXPECT_EQ(path->back(), (GridCell{17, 6})) << name;
+  }
+}
+
+TEST(AnyAngleSearch, ReturnsNulloptWhenBlocked)
+{
+  auto grid = emptyGrid(10, 10);
+  for (int y = 0; y < 10; ++y) {
+    grid.setOccupied(GridCell{5, y});
+  }
+  for (const auto & [name, search] : kAnyAngleSearches) {
+    EXPECT_FALSE(search(grid, GridCell{1, 1}, GridCell{8, 8}).has_value()) << name;
+  }
+}
+
+// 見通しのある区間だけでつながり、8 方向の最短経路より長くならない
+TEST(AnyAngleSearch, FindsVisiblePathNoLongerThanGridPathOnRandomGrids)
+{
+  std::mt19937 random(2U);
+  std::uniform_real_distribution<double> uniform(0.0, 1.0);
+  std::uniform_int_distribution<int> coordinate(0, 39);
+  int compared = 0;
+  for (int trial = 0; trial < 200; ++trial) {
+    auto grid = emptyGrid(40, 40);
+    const double density = 0.05 + 0.25 * uniform(random);
+    for (int y = 0; y < 40; ++y) {
+      for (int x = 0; x < 40; ++x) {
+        if (uniform(random) < density) {
+          grid.setOccupied(GridCell{x, y});
+        }
+      }
+    }
+    const GridCell start{coordinate(random), coordinate(random)};
+    const GridCell goal{coordinate(random), coordinate(random)};
+    if (grid.isOccupied(start) || grid.isOccupied(goal)) {
+      continue;
+    }
+    const double grid_length = dijkstraLength(grid, start, goal);
+    for (const auto & [name, search] : kAnyAngleSearches) {
+      const auto path = search(grid, start, goal);
+      if (std::isinf(grid_length)) {
+        EXPECT_FALSE(path.has_value()) << name << " trial " << trial;
+        continue;
+      }
+      ASSERT_TRUE(path.has_value()) << name << " trial " << trial;
+      EXPECT_EQ(path->front(), start) << name << " trial " << trial;
+      EXPECT_EQ(path->back(), goal) << name << " trial " << trial;
+      for (std::size_t i = 1U; i < path->size(); ++i) {
+        EXPECT_TRUE(hasLineOfSight(grid, (*path)[i - 1U], (*path)[i]))
+          << name << " trial " << trial << " segment " << i;
+      }
+      EXPECT_LE(pathLength(*path), grid_length + 1e-6) << name << " trial " << trial;
+    }
+    compared += std::isinf(grid_length) ? 0 : 1;
+  }
+  EXPECT_GT(compared, 50);
+}
+
+TEST(SearchPath, JpsMatchesFindPathAndRejectsUnknownMethod)
+{
+  auto grid = emptyGrid(20, 20);
+  for (int y = 0; y < 15; ++y) {
+    grid.setOccupied(GridCell{10, y});
+  }
+  const GridCell start{2, 2};
+  const GridCell goal{17, 2};
+  const auto expected = simplifyPath(grid, *findPath(grid, start, goal));
+  EXPECT_EQ(*searchPath(grid, start, goal, SearchMethod::kJps, false), expected);
+  EXPECT_EQ(parseSearchMethod("jps"), SearchMethod::kJps);
+  EXPECT_EQ(parseSearchMethod("theta_star"), SearchMethod::kThetaStar);
+  EXPECT_EQ(parseSearchMethod("jps_theta"), SearchMethod::kJpsTheta);
+  EXPECT_THROW(parseSearchMethod("astar"), std::invalid_argument);
+  // 壁を回り込む経路は、どの方法でも JPS の折れ線より長くならない
+  const double jps_length = pathLength(expected);
+  for (const auto method : {SearchMethod::kThetaStar, SearchMethod::kJpsTheta}) {
+    const auto path = searchPath(grid, start, goal, method, false);
+    ASSERT_TRUE(path.has_value());
+    EXPECT_LE(pathLength(*path), jps_length + 1e-6);
+  }
 }
 
 TEST(SimplifyPath, RemovesPointsWithLineOfSight)

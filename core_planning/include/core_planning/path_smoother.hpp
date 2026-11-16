@@ -3,7 +3,8 @@
 // 折れ線を spacing_m おきの点に増やし、端点以外の点を iterations 回動かす。点ごとに次の 2 つを足す。
 // - なめらかさ: 両隣の中点へ smooth_weight の割合で引く
 // - 余裕: 距離場の距離が「hard_radius_m + extra_clearance_m」より近ければ、不足分の clearance_weight
-//   の割合だけ、距離場の勾配の向き（障害物から離れる向き）へ押す
+//   の割合だけ、距離場の勾配の向き（障害物から離れる向き）へ押す。押すと尾根（両側の障害物から等距離の
+//   線）を越えるときは、尾根の手前までにする（狭い通路で点が左右に行き来して折れないように）
 // 障害物から遠い直線の区間は両方の力が 0 なので動かない。動かした先が守るべき距離より近くなる移動は
 // 採らない。端点は動かないので、端点から 1m の間は、取りたい距離を端点の距離から少しずつ上げる
 // （端点が障害物の近くにあっても、端点で鉤形に曲がらない）。
@@ -12,6 +13,7 @@
 #define CORE_PLANNING__PATH_SMOOTHER_HPP_
 
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -19,9 +21,24 @@
 
 namespace core_planning
 {
+// 点を動かす方法
+enum class SmoothingMode
+{
+  // 両隣の中点へ引く（線の長さを小さくする。曲がりは折れ線の角に集まる）
+  kLaplacian,
+  // 曲げのエネルギー（2 階差分の二乗和）を小さくする。曲がりを bending_length_m ほどに広げ、最大の曲率を下げる
+  kBending,
+  // bending と同じ目的を、各点が膨らみの外の円の中にあるという条件の下で解く（ADMM）
+  kCorridor,
+};
+
+// "laplacian" / "bending" / "corridor"。それ以外は std::invalid_argument を投げる
+SmoothingMode parseSmoothingMode(const std::string & name);
+
 struct SmoothingParams
 {
   bool enabled{true};
+  SmoothingMode mode{SmoothingMode::kLaplacian};
   // 点の間隔 [m]
   double spacing_m{0.1};
   // 膨らみの外に、さらに取りたい余裕 [m]
@@ -32,6 +49,8 @@ struct SmoothingParams
   double smooth_weight{0.25};
   // 余裕の不足分のうち、1 回で押し戻す割合（0〜1）
   double clearance_weight{0.25};
+  // bending で曲がりを広げる長さの目安 [m]。λ = (bending_length_m / spacing_m)^4
+  double bending_length_m{1.0};
 };
 
 // 折れ線を曲線にする。端点は動かさない。

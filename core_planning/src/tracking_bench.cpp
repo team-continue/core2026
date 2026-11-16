@@ -36,6 +36,7 @@
 #include "core_planning/crowd_model.hpp"
 #include "core_planning/drive_delay.hpp"
 #include "core_planning/grid_map.hpp"
+#include "core_planning/hybrid_astar.hpp"
 #include "core_planning/jps.hpp"
 #include "core_planning/mppi.hpp"
 #include "core_planning/path_smoother.hpp"
@@ -239,6 +240,10 @@ struct BenchParams
   bool smoothing_keep_clearance{true};
   // global_planner と同じ（planner.any_angle_shortcut）
   bool any_angle_shortcut{true};
+  // global_planner と同じ（planner.search）
+  core_planning::SearchMethod search{core_planning::SearchMethod::kJps};
+  // global_planner と同じ（planner.hybrid.*）
+  core_planning::HybridAStarParams hybrid;
 };
 
 double toDouble(const std::string & text)
@@ -319,6 +324,11 @@ bool applyBenchParameter(BenchParams & params, const std::string & name, const s
     {"planner.smoothing.extra_clearance_m", &params.smoothing.extra_clearance_m},
     {"planner.smoothing.smooth_weight", &params.smoothing.smooth_weight},
     {"planner.smoothing.clearance_weight", &params.smoothing.clearance_weight},
+    {"planner.smoothing.bending_length_m", &params.smoothing.bending_length_m},
+    {"planner.hybrid.step_m", &params.hybrid.step_m},
+    {"planner.hybrid.min_radius_m", &params.hybrid.min_radius_m},
+    {"planner.hybrid.curvature_weight", &params.hybrid.curvature_weight},
+    {"planner.hybrid.curvature_change_weight", &params.hybrid.curvature_change_weight},
     {"narrow_passage.min_side_clearance_m", &params.narrow_min_side_clearance_m},
   };
   for (const auto & [key, target] : doubles) {
@@ -368,6 +378,14 @@ bool applyBenchParameter(BenchParams & params, const std::string & name, const s
   }
   if (name == "planner.smoothing.iterations") {
     params.smoothing.iterations = static_cast<int>(toDouble(value));
+    return true;
+  }
+  if (name == "planner.smoothing.mode") {
+    params.smoothing.mode = core_planning::parseSmoothingMode(value);
+    return true;
+  }
+  if (name == "planner.search") {
+    params.search = core_planning::parseSearchMethod(value);
     return true;
   }
   if (name == "planner.any_angle_shortcut") {
@@ -476,7 +494,8 @@ class GlobalPlanner
 {
 public:
   GlobalPlanner(const BenchParams & params, const std::string & map_path)
-  : smoothing_(params.smoothing), any_angle_shortcut_(params.any_angle_shortcut)
+  : smoothing_(params.smoothing), any_angle_shortcut_(params.any_angle_shortcut),
+    search_(params.search), hybrid_(params.hybrid)
   {
     OccupancyGrid grid =
       core_planning::makeFieldGrid(params.stack.field, params.planner_resolution_m);
@@ -507,27 +526,39 @@ public:
     if (!start.has_value() || !end.has_value()) {
       return std::nullopt;
     }
-    const auto found = core_planning::findPath(inflated_, *start, *end);
+    std::vector<std::pair<double, double>> points;
+    // global_planner_node と同じく、hybrid_astar で見つからなければ JPS で探す
+    std::optional<std::vector<std::pair<double, double>>> hybrid;
+    if (search_ == core_planning::SearchMethod::kHybridAStar) {
+      hybrid = core_planning::findPathHybridAStar(
+        inflated_, {info.centerX(start->x), info.centerY(start->y)},
+        {info.centerX(end->x), info.centerY(end->y)}, hybrid_);
+    }
+    const auto found = hybrid.has_value() ? std::optional<std::vector<GridCell>>(std::vector<GridCell>{}) :
+      core_planning::searchPath(inflated_, *start, *end, search_, any_angle_shortcut_);
     if (!found.has_value()) {
       return std::nullopt;
     }
-    const auto cells = any_angle_shortcut_ ?
-      core_planning::shortcutPath(inflated_, *found) :
-      core_planning::simplifyPath(inflated_, *found);
-    std::vector<std::pair<double, double>> points;
-    points.emplace_back(robot.x, robot.y);
-    for (std::size_t i = 1U; i < cells.size(); ++i) {
-      points.emplace_back(info.centerX(cells[i].x), info.centerY(cells[i].y));
-    }
-    const GridCell goal_cell = info.cellAt(goal.x, goal.y);
-    if (!cells.empty() && cells.back() == goal_cell) {
-      if (cells.size() > 1U) {
-        points.back() = {goal.x, goal.y};
-      } else {
-        points.emplace_back(goal.x, goal.y);
+    const auto & cells = *found;
+    if (hybrid.has_value()) {
+      points = *hybrid;
+      points.front() = {robot.x, robot.y};
+      points.back() = {goal.x, goal.y};
+    } else {
+      points.emplace_back(robot.x, robot.y);
+      for (std::size_t i = 1U; i < cells.size(); ++i) {
+        points.emplace_back(info.centerX(cells[i].x), info.centerY(cells[i].y));
       }
-    } else if (cells.size() == 1U) {
-      points.emplace_back(info.centerX(cells[0].x), info.centerY(cells[0].y));
+      const GridCell goal_cell = info.cellAt(goal.x, goal.y);
+      if (!cells.empty() && cells.back() == goal_cell) {
+        if (cells.size() > 1U) {
+          points.back() = {goal.x, goal.y};
+        } else {
+          points.emplace_back(goal.x, goal.y);
+        }
+      } else if (cells.size() == 1U) {
+        points.emplace_back(info.centerX(cells[0].x), info.centerY(cells[0].y));
+      }
     }
     if (smoothing_.enabled) {
       try {
@@ -553,6 +584,8 @@ public:
 private:
   core_planning::SmoothingParams smoothing_;
   bool any_angle_shortcut_{true};
+  core_planning::SearchMethod search_{core_planning::SearchMethod::kJps};
+  core_planning::HybridAStarParams hybrid_;
   DistanceField distance_;
   OccupancyGrid inflated_;
   double radius_{0.0};

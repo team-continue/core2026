@@ -28,6 +28,7 @@ find_package(yaml-cpp REQUIRED)
 add_library(${PROJECT_NAME}_core STATIC
   src/drive_delay.cpp
   src/grid_map.cpp
+  src/hybrid_astar.cpp
   src/jps.cpp
   src/mppi.cpp
   src/path_smoother.cpp
@@ -104,7 +105,8 @@ if(BUILD_TESTING)
   foreach(name test_contact_detection test_drive_delay test_footprint test_jps test_keep_out test_mppi
     test_path_smoother test_safety
     test_traction_estimator
-    test_tracks_sync)
+    test_tracks_sync
+    test_hybrid_astar)
     ament_add_gtest(${name} test/${name}.cpp)
     target_link_libraries(${name} ${PROJECT_NAME}_core)
   endforeach()

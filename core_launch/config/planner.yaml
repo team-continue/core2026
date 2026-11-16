@@ -10,12 +10,29 @@
       # JPS の 8 方向の折れ線を、ジャンプポイントの間のセルにも見通しで飛んで短くする。false ではジャンプ
       # ポイントの間だけを直線にするので、本当は直線で行ける所に 45° などの折れが残り、そこで減速していた
       any_angle_shortcut: true
+      # 探索の方法。jps（8 方向）/ theta_star（Theta*。任意の角度）/ jps_theta（JPS に Theta* の親の飛ばしを
+      # 入れたもの。任意の角度）/ hybrid_astar（曲率に上限のある円弧でつなぐ。見つからなければ JPS）。
+      # any_angle_shortcut は jps のときだけ使う
+      search: jps
+      # search が hybrid_astar のときの設定（起動したときだけ読む）
+      hybrid:
+        step_m: 0.3
+        min_radius_m: 1.0
+        curvature_weight: 0.5
+        curvature_change_weight: 0.5
+        max_expansions: 100000
       # 静止物（地図の固定物と柵）と止まっている相手の周りでだけ、JPS の折れ線を曲線にする。障害物から
       # 遠い直線は動かさない。膨らみの外（外接円の半径 + footprint.margin_m）は守り、守れなければ折れ線を
       # 出す。機体の位置からの区間がもともと膨らみの中にあるときは、元の折れ線より障害物に近づけない。
       # enabled: false で元の折れ線。値は arena_static.pcd の 22 区間（check_planning のゴール）で比べた
       smoothing:
         enabled: true
+        # 点を動かす方法。laplacian: 両隣の中点へ引く（線の長さを小さくする。曲がりは折れ線の角に集まる）。
+        # bending: 曲げのエネルギー（2 階差分の二乗和）を小さくする。曲がりを bending_length_m ほどに広げて
+        # 最大の曲率を下げる。corridor: bending と同じ目的を、各点が膨らみの外の範囲にあるという条件の下で
+        # 解く（ADMM）（起動したときだけ読む）
+        mode: laplacian
+        bending_length_m: 1.0
         # 格子（resolution_m）と同じ。0.05m は時間が倍（平均 0.52ms）で形は同じ（曲率 1.3/m）。
         # 0.2m は 1 点の曲がりが 12° になる
         spacing_m: 0.1

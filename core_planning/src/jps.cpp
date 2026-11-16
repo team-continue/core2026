@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <limits>
 #include <queue>
+#include <string>
 #include <stdexcept>
 #include <utility>
 
@@ -122,6 +123,53 @@ struct QueueEntry
 
   bool operator>(const QueueEntry & other) const {return priority > other.priority;}
 };
+
+using OpenList = std::priority_queue<QueueEntry, std::vector<QueueEntry>, std::greater<QueueEntry>>;
+
+double euclidean(const GridCell & a, const GridCell & b)
+{
+  return std::hypot(a.x - b.x, a.y - b.y);
+}
+
+// parent をたどって始点から goal_index までの列にする
+std::vector<GridCell> tracePath(
+  const GridInfo & info, const std::vector<int> & parent, const int goal_index)
+{
+  std::vector<GridCell> path;
+  for (int index = goal_index; index != -1; index = parent[static_cast<std::size_t>(index)]) {
+    path.push_back(GridCell{index % info.width, index / info.width});
+  }
+  std::reverse(path.begin(), path.end());
+  return path;
+}
+
+// Theta* の距離の更新。current から next へ進むとき、current の見通しの親から next が見えれば
+// 親から直線で進んだとする。更新したら true
+bool relaxAnyAngle(
+  const OccupancyGrid & grid, const GridInfo & info, const int current_index, const int next_index,
+  std::vector<double> & cost, std::vector<int> & parent)
+{
+  const GridCell current{current_index % info.width, current_index / info.width};
+  const GridCell next{next_index % info.width, next_index / info.width};
+  const auto current_position = static_cast<std::size_t>(current_index);
+  const auto next_position = static_cast<std::size_t>(next_index);
+  int from_index = current_index;
+  const int grand_index = parent[current_position];
+  if (grand_index >= 0) {
+    const GridCell grand{grand_index % info.width, grand_index / info.width};
+    if (hasLineOfSight(grid, grand, next)) {
+      from_index = grand_index;
+    }
+  }
+  const GridCell from{from_index % info.width, from_index / info.width};
+  const double tentative = cost[static_cast<std::size_t>(from_index)] + euclidean(from, next);
+  if (tentative >= cost[next_position]) {
+    return false;
+  }
+  cost[next_position] = tentative;
+  parent[next_position] = from_index;
+  return true;
+}
 }  // namespace
 
 std::optional<std::vector<GridCell>> findPath(
@@ -285,6 +333,162 @@ std::optional<GridCell> nearestFreeCell(
     }
   }
   return best;
+}
+
+std::optional<std::vector<GridCell>> findPathThetaStar(
+  const OccupancyGrid & grid, const GridCell & start, const GridCell & goal)
+{
+  const GridInfo & info = grid.info();
+  if (grid.isOccupied(start) || grid.isOccupied(goal)) {
+    return std::nullopt;
+  }
+  if (start == goal) {
+    return std::vector<GridCell>{start};
+  }
+  const auto size = static_cast<std::size_t>(info.width * info.height);
+  std::vector<double> cost(size, std::numeric_limits<double>::infinity());
+  std::vector<int> parent(size, -1);
+  std::vector<std::uint8_t> closed(size, 0U);
+  OpenList open;
+  const int start_index = info.index(start);
+  const int goal_index = info.index(goal);
+  cost[static_cast<std::size_t>(start_index)] = 0.0;
+  open.push(QueueEntry{euclidean(start, goal), start_index});
+  constexpr std::array<std::pair<int, int>, 8> kNeighbors{{
+    {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}}};
+
+  while (!open.empty()) {
+    const int current_index = open.top().index;
+    open.pop();
+    const auto current_position = static_cast<std::size_t>(current_index);
+    if (closed[current_position] != 0U) {
+      continue;
+    }
+    closed[current_position] = 1U;
+    if (current_index == goal_index) {
+      return tracePath(info, parent, goal_index);
+    }
+    const GridCell current{current_index % info.width, current_index / info.width};
+    for (const auto & [dx, dy] : kNeighbors) {
+      const GridCell next{current.x + dx, current.y + dy};
+      if (!info.contains(next) || !canMove(grid, current.x, current.y, dx, dy)) {
+        continue;
+      }
+      const int next_index = info.index(next);
+      if (closed[static_cast<std::size_t>(next_index)] != 0U) {
+        continue;
+      }
+      if (relaxAnyAngle(grid, info, current_index, next_index, cost, parent)) {
+        open.push(
+          QueueEntry{cost[static_cast<std::size_t>(next_index)] + euclidean(next, goal), next_index});
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::vector<GridCell>> findPathJpsTheta(
+  const OccupancyGrid & grid, const GridCell & start, const GridCell & goal)
+{
+  const GridInfo & info = grid.info();
+  if (grid.isOccupied(start) || grid.isOccupied(goal)) {
+    return std::nullopt;
+  }
+  if (start == goal) {
+    return std::vector<GridCell>{start};
+  }
+  const auto size = static_cast<std::size_t>(info.width * info.height);
+  std::vector<double> cost(size, std::numeric_limits<double>::infinity());
+  // 経路と距離に使う見通しの親
+  std::vector<int> parent(size, -1);
+  // 枝刈りの向きに使う JPS の親（ジャンプで来た元）
+  std::vector<int> jump_parent(size, -1);
+  std::vector<std::uint8_t> closed(size, 0U);
+  OpenList open;
+  const int start_index = info.index(start);
+  const int goal_index = info.index(goal);
+  cost[static_cast<std::size_t>(start_index)] = 0.0;
+  open.push(QueueEntry{euclidean(start, goal), start_index});
+
+  while (!open.empty()) {
+    const int current_index = open.top().index;
+    open.pop();
+    const auto current_position = static_cast<std::size_t>(current_index);
+    if (closed[current_position] != 0U) {
+      continue;
+    }
+    closed[current_position] = 1U;
+    if (current_index == goal_index) {
+      return tracePath(info, parent, goal_index);
+    }
+    const GridCell current{current_index % info.width, current_index / info.width};
+    const int jump_parent_index = jump_parent[current_position];
+    const std::optional<GridCell> jump_parent_cell = jump_parent_index >= 0 ?
+      std::optional<GridCell>(
+      GridCell{jump_parent_index % info.width, jump_parent_index / info.width}) :
+      std::nullopt;
+    for (const auto & [dx, dy] : pruneDirections(grid, current, jump_parent_cell)) {
+      const auto next = jump(grid, current.x, current.y, dx, dy, goal);
+      if (!next.has_value()) {
+        continue;
+      }
+      const int next_index = info.index(*next);
+      if (closed[static_cast<std::size_t>(next_index)] != 0U) {
+        continue;
+      }
+      if (relaxAnyAngle(grid, info, current_index, next_index, cost, parent)) {
+        jump_parent[static_cast<std::size_t>(next_index)] = current_index;
+        open.push(
+          QueueEntry{
+            cost[static_cast<std::size_t>(next_index)] + euclidean(*next, goal), next_index});
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+SearchMethod parseSearchMethod(const std::string & name)
+{
+  if (name == "jps") {
+    return SearchMethod::kJps;
+  }
+  if (name == "theta_star") {
+    return SearchMethod::kThetaStar;
+  }
+  if (name == "jps_theta") {
+    return SearchMethod::kJpsTheta;
+  }
+  if (name == "hybrid_astar") {
+    return SearchMethod::kHybridAStar;
+  }
+  throw std::invalid_argument(
+          "探索の方法は jps / theta_star / jps_theta / hybrid_astar のどれかにしてください: " + name);
+}
+
+std::optional<std::vector<GridCell>> searchPath(
+  const OccupancyGrid & grid, const GridCell & start, const GridCell & goal,
+  const SearchMethod method, const bool any_angle_shortcut)
+{
+  switch (method) {
+    case SearchMethod::kJps:
+    case SearchMethod::kHybridAStar: {
+        const auto path = findPath(grid, start, goal);
+        if (!path.has_value()) {
+          return std::nullopt;
+        }
+        return any_angle_shortcut ? shortcutPath(grid, *path) : simplifyPath(grid, *path);
+      }
+    case SearchMethod::kThetaStar:
+    case SearchMethod::kJpsTheta: {
+        const auto path = method == SearchMethod::kThetaStar ?
+          findPathThetaStar(grid, start, goal) : findPathJpsTheta(grid, start, goal);
+        if (!path.has_value()) {
+          return std::nullopt;
+        }
+        return simplifyPath(grid, *path);
+      }
+  }
+  throw std::invalid_argument("searchPath: 不明な探索の方法です");
 }
 
 double pathLength(const std::vector<GridCell> & path)

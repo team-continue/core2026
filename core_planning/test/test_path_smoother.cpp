@@ -24,7 +24,9 @@ using core_planning::makeFieldGrid;
 using core_planning::nearestFreeCell;
 using core_planning::OccupancyGrid;
 using core_planning::simplifyPath;
+using core_planning::parseSmoothingMode;
 using core_planning::smoothPath;
+using core_planning::SmoothingMode;
 using core_planning::SmoothingParams;
 using Points = std::vector<std::pair<double, double>>;
 
@@ -172,6 +174,140 @@ TEST(SmoothPath, RoundsPolylineAroundBoxCorners)
   EXPECT_GT(minDistance(field, *smoothed), kHardRadiusM + 0.5 * params.extra_clearance_m);
 }
 
+SmoothingParams bendingParams()
+{
+  SmoothingParams params;
+  params.mode = SmoothingMode::kBending;
+  return params;
+}
+
+TEST(BendingSmoothing, StraightLineDoesNotMove)
+{
+  const auto field = computeDistanceField(fieldGrid());
+  const Points polyline{{3.0, 10.0}, {9.0, 10.3}, {17.0, 10.7}};
+  const auto smoothed = smoothPath(polyline, field, kHardRadiusM, bendingParams());
+  ASSERT_TRUE(smoothed.has_value());
+  EXPECT_EQ(smoothed->front(), polyline.front());
+  EXPECT_EQ(smoothed->back(), polyline.back());
+  for (const auto & [x, y] : *smoothed) {
+    const double offset = std::abs(y - (10.0 + 0.05 * (x - 3.0))) / std::hypot(1.0, 0.05);
+    EXPECT_LT(offset, 0.01) << "x=" << x;
+  }
+}
+
+TEST(BendingSmoothing, SpreadsCornerTurnMoreThanLaplacian)
+{
+  // 障害物から遠い直角の角。laplacian は角の近くで大きく曲がるが、bending は曲がりを広げる
+  const auto field = computeDistanceField(fieldGrid());
+  const Points polyline{{4.0, 5.0}, {10.0, 5.0}, {10.0, 15.0}};
+  const auto laplacian = smoothPath(polyline, field, kHardRadiusM, SmoothingParams{});
+  const auto bending = smoothPath(polyline, field, kHardRadiusM, bendingParams());
+  ASSERT_TRUE(laplacian.has_value());
+  ASSERT_TRUE(bending.has_value());
+  EXPECT_EQ(bending->front(), polyline.front());
+  EXPECT_EQ(bending->back(), polyline.back());
+  EXPECT_GE(minDistance(field, *bending), kHardRadiusM);
+  EXPECT_LT(maxTurn(*bending), 0.5 * maxTurn(*laplacian))
+    << "laplacian " << maxTurn(*laplacian) * 180.0 / M_PI << "°、bending "
+    << maxTurn(*bending) * 180.0 / M_PI << "°";
+  EXPECT_LT(maxTurn(*bending), 5.0 * M_PI / 180.0);
+}
+
+TEST(BendingSmoothing, RoundsAroundBoxKeepingClearance)
+{
+  auto grid = fieldGrid();
+  fillBox(grid, 8.0, 8.0, 12.0, 12.0);
+  const auto field = computeDistanceField(grid);
+  const auto inflated = inflate(field, kHardRadiusM);
+  const Points polyline = plannedPolyline(inflated, {4.0, 10.5}, {16.0, 10.5});
+  const auto laplacian = smoothPath(polyline, field, kHardRadiusM, SmoothingParams{});
+  const auto bending = smoothPath(polyline, field, kHardRadiusM, bendingParams());
+  ASSERT_TRUE(laplacian.has_value());
+  ASSERT_TRUE(bending.has_value());
+  EXPECT_EQ(bending->front(), polyline.front());
+  EXPECT_EQ(bending->back(), polyline.back());
+  EXPECT_GE(minDistance(field, *bending), kHardRadiusM);
+  EXPECT_LE(maxTurn(*bending), maxTurn(*laplacian) + 1e-9)
+    << "laplacian " << maxTurn(*laplacian) * 180.0 / M_PI << "°、bending "
+    << maxTurn(*bending) * 180.0 / M_PI << "°";
+}
+
+TEST(BendingSmoothing, StaysOnCenterlineOfGapPushedFromBothSides)
+{
+  auto grid = fieldGrid();
+  fillBox(grid, 7.0, 0.0, 13.0, 9.2);
+  fillBox(grid, 7.0, 10.8, 13.0, 20.0);
+  const auto field = computeDistanceField(grid);
+  SmoothingParams params = bendingParams();
+  params.extra_clearance_m = 0.6;
+  for (const double offset : {0.0, 0.05, -0.15}) {
+    const Points polyline{{2.0, 10.0 + offset}, {18.0, 10.0 + offset}};
+    const auto smoothed = smoothPath(polyline, field, kHardRadiusM, params);
+    ASSERT_TRUE(smoothed.has_value()) << "offset=" << offset;
+    EXPECT_GE(minDistance(field, *smoothed), kHardRadiusM) << "offset=" << offset;
+    Points inside;
+    for (const auto & point : *smoothed) {
+      if (point.first > 8.0 && point.first < 12.0) {
+        inside.push_back(point);
+        EXPECT_LE(std::abs(point.second - 10.0), 0.5 * kResolutionM + 1e-3)
+          << "offset=" << offset << " x=" << point.first;
+      }
+    }
+    EXPECT_LT(maxTurn(inside), 2.0 * M_PI / 180.0) << "offset=" << offset;
+  }
+}
+
+TEST(BendingSmoothing, ParsesModeAndRejectsInvalidLength)
+{
+  EXPECT_EQ(parseSmoothingMode("laplacian"), SmoothingMode::kLaplacian);
+  EXPECT_EQ(parseSmoothingMode("bending"), SmoothingMode::kBending);
+  EXPECT_THROW(parseSmoothingMode("spline"), std::invalid_argument);
+  const auto field = computeDistanceField(fieldGrid());
+  SmoothingParams params = bendingParams();
+  params.bending_length_m = 0.0;
+  EXPECT_THROW(
+    smoothPath(Points{{3.0, 3.0}, {5.0, 5.0}}, field, kHardRadiusM, params), std::invalid_argument);
+}
+
+SmoothingParams corridorParams()
+{
+  SmoothingParams params;
+  params.mode = SmoothingMode::kCorridor;
+  return params;
+}
+
+TEST(CorridorSmoothing, SpreadsCornerTurnAndKeepsOutsideInflation)
+{
+  const auto field = computeDistanceField(fieldGrid());
+  const Points polyline{{4.0, 5.0}, {10.0, 5.0}, {10.0, 15.0}};
+  const auto laplacian = smoothPath(polyline, field, kHardRadiusM, SmoothingParams{});
+  const auto corridor = smoothPath(polyline, field, kHardRadiusM, corridorParams());
+  ASSERT_TRUE(laplacian.has_value());
+  ASSERT_TRUE(corridor.has_value());
+  EXPECT_EQ(corridor->front(), polyline.front());
+  EXPECT_EQ(corridor->back(), polyline.back());
+  EXPECT_GE(minDistance(field, *corridor), kHardRadiusM);
+  EXPECT_LT(maxTurn(*corridor), 0.5 * maxTurn(*laplacian))
+    << "laplacian " << maxTurn(*laplacian) * 180.0 / M_PI << "°、corridor "
+    << maxTurn(*corridor) * 180.0 / M_PI << "°";
+}
+
+TEST(CorridorSmoothing, RoundsAroundBoxKeepingClearance)
+{
+  auto grid = fieldGrid();
+  fillBox(grid, 8.0, 8.0, 12.0, 12.0);
+  const auto field = computeDistanceField(grid);
+  const auto inflated = inflate(field, kHardRadiusM);
+  const Points polyline = plannedPolyline(inflated, {4.0, 10.5}, {16.0, 10.5});
+  const auto laplacian = smoothPath(polyline, field, kHardRadiusM, SmoothingParams{});
+  const auto corridor = smoothPath(polyline, field, kHardRadiusM, corridorParams());
+  ASSERT_TRUE(laplacian.has_value());
+  ASSERT_TRUE(corridor.has_value());
+  EXPECT_GE(minDistance(field, *corridor), kHardRadiusM);
+  EXPECT_LE(maxTurn(*corridor), maxTurn(*laplacian) + 1e-9);
+  EXPECT_EQ(parseSmoothingMode("corridor"), SmoothingMode::kCorridor);
+}
+
 TEST(SmoothPath, KeepsOutsideInflationInGapNarrowerThanClearance)
 {
   // 幅 1.6m のすき間。中央でも膨らみの外までの余裕は 0.3m 取れない
@@ -192,6 +328,36 @@ TEST(SmoothPath, KeepsOutsideInflationInGapNarrowerThanClearance)
     if (x > 9.0 && x < 11.0) {
       EXPECT_LT(std::abs(y - 10.0), 0.1) << "x=" << x;
     }
+  }
+}
+
+TEST(SmoothPath, StaysStraightOnCenterlineOfGapPushedFromBothSides)
+{
+  // 幅 1.6m の通路（長さ 6m）。取りたい距離（膨らみ + 0.6m、約 1.27m）は真ん中でも足りないので、
+  // 両側から押される。押し出しが真ん中を越えると、点が左右に行き来して 1 点ごとに折れる
+  auto grid = fieldGrid();
+  fillBox(grid, 7.0, 0.0, 13.0, 9.2);
+  fillBox(grid, 7.0, 10.8, 13.0, 20.0);
+  const auto field = computeDistanceField(grid);
+  SmoothingParams params;
+  params.extra_clearance_m = 0.6;
+  for (const double offset : {0.0, 0.05, 0.1, -0.15}) {
+    const Points polyline{{2.0, 10.0 + offset}, {18.0, 10.0 + offset}};
+    const auto smoothed = smoothPath(polyline, field, kHardRadiusM, params);
+    ASSERT_TRUE(smoothed.has_value()) << "offset=" << offset;
+    EXPECT_GE(minDistance(field, *smoothed), kHardRadiusM) << "offset=" << offset;
+    Points inside;
+    for (const auto & point : *smoothed) {
+      if (point.first > 8.0 && point.first < 12.0) {
+        inside.push_back(point);
+        // 距離場はセルの中心で持つので、真ん中の 2 セル（y = 9.95 と 10.05）の間は距離が同じで、
+        // そこより真ん中へは押されない。セルの半分までのずれは許す
+        EXPECT_LE(std::abs(point.second - 10.0), 0.5 * kResolutionM + 1e-3)
+          << "offset=" << offset << " x=" << point.first;
+      }
+    }
+    ASSERT_GE(inside.size(), 30U);
+    EXPECT_LT(maxTurn(inside), 2.0 * M_PI / 180.0) << "offset=" << offset;
   }
 }
 
