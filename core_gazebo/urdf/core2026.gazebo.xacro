@@ -21,6 +21,13 @@
         <gz_frame_id>${frame_id}</gz_frame_id>
         <imu>
           <enable_orientation>${enable_orientation}</enable_orientation>
+          <!-- 向きは世界の座標（ENU）から見た IMU の姿勢で出す。実機の damiao のドライバは、IMU 本体が重力を
+               基準に出すオイラー角を四元数にするので、上下逆さに付けても機体が反時計回りに回ると yaw が増える。
+               指定しないと Gazebo は取り付けた向きを基準にするので、上下逆さの damiao では yaw の向きが逆になり、
+               これを使う target_angle_node（腰で上半身の向きを保つ）の帰還が逆にかかる -->
+          <orientation_reference_frame>
+            <localization>ENU</localization>
+          </orientation_reference_frame>
           <angular_velocity>
             <xacro:axis_noise axis="x" stddev="${gyro_stddev}"/>
             <xacro:axis_noise axis="y" stddev="${gyro_stddev}"/>
