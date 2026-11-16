@@ -63,6 +63,23 @@ inline double front_world_target(
   return normalize_angle(world_angle - waist_direction * (waist_position - waist_front_offset));
 }
 
+// 腰のモータの回る速さに足す先回り [rad/s]。車体の回転のうち、上半身に伝えない分を腰で打ち消す。
+// TURRET は車体の回転（body_omega）を全部打ち消して、上半身のワールドでの向きを保つ。FRONT は無限回転の
+// 分（body_omega − body_omega_manual）だけを打ち消し、操作の回転は上半身にそのまま伝えて車体と一緒に回す。
+// FRONT でも全部を打ち消すと、上半身は帰還だけで目標を追うので遅れる（比例 2.0 で、0.5rad/s に約 0.25rad）。
+// body_omega がなければ 0、FRONT で body_omega_manual がなければ body_omega を全部打ち消す
+inline double waist_feedforward(
+  YawMode mode, std::optional<double> body_omega, std::optional<double> body_omega_manual)
+{
+  if (!body_omega || !std::isfinite(*body_omega)) {
+    return 0.0;
+  }
+  if (mode == YawMode::kFront && body_omega_manual && std::isfinite(*body_omega_manual)) {
+    return *body_omega - *body_omega_manual;
+  }
+  return *body_omega;
+}
+
 inline bool quaternion_to_yaw(double x, double y, double z, double w, double & yaw)
 {
   if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(w)) {

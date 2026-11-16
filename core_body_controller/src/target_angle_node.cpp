@@ -358,9 +358,16 @@ double TargetAngleNode::gimbal_control(
 
   const double world_angle_error =
     core_body_controller::normalize_angle(world_target_angle_ - latest_world_angle_);
-  // 車体の回転 (body_omega) は回転モードに関係なく打ち消す。モードの切り替えの瞬間に補正を切ると、
-  // 加速・減速中 (body_control_node の加速度の制限で数秒かかる) に腰が車体と一緒に回されて前を向かなくなる
-  const double feedforward = body_omega_is_fresh ? latest_body_omega_ : 0.0;
+  // 車体の回転 (body_omega) の打ち消しは回転モードに関係なく効かせる。モードの切り替えの瞬間に補正を切ると、
+  // 加速・減速中 (body_control_node の加速度の制限で数秒かかる) に腰が車体と一緒に回されて前を向かなくなる。
+  // FRONT は無限回転の分だけを打ち消し、操作の回転は上半身を車体と一緒に回す (waist_feedforward)
+  const bool body_omega_manual_is_fresh_for_feedforward = is_fresh(
+    last_body_omega_manual_time_, has_received_body_omega_manual_, body_omega_timeout_sec_);
+  const double feedforward = core_body_controller::waist_feedforward(
+    yaw_mode_,
+    body_omega_is_fresh ? std::optional<double>(latest_body_omega_) : std::nullopt,
+    body_omega_manual_is_fresh_for_feedforward ?
+    std::optional<double>(latest_body_omega_manual_) : std::nullopt);
   return controller_->update(world_angle_error, feedforward, dt);
 }
 

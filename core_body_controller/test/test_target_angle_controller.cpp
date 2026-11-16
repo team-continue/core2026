@@ -192,4 +192,18 @@ TEST(TargetAngleControllerTest, FrontTargetRemovesTheWaistOffsetFromTheUpperBody
     1e-12);
 }
 
+TEST(TargetAngleControllerTest, FeedforwardCancelsOnlyTheSpinInFrontMode)
+{
+  using core_body_controller::YawMode;
+  using core_body_controller::waist_feedforward;
+  // 無限回転 -3.14 rad/s と操作 0.5 rad/s: FRONT は無限回転の分だけ、TURRET は全部を打ち消す
+  EXPECT_NEAR(waist_feedforward(YawMode::kFront, -2.64, 0.5), -3.14, 1e-12);
+  EXPECT_NEAR(waist_feedforward(YawMode::kTurret, -2.64, 0.5), -2.64, 1e-12);
+  // 無限回転なしの FRONT は打ち消さない（上半身は車体と一緒に回る）
+  EXPECT_NEAR(waist_feedforward(YawMode::kFront, 0.5, 0.5), 0.0, 1e-12);
+  // 操作の分が届いていなければ、FRONT でも全部を打ち消す。車体の回転がなければ 0
+  EXPECT_NEAR(waist_feedforward(YawMode::kFront, 0.5, std::nullopt), 0.5, 1e-12);
+  EXPECT_NEAR(waist_feedforward(YawMode::kTurret, std::nullopt, 0.5), 0.0, 1e-12);
+}
+
 }  // namespace
