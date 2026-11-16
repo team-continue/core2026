@@ -109,6 +109,8 @@ const std::map<std::string, Setter> & parameterTable()
     {"mppi.max_angular_accel_radps2",
       [](P & p, const S & v) {p.mppi.max_angular_accel_radps2 = toDouble(v);}},
     {"mppi.yaw_gain_per_s", [](P & p, const S & v) {p.mppi.yaw_gain_per_s = toDouble(v);}},
+    {"mppi.yaw_brake_accel_ratio",
+      [](P & p, const S & v) {p.mppi.yaw_brake_accel_ratio = toDouble(v);}},
     {"mppi.reference_decel_mps2",
       [](P & p, const S & v) {p.mppi.reference_decel_mps2 = toDouble(v);}},
     {"mppi.goal_tolerance_m", [](P & p, const S & v) {p.goal_tolerance_m = toDouble(v);}},

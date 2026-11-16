@@ -292,6 +292,10 @@ struct MppiParams
   double drive_time_constant_s{0.0};
   // ゴールの向きへ回る速さの、向きの誤差に対する比
   double yaw_gain_per_s{1.5};
+  // 向きの目標の手前で回る速さを落とすときに見込む角加速度の、max_angular_accel_radps2 に対する割合。
+  // 回る速さを、この角加速度で落として誤差の分を回るうちに止まりきれる速さまでに抑える（yawRateToward）。
+  // 1 では、指令から機体が応えるまでの遅れ（数十 ms）の分だけ減速が足りずに行き過ぎる
+  double yaw_brake_accel_ratio{0.7};
   // 参照軌道がゴールの手前で減速するときの減速度
   double reference_decel_mps2{2.0};
   double keep_out_range_m{0.5};
@@ -368,6 +372,12 @@ std::optional<HeadingMode> parseHeadingMode(const std::string & text);
 // 向き。経路の終わり（ゴールの手前で待つ位置）で弦が短ければ、経路の終わりの区間の向き
 std::optional<double> headingTarget(
   const MppiState & state, const ReferencePath & path, const MppiParams & params);
+
+// 向きの誤差 error [rad]（目標の向き − 今の向き）を詰める回る速さ [rad/s]。符号は error と同じ。
+// 比例（yaw_gain_per_s × |error|）を、max_angular_speed_radps と、max_angular_accel_radps2 ×
+// yaw_brake_accel_ratio で dt ごとに落として |error| を回るうちに止まりきれる速さまでに抑える。
+// 比例だけでは、角加速度の上限が小さいと減速が間に合わずに行き過ぎる（1rad/s² で 180° 回ると約 10°）
+double yawRateToward(double error, const MppiParams & params);
 
 // heading.mode が kForward で、向きの目標 target_yaw と今の向きの差が forward_turn_angle_rad を超えるなら、
 // speed_limit を forward_turn_speed_mps までに下げて返す。それ以外は speed_limit のまま
@@ -512,6 +522,51 @@ private:
   Point2 backoff_start_;
   // 進んだとみなした最後の位置
   Point2 anchor_;
+};
+
+// ゴールに着いたかの判定（mppi.goal_*）。位置と速さに加えて、ゴールの向きがあれば向きも見る
+struct GoalArrivalParams
+{
+  double position_tolerance_m{0.15};
+  double speed_tolerance_mps{0.2};
+  // ゴールの向きとの差の許容 [rad]。負なら向きを見ない（位置と速さだけで着いたとする、前の動き）
+  double yaw_tolerance_rad{5.0 * M_PI / 180.0};
+  // 向きが合ったとみなす、回る速さの上限 [rad/s]
+  double yaw_rate_tolerance_radps{0.2};
+  // 位置に着いて（位置と速さが許容に入って）から、向きが合うのを待つ時間の上限 [s]。過ぎたら、
+  // 位置の許容の中にいれば向きが合わなくても着いたとする
+  double yaw_timeout_s{5.0};
+};
+
+enum class GoalArrival : std::uint8_t
+{
+  // 位置に着いていない（着いた後に位置の許容から出たときも）
+  kApproaching,
+  // 位置に着いて、その場でゴールの向きへ回っている
+  kAligning,
+  // 着いた（位置と速さ、ゴールの向きがあれば向きと回る速さも許容に入った）
+  kReached,
+  // 位置に着いてから yaw_timeout_s 経っても向きが合わないので、着いたとする
+  kTimedOut,
+};
+
+// ゴールに着いたかの判定。位置に着いた時刻を覚えて、向きが合うのを待つ時間を数える
+class GoalArrivalMonitor
+{
+public:
+  // ゴールが変わったときに呼ぶ
+  void reset() {position_reached_s_.reset();}
+
+  // goal と goal_yaw は state と同じ座標系（odom）。goal_yaw がなければ向きを見ない
+  GoalArrival update(
+    double time_s, const MppiState & state, const Point2 & goal,
+    const std::optional<double> & goal_yaw, const GoalArrivalParams & params);
+
+  // 今のゴールで、位置に着いた時刻。まだなら nullopt
+  const std::optional<double> & positionReachedAt() const {return position_reached_s_;}
+
+private:
+  std::optional<double> position_reached_s_;
 };
 
 // ゴールの手前で待つ判定。ゴールの近くを、動いているロボットが自機の着くまでの間に通る予測なら、

@@ -2568,4 +2568,210 @@ TEST(OncomingRule, StationaryRobotIsPassedOnRuleSide)
   EXPECT_LT(stationaryPassingOffset(true), -0.2);
   EXPECT_GT(stationaryPassingOffset(false), 0.2);
 }
+
+// ---- ゴールの向きに合わせて着く（mppi.goal_yaw_*）と、行き過ぎない回り方（yawRateToward） ----
+
+using core_planning::GoalArrival;
+using core_planning::GoalArrivalMonitor;
+using core_planning::GoalArrivalParams;
+using core_planning::yawRateToward;
+
+MppiState movingStateAt(
+  const double x, const double y, const double yaw, const double speed, const double wz)
+{
+  MppiState state = stateAt(x, y, yaw);
+  state.vx = speed;
+  state.wz = wz;
+  return state;
+}
+
+// mppi.yaml の回り方（core2026 の足回りの角加速度 1rad/s²）
+MppiParams core2026YawParams()
+{
+  MppiParams params;
+  params.max_angular_speed_radps = 1.5;
+  params.max_angular_accel_radps2 = 1.0;
+  params.yaw_gain_per_s = 1.5;
+  params.yaw_brake_accel_ratio = 0.7;
+  return params;
+}
+
+TEST(GoalArrival, WithoutGoalYawReachesAtPositionAndSpeedAsBefore)
+{
+  const GoalArrivalParams params;
+  const Point2 goal{5.0, 0.0};
+  GoalArrivalMonitor monitor;
+  EXPECT_EQ(
+    monitor.update(0.0, movingStateAt(4.5, 0.0, 0.0, 0.1, 0.0), goal, std::nullopt, params),
+    GoalArrival::kApproaching);
+  // 位置の許容の中でも速ければ着いていない
+  EXPECT_EQ(
+    monitor.update(0.1, movingStateAt(4.9, 0.0, 0.0, 0.5, 0.0), goal, std::nullopt, params),
+    GoalArrival::kApproaching);
+  // ゴールの向きがなければ、向きと回る速さは見ない
+  EXPECT_EQ(
+    monitor.update(0.2, movingStateAt(4.9, 0.0, 2.0, 0.1, 1.0), goal, std::nullopt, params),
+    GoalArrival::kReached);
+  // 許容を負にすると、ゴールの向きがあっても位置と速さだけで着いたとする（前の動き）
+  GoalArrivalParams position_only = params;
+  position_only.yaw_tolerance_rad = -1.0;
+  GoalArrivalMonitor other;
+  EXPECT_EQ(
+    other.update(0.0, movingStateAt(5.0, 0.0, 0.0, 0.0, 0.0), goal, M_PI / 2.0, position_only),
+    GoalArrival::kReached);
+}
+
+TEST(GoalArrival, TurnsInPlaceUntilYawAndRateAreWithinTolerance)
+{
+  const GoalArrivalParams params;
+  const Point2 goal{5.0, 0.0};
+  const double goal_yaw = M_PI / 2.0;
+  GoalArrivalMonitor monitor;
+  EXPECT_FALSE(monitor.positionReachedAt().has_value());
+  // 位置に着いたが向きが 90° 違う
+  EXPECT_EQ(
+    monitor.update(10.0, movingStateAt(5.05, 0.0, 0.0, 0.05, 0.0), goal, goal_yaw, params),
+    GoalArrival::kAligning);
+  ASSERT_TRUE(monitor.positionReachedAt().has_value());
+  EXPECT_DOUBLE_EQ(*monitor.positionReachedAt(), 10.0);
+  // 向きは許容（5°）の中でも、まだ速く回っている
+  const double near_yaw = goal_yaw - 3.0 * M_PI / 180.0;
+  EXPECT_EQ(
+    monitor.update(11.0, movingStateAt(5.0, 0.0, near_yaw, 0.0, 0.5), goal, goal_yaw, params),
+    GoalArrival::kAligning);
+  // 向きが 6° 違う
+  EXPECT_EQ(
+    monitor.update(
+      11.5, movingStateAt(5.0, 0.0, goal_yaw - 6.0 * M_PI / 180.0, 0.0, 0.1), goal, goal_yaw,
+      params),
+    GoalArrival::kAligning);
+  EXPECT_EQ(
+    monitor.update(12.0, movingStateAt(5.0, 0.0, near_yaw, 0.0, 0.1), goal, goal_yaw, params),
+    GoalArrival::kReached);
+  // ±π をまたいでも差で比べる
+  GoalArrivalMonitor across;
+  EXPECT_EQ(
+    across.update(0.0, movingStateAt(5.0, 0.0, -M_PI + 0.02, 0.0, 0.0), goal, M_PI - 0.02, params),
+    GoalArrival::kReached);
+}
+
+TEST(GoalArrival, TimesOutOnlyInsidePositionTolerance)
+{
+  const GoalArrivalParams params;
+  const Point2 goal{5.0, 0.0};
+  const double goal_yaw = M_PI;
+  GoalArrivalMonitor monitor;
+  // 速いまま位置の許容を通り抜けても、着いたとは数えない
+  EXPECT_EQ(
+    monitor.update(9.0, movingStateAt(5.0, 0.0, 0.0, 1.0, 0.0), goal, goal_yaw, params),
+    GoalArrival::kApproaching);
+  EXPECT_FALSE(monitor.positionReachedAt().has_value());
+  EXPECT_EQ(
+    monitor.update(10.0, movingStateAt(5.0, 0.0, 0.0, 0.0, 0.0), goal, goal_yaw, params),
+    GoalArrival::kAligning);
+  EXPECT_EQ(
+    monitor.update(14.9, movingStateAt(5.0, 0.0, 1.0, 0.0, 1.0), goal, goal_yaw, params),
+    GoalArrival::kAligning);
+  // 押されて位置の許容から出ている間は、時間が過ぎても着いたとしない（行き詰まりの判定に任せる）
+  EXPECT_EQ(
+    monitor.update(15.5, movingStateAt(5.3, 0.0, 1.0, 0.0, 1.0), goal, goal_yaw, params),
+    GoalArrival::kApproaching);
+  // 位置に戻れば、速さが許容を超えていても時間切れで着いたとする
+  EXPECT_EQ(
+    monitor.update(16.0, movingStateAt(5.1, 0.0, 1.0, 0.4, 1.0), goal, goal_yaw, params),
+    GoalArrival::kTimedOut);
+  monitor.reset();
+  EXPECT_FALSE(monitor.positionReachedAt().has_value());
+}
+
+TEST(GoalArrival, ClockGoingBackRestartsWaiting)
+{
+  const GoalArrivalParams params;
+  const Point2 goal{5.0, 0.0};
+  const MppiState misaligned = movingStateAt(5.0, 0.0, 0.0, 0.0, 0.0);
+  GoalArrivalMonitor monitor;
+  EXPECT_EQ(monitor.update(100.0, misaligned, goal, M_PI, params), GoalArrival::kAligning);
+  // シミュレーションのやり直しで時計が戻った
+  EXPECT_EQ(monitor.update(3.0, misaligned, goal, M_PI, params), GoalArrival::kAligning);
+  EXPECT_EQ(monitor.update(7.9, misaligned, goal, M_PI, params), GoalArrival::kAligning);
+  EXPECT_EQ(monitor.update(8.0, misaligned, goal, M_PI, params), GoalArrival::kTimedOut);
+}
+
+TEST(Heading, YawRateTowardCanStopWithinRemainingError)
+{
+  const MppiParams params = core2026YawParams();
+  const double brake = params.max_angular_accel_radps2 * params.yaw_brake_accel_ratio;
+  for (int i = -314; i <= 314; ++i) {
+    const double error = 0.01 * i;
+    const double rate = yawRateToward(error, params);
+    EXPECT_GE(rate * error, 0.0) << error;
+    EXPECT_LE(std::abs(rate), params.max_angular_speed_radps + 1e-12) << error;
+    EXPECT_LE(std::abs(rate), params.yaw_gain_per_s * std::abs(error) + 1e-12) << error;
+    // この速さから dt ごとに brake × dt ずつ落とすと、止まるまでに回る角度が誤差を超えない
+    EXPECT_LE(
+      rate * rate / (2.0 * brake) + std::abs(rate) * params.dt / 2.0, std::abs(error) + 1e-9)
+      << error;
+  }
+  // 誤差が小さい所は比例のまま
+  EXPECT_NEAR(yawRateToward(0.1, params), 0.15, 1e-12);
+  // 割合 0 なら、比例を回る速さの上限で切るだけ（前の動き）
+  MppiParams previous = params;
+  previous.yaw_brake_accel_ratio = 0.0;
+  EXPECT_NEAR(yawRateToward(0.5, previous), 0.75, 1e-12);
+  EXPECT_NEAR(yawRateToward(-2.0, previous), -1.5, 1e-12);
+}
+
+struct TurnInPlaceRun
+{
+  // ゴールの向きを越えて回った角度の最大 [rad]
+  double overshoot{0.0};
+  // ゴールの位置からずれた距離の最大 [m]
+  double drift{0.0};
+  // 着いた（kReached）時刻 [s]。着かなければ nullopt
+  std::optional<double> reached_s;
+  double final_yaw_error{0.0};
+};
+
+// ゴールの位置で、向きが goal_yaw と違う止まった機体を、閉ループで回す
+TurnInPlaceRun turnInPlace(const MppiParams & params, const double goal_yaw)
+{
+  const ReferencePath path({Point2{0.0, 0.0}, Point2{5.0, 0.0}}, goal_yaw);
+  MppiController controller;
+  GoalArrivalMonitor monitor;
+  MppiState state = stateAt(5.0, 0.0, 0.0);
+  TurnInPlaceRun run;
+  for (int i = 0; i < 80; ++i) {
+    const double time_s = i * params.dt;
+    if (!run.reached_s.has_value() &&
+      monitor.update(time_s, state, Point2{5.0, 0.0}, goal_yaw, GoalArrivalParams{}) ==
+      GoalArrival::kReached)
+    {
+      run.reached_s = time_s;
+    }
+    const auto command = controller.solve(state, path, {}, nullptr, SE2{}, params, 3.0);
+    state = step(state, command, params.dt);
+    run.overshoot = std::max(run.overshoot, -std::copysign(1.0, goal_yaw) * (goal_yaw - state.yaw));
+    run.drift = std::max(run.drift, std::hypot(state.x - 5.0, state.y));
+  }
+  run.final_yaw_error = wrapAngle(goal_yaw - state.yaw);
+  return run;
+}
+
+TEST(Heading, TurnsInPlaceAtGoalWithoutOvershoot)
+{
+  // 進む向き（+x）と 172° 違うゴールの向きに、位置を保ったままその場で回る
+  const MppiParams params = core2026YawParams();
+  const TurnInPlaceRun run = turnInPlace(params, 3.0);
+  EXPECT_LT(run.overshoot, 0.01);
+  EXPECT_LT(run.drift, 0.1);
+  ASSERT_TRUE(run.reached_s.has_value());
+  EXPECT_LT(*run.reached_s, 5.0);
+  EXPECT_LT(std::abs(run.final_yaw_error), 0.01);
+  // 前の比例だけの回り方は、減速が間に合わずに行き過ぎる
+  MppiParams previous = params;
+  previous.yaw_brake_accel_ratio = 0.0;
+  EXPECT_GT(turnInPlace(previous, 3.0).overshoot, 0.1);
+  // 逆回りも同じ
+  EXPECT_LT(turnInPlace(params, -2.0).overshoot, 0.01);
+}
 }  // namespace

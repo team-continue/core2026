@@ -66,6 +66,9 @@ using nav_msgs::msg::Path;
 
 // この距離以上ゴールが動いたら、別のゴールとして扱う
 constexpr double kGoalChangedM = 0.05;
+// ゴールの向きがこの角度 [rad]（約 3°）以上変わっても、別のゴールとして扱う。着いた後に、同じ位置で
+// 向きだけ違うゴールを受けたら回り直す
+constexpr double kGoalYawChangedRad = 0.05;
 // 送った指令を覚えておく時間 [s]。姿勢はこれより古くならない
 constexpr double kSentCommandKeepS = 1.0;
 // 姿勢の時刻が今よりこれ以上先か、これ以上古ければ、時計が合っていないとみなして先を読まない [s]
@@ -309,6 +312,10 @@ private:
     declareDouble(*this, "mppi.max_angular_speed_radps", 1.5, 0.0, 20.0, "角速度の上限");
     declareDouble(*this, "mppi.max_angular_accel_radps2", 6.0, 0.1, 100.0, "角加速度の上限");
     declareDouble(*this, "mppi.yaw_gain_per_s", 1.5, 0.0, 100.0, "ゴールの向きへ回る比 [1/s]");
+    declareDouble(
+      *this, "mppi.yaw_brake_accel_ratio", 0.7, 0.0, 1.0,
+      "向きの目標の手前で回る速さを落とすときに見込む角加速度の、max_angular_accel_radps2 に対する割合。"
+      "回る速さを、この角加速度で止まりきれる速さまでに抑える。0 で抑えない（前の動き）");
     declareDouble(*this, "mppi.reference_decel_mps2", 2.0, 0.1, 20.0, "ゴール手前の減速度");
     declareDouble(
       *this, "mppi.curve.max_lateral_accel_mps2", 0.0, 0.0, 20.0,
@@ -317,6 +324,15 @@ private:
       *this, "mppi.curve.window_m", 0.5, 0.05, 5.0, "曲率を測る、経路の前後の距離 [m]");
     declareDouble(*this, "mppi.goal_tolerance_m", 0.15, 0.01, 5.0, "到着とみなす距離");
     declareDouble(*this, "mppi.goal_speed_tolerance_mps", 0.2, 0.01, 5.0, "到着とみなす速度");
+    declareDouble(
+      *this, "mppi.goal_yaw_tolerance_deg", 5.0, -1.0, 180.0,
+      "到着とみなす、ゴールの向きとの差 [deg]。位置に着いた後、ここまでその場で回る。"
+      "負なら向きを見ない（位置と速さだけで着いたとする、前の動き）");
+    declareDouble(
+      *this, "mppi.goal_yaw_rate_tolerance_radps", 0.2, 0.01, 5.0, "向きが合ったとみなす回る速さ [rad/s]");
+    declareDouble(
+      *this, "mppi.goal_yaw_timeout_s", 5.0, 0.0, 60.0,
+      "位置に着いてから、ゴールの向きに合うのを待つ時間の上限 [s]。過ぎたら向きが合わなくても着いたとする");
     declareDouble(*this, "mppi.latency_compensation_s", 0.05, 0.0, 1.0, "遅れの補償");
     declareBool(
       *this, "mppi.drive.predict_delay", false,
@@ -593,6 +609,7 @@ private:
     mppi.max_angular_speed_radps = get_parameter("mppi.max_angular_speed_radps").as_double();
     mppi.max_angular_accel_radps2 = get_parameter("mppi.max_angular_accel_radps2").as_double();
     mppi.yaw_gain_per_s = get_parameter("mppi.yaw_gain_per_s").as_double();
+    mppi.yaw_brake_accel_ratio = get_parameter("mppi.yaw_brake_accel_ratio").as_double();
     mppi.reference_decel_mps2 = get_parameter("mppi.reference_decel_mps2").as_double();
     mppi.curve.max_lateral_accel_mps2 =
       get_parameter("mppi.curve.max_lateral_accel_mps2").as_double();
@@ -730,8 +747,15 @@ private:
     goal_approach_params_ = goal_approach;
 
     max_speed_mps_ = get_parameter("mppi.max_speed_mps").as_double();
-    goal_tolerance_m_ = get_parameter("mppi.goal_tolerance_m").as_double();
-    goal_speed_tolerance_mps_ = get_parameter("mppi.goal_speed_tolerance_mps").as_double();
+    GoalArrivalParams arrival;
+    arrival.position_tolerance_m = get_parameter("mppi.goal_tolerance_m").as_double();
+    arrival.speed_tolerance_mps = get_parameter("mppi.goal_speed_tolerance_mps").as_double();
+    arrival.yaw_tolerance_rad =
+      get_parameter("mppi.goal_yaw_tolerance_deg").as_double() * M_PI / 180.0;
+    arrival.yaw_rate_tolerance_radps =
+      get_parameter("mppi.goal_yaw_rate_tolerance_radps").as_double();
+    arrival.yaw_timeout_s = get_parameter("mppi.goal_yaw_timeout_s").as_double();
+    goal_arrival_params_ = arrival;
     latency_compensation_s_ = get_parameter("mppi.latency_compensation_s").as_double();
     evade_while_stopped_ = get_parameter("mppi.evade_while_stopped").as_bool();
     evade_humans_while_stopped_ = get_parameter("mppi.evade_humans_while_stopped").as_bool();
@@ -768,6 +792,7 @@ private:
       navigation_state_ = NavigationStatus::STATE_IDLE;
       controller_.reset();
       stuck_monitor_.reset();
+      arrival_monitor_.reset();
       resetGoalHold();
       return;
     }
@@ -777,10 +802,12 @@ private:
       points.push_back(Point2{pose.pose.position.x, pose.pose.position.y});
     }
     const Point2 goal = points.back();
-    const bool goal_changed = plan_map_.empty() ||
-      std::hypot(goal.x - plan_map_.back().x, goal.y - plan_map_.back().y) > kGoalChangedM;
+    const double goal_yaw = yawOf(plan->poses.back().pose.orientation);
+    const bool goal_changed = plan_map_.empty() || !goal_yaw_map_.has_value() ||
+      std::hypot(goal.x - plan_map_.back().x, goal.y - plan_map_.back().y) > kGoalChangedM ||
+      std::abs(wrapAngle(goal_yaw - *goal_yaw_map_)) > kGoalYawChangedRad;
     plan_map_ = std::move(points);
-    goal_yaw_map_ = yawOf(plan->poses.back().pose.orientation);
+    goal_yaw_map_ = goal_yaw;
 
     // 同じゴールへの計画のし直しでは、到着や失敗の状態を変えない
     if (goal_changed) {
@@ -789,6 +816,7 @@ private:
       navigation_state_ = NavigationStatus::STATE_DRIVING;
       controller_.reset();
       stuck_monitor_.reset();
+      arrival_monitor_.reset();
       resetGoalHold();
     }
   }
@@ -1070,17 +1098,10 @@ private:
     const ReferencePath path = makeOdomPath(*map_from_odom);
     updateFixedYaw(state, *map_from_odom);
     const double remaining = path.remaining(state.x, state.y);
-    const Point2 & goal = path.points().back();
-    const double speed = std::hypot(state.vx, state.vy);
 
-    if (navigation_state_ != NavigationStatus::STATE_REACHED &&
-      navigation_state_ != NavigationStatus::STATE_FAILED &&
-      std::hypot(goal.x - state.x, goal.y - state.y) <= goal_tolerance_m_ &&
-      speed <= goal_speed_tolerance_mps_)
-    {
-      navigation_state_ = NavigationStatus::STATE_REACHED;
-      controller_.reset();
-    }
+    const GoalArrival arrival = navigation_state_ != NavigationStatus::STATE_REACHED &&
+      navigation_state_ != NavigationStatus::STATE_FAILED ?
+      updateArrival(time_s, state, path) : GoalArrival::kApproaching;
     if (navigation_state_ == NavigationStatus::STATE_FAILED ||
       navigation_state_ == NavigationStatus::STATE_IDLE)
     {
@@ -1113,6 +1134,11 @@ private:
       publishCommand(state, stop());
       publishStatus(odometry->header.stamp, 0.0, remaining, start);
       return;
+    }
+    // 位置に着いて、その場でゴールの向きへ回っている。残りの距離は減らないが行き詰まりではないので、
+    // 判定をやり直す（待つ・下がる途中で位置に入ったときも、下がって離れたり失敗にしたりしない）
+    if (arrival == GoalArrival::kAligning) {
+      stuck_monitor_.reset();
     }
     if (isOnCollisionCourse(state, objects, mppi_params_)) {
       stuck_monitor_.holdProgress(time_s, remaining);
@@ -1177,6 +1203,43 @@ private:
     }
     publishCommand(state, command);
     publishStatus(odometry->header.stamp, speed_limit, remaining, start);
+  }
+
+  // ゴールに着いたかを判定し、着いたら（向きが合わないまま待つ時間が切れたときも）REACHED にする。
+  // 位置に着いて回り始めるときと、向きが合わないまま着いたとするときを記録に出す
+  GoalArrival updateArrival(
+    const double time_s, const MppiState & state, const ReferencePath & path)
+  {
+    const Point2 & goal = path.points().back();
+    const std::optional<double> & goal_yaw = path.goalYaw();
+    const bool was_at_position = arrival_monitor_.positionReachedAt().has_value();
+    const GoalArrival arrival =
+      arrival_monitor_.update(time_s, state, goal, goal_yaw, goal_arrival_params_);
+    const double yaw_error_deg =
+      goal_yaw.has_value() ? wrapAngle(*goal_yaw - state.yaw) * 180.0 / M_PI : 0.0;
+    if (arrival == GoalArrival::kAligning && !was_at_position) {
+      RCLCPP_INFO(
+        get_logger(), "位置に着きました。その場でゴールの向きへ回ります（向きの差 %.0f°）", yaw_error_deg);
+    }
+    if (arrival != GoalArrival::kReached && arrival != GoalArrival::kTimedOut) {
+      return arrival;
+    }
+    const double aligning_s = arrival_monitor_.positionReachedAt().has_value() ?
+      time_s - *arrival_monitor_.positionReachedAt() : 0.0;
+    if (arrival == GoalArrival::kTimedOut) {
+      RCLCPP_WARN(
+        get_logger(),
+        "位置に着いてから %.1f 秒でゴールの向きに合わないので、着いたとします（向きの差 %.1f°、"
+        "回る速さ %.2f rad/s、位置の差 %.2f m）", aligning_s, yaw_error_deg, state.wz,
+        std::hypot(goal.x - state.x, goal.y - state.y));
+    } else if (aligning_s > 0.0) {
+      RCLCPP_INFO(
+        get_logger(), "ゴールの向きに合わせて着きました（位置に着いてから %.1f 秒、向きの差 %.1f°）",
+        aligning_s, yaw_error_deg);
+    }
+    navigation_state_ = NavigationStatus::STATE_REACHED;
+    controller_.reset();
+    return arrival;
   }
 
   // ゴールの手前で待つなら、待つ位置（経路の始点からの距離）を返す。待ち始めと終わりを記録に出す
@@ -1251,8 +1314,7 @@ private:
   double max_speed_mps_{3.0};
   bool evade_while_stopped_{false};
   bool evade_humans_while_stopped_{false};
-  double goal_tolerance_m_{0.15};
-  double goal_speed_tolerance_mps_{0.2};
+  GoalArrivalParams goal_arrival_params_;
   double latency_compensation_s_{0.05};
   DriveParams drive_params_;
   // 床の推定。base_mppi_params_ は推定で変える前の設定
@@ -1274,6 +1336,7 @@ private:
   DistanceField distance_field_;
   MppiController controller_;
   StuckMonitor stuck_monitor_;
+  GoalArrivalMonitor arrival_monitor_;
   std::uint8_t navigation_state_{NavigationStatus::STATE_IDLE};
   // この周期に MPPI で指令を求めたか。ローカルパスを出すかの判断に使う
   bool controller_used_{false};

@@ -579,8 +579,8 @@ std::vector<Point2> makeReference(
   return reference;
 }
 
-// 向きの指令の系列。目標の向き（headingTarget）があればそちらへ回り、なければ今の向きを保つ。
-// 全方位に動けるので、避けるために向きを変える必要はない。サンプルに含めると向きが乱れ、
+// 向きの指令の系列。目標の向き（headingTarget）があればそちらへ回り（yawRateToward）、なければ今の
+// 向きを保つ。全方位に動けるので、避けるために向きを変える必要はない。サンプルに含めると向きが乱れ、
 // 斜めになった機体は横に広がる。すべての系列で同じなので、回るときの機体の角の動きは
 // rolloutCost の静止物と相手のコストに入る
 std::vector<double> makeYawRates(
@@ -592,9 +592,7 @@ std::vector<double> makeYawRates(
   double wz = state.wz;
   for (double & rate : rates) {
     const double target = target_yaw.has_value() ?
-      std::clamp(
-      params.yaw_gain_per_s * wrapAngle(*target_yaw - yaw), -params.max_angular_speed_radps,
-      params.max_angular_speed_radps) : 0.0;
+      yawRateToward(wrapAngle(*target_yaw - yaw), params) : 0.0;
     wz += std::clamp(target - wz, -max_dw, max_dw);
     yaw += wz * params.dt;
     rate = wz;
@@ -1223,6 +1221,21 @@ std::optional<double> headingTarget(
     return std::nullopt;
   }
   return std::atan2(last.y, last.x);
+}
+
+double yawRateToward(const double error, const MppiParams & params)
+{
+  const double magnitude = std::abs(error);
+  double rate = std::min(
+    params.yaw_gain_per_s * magnitude, std::max(params.max_angular_speed_radps, 0.0));
+  const double brake = params.max_angular_accel_radps2 * params.yaw_brake_accel_ratio;
+  if (brake > 0.0) {
+    // makeYawRates と同じく dt ごとに速さを決めて回る。速さ w から dt ごとに brake × dt ずつ落とすと、
+    // 止まるまでに w² / (2 brake) + w × dt / 2 回る。これが |error| 以下になる w の上限
+    const double half_step = 0.5 * brake * std::max(params.dt, 0.0);
+    rate = std::min(rate, std::sqrt(half_step * half_step + 2.0 * brake * magnitude) - half_step);
+  }
+  return std::copysign(rate, error);
 }
 
 double forwardTurnSpeedLimit(
@@ -2215,6 +2228,36 @@ StuckState StuckMonitor::update(
       break;
   }
   return state_;
+}
+
+GoalArrival GoalArrivalMonitor::update(
+  const double time_s, const MppiState & state, const Point2 & goal,
+  const std::optional<double> & goal_yaw, const GoalArrivalParams & params)
+{
+  const bool at_position =
+    std::hypot(goal.x - state.x, goal.y - state.y) <= params.position_tolerance_m;
+  const bool settled = at_position && std::hypot(state.vx, state.vy) <= params.speed_tolerance_mps;
+  if (!goal_yaw.has_value() || params.yaw_tolerance_rad < 0.0) {
+    return settled ? GoalArrival::kReached : GoalArrival::kApproaching;
+  }
+  // 時計が戻った（シミュレーションのやり直しなど）ときは、いま着いたとみなす
+  if ((settled && !position_reached_s_.has_value()) ||
+    (position_reached_s_.has_value() && time_s < *position_reached_s_))
+  {
+    position_reached_s_ = time_s;
+  }
+  if (!position_reached_s_.has_value() || !at_position) {
+    return GoalArrival::kApproaching;
+  }
+  const bool aligned = std::abs(wrapAngle(*goal_yaw - state.yaw)) <= params.yaw_tolerance_rad &&
+    std::abs(state.wz) <= params.yaw_rate_tolerance_radps;
+  if (settled && aligned) {
+    return GoalArrival::kReached;
+  }
+  if (time_s - *position_reached_s_ >= params.yaw_timeout_s) {
+    return GoalArrival::kTimedOut;
+  }
+  return GoalArrival::kAligning;
 }
 
 Point2 chooseBackoffDirection(
