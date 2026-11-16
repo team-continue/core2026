@@ -28,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/vector3_stamped.hpp>
@@ -259,6 +260,9 @@ public:
       create_publisher<geometry_msgs::msg::Twist>("/planning/cmd_vel_nav", rclcpp::QoS(10));
     status_publisher_ = create_publisher<NavigationStatus>("/planning/navigation/status", rclcpp::QoS(10));
     local_plan_publisher_ = create_publisher<Path>("/planning/local_plan", rclcpp::QoS(1));
+    // 行き詰まった所（map）。大域計画がしばらく通れない所として扱い、計画し直す
+    stuck_point_publisher_ =
+      create_publisher<geometry_msgs::msg::PointStamped>("/planning/stuck_point", rclcpp::QoS(10));
     plan_subscription_ = create_subscription<Path>(
       "/planning/plan", rclcpp::QoS(1), std::bind(&MppiLiteNode::onPlan, this, std::placeholders::_1));
     // 同じスキャンの追跡結果を待つ上限。待つたびに始めからにし、時間が来たら前の追跡結果で計算する
@@ -510,6 +514,21 @@ private:
     declareDouble(*this, "stuck_recovery.no_progress_timeout_s", 2.0, 0.1, 120.0, "判定の時間");
     declareDouble(*this, "stuck_recovery.min_progress_m", 0.2, 0.0, 10.0, "進んだとみなす距離");
     declareDouble(*this, "stuck_recovery.wait_s", 1.0, 0.0, 60.0, "止まって待つ時間");
+    declareDouble(
+      *this, "stuck_recovery.near_goal_accept_m", 0.0, 0.0, 10.0,
+      "到達が難しいゴールで、行き詰まったときにゴールまでの残りがこれ以下なら着いたことにする（0 で使わない）");
+    declareDouble(
+      *this, "stuck_recovery.hard_goal_clearance_m", 0.0, 0.0, 10.0,
+      "ゴールから固定物までの距離がこれより小さければ、到達が難しいゴールとみなす");
+    declareDouble(
+      *this, "stuck_recovery.replan_timeout_s", 0.0, 0.0, 60.0,
+      "行き詰まった後、計画し直した経路を待つ時間の上限（0 で待たない）");
+    declareDouble(
+      *this, "stuck_recovery.give_up_s", 0.0, 0.0, 600.0,
+      "ゴールまでの残りの最小値がこの時間よくならなければ FAILED にする（0 で使わない）");
+    declareDouble(
+      *this, "stuck_recovery.blocked_ahead_m", 1.0, 0.0, 10.0,
+      "行き詰まった所として大域計画に知らせる、経路に沿った機体の前方の距離");
     declareDouble(*this, "stuck_recovery.backoff_distance_m", 0.5, 0.0, 10.0, "下がる距離");
     declareInt(*this, "stuck_recovery.max_retries", 3, 0, 100, "復帰を試みる回数");
     declareDouble(
@@ -740,7 +759,12 @@ private:
     stuck.max_retries = static_cast<int>(get_parameter("stuck_recovery.max_retries").as_int());
     stuck.moving_distance_m = get_parameter("stuck_recovery.moving_distance_m").as_double();
     stuck.moving_timeout_s = get_parameter("stuck_recovery.moving_timeout_s").as_double();
+    stuck.near_goal_accept_m = get_parameter("stuck_recovery.near_goal_accept_m").as_double();
+    stuck.replan_timeout_s = get_parameter("stuck_recovery.replan_timeout_s").as_double();
+    stuck.give_up_s = get_parameter("stuck_recovery.give_up_s").as_double();
     stuck_params_ = stuck;
+    blocked_ahead_m_ = get_parameter("stuck_recovery.blocked_ahead_m").as_double();
+    hard_goal_clearance_m_ = get_parameter("stuck_recovery.hard_goal_clearance_m").as_double();
 
     GoalApproachParams goal_approach;
     goal_approach.enabled = get_parameter("goal_approach.enabled").as_bool();
@@ -823,6 +847,9 @@ private:
       stuck_monitor_.reset();
       arrival_monitor_.reset();
       resetGoalHold();
+    } else {
+      // 同じゴールへの計画し直し。行き詰まって待っている間なら、この経路で走行に戻れる
+      stuck_monitor_.planReceived(now().seconds());
     }
   }
 
@@ -1167,7 +1194,20 @@ private:
     }
 
     MppiCommand command;
-    switch (stuck_monitor_.update(time_s, remaining, state.x, state.y, stuck_params_)) {
+    // ゴールが固定物（地図・柵・入らない範囲）に近すぎて機体が入れないなら、いちばん近くまで来て進めないときに
+    // 着いたことにする。距離の場は map の座標
+    stuck_monitor_.setGoalHardToReach(
+      distance_field_.at(plan_map_.back().x, plan_map_.back().y) < hard_goal_clearance_m_);
+    const StuckState previous_stuck = stuck_monitor_.state();
+    const StuckState stuck_state =
+      stuck_monitor_.update(time_s, remaining, state.x, state.y, stuck_params_);
+    // 回数を使い切っていれば、待った後に FAILED になるので知らせない
+    if (stuck_state == StuckState::kWait && previous_stuck != StuckState::kWait &&
+      stuck_monitor_.retries() < stuck_params_.max_retries)
+    {
+      publishStuckPoint(state, path, *map_from_odom, odometry->header.stamp, remaining);
+    }
+    switch (stuck_state) {
       case StuckState::kDriving:
         navigation_state_ = NavigationStatus::STATE_DRIVING;
         speed_limit = std::min(speed_limit, yield.speed_limit);
@@ -1205,6 +1245,16 @@ private:
         controller_.reset();
         command = stop();
         RCLCPP_ERROR(get_logger(), "行き詰まりから復帰できませんでした。新しいゴールを待ちます");
+        break;
+      case StuckState::kNearGoal:
+        // ゴールのすぐ手前で進めないので、下がってやり直さずに着いたことにする
+        navigation_state_ = NavigationStatus::STATE_REACHED;
+        controller_.reset();
+        command = stop();
+        RCLCPP_WARN(
+          get_logger(),
+          "ゴールが固定物に近く（%.2f m）、手前 %.2f m より近づけないので、着いたことにします",
+          distance_field_.at(plan_map_.back().x, plan_map_.back().y), remaining);
         break;
     }
     publishCommand(state, command);
@@ -1246,6 +1296,26 @@ private:
     navigation_state_ = NavigationStatus::STATE_REACHED;
     controller_.reset();
     return arrival;
+  }
+
+  // 行き詰まった所を大域計画に知らせる。経路に沿って機体の blocked_ahead_m 前の点（ゴールを越えない）を
+  // map で出し、大域計画はその周りをしばらく通れない所として計画し直す
+  void publishStuckPoint(
+    const MppiState & state, const ReferencePath & path, const SE2 & map_from_odom,
+    const builtin_interfaces::msg::Time & stamp, const double remaining)
+  {
+    const double s = std::min(path.project(state.x, state.y) + blocked_ahead_m_, path.length());
+    const Point2 ahead = path.pointAt(s);
+    const Point2 in_map = map_from_odom.apply(ahead.x, ahead.y);
+    geometry_msgs::msg::PointStamped point;
+    point.header.stamp = stamp;
+    point.header.frame_id = get_parameter("map_frame").as_string();
+    point.point.x = in_map.x;
+    point.point.y = in_map.y;
+    stuck_point_publisher_->publish(point);
+    RCLCPP_WARN(
+      get_logger(), "行き詰まりました（ゴールまで %.2f m、%d 回目の復帰）。(%.2f, %.2f) を避けて計画し直します",
+      remaining, stuck_monitor_.retries() + 1, in_map.x, in_map.y);
   }
 
   // ゴールの手前で待つなら、待つ位置（経路の始点からの距離）を返す。待ち始めと終わりを記録に出す
@@ -1316,6 +1386,8 @@ private:
   MppiParams mppi_params_;
   SpeedLimitParams speed_limit_params_;
   StuckParams stuck_params_;
+  double blocked_ahead_m_{1.0};
+  double hard_goal_clearance_m_{0.0};
   GoalApproachParams goal_approach_params_;
   double max_speed_mps_{3.0};
   bool evade_while_stopped_{false};
@@ -1367,6 +1439,7 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr command_publisher_;
   rclcpp::Publisher<NavigationStatus>::SharedPtr status_publisher_;
   rclcpp::Publisher<Path>::SharedPtr local_plan_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr stuck_point_publisher_;
   rclcpp::Subscription<Path>::SharedPtr plan_subscription_;
   rclcpp::Subscription<TrackedObjectArray>::SharedPtr tracks_subscription_;
   rclcpp::Subscription<LocalizationHealth>::SharedPtr health_subscription_;

@@ -507,6 +507,79 @@ TEST(StuckMonitor, WaitsThenBacksOffThenFails)
   EXPECT_EQ(monitor.retries(), 0);
 }
 
+TEST(StuckMonitor, AcceptsHardToReachGoalWhenStuckNearIt)
+{
+  StuckParams params;
+  params.no_progress_timeout_s = 2.0;
+  params.near_goal_accept_m = 1.0;
+  StuckMonitor monitor;
+  // ふつうのゴールでは、近くで進めなくても着いたことにしない（待って計画し直す）
+  EXPECT_EQ(monitor.update(0.0, 0.3, 0.0, 0.0, params), StuckState::kDriving);
+  EXPECT_EQ(monitor.update(2.0, 0.3, 0.0, 0.0, params), StuckState::kWait);
+  // 固定物に近いゴールで、0.6m 手前で進めないなら、いちばん近くまで来たとして着いたことにする
+  monitor.reset();
+  monitor.setGoalHardToReach(true);
+  EXPECT_EQ(monitor.update(10.0, 0.6, 0.0, 0.0, params), StuckState::kDriving);
+  EXPECT_EQ(monitor.update(12.0, 0.6, 0.0, 0.0, params), StuckState::kNearGoal);
+  EXPECT_EQ(monitor.update(13.0, 0.6, 0.0, 0.0, params), StuckState::kNearGoal);
+  EXPECT_EQ(monitor.retries(), 0);
+  // 到達が難しいゴールでも、遠ければ待つ
+  monitor.reset();
+  EXPECT_EQ(monitor.update(20.0, 1.5, 0.0, 0.0, params), StuckState::kDriving);
+  EXPECT_EQ(monitor.update(22.0, 1.5, 0.0, 0.0, params), StuckState::kWait);
+}
+
+TEST(StuckMonitor, WaitsForReplanInsteadOfBackingOff)
+{
+  StuckParams params;
+  params.no_progress_timeout_s = 2.0;
+  params.wait_s = 1.0;
+  params.backoff_distance_m = 0.0;
+  params.replan_timeout_s = 3.0;
+  params.max_retries = 2;
+  StuckMonitor monitor;
+  EXPECT_EQ(monitor.update(0.0, 10.0, 0.0, 0.0, params), StuckState::kDriving);
+  EXPECT_EQ(monitor.update(2.0, 10.0, 0.0, 0.0, params), StuckState::kWait);
+  // 行き詰まる前に受けた経路では、待ち終えない
+  monitor.planReceived(1.5);
+  EXPECT_EQ(monitor.update(3.0, 10.0, 0.0, 0.0, params), StuckState::kWait);
+  // 計画し直した経路を受けたら、下がらずにその経路で走行に戻る
+  monitor.planReceived(3.2);
+  EXPECT_EQ(monitor.update(3.3, 10.0, 0.0, 0.0, params), StuckState::kDriving);
+  EXPECT_EQ(monitor.retries(), 1);
+  // 経路が届かなくても、上限の時間が過ぎたら今の経路で進む
+  EXPECT_EQ(monitor.update(5.3, 10.0, 0.0, 0.0, params), StuckState::kWait);
+  EXPECT_EQ(monitor.update(7.0, 10.0, 0.0, 0.0, params), StuckState::kWait);
+  EXPECT_EQ(monitor.update(8.3, 10.0, 0.0, 0.0, params), StuckState::kDriving);
+  EXPECT_EQ(monitor.retries(), 2);
+  // 回数を使い切ったら FAILED で止まる
+  EXPECT_EQ(monitor.update(10.3, 10.0, 0.0, 0.0, params), StuckState::kWait);
+  monitor.planReceived(10.5);
+  EXPECT_EQ(monitor.update(11.3, 10.0, 0.0, 0.0, params), StuckState::kFailed);
+}
+
+TEST(StuckMonitor, GivesUpWhenNotGettingCloserForLong)
+{
+  StuckParams params;
+  params.no_progress_timeout_s = 2.0;
+  params.moving_distance_m = 0.5;
+  params.moving_timeout_s = 100.0;
+  params.give_up_s = 30.0;
+  StuckMonitor monitor;
+  EXPECT_EQ(monitor.update(0.0, 10.0, 0.0, 0.0, params), StuckState::kDriving);
+  // 動き回っているので行き詰まりとは数えないが、ゴールには近づかない
+  for (int i = 1; i < 30; ++i) {
+    EXPECT_EQ(
+      monitor.update(i, 10.0, (i % 2 == 0) ? 0.0 : 1.0, 0.0, params), StuckState::kDriving) << i;
+  }
+  EXPECT_EQ(monitor.update(30.0, 10.0, 0.0, 0.0, params), StuckState::kFailed);
+  // 近づいていれば、あきらめない
+  monitor.reset();
+  for (int i = 0; i <= 40; ++i) {
+    EXPECT_EQ(monitor.update(100.0 + i, 20.0 - 0.3 * i, 0.0, 0.3 * i, params), StuckState::kDriving);
+  }
+}
+
 TEST(StuckMonitor, DoesNotCountTimeWhileEvading)
 {
   StuckParams params;

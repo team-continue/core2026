@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <core_msgs/msg/navigation_status.hpp>
@@ -53,6 +54,9 @@ constexpr double kFieldInsetM = 0.1;
 constexpr double kNearestFreeRadiusM = 2.0;
 // 経路の閉塞で計画し直す最短の間隔
 constexpr double kMinReplanIntervalS = 0.25;
+// 新しいゴールを受けた直後に届いた、前のゴールの FAILED・REACHED は使わない（局所計画が新しい経路を受けるまで、
+// 前のゴールの状態を出し続ける。REACHED は機体とゴールの距離でも確かめるが、近くに出した新しいゴールは通ってしまう）
+constexpr double kStaleStatusIgnoreS = 0.5;
 // 追跡結果がこれより古ければ使わない
 constexpr double kTracksMaxAgeS = 1.0;
 // 代わりのゴールを探す角度の刻み
@@ -75,6 +79,17 @@ struct PlannerParams
   SearchMethod search{SearchMethod::kJps};
   // planner.hybrid.*（search が hybrid_astar のとき）
   HybridAStarParams hybrid;
+  // 局所計画が行き詰まった所（/planning/stuck_point）を、通れない円として足す半径と時間。時間 0 で使わない
+  double stuck_block_radius_m{0.4};
+  double stuck_block_duration_s{20.0};
+};
+
+// 局所計画が行き詰まった所。期限までは止まっている相手と同じく通れない円にする
+struct StuckBlock
+{
+  double x{0.0};
+  double y{0.0};
+  double expires_s{0.0};
 };
 
 struct GoalHandlingParams
@@ -83,6 +98,12 @@ struct GoalHandlingParams
   double occupied_radius_m{0.8};
   double wait_s{3.0};
   double alternative_radius_m{2.0};
+  // true なら、ゴールが wait_s の間塞がれたままのとき、代わりのゴールへ行かずに FAILED で止まる
+  bool fail_when_occupied{false};
+  // true なら、止まっている相手（と局所計画が行き詰まった所）を避ける経路がない状態が blocked_wait_s 続いたとき、
+  // 固定物だけで計画し直さずに FAILED で止まる
+  bool fail_when_blocked{false};
+  double blocked_wait_s{5.0};
 };
 
 struct SlowObstacle
@@ -340,6 +361,11 @@ public:
     declareDouble(
       *this, "planner.hybrid.curvature_change_weight", 0.5, 0.0, 100.0, "Hybrid A* の曲率の変化の重み", true);
     declareInt(*this, "planner.hybrid.max_expansions", 100000, 1, 10000000, "Hybrid A* で調べる状態の上限", true);
+    declareDouble(
+      *this, "planner.stuck_block.radius_m", 0.4, 0.0, 5.0, "局所計画が行き詰まった所を塞ぐ円の半径");
+    declareDouble(
+      *this, "planner.stuck_block.duration_s", 20.0, 0.0, 600.0,
+      "局所計画が行き詰まった所を塞いでおく時間（0 で使わない）");
     declareBool(*this, "planner.smoothing.enabled", true, "静止物の周りで経路を曲線にする");
     declareString(
       *this, "planner.smoothing.mode", "laplacian", "点を動かす方法（laplacian / bending）", true);
@@ -360,6 +386,14 @@ public:
     declareDouble(*this, "goal_handling.wait_s", 3.0, 0.0, 600.0, "代わりのゴールへ移るまで待つ時間");
     declareDouble(
       *this, "goal_handling.alternative_radius_m", 2.0, 0.1, 20.0, "代わりのゴールを探す半径");
+    declareBool(
+      *this, "goal_handling.fail_when_occupied", false,
+      "ゴールが塞がれたままなら、代わりのゴールへ行かずに FAILED で止まる");
+    declareBool(
+      *this, "goal_handling.fail_when_blocked", false,
+      "止まっている相手を避ける経路がないままなら、FAILED で止まる");
+    declareDouble(
+      *this, "goal_handling.blocked_wait_s", 5.0, 0.0, 600.0, "経路が塞がれたまま待つ時間");
 
     loadParams();
     buildGrid();
@@ -387,6 +421,9 @@ public:
     navigation_subscription_ = create_subscription<NavigationStatus>(
       "/planning/navigation/status", rclcpp::QoS(10),
       std::bind(&GlobalPlannerNode::onNavigationStatus, this, std::placeholders::_1));
+    stuck_point_subscription_ = create_subscription<geometry_msgs::msg::PointStamped>(
+      "/planning/stuck_point", rclcpp::QoS(10),
+      std::bind(&GlobalPlannerNode::onStuckPoint, this, std::placeholders::_1));
     const auto period = std::chrono::duration<double>(
       1.0 / get_parameter("planner.rate_hz").as_double());
     timer_ = rclcpp::create_timer(
@@ -409,11 +446,17 @@ private:
       get_parameter("planner.hybrid.curvature_change_weight").as_double();
     planner_params_.hybrid.max_expansions =
       static_cast<int>(get_parameter("planner.hybrid.max_expansions").as_int());
+    planner_params_.stuck_block_radius_m = get_parameter("planner.stuck_block.radius_m").as_double();
+    planner_params_.stuck_block_duration_s =
+      get_parameter("planner.stuck_block.duration_s").as_double();
     goal_params_.enabled = get_parameter("goal_handling.enabled").as_bool();
     goal_params_.occupied_radius_m = get_parameter("goal_handling.occupied_radius_m").as_double();
     goal_params_.wait_s = get_parameter("goal_handling.wait_s").as_double();
     goal_params_.alternative_radius_m =
       get_parameter("goal_handling.alternative_radius_m").as_double();
+    goal_params_.fail_when_occupied = get_parameter("goal_handling.fail_when_occupied").as_bool();
+    goal_params_.fail_when_blocked = get_parameter("goal_handling.fail_when_blocked").as_bool();
+    goal_params_.blocked_wait_s = get_parameter("goal_handling.blocked_wait_s").as_double();
     smoothing_params_.enabled = get_parameter("planner.smoothing.enabled").as_bool();
     smoothing_params_.mode = parseSmoothingMode(get_parameter("planner.smoothing.mode").as_string());
     smoothing_params_.bending_length_m =
@@ -521,7 +564,23 @@ private:
     }
   }
 
+  // 止まっている相手と、局所計画が行き詰まった所（期限内のもの）
   std::vector<SlowObstacle> currentSlowObstacles()
+  {
+    std::vector<SlowObstacle> obstacles = trackedSlowObstacles();
+    const double time_s = now().seconds();
+    stuck_blocks_.erase(
+      std::remove_if(
+        stuck_blocks_.begin(), stuck_blocks_.end(),
+        [time_s](const StuckBlock & block) {return block.expires_s <= time_s;}),
+      stuck_blocks_.end());
+    for (const auto & block : stuck_blocks_) {
+      obstacles.push_back(SlowObstacle{block.x, block.y, planner_params_.stuck_block_radius_m});
+    }
+    return obstacles;
+  }
+
+  std::vector<SlowObstacle> trackedSlowObstacles()
   {
     if (!latest_tracks_ || !last_tracks_time_.has_value() ||
       (now() - *last_tracks_time_).seconds() > kTracksMaxAgeS)
@@ -534,6 +593,40 @@ private:
       return {};
     }
     return slowObstaclesInMap(*latest_tracks_, *map_to_odom, planner_params_.blocked_speed_mps);
+  }
+
+  // 局所計画が行き詰まった所を、しばらく通れない所にして計画し直す。ゴールの近くの点は足さない
+  // （ゴールが塞がれたとみなされ、経路が空になる。ゴールの近くは局所計画が着いたことにする）
+  void onStuckPoint(const geometry_msgs::msg::PointStamped::ConstSharedPtr & point)
+  {
+    if (!goal_.has_value() || planner_params_.stuck_block_duration_s <= 0.0) {
+      return;
+    }
+    const std::string map_frame = get_parameter("map_frame").as_string();
+    PlanarPose position{point->point.x, point->point.y, 0.0};
+    if (!point->header.frame_id.empty() && point->header.frame_id != map_frame) {
+      const auto frame_in_map = lookupPose(map_frame, point->header.frame_id);
+      if (!frame_in_map.has_value()) {
+        RCLCPP_ERROR(
+          get_logger(), "行き詰まった所の座標系 %s を %s に直せないので、使いません",
+          point->header.frame_id.c_str(), map_frame.c_str());
+        return;
+      }
+      position = toMapFrame(*frame_in_map, position);
+    }
+    const double to_goal = std::hypot(position.x - goal_->x, position.y - goal_->y);
+    if (to_goal < goal_params_.occupied_radius_m + planner_params_.stuck_block_radius_m) {
+      RCLCPP_WARN(
+        get_logger(), "行き詰まった所 (%.2f, %.2f) はゴールに近い（%.2f m）ので、塞がずに計画し直します",
+        position.x, position.y, to_goal);
+    } else {
+      stuck_blocks_.push_back(
+        StuckBlock{position.x, position.y, now().seconds() + planner_params_.stuck_block_duration_s});
+      RCLCPP_WARN(
+        get_logger(), "局所計画が (%.2f, %.2f) で行き詰まったので、%.0f 秒の間そこを避けて計画し直します",
+        position.x, position.y, planner_params_.stuck_block_duration_s);
+    }
+    plan();
   }
 
   void publishStatus(const std::uint8_t state, const double planning_ms, const double distance)
@@ -573,6 +666,8 @@ private:
     goal_wait_start_.reset();
     alternative_.reset();
     goal_free_since_.reset();
+    stuck_blocks_.clear();
+    blocked_since_.reset();
     if (!std::isfinite(goal->pose.position.x) || !std::isfinite(goal->pose.position.y)) {
       goal_.reset();
       publishEmptyPath();
@@ -584,6 +679,7 @@ private:
       goal->pose.position.x, goal->pose.position.y,
       std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))};
     goal_ = frame_in_map.has_value() ? toMapFrame(*frame_in_map, pose) : pose;
+    goal_received_time_ = now();
     plan();
   }
 
@@ -614,7 +710,20 @@ private:
 
   void onNavigationStatus(const NavigationStatus::ConstSharedPtr & status)
   {
-    if (status->state != NavigationStatus::STATE_REACHED || !goal_.has_value()) {
+    if (status->state == NavigationStatus::STATE_FAILED && goal_.has_value() &&
+      (now() - goal_received_time_).seconds() > kStaleStatusIgnoreS)
+    {
+      // 局所計画が、計画し直しても経路をふさがれて進めなかった。ゴールを捨てて止まる
+      RCLCPP_ERROR(
+        get_logger(), "局所計画が行き詰まりから復帰できなかったので、ゴール (%.2f, %.2f) をやめます",
+        goal_->x, goal_->y);
+      goal_.reset();
+      publishStatus(NavigationStatus::STATE_FAILED, 0.0, 0.0);
+      return;
+    }
+    if (status->state != NavigationStatus::STATE_REACHED || !goal_.has_value() ||
+      (now() - goal_received_time_).seconds() <= kStaleStatusIgnoreS)
+    {
       return;
     }
     // 前のゴールの到達の通知で、新しいゴールを消さないよう、機体の位置でも確かめる
@@ -631,6 +740,25 @@ private:
       reached.data = true;
       goal_reached_publisher_->publish(reached);
     }
+  }
+
+  // 止まっている相手を避ける経路がない。fail_when_blocked で blocked_wait_s 続いたら、ゴールをやめて true を返す
+  bool failWhenBlocked(const PlanarPose & goal)
+  {
+    if (!goal_params_.fail_when_blocked) {
+      return false;
+    }
+    const rclcpp::Time time = now();
+    blocked_since_ = blocked_since_.value_or(time);
+    if ((time - *blocked_since_).seconds() < goal_params_.blocked_wait_s) {
+      return false;
+    }
+    RCLCPP_ERROR(
+      get_logger(), "ゴール (%.2f, %.2f) への経路が %.1f 秒塞がれたままなので、ゴールをやめます", goal.x, goal.y,
+      goal_params_.blocked_wait_s);
+    blocked_since_.reset();
+    goal_.reset();
+    return true;
   }
 
   // 目標の地点を決める。待つときは nullopt
@@ -662,6 +790,10 @@ private:
     if ((time - *goal_wait_start_).seconds() < goal_params_.wait_s) {
       return std::nullopt;
     }
+    if (goal_params_.fail_when_occupied) {
+      goal_occupied_failed_ = true;
+      return std::nullopt;
+    }
     // 決めた代わりのゴールは変えない。機体の位置で選び直すと、目標が動き続けて到着できない
     if (!alternative_.has_value()) {
       alternative_ = findAlternativeGoal(grid, goal, robot, goal_params_.alternative_radius_m);
@@ -691,6 +823,17 @@ private:
     const auto obstacles = currentSlowObstacles();
     const OccupancyGrid blocked = withObstacles(inflated_, obstacles, inflated_radius_);
     const auto target = selectTarget(goal, *robot, obstacles, blocked);
+    if (goal_occupied_failed_) {
+      // ゴールの上の障害物がどかない。代わりのゴールへは行かずに止まる
+      RCLCPP_ERROR(
+        get_logger(), "ゴール (%.2f, %.2f) が %.1f 秒塞がれたままなので、ゴールをやめます", goal.x, goal.y,
+        goal_params_.wait_s);
+      goal_occupied_failed_ = false;
+      goal_.reset();
+      publishEmptyPath();
+      publishStatus(NavigationStatus::STATE_FAILED, elapsed_ms(), distance);
+      return;
+    }
     if (!target.has_value()) {
       publishEmptyPath();
       publishStatus(NavigationStatus::STATE_GOAL_WAIT, elapsed_ms(), distance);
@@ -702,6 +845,13 @@ private:
     auto route = planOnGrid(
       blocked, *robot, *target, planner_params_.search, planner_params_.any_angle_shortcut,
       planner_params_.hybrid);
+    if (route.has_value()) {
+      blocked_since_.reset();
+    } else if (failWhenBlocked(goal)) {
+      publishEmptyPath();
+      publishStatus(NavigationStatus::STATE_FAILED, elapsed_ms(), distance);
+      return;
+    }
     if (!route.has_value()) {
       used_grid = &inflated_;
       route = planOnGrid(
@@ -746,6 +896,9 @@ private:
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
   std::optional<PlanarPose> goal_;
+  rclcpp::Time goal_received_time_{0, 0, RCL_ROS_TIME};
+  bool goal_occupied_failed_{false};
+  std::optional<rclcpp::Time> blocked_since_;
   std::optional<rclcpp::Time> goal_wait_start_;
   std::optional<PlanarPose> alternative_;
   std::optional<rclcpp::Time> goal_free_since_;
@@ -753,6 +906,7 @@ private:
   std::optional<rclcpp::Time> last_tracks_time_;
   TrackedObjectArray::ConstSharedPtr latest_tracks_;
   std::vector<GridCell> current_cells_;
+  std::vector<StuckBlock> stuck_blocks_;
   rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
   rclcpp::Publisher<Path>::SharedPtr path_publisher_;
   rclcpp::Publisher<NavigationStatus>::SharedPtr status_publisher_;
@@ -760,6 +914,7 @@ private:
   rclcpp::Subscription<PoseStamped>::SharedPtr goal_subscription_;
   rclcpp::Subscription<TrackedObjectArray>::SharedPtr tracks_subscription_;
   rclcpp::Subscription<NavigationStatus>::SharedPtr navigation_subscription_;
+  rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr stuck_point_subscription_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 }  // namespace core_planning

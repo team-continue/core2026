@@ -255,6 +255,15 @@ const std::map<std::string, Setter> & parameterTable()
       [](P & p, const S & v) {p.stuck.moving_distance_m = toDouble(v);}},
     {"stuck_recovery.moving_timeout_s",
       [](P & p, const S & v) {p.stuck.moving_timeout_s = toDouble(v);}},
+    {"stuck_recovery.near_goal_accept_m",
+      [](P & p, const S & v) {p.stuck.near_goal_accept_m = toDouble(v);}},
+    // 統計モデルには大域計画がないので、計画し直しは届かず、上限の時間だけ待って今の経路で進む
+    {"stuck_recovery.replan_timeout_s",
+      [](P & p, const S & v) {p.stuck.replan_timeout_s = toDouble(v);}},
+    {"stuck_recovery.give_up_s", [](P & p, const S & v) {p.stuck.give_up_s = toDouble(v);}},
+    {"stuck_recovery.blocked_ahead_m", [](P &, const S &) {}},
+    // 統計モデルには地図の固定物の判定がないので、到達が難しいゴールとして扱わない（着いたことにしない）
+    {"stuck_recovery.hard_goal_clearance_m", [](P &, const S &) {}},
     {"safety_stop.enabled", [](P & p, const S & v) {p.safety_enabled = toBool(v);}},
     {"safety_stop.ttc_slow_s", [](P & p, const S & v) {p.safety.ttc_slow_s = toDouble(v);}},
     {"safety_stop.ttc_stop_s", [](P & p, const S & v) {p.safety.ttc_stop_s = toDouble(v);}},
@@ -930,6 +939,11 @@ RunResult simulateRun(
             break;
           case StuckState::kFailed:
             // run_scenario.py と同じく、到達できなかったゴールを飛ばす
+            next_goal();
+            break;
+          case StuckState::kNearGoal:
+            // mppi_lite_node と同じく、ゴールのすぐ手前で進めないなら着いたことにする
+            ++result.goals_reached;
             next_goal();
             break;
         }

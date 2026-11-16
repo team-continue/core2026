@@ -471,7 +471,9 @@ double computeSpeedLimit(
   const SpeedLimitParams & params, const std::vector<PredictedObject> & objects,
   const MppiState & state, const FootprintParams & footprint, double max_speed);
 
-enum class StuckState : std::uint8_t {kDriving, kWait, kBackoff, kFailed};
+// kNearGoal: 到達が難しいゴール（setGoalHardToReach）の近く（near_goal_accept_m 以内）で行き詰まったので、
+// いちばん近くまで来たとして着いたことにする
+enum class StuckState : std::uint8_t {kDriving, kWait, kBackoff, kFailed, kNearGoal};
 
 struct StuckParams
 {
@@ -479,8 +481,15 @@ struct StuckParams
   double no_progress_timeout_s{2.0};
   double min_progress_m{0.2};
   double wait_s{1.0};
+  // 待った後に下がる距離。0 なら下がらずに、そのまま走行に戻る（計画し直した経路で進む）
   double backoff_distance_m{0.5};
   int max_retries{3};
+  // 到達が難しいゴールで、行き詰まったときにゴールまでの残りがこの距離以下なら、着いたことにする。0 で使わない
+  double near_goal_accept_m{0.0};
+  // 待つ間に、計画し直した経路（planReceived）を受けるまで待つ時間の上限。0 なら経路を待たない
+  double replan_timeout_s{0.0};
+  // ゴールまでの残りの最小値がこの時間よくならなければ、動き回っていても FAILED にする。0 で使わない
+  double give_up_s{0.0};
   // 前に進んだとみなした位置からこの距離以上動けば、ゴールまでの残りが減っていなくても進んでいると
   // みなす（すき間を行き過ぎて引き返すと残りが増える）。0 で残りの距離だけで判定する
   double moving_distance_m{0.5};
@@ -503,6 +512,12 @@ public:
   StuckState update(
     double time_s, double distance_to_goal, double x, double y, const StuckParams & params);
 
+  // 同じゴールへ計画し直した経路を受けたときに呼ぶ。待つ間に受けたら、待ち終えて走行に戻れる
+  void planReceived(double time_s) {last_plan_time_s_ = time_s;}
+
+  // ゴールが固定物に近すぎて、機体がゴールまで入れないか。true のときだけ、近くで行き詰まったら着いたことにする
+  void setGoalHardToReach(bool hard) {goal_hard_to_reach_ = hard;}
+
   StuckState state() const {return state_;}
   int retries() const {return retries_;}
 
@@ -516,7 +531,13 @@ private:
   double progress_time_s_{0.0};
   // 残りの距離が最後に減った（または数えないと決めた）時刻
   double approach_time_s_{0.0};
+  double wait_start_s_{0.0};
   double wait_until_s_{0.0};
+  double last_plan_time_s_{-std::numeric_limits<double>::infinity()};
+  bool goal_hard_to_reach_{false};
+  // ゴールまでの残りの、このゴールでの最小値と、それが最後に更新された時刻
+  double closest_distance_{0.0};
+  double closest_time_s_{0.0};
   double backoff_start_time_s_{0.0};
   double distance_at_last_stuck_{0.0};
   Point2 backoff_start_;

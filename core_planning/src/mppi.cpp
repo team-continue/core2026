@@ -2169,12 +2169,24 @@ StuckState StuckMonitor::update(
   if (!started_) {
     started_ = true;
     state_ = StuckState::kDriving;
+    closest_distance_ = distance_to_goal;
+    closest_time_s_ = time_s;
     distance_at_last_stuck_ = distance_to_goal;
     restartProgress(time_s, distance_to_goal);
     anchor_ = Point2{x, y};
     return state_;
   }
 
+  if (state_ != StuckState::kFailed && state_ != StuckState::kNearGoal) {
+    if (distance_to_goal <= closest_distance_ - params.min_progress_m) {
+      closest_distance_ = distance_to_goal;
+      closest_time_s_ = time_s;
+    } else if (params.give_up_s > 0.0 && time_s - closest_time_s_ >= params.give_up_s) {
+      // 塞がれた通路の間を動き回るなど、動いていてもゴールに近づけないままなら、あきらめる
+      state_ = StuckState::kFailed;
+      return state_;
+    }
+  }
   switch (state_) {
     case StuckState::kDriving:
       if (distance_to_goal <= best_distance_ - params.min_progress_m) {
@@ -2196,24 +2208,43 @@ StuckState StuckMonitor::update(
         distance_at_last_stuck_ = distance_to_goal;
       }
       if (time_s - progress_time_s_ >= params.no_progress_timeout_s) {
+        if (goal_hard_to_reach_ && params.near_goal_accept_m > 0.0 &&
+          distance_to_goal <= params.near_goal_accept_m)
+        {
+          // 固定物に近いゴールで、いちばん近くまで来て進めないなら、着いたことにする
+          state_ = StuckState::kNearGoal;
+          break;
+        }
         distance_at_last_stuck_ = distance_to_goal;
         state_ = StuckState::kWait;
+        wait_start_s_ = time_s;
         wait_until_s_ = time_s + params.wait_s;
       }
       break;
-    case StuckState::kWait:
-      // 待っている間に道が空いて前進できるようになっていても、次の判定は走行に戻ってから行う
-      if (time_s >= wait_until_s_) {
+    case StuckState::kWait: {
+        // 待っている間に道が空いて前進できるようになっていても、次の判定は走行に戻ってから行う。
+        // 計画し直しを待つときは、待ち始めた後の経路を受けるか、上限の時間が過ぎるまで待つ
+        const bool replanned = params.replan_timeout_s <= 0.0 ||
+          last_plan_time_s_ >= wait_start_s_ ||
+          time_s >= wait_start_s_ + params.replan_timeout_s;
+        if (time_s < wait_until_s_ || !replanned) {
+          break;
+        }
         if (retries_ >= params.max_retries) {
           state_ = StuckState::kFailed;
+        } else if (params.backoff_distance_m <= 0.0) {
+          ++retries_;
+          state_ = StuckState::kDriving;
+          restartProgress(time_s, distance_to_goal);
+          anchor_ = Point2{x, y};
         } else {
           ++retries_;
           state_ = StuckState::kBackoff;
           backoff_start_ = Point2{x, y};
           backoff_start_time_s_ = time_s;
         }
+        break;
       }
-      break;
     case StuckState::kBackoff:
       // 下がれない場合に止まり続けないよう、時間でも打ち切る
       if (std::hypot(x - backoff_start_.x, y - backoff_start_.y) >= params.backoff_distance_m ||
@@ -2225,6 +2256,7 @@ StuckState StuckMonitor::update(
       }
       break;
     case StuckState::kFailed:
+    case StuckState::kNearGoal:
       break;
   }
   return state_;
