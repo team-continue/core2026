@@ -207,4 +207,39 @@ TEST(TargetAngleControllerTest, FeedforwardTurnsTheUpperBodyAtTheWantedRate)
   EXPECT_NEAR(waist_feedforward(std::nullopt, 0.5), 0.0, 1e-12);
 }
 
+TEST(TargetAngleControllerTest, OperatorStaysActiveForTheHoldTime)
+{
+  core_body_controller::OperatorYawActivity activity(1.0);
+  EXPECT_FALSE(activity.active(0.0));
+  activity.update(0.0, 0.0);  // 0 の操作では動いていない
+  EXPECT_FALSE(activity.active(0.0));
+  activity.update(0.5, 2.0);
+  EXPECT_TRUE(activity.active(2.5));
+  activity.update(0.0, 2.6);  // 止めても hold_sec の間は動いているとみなす
+  EXPECT_TRUE(activity.active(3.0));
+  EXPECT_FALSE(activity.active(3.1));
+}
+
+TEST(TargetAngleControllerTest, TurretRatePrefersTheOperatorThenTheAutoRate)
+{
+  using core_body_controller::turret_rate;
+  // 操作が動いていれば操作、止まっていれば自律移動
+  EXPECT_DOUBLE_EQ(*turret_rate(0.8, true, -0.3), 0.8);
+  EXPECT_DOUBLE_EQ(*turret_rate(0.0, false, -0.3), -0.3);
+  // 自律移動が届いていなければ操作の値。どちらもなければ目標を保つ
+  EXPECT_DOUBLE_EQ(*turret_rate(0.0, false, std::nullopt), 0.0);
+  EXPECT_FALSE(turret_rate(std::nullopt, false, std::nullopt).has_value());
+}
+
+TEST(TargetAngleControllerTest, FrontIsRefusedOnlyFromTurretDuringRotation)
+{
+  using core_body_controller::YawMode;
+  using core_body_controller::accept_yaw_mode;
+  EXPECT_FALSE(accept_yaw_mode(YawMode::kTurret, YawMode::kFront, 1));
+  EXPECT_FALSE(accept_yaw_mode(YawMode::kTurret, YawMode::kFront, 2));
+  EXPECT_TRUE(accept_yaw_mode(YawMode::kTurret, YawMode::kFront, 0));
+  EXPECT_TRUE(accept_yaw_mode(YawMode::kFront, YawMode::kTurret, 1));
+  EXPECT_TRUE(accept_yaw_mode(YawMode::kTurret, YawMode::kTurret, 1));
+}
+
 }  // namespace

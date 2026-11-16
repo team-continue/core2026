@@ -83,6 +83,53 @@ inline double waist_feedforward(std::optional<double> body_omega, std::optional<
   return *body_omega;
 }
 
+// 操作の yaw_target_rate が動いているか。0 でない速さを最後に受けてから hold_sec の間は動いているとみなす
+// （操作を止めても、すぐには自律移動の向きに戻さない）
+class OperatorYawActivity
+{
+public:
+  explicit OperatorYawActivity(double hold_sec, double threshold = 1e-3)
+  : hold_sec_(hold_sec), threshold_(threshold) {}
+
+  void update(double rate, double now_sec)
+  {
+    if (std::isfinite(rate) && std::abs(rate) > threshold_) {
+      last_active_sec_ = now_sec;
+    }
+  }
+
+  bool active(double now_sec) const
+  {
+    return last_active_sec_.has_value() && now_sec - *last_active_sec_ <= hold_sec_;
+  }
+
+private:
+  double hold_sec_;
+  double threshold_;
+  std::optional<double> last_active_sec_;
+};
+
+// TURRET で上半身の目標を回す速さ。操作が動いていれば操作、そうでなければ自律移動（auto/yaw_target_rate）、
+// どちらも届いていなければ操作の値（届いていなければ nullopt で、目標を保つ）
+inline std::optional<double> turret_rate(
+  std::optional<double> operator_rate, bool operator_active, std::optional<double> auto_rate)
+{
+  if (operator_active && operator_rate) {
+    return operator_rate;
+  }
+  if (auto_rate) {
+    return auto_rate;
+  }
+  return operator_rate;
+}
+
+// 腰のモードの切り替えを受けるか。車体が回り続けている（回転モード中）間は、TURRET から FRONT へは
+// 切り替えない（FRONT は上半身を車体と一体に動かすモードなので、回転モードと組み合わせない）
+inline bool accept_yaw_mode(YawMode current, YawMode requested, int rotation_mode)
+{
+  return !(current == YawMode::kTurret && requested == YawMode::kFront && rotation_mode != 0);
+}
+
 inline bool quaternion_to_yaw(double x, double y, double z, double w, double & yaw)
 {
   if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(w)) {
