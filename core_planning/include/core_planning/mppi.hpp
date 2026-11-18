@@ -6,6 +6,7 @@
 #ifndef CORE_PLANNING__MPPI_HPP_
 #define CORE_PLANNING__MPPI_HPP_
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "core_planning/blind_side.hpp"
@@ -74,13 +76,18 @@ public:
   const std::vector<Point2> & points() const {return points_;}
   const std::optional<double> & goalYaw() const {return goal_yaw_;}
 
-  // 最も近い点の、始点からの距離
+  // 最も近い点の、始点からの距離。経路全体から探す（相手の位置など）
   double project(double x, double y) const;
+  // 機体が経路をどこまで進んだか（始点からの距離）。setProgressWindow の範囲があれば、その中の最も近い点。
+  // 通過点で行って戻る経路では、行きと戻りの区間が近づくので、全体から探すと先の区間へ飛ぶ
+  double progress(double x, double y) const;
+  // progress を探す範囲 [from_s, to_s]（始点からの距離）。局所計画が、前の周期に進んだ位置の近くに絞る
+  void setProgressWindow(double from_s, double to_s);
   Point2 pointAt(double s) const;
   // 距離 s での進行方向（単位ベクトル）。経路が 1 点なら (0, 0)
   Point2 directionAt(double s) const;
-  // (x, y) からゴールまでの残りの道のり
-  double remaining(double x, double y) const {return total_length_ - project(x, y);}
+  // 機体の位置 (x, y) からゴールまでの残りの道のり（progress から数える）
+  double remaining(double x, double y) const {return total_length_ - progress(x, y);}
   // 始点から距離 length までの経路（終わりの向きはそのまま）。length が全長以上なら同じ経路。
   // 切った分の長さを distanceBeyondEnd に足す
   ReferencePath truncated(double length) const;
@@ -94,6 +101,8 @@ private:
   double total_length_{0.0};
   std::optional<double> goal_yaw_;
   double beyond_end_m_{0.0};
+  // progress を探す範囲。なければ経路全体
+  std::optional<std::pair<double, double>> progress_window_;
 };
 
 struct MppiState
@@ -266,6 +275,16 @@ struct ChassisFaceParams
 // min_speed_mps 未満、差が deadband_rad 以下、enabled でなければ 0
 double chassisFaceRate(
   double chassis_yaw, double travel_yaw, double speed, const ChassisFaceParams & params);
+
+// 速度の上限 [m/s]。操作（UI）が上限を決めていれば、パラメータの上限（mppi.max_speed_mps）との小さい方にする。
+// 操作の値が正の有限値でなければ使わない（パラメータの上限のまま）
+inline double limitedMaxSpeed(const double parameter_max_mps, const std::optional<double> & requested_mps)
+{
+  if (!requested_mps.has_value() || !std::isfinite(*requested_mps) || *requested_mps <= 0.0) {
+    return parameter_max_mps;
+  }
+  return std::min(parameter_max_mps, *requested_mps);
+}
 
 // 経路の曲がりで、参照軌道の速さを横の加速度の上限まで落とす。曲率 κ の所の速さを √(上限 / κ) までにし、
 // その手前から reference_decel_mps2 で落とす（狭い通路の速さと同じ後ろ向きの計算）。

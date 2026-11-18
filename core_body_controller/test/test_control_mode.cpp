@@ -1,11 +1,15 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <string>
+
 #include "core_body_controller/control_mode.hpp"
 
 using core_body_controller::CommandSource;
 using core_body_controller::ControlMode;
 using core_body_controller::ControlModeLogic;
 using core_body_controller::NavigationPhase;
+using core_body_controller::routeError;
 
 TEST(ControlModeLogic, StartsManualAndPassesOnlyManual)
 {
@@ -80,4 +84,19 @@ TEST(ControlModeLogic, EmergencyReturnsToManualAndBlocksStart)
   EXPECT_EQ(logic.mode(), ControlMode::kManual);
   EXPECT_TRUE(logic.start());
   EXPECT_EQ(logic.mode(), ControlMode::kAuto);
+}
+
+TEST(RouteError, AcceptsFiniteRouteWithinLimit)
+{
+  EXPECT_FALSE(routeError({{1.0, 2.0}}, 3).has_value());
+  EXPECT_FALSE(routeError({{1.0, 2.0}, {3.0, -1.0}, {0.0, 0.0}}, 3).has_value());
+}
+
+TEST(RouteError, RejectsEmptyTooLongAndNonFinite)
+{
+  EXPECT_TRUE(routeError({}, 3).has_value());
+  EXPECT_TRUE(routeError({{0.0, 0.0}, {1.0, 1.0}, {2.0, 2.0}, {3.0, 3.0}}, 3).has_value());
+  const auto error = routeError({{0.0, 0.0}, {std::nan(""), 1.0}}, 3);
+  ASSERT_TRUE(error.has_value());
+  EXPECT_NE(error->find("2 番目"), std::string::npos);
 }

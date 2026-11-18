@@ -2,6 +2,8 @@
 //
 // 入力:
 //   /ui/auto/start（PoseStamped）   目標の位置と向き。受けたら自動に入り、目標を計画へ渡す
+//   /ui/auto/route（Path）          通過点を順に並べ、最後をゴール（位置と向き）にした経路。受けたら自動に入り、
+//                                   経路を計画へ渡す（route.max_points 個まで）
 //   /ui/auto/stop（Bool, true）     自動をやめて手動に戻し、計画のゴールを消す
 //   /control/manual/cmd_vel         手動の指令（操縦アプリ → ros2_ws_bridge）
 //   /control/auto/cmd_vel           自動の指令（safety_gate）
@@ -12,6 +14,7 @@
 // 出力:
 //   /control/cmd_vel                足回りへの指令
 //   /behavior/goal_pose             計画へのゴール（停止では位置を NaN にしてゴールを消す）
+//   /behavior/goal_route（Path）    計画への、通過点付きのゴール
 //   /control/mode（String）         今のモード（"manual" / "auto"）
 
 #include <chrono>
@@ -21,11 +24,13 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "core_body_controller/control_mode.hpp"
 #include "core_msgs/msg/navigation_status.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -61,10 +66,17 @@ public:
     if (!(mode_period_s > 0.0)) {
       throw std::invalid_argument("mode_publish_period_s は正の値にしてください");
     }
+    const auto max_route_points = declare_parameter<std::int64_t>("route.max_points", 20);
+    if (max_route_points < 1) {
+      throw std::invalid_argument("route.max_points は 1 以上にしてください");
+    }
+    max_route_points_ = static_cast<std::size_t>(max_route_points);
 
     cmd_pub_ = create_publisher<geometry_msgs::msg::Twist>("/control/cmd_vel", rclcpp::QoS(10));
     goal_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
       "/behavior/goal_pose", rclcpp::QoS(1).reliable().transient_local());
+    route_pub_ = create_publisher<nav_msgs::msg::Path>(
+      "/behavior/goal_route", rclcpp::QoS(1).reliable());
     mode_pub_ = create_publisher<std_msgs::msg::String>(
       "/control/mode", rclcpp::QoS(1).reliable().transient_local());
 
@@ -77,6 +89,9 @@ public:
     start_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
       "/ui/auto/start", rclcpp::QoS(10),
       [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {onStart(*msg);});
+    route_sub_ = create_subscription<nav_msgs::msg::Path>(
+      "/ui/auto/route", rclcpp::QoS(10),
+      [this](const nav_msgs::msg::Path::SharedPtr msg) {onRoute(*msg);});
     stop_sub_ = create_subscription<std_msgs::msg::Bool>(
       "/ui/auto/stop", rclcpp::QoS(10),
       [this](const std_msgs::msg::Bool::SharedPtr msg) {
@@ -131,6 +146,26 @@ private:
     update([this]() {logic_.start();}, "auto が押された");
   }
 
+  void onRoute(const nav_msgs::msg::Path & route)
+  {
+    std::vector<std::array<double, 2>> points;
+    points.reserve(route.poses.size());
+    for (const auto & pose : route.poses) {
+      points.push_back({pose.pose.position.x, pose.pose.position.y});
+    }
+    if (const auto error = routeError(points, max_route_points_)) {
+      RCLCPP_WARN(get_logger(), "%s ので、auto を受け付けません", error->c_str());
+      return;
+    }
+    if (logic_.emergencyActive()) {
+      RCLCPP_WARN(get_logger(), "緊急停止が入っているので、auto を受け付けません");
+      return;
+    }
+    route_pub_->publish(route);
+    RCLCPP_INFO(get_logger(), "通過点 %zu 個を通ってゴールへ向かいます", route.poses.size() - 1U);
+    update([this]() {logic_.start();}, "auto（通過点付き）が押された");
+  }
+
   void onStop()
   {
     cancelGoal();
@@ -183,12 +218,15 @@ private:
   }
 
   ControlModeLogic logic_;
+  std::size_t max_route_points_{20U};
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pub_;
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr route_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mode_pub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr manual_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr auto_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr start_sub_;
+  rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr route_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr stop_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reached_sub_;
   rclcpp::Subscription<core_msgs::msg::NavigationStatus>::SharedPtr navigation_sub_;

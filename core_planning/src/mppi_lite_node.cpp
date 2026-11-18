@@ -305,6 +305,20 @@ public:
           last_operator_active_ = std::chrono::steady_clock::now();
         }
       });
+    // 操作（UI）が決めた速度の上限。パラメータの上限（mppi.max_speed_mps）より下げるときだけ効く
+    max_speed_publisher_ = create_publisher<std_msgs::msg::Float64>(
+      "/planning/max_speed", rclcpp::QoS(1).reliable().transient_local());
+    requested_max_speed_subscription_ = create_subscription<std_msgs::msg::Float64>(
+      "/ui/auto/max_speed", rclcpp::QoS(10),
+      [this](const std_msgs::msg::Float64::ConstSharedPtr & speed) {
+        if (!std::isfinite(speed->data) || speed->data <= 0.0) {
+          RCLCPP_WARN(get_logger(), "速度の上限 %.3f m/s は正の有限値でないので使いません", speed->data);
+          return;
+        }
+        requested_max_speed_mps_ = speed->data;
+        publishMaxSpeed();
+      });
+    publishMaxSpeed();
     control_mode_subscription_ = create_subscription<std_msgs::msg::String>(
       "/control/mode", rclcpp::QoS(1).reliable().transient_local(),
       [this](const std_msgs::msg::String::ConstSharedPtr & mode) {
@@ -840,6 +854,7 @@ private:
     goal_approach_params_ = goal_approach;
 
     max_speed_mps_ = get_parameter("mppi.max_speed_mps").as_double();
+    publishMaxSpeed();
     GoalArrivalParams arrival;
     arrival.position_tolerance_m = get_parameter("mppi.goal_tolerance_m").as_double();
     arrival.speed_tolerance_mps = get_parameter("mppi.goal_speed_tolerance_mps").as_double();
@@ -879,6 +894,8 @@ private:
 
   void onPlan(const Path::ConstSharedPtr & plan)
   {
+    // 経路が変わったので、進んだ位置は新しい経路の始点から探し直す
+    progress_s_.reset();
     if (plan->poses.empty()) {
       plan_map_.clear();
       goal_yaw_map_.reset();
@@ -962,6 +979,17 @@ private:
       goal_yaw = wrapAngle(*goal_yaw_map_ - map_from_odom.yaw);
     }
     return ReferencePath(std::move(points), goal_yaw);
+  }
+
+  // 今使っている速度の上限を出す（UI に見せる）。起動中で出す先がまだなければ何もしない
+  void publishMaxSpeed()
+  {
+    if (max_speed_publisher_ == nullptr) {
+      return;
+    }
+    std_msgs::msg::Float64 message;
+    message.data = limitedMaxSpeed(max_speed_mps_, requested_max_speed_mps_);
+    max_speed_publisher_->publish(message);
   }
 
   void publishCommand(const MppiState & state, const MppiCommand & command)
@@ -1243,7 +1271,15 @@ private:
       return;
     }
 
-    const ReferencePath path = makeOdomPath(*map_from_odom);
+    // 経路上の進んだ位置は、前の周期の位置の近くだけで探す（行って戻る経路で、戻りの区間へ飛ばない）。
+    // 大域計画の経路は機体の位置から始まるので、新しい経路を受けた直後は始点の近くを探す
+    ReferencePath path = makeOdomPath(*map_from_odom);
+    if (progress_s_.has_value()) {
+      path.setProgressWindow(*progress_s_ - kProgressBackM, *progress_s_ + kProgressAheadM);
+    } else {
+      path.setProgressWindow(0.0, kProgressInitialAheadM);
+    }
+    progress_s_ = path.progress(state.x, state.y);
     updateFixedYaw(state, *map_from_odom);
     const double remaining = path.remaining(state.x, state.y);
 
@@ -1260,7 +1296,8 @@ private:
 
     const auto objects = currentObjects(prediction_s.value_or(time_s + latency_compensation_s_));
     double speed_limit = computeSpeedLimit(
-      speed_limit_params_, objects, state, mppi_params_.footprint, max_speed_mps_);
+      speed_limit_params_, objects, state, mppi_params_.footprint,
+      limitedMaxSpeed(max_speed_mps_, requested_max_speed_mps_));
     const std::uint8_t health_level =
       health_ != nullptr ? health_->level : LocalizationHealth::LEVEL_OK;
     // 到達後に相手を避けるときも、自己位置が怪しい間は速度を抑える
@@ -1486,7 +1523,7 @@ private:
     const MppiState & state, const ReferencePath & path, const SE2 & map_from_odom,
     const builtin_interfaces::msg::Time & stamp, const double remaining)
   {
-    const double s = std::min(path.project(state.x, state.y) + blocked_ahead_m_, path.length());
+    const double s = std::min(path.progress(state.x, state.y) + blocked_ahead_m_, path.length());
     const Point2 ahead = path.pointAt(s);
     const Point2 in_map = map_from_odom.apply(ahead.x, ahead.y);
     geometry_msgs::msg::PointStamped point;
@@ -1535,7 +1572,7 @@ private:
     oncoming_yielding_ = yield.yielding > 0;
     if (oncoming_yielding_ != was_yielding) {
       const double stop_ahead = yield.stop_length.has_value() ?
-        *yield.stop_length - path.project(state.x, state.y) : 0.0;
+        *yield.stop_length - path.progress(state.x, state.y) : 0.0;
       RCLCPP_INFO(
         get_logger(), "%s（相手 %d 台、停止線まで %.2f m、速さの上限 %.2f m/s、自機 %.2f, %.2f）",
         oncoming_yielding_ ? "向かってくる相手に道を開けず、停止線で止まります" :
@@ -1572,6 +1609,10 @@ private:
   double hard_goal_clearance_m_{0.0};
   GoalApproachParams goal_approach_params_;
   double max_speed_mps_{3.0};
+  // 操作（UI）が決めた速度の上限と、今使っている上限を出す先
+  std::optional<double> requested_max_speed_mps_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr requested_max_speed_subscription_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr max_speed_publisher_;
   bool evade_while_stopped_{false};
   bool evade_humans_while_stopped_{false};
   GoalArrivalParams goal_arrival_params_;
@@ -1609,6 +1650,11 @@ private:
   static constexpr int kTurretYawMode = 1;
   // 向きを保つときに、姿勢の時刻から先へ進める時間の上限 [s]（時計がずれたときに向きを飛ばさない）
   static constexpr double kMaxYawHoldAheadS = 0.3;
+  // 経路上の進んだ位置を探す範囲 [m]。前の周期の位置から後ろへ・先へ。1 周期（約 0.1 秒）に進むのは
+  // 速さの上限 3m/s でも 0.3m。新しい経路は機体の位置から始まるが、計画の遅れの間に先へ進んでいる分を見込む
+  static constexpr double kProgressBackM = 0.5;
+  static constexpr double kProgressAheadM = 1.0;
+  static constexpr double kProgressInitialAheadM = 2.0;
   int yaw_mode_{kTurretYawMode};
   bool follow_yaw_mode_{true};
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr yaw_mode_subscription_;

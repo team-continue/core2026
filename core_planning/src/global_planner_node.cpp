@@ -3,6 +3,8 @@
 // 一定周期のほか、止まっている相手で経路が塞がれたときにも計画し直す。
 // 柵はセンサで近距離を見られないので、地図と同じ扱いで占有にしてある。
 // x が NaN のゴールを受け取ると、ゴールを解除して空のパスを出す。
+// /behavior/goal_route（通過点…、最後がゴール）を受けると、通過点を順に通ってゴールへ行く経路を出す。
+// 通過点では止まらない（局所計画は経路の終わりのゴールでだけ止まる）。残りの通過点は /planning/waypoints に出す。
 
 #include <algorithm>
 #include <chrono>
@@ -17,6 +19,7 @@
 #include <vector>
 
 #include <geometry_msgs/msg/point_stamped.hpp>
+#include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <core_msgs/msg/navigation_status.hpp>
@@ -37,6 +40,7 @@
 #include "core_planning/hybrid_astar.hpp"
 #include "core_planning/jps.hpp"
 #include "core_planning/path_smoother.hpp"
+#include "core_planning/waypoints.hpp"
 
 namespace core_planning
 {
@@ -73,6 +77,11 @@ struct PlannerParams
 {
   double blocked_speed_mps{0.3};
   double reached_clear_radius_m{0.5};
+  // 機体がこの距離の中に入った通過点は通過済みにする
+  double waypoint_pass_radius_m{0.5};
+  // 通過点に要る、静止物（地図・柵・進入禁止ゾーン）までの余裕。足りない通過点は、受けたときに余裕のある一番
+  // 近い所へ移す（局所計画は静止物から余裕を取るので、近すぎる通過点には通過済みの距離まで近づけない）
+  double waypoint_clearance_m{1.0};
   // ジャンプポイントの間のセルにも直線で飛ぶ（shortcutPath）。false でジャンプポイントの間だけ（simplifyPath）
   bool any_angle_shortcut{true};
   // 探索の方法（planner.search）
@@ -349,6 +358,11 @@ public:
     declareDouble(*this, "planner.blocked_speed_mps", 0.3, 0.0, 5.0, "止まっているとみなす速度");
     declareDouble(
       *this, "planner.reached_clear_radius_m", 0.5, 0.01, 5.0, "到達でゴールを解除する距離");
+    declareDouble(
+      *this, "planner.waypoint_pass_radius_m", 0.5, 0.05, 5.0, "通過点を通過したとみなす距離");
+    declareDouble(
+      *this, "planner.waypoint_clearance_m", 1.0, 0.0, 3.0,
+      "通過点に要る静止物までの余裕。足りなければ余裕のある一番近い所へ移す");
     declareBool(
       *this, "planner.any_angle_shortcut", true,
       "ジャンプポイントの間のセルにも直線で飛び、直線で行ける所の折れを除く（search が jps のとき）");
@@ -415,6 +429,13 @@ public:
     goal_subscription_ = create_subscription<PoseStamped>(
       "/behavior/goal_pose", rclcpp::QoS(10),
       std::bind(&GlobalPlannerNode::onGoal, this, std::placeholders::_1));
+    route_subscription_ = create_subscription<Path>(
+      "/behavior/goal_route", rclcpp::QoS(1).reliable(),
+      std::bind(&GlobalPlannerNode::onRoute, this, std::placeholders::_1));
+    // 残りの通過点。UI が後から繋いでも分かるよう、最後の値を残して出す
+    waypoints_publisher_ = create_publisher<geometry_msgs::msg::PoseArray>(
+      "/planning/waypoints", rclcpp::QoS(1).reliable().transient_local());
+    publishWaypoints();
     tracks_subscription_ = create_subscription<TrackedObjectArray>(
       "/perception/tracks", rclcpp::QoS(10),
       std::bind(&GlobalPlannerNode::onTracks, this, std::placeholders::_1));
@@ -437,6 +458,9 @@ private:
     planner_params_.blocked_speed_mps = get_parameter("planner.blocked_speed_mps").as_double();
     planner_params_.reached_clear_radius_m =
       get_parameter("planner.reached_clear_radius_m").as_double();
+    planner_params_.waypoint_pass_radius_m =
+      get_parameter("planner.waypoint_pass_radius_m").as_double();
+    planner_params_.waypoint_clearance_m = get_parameter("planner.waypoint_clearance_m").as_double();
     planner_params_.any_angle_shortcut = get_parameter("planner.any_angle_shortcut").as_bool();
     planner_params_.search = parseSearchMethod(get_parameter("planner.search").as_string());
     planner_params_.hybrid.step_m = get_parameter("planner.hybrid.step_m").as_double();
@@ -649,38 +673,129 @@ private:
     current_cells_.clear();
   }
 
-  void onGoal(const PoseStamped::ConstSharedPtr & goal)
+  // frame_id の座標系の map での姿勢。map か空なら原点。直せなければ nullopt（ログを出す）
+  std::optional<PlanarPose> frameInMap(const std::string & frame_id, const char * what)
   {
     const std::string map_frame = get_parameter("map_frame").as_string();
-    // map 以外の座標系（odom など）のゴールは、今の TF で map に直す
-    std::optional<PlanarPose> frame_in_map;
-    if (!goal->header.frame_id.empty() && goal->header.frame_id != map_frame) {
-      frame_in_map = lookupPose(map_frame, goal->header.frame_id);
-      if (!frame_in_map.has_value()) {
-        RCLCPP_ERROR(
-          get_logger(), "ゴールの座標系 %s を %s に直せないので、ゴールを捨てます",
-          goal->header.frame_id.c_str(), map_frame.c_str());
-        return;
-      }
+    if (frame_id.empty() || frame_id == map_frame) {
+      return PlanarPose{};
     }
+    // map 以外の座標系（odom など）は、今の TF で map に直す
+    const auto frame_in_map = lookupPose(map_frame, frame_id);
+    if (!frame_in_map.has_value()) {
+      RCLCPP_ERROR(
+        get_logger(), "%sの座標系 %s を %s に直せないので、%sを捨てます", what, frame_id.c_str(),
+        map_frame.c_str(), what);
+    }
+    return frame_in_map;
+  }
+
+  static PlanarPose planarPose(const geometry_msgs::msg::Pose & pose)
+  {
+    const auto & q = pose.orientation;
+    return PlanarPose{
+      pose.position.x, pose.position.y,
+      std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))};
+  }
+
+  // 新しいゴールを受けたときに、前のゴールの待ちや迂回の状態を消す
+  void resetGoalState()
+  {
     goal_wait_start_.reset();
     alternative_.reset();
     goal_free_since_.reset();
     stuck_blocks_.clear();
     blocked_since_.reset();
+  }
+
+  void onGoal(const PoseStamped::ConstSharedPtr & goal)
+  {
+    const auto frame_in_map = frameInMap(goal->header.frame_id, "ゴール");
+    if (!frame_in_map.has_value()) {
+      return;
+    }
+    resetGoalState();
+    setWaypoints({});
     if (!std::isfinite(goal->pose.position.x) || !std::isfinite(goal->pose.position.y)) {
       goal_.reset();
       publishEmptyPath();
       publishStatus(NavigationStatus::STATE_IDLE, 0.0, 0.0);
       return;
     }
-    const auto & q = goal->pose.orientation;
-    const PlanarPose pose{
-      goal->pose.position.x, goal->pose.position.y,
-      std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))};
-    goal_ = frame_in_map.has_value() ? toMapFrame(*frame_in_map, pose) : pose;
+    goal_ = toMapFrame(*frame_in_map, planarPose(goal->pose));
     goal_received_time_ = now();
     plan();
+  }
+
+  // 通過点を順に並べ、最後をゴールにした経路
+  void onRoute(const Path::ConstSharedPtr & route)
+  {
+    if (route->poses.empty()) {
+      RCLCPP_WARN(get_logger(), "点のない経路を受けたので捨てます");
+      return;
+    }
+    for (const auto & pose : route->poses) {
+      if (!std::isfinite(pose.pose.position.x) || !std::isfinite(pose.pose.position.y)) {
+        RCLCPP_WARN(get_logger(), "位置が有限でない点を含む経路を受けたので捨てます");
+        return;
+      }
+    }
+    const auto frame_in_map = frameInMap(route->header.frame_id, "経路");
+    if (!frame_in_map.has_value()) {
+      return;
+    }
+    resetGoalState();
+    std::vector<Waypoint> waypoints;
+    waypoints.reserve(route->poses.size() - 1U);
+    for (std::size_t i = 0U; i + 1U < route->poses.size(); ++i) {
+      const PlanarPose point = toMapFrame(*frame_in_map, planarPose(route->poses[i].pose));
+      waypoints.push_back(reachableWaypoint({point.x, point.y}, i + 1U));
+    }
+    goal_ = toMapFrame(*frame_in_map, planarPose(route->poses.back().pose));
+    setWaypoints(std::move(waypoints));
+    goal_received_time_ = now();
+    RCLCPP_INFO(
+      get_logger(), "通過点 %zu 個を通ってゴール (%.2f, %.2f) へ向かいます", waypoints_.size(), goal_->x,
+      goal_->y);
+    plan();
+  }
+
+  // 静止物に近すぎる通過点を、余裕（planner.waypoint_clearance_m）のある一番近い所へ移す。見つからなければそのまま
+  Waypoint reachableWaypoint(const Waypoint & waypoint, const std::size_t number)
+  {
+    const auto moved = withClearance(
+      waypoint, planner_params_.waypoint_clearance_m, kNearestFreeRadiusM,
+      distance_field_.info().resolution,
+      [this](const double x, const double y) {return static_cast<double>(distance_field_.at(x, y));});
+    if (!moved.has_value()) {
+      RCLCPP_WARN(
+        get_logger(), "通過点 %zu (%.2f, %.2f) の近くに静止物から %.2f m 離れた所がないので、そのまま使います",
+        number, waypoint.x, waypoint.y, planner_params_.waypoint_clearance_m);
+      return waypoint;
+    }
+    if (std::hypot(moved->x - waypoint.x, moved->y - waypoint.y) > 1e-6) {
+      RCLCPP_INFO(
+        get_logger(), "通過点 %zu を静止物から離しました (%.2f, %.2f) → (%.2f, %.2f)", number, waypoint.x,
+        waypoint.y, moved->x, moved->y);
+    }
+    return *moved;
+  }
+
+  void setWaypoints(std::vector<Waypoint> waypoints)
+  {
+    waypoints_ = std::move(waypoints);
+    publishWaypoints();
+  }
+
+  void publishWaypoints()
+  {
+    geometry_msgs::msg::PoseArray message;
+    message.header.stamp = now();
+    message.header.frame_id = get_parameter("map_frame").as_string();
+    for (const auto & waypoint : waypoints_) {
+      message.poses.push_back(makePose(waypoint.x, waypoint.y, 0.0));
+    }
+    waypoints_publisher_->publish(message);
   }
 
   void onTracks(const TrackedObjectArray::ConstSharedPtr & tracks)
@@ -801,9 +916,31 @@ private:
     return alternative_;
   }
 
+  // stops（機体 → 通過点 → … → 目標）の区間ごとに経路を探す。どこかの区間で見つからなければ nullopt
+  std::optional<std::vector<PlannedRoute>> planLegs(
+    const OccupancyGrid & grid, const std::vector<PlanarPose> & stops) const
+  {
+    std::vector<PlannedRoute> legs;
+    legs.reserve(stops.size() - 1U);
+    for (std::size_t i = 1U; i < stops.size(); ++i) {
+      auto leg = planOnGrid(
+        grid, stops[i - 1U], stops[i], planner_params_.search, planner_params_.any_angle_shortcut,
+        planner_params_.hybrid);
+      if (!leg.has_value()) {
+        return std::nullopt;
+      }
+      legs.push_back(std::move(*leg));
+    }
+    return legs;
+  }
+
   void plan()
   {
     if (!goal_.has_value()) {
+      // 到達・失敗などでゴールを消したら、残りの通過点も消す
+      if (!waypoints_.empty()) {
+        setWaypoints({});
+      }
       return;
     }
     const auto start_time = std::chrono::steady_clock::now();
@@ -814,7 +951,13 @@ private:
     }
     last_plan_time_ = now();
     const PlanarPose goal = *goal_;
-    const double distance = std::hypot(robot->x - goal.x, robot->y - goal.y);
+    if (const std::size_t passed = dropReachedWaypoints(
+        waypoints_, robot->x, robot->y, planner_params_.waypoint_pass_radius_m))
+    {
+      RCLCPP_INFO(get_logger(), "通過点を %zu 個通過しました（残り %zu 個）", passed, waypoints_.size());
+      publishWaypoints();
+    }
+    const double distance = routeDistance(robot->x, robot->y, waypoints_, goal.x, goal.y);
     const auto elapsed_ms = [&start_time]() {
         return std::chrono::duration<double, std::milli>(
           std::chrono::steady_clock::now() - start_time).count();
@@ -840,46 +983,71 @@ private:
       return;
     }
 
+    // 区間の端: 機体、残りの通過点（向きは次の点へ）、目標
+    std::vector<PlanarPose> stops{*robot};
+    for (std::size_t i = 0U; i < waypoints_.size(); ++i) {
+      const double next_x = i + 1U < waypoints_.size() ? waypoints_[i + 1U].x : target->x;
+      const double next_y = i + 1U < waypoints_.size() ? waypoints_[i + 1U].y : target->y;
+      stops.push_back(
+        {waypoints_[i].x, waypoints_[i].y,
+          std::atan2(next_y - waypoints_[i].y, next_x - waypoints_[i].x)});
+    }
+    stops.push_back(*target);
+
     // 相手を避ける経路がなければ、固定物だけで計画する。塞がれていれば局所計画が止まる
     const OccupancyGrid * used_grid = &blocked;
-    auto route = planOnGrid(
-      blocked, *robot, *target, planner_params_.search, planner_params_.any_angle_shortcut,
-      planner_params_.hybrid);
-    if (route.has_value()) {
+    auto legs = planLegs(blocked, stops);
+    if (legs.has_value()) {
       blocked_since_.reset();
     } else if (failWhenBlocked(goal)) {
       publishEmptyPath();
       publishStatus(NavigationStatus::STATE_FAILED, elapsed_ms(), distance);
       return;
     }
-    if (!route.has_value()) {
+    if (!legs.has_value()) {
       used_grid = &inflated_;
-      route = planOnGrid(
-        inflated_, *robot, *target, planner_params_.search, planner_params_.any_angle_shortcut,
-        planner_params_.hybrid);
+      legs = planLegs(inflated_, stops);
     }
-    if (!route.has_value()) {
-      RCLCPP_WARN_THROTTLE(
-        get_logger(), *get_clock(), 2000, "ゴール (%.2f, %.2f) への経路がありません", goal.x, goal.y);
+    if (!legs.has_value()) {
+      if (waypoints_.empty()) {
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000, "ゴール (%.2f, %.2f) への経路がありません", goal.x, goal.y);
+      } else {
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000, "通過点 %zu 個を通ってゴール (%.2f, %.2f) へ行く経路がありません",
+          waypoints_.size(), goal.x, goal.y);
+      }
       publishEmptyPath();
       publishStatus(NavigationStatus::STATE_FAILED, elapsed_ms(), distance);
       return;
     }
 
-    current_cells_ = route->cells;
-    // hybrid_astar の点の列は、始点と終点をセルの中心から機体とゴールの位置に置き換える
-    std::vector<std::pair<double, double>> raw_points;
-    if (route->points.has_value()) {
-      raw_points = *route->points;
-      raw_points.front() = {robot->x, robot->y};
-      raw_points.back() = {target->x, target->y};
-    } else {
-      raw_points = toPoints(*used_grid, route->cells, *robot, *target);
+    // 区間ごとに折れ線を作って曲線にし、つなぐ（曲線にしても、区間の端の通過点は通る）
+    current_cells_.clear();
+    std::vector<std::vector<std::pair<double, double>>> segments;
+    segments.reserve(legs->size());
+    for (std::size_t i = 0U; i < legs->size(); ++i) {
+      const PlannedRoute & leg = (*legs)[i];
+      for (const auto & cell : leg.cells) {
+        if (current_cells_.empty() || !(current_cells_.back() == cell)) {
+          current_cells_.push_back(cell);
+        }
+      }
+      // hybrid_astar の点の列は、始点と終点をセルの中心から区間の端の位置に置き換える
+      std::vector<std::pair<double, double>> raw_points;
+      if (leg.points.has_value()) {
+        raw_points = *leg.points;
+        raw_points.front() = {stops[i].x, stops[i].y};
+        raw_points.back() = {stops[i + 1U].x, stops[i + 1U].y};
+      } else {
+        raw_points = toPoints(*used_grid, leg.cells, stops[i], stops[i + 1U]);
+      }
+      // 固定物だけで計画し直した経路は相手を通るので、固定物だけの距離場で曲線にする
+      segments.push_back(
+        smoothedPoints(
+          raw_points, used_grid == &blocked ? obstacles : std::vector<SlowObstacle>{}));
     }
-    // 固定物だけで計画し直した経路は相手を通るので、固定物だけの距離場で曲線にする
-    const auto points = smoothedPoints(
-      raw_points,
-      used_grid == &blocked ? obstacles : std::vector<SlowObstacle>{});
+    const auto points = joinSegments(segments);
     path_publisher_->publish(
       makePath(points, target->yaw, get_parameter("map_frame").as_string(), now()));
     publishStatus(NavigationStatus::STATE_DRIVING, elapsed_ms(), distance);
@@ -912,6 +1080,10 @@ private:
   rclcpp::Publisher<NavigationStatus>::SharedPtr status_publisher_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_publisher_;
   rclcpp::Subscription<PoseStamped>::SharedPtr goal_subscription_;
+  rclcpp::Subscription<Path>::SharedPtr route_subscription_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr waypoints_publisher_;
+  // 残りの通過点（map）。先頭から順に通る
+  std::vector<Waypoint> waypoints_;
   rclcpp::Subscription<TrackedObjectArray>::SharedPtr tracks_subscription_;
   rclcpp::Subscription<NavigationStatus>::SharedPtr navigation_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr stuck_point_subscription_;

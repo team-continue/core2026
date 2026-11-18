@@ -560,7 +560,7 @@ std::vector<Point2> makeReference(
   reference.reserve(static_cast<std::size_t>(params.horizon_steps));
   arc_lengths.clear();
   arc_lengths.reserve(static_cast<std::size_t>(params.horizon_steps));
-  double s = path.project(state.x, state.y);
+  double s = path.progress(state.x, state.y);
   const Point2 direction = path.directionAt(s);
   double v = std::max(state.vx * direction.x + state.vy * direction.y, 0.0);
   for (int k = 0; k < params.horizon_steps; ++k) {
@@ -1206,7 +1206,7 @@ std::optional<double> headingTarget(
   if (params.heading.mode == HeadingMode::kGoal || path.points().size() < 2U) {
     return path.goalYaw();
   }
-  const double s = path.project(state.x, state.y);
+  const double s = path.progress(state.x, state.y);
   const double to_goal = std::max(path.length() - s, 0.0) + path.distanceBeyondEnd();
   if (params.heading.mode == HeadingMode::kFixed) {
     // ゴールの向きの指定がなければ、着くまで保つ向きのまま
@@ -1406,6 +1406,43 @@ double ReferencePath::project(const double x, const double y) const
   return best_s;
 }
 
+double ReferencePath::progress(const double x, const double y) const
+{
+  if (!progress_window_.has_value() || points_.size() < 2U) {
+    return project(x, y);
+  }
+  const double from = std::clamp(progress_window_->first, 0.0, total_length_);
+  const double to = std::clamp(progress_window_->second, from, total_length_);
+  double best_s = from;
+  double best_distance = std::numeric_limits<double>::infinity();
+  for (std::size_t i = 0; i + 1U < points_.size(); ++i) {
+    // 範囲にかからない区間は見ない
+    if (cumulative_[i + 1U] < from || cumulative_[i] > to) {
+      continue;
+    }
+    const double dx = points_[i + 1U].x - points_[i].x;
+    const double dy = points_[i + 1U].y - points_[i].y;
+    const double squared = dx * dx + dy * dy;
+    const double length = cumulative_[i + 1U] - cumulative_[i];
+    // 区間の中で、範囲に入る部分の比
+    const double low = length > 0.0 ? std::clamp((from - cumulative_[i]) / length, 0.0, 1.0) : 0.0;
+    const double high = length > 0.0 ? std::clamp((to - cumulative_[i]) / length, 0.0, 1.0) : 0.0;
+    const double ratio = squared > 0.0 ?
+      std::clamp(((x - points_[i].x) * dx + (y - points_[i].y) * dy) / squared, low, high) : low;
+    const double distance = std::hypot(points_[i].x + ratio * dx - x, points_[i].y + ratio * dy - y);
+    if (distance < best_distance) {
+      best_distance = distance;
+      best_s = cumulative_[i] + ratio * length;
+    }
+  }
+  return best_s;
+}
+
+void ReferencePath::setProgressWindow(const double from_s, const double to_s)
+{
+  progress_window_ = std::make_pair(std::min(from_s, to_s), std::max(from_s, to_s));
+}
+
 Point2 ReferencePath::pointAt(const double s) const
 {
   if (points_.empty()) {
@@ -1440,6 +1477,10 @@ ReferencePath ReferencePath::truncated(const double length) const
   points.push_back(pointAt(clamped));
   ReferencePath result(std::move(points), goal_yaw_);
   result.beyond_end_m_ = beyond_end_m_ + (total_length_ - clamped);
+  if (progress_window_.has_value()) {
+    result.progress_window_ = std::make_pair(
+      std::min(progress_window_->first, clamped), std::min(progress_window_->second, clamped));
+  }
   return result;
 }
 
@@ -1520,11 +1561,11 @@ MppiCommand MppiController::solve(
     const double reach = limit * params.dt * static_cast<double>(params.horizon_steps) +
       limit * limit / (2.0 * std::max(params.reference_decel_mps2, 1e-3)) + kPassageStepM;
     passage = makePassageProfile(
-      path, path.project(state.x, state.y), reach, limit, *field, map_from_odom, params);
+      path, path.progress(state.x, state.y), reach, limit, *field, map_from_odom, params);
   }
   // 曲がり: 同じ範囲で、横の加速度の上限から決まる速さを調べる
   const CurveProfile curve = makeCurveProfile(
-    path, path.project(state.x, state.y),
+    path, path.progress(state.x, state.y),
     limit * params.dt * static_cast<double>(params.horizon_steps) +
     limit * limit / (2.0 * std::max(params.reference_decel_mps2, 1e-3)) + kCurveStepM, params);
   std::vector<double> reference_s;
@@ -1560,7 +1601,7 @@ MppiCommand MppiController::solve(
       [](const MppiState & point) {return Point2{point.x, point.y};});
   }
   const auto predicted = predictObjects(
-    state, objects, trajectory, path, path.pointAt(path.project(state.x, state.y)), reference, field,
+    state, objects, trajectory, path, path.pointAt(path.progress(state.x, state.y)), reference, field,
     map_from_odom, params);
 
   const FootprintParams & footprint = params.footprint;
@@ -1910,7 +1951,7 @@ std::optional<double> goalHoldLength(
   }
   const double length = path.length();
   const double hold_length = length - goal.hold_distance_m;
-  const double s_now = path.project(state.x, state.y);
+  const double s_now = path.progress(state.x, state.y);
   // 待つ位置より内側にいれば、そのままゴールへ進む
   if (hold_length <= 0.0 || s_now >= hold_length) {
     return std::nullopt;
@@ -1973,7 +2014,7 @@ std::optional<double> GoalHoldMonitor::update(
     last_request_s_ = time_s;
   }
   const double hold_length = path.length() - goal.hold_distance_m;
-  const double s_now = path.project(state.x, state.y);
+  const double s_now = path.progress(state.x, state.y);
   // 待つ位置の近くで待っていた時間を数える。待つと決めても、待つ位置へ向かって走っている間は数えない
   // （遠くから待ち始めると、着く前に上限に達して、相手が通る最中にゴールへ入ってしまう）
   if (holding_ && last_update_s_.has_value() && s_now >= hold_length - kHoldArrivalM) {
@@ -2032,7 +2073,7 @@ YieldPlan OncomingMonitor::update(
   const double half_width = footprint.enabled ? footprint.half_width_m : 0.0;
   // 機体の中心から前の端（余裕を含む）までの距離
   const double front = half_length + footprint.margin_m;
-  const double s_self = path.project(state.x, state.y);
+  const double s_self = path.progress(state.x, state.y);
   const Point2 direction = path.directionAt(s_self);
   const double own_speed = std::max(state.vx * direction.x + state.vy * direction.y, 0.0);
   const auto propose_stop = [&](Encounter & encounter, const double stop_s) {
@@ -2323,7 +2364,7 @@ Point2 chooseBackoffDirection(
   const std::vector<PredictedObject> & objects, const DistanceField * field,
   const SE2 & map_from_odom, const MppiParams & params)
 {
-  const Point2 path_direction = path.directionAt(path.project(state.x, state.y));
+  const Point2 path_direction = path.directionAt(path.progress(state.x, state.y));
   Point2 best_direction{-path_direction.x, -path_direction.y};
   double best_score = -std::numeric_limits<double>::infinity();
   for (int i = 0; i < kBackoffDirections; ++i) {

@@ -4,12 +4,18 @@
 // - 自動から手動へは、ゴールへの到達、走行の失敗、UI の停止、緊急停止で戻る
 // - 緊急停止が入っている間は、auto を受け付けない
 // - 速度指令は、今のモードの側のものだけを足回りへ通す
+// - 目標は、通過点を順に通ってゴールへ行く経路（route）でも渡せる
 
 #ifndef CORE_BODY_CONTROLLER__CONTROL_MODE_HPP_
 #define CORE_BODY_CONTROLLER__CONTROL_MODE_HPP_
 
+#include <array>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace core_body_controller
 {
@@ -28,6 +34,25 @@ enum class CommandSource : std::uint8_t { kManual, kAuto };
 inline std::string toString(const ControlMode mode)
 {
   return mode == ControlMode::kAuto ? "auto" : "manual";
+}
+
+// 経路（通過点…、最後がゴール。各点は map の (x, y)）を受け付けない理由。受け付けるなら nullopt
+inline std::optional<std::string> routeError(
+  const std::vector<std::array<double, 2>> & points, const std::size_t max_points)
+{
+  if (points.empty()) {
+    return "経路に点がありません";
+  }
+  if (points.size() > max_points) {
+    return "経路の点が " + std::to_string(points.size()) + " 個あり、上限 " +
+           std::to_string(max_points) + " 個を超えています";
+  }
+  for (std::size_t i = 0; i < points.size(); ++i) {
+    if (!std::isfinite(points[i][0]) || !std::isfinite(points[i][1])) {
+      return std::to_string(i + 1) + " 番目の点の位置が有限でありません";
+    }
+  }
+  return std::nullopt;
 }
 
 class ControlModeLogic

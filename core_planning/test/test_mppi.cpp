@@ -2915,3 +2915,34 @@ TEST(Heading, YawFreeDrivesToGoalWithoutTurning)
   EXPECT_GT(held_state.yaw, 0.5);
 }
 }  // namespace
+
+TEST(MaxSpeed, OperatorLimitOnlyLowersParameterLimit)
+{
+  EXPECT_DOUBLE_EQ(core_planning::limitedMaxSpeed(3.0, std::nullopt), 3.0);
+  EXPECT_DOUBLE_EQ(core_planning::limitedMaxSpeed(3.0, 1.2), 1.2);
+  // パラメータの上限より上には上げない
+  EXPECT_DOUBLE_EQ(core_planning::limitedMaxSpeed(3.0, 5.0), 3.0);
+  // 0 以下と有限でない値は使わない
+  EXPECT_DOUBLE_EQ(core_planning::limitedMaxSpeed(3.0, 0.0), 3.0);
+  EXPECT_DOUBLE_EQ(core_planning::limitedMaxSpeed(3.0, -1.0), 3.0);
+  EXPECT_DOUBLE_EQ(core_planning::limitedMaxSpeed(3.0, std::nan("")), 3.0);
+}
+
+TEST(ReferencePath, ProgressStaysNearPreviousPositionOnHairpin)
+{
+  // 通過点で折り返す経路（行き y = 0、戻り y = 0.3）。行きの区間の (1, 0.2) は戻りの区間の方が近いので、
+  // 経路全体から探すと戻りの区間（約 7.3m 先）へ飛ぶ。範囲を絞れば行きの区間の位置になる
+  ReferencePath path({Point2{0.0, 0.0}, Point2{4.0, 0.0}, Point2{4.0, 0.3}, Point2{0.0, 0.3}});
+  EXPECT_NEAR(path.project(1.0, 0.2), 7.3, 1e-9);
+  EXPECT_NEAR(path.progress(1.0, 0.2), 7.3, 1e-9);
+  path.setProgressWindow(0.5, 2.0);
+  EXPECT_NEAR(path.progress(1.0, 0.2), 1.0, 1e-9);
+  EXPECT_NEAR(path.remaining(1.0, 0.2), path.length() - 1.0, 1e-9);
+  // 範囲の外の位置は範囲の端にする
+  EXPECT_NEAR(path.progress(3.5, 0.0), 2.0, 1e-9);
+  // 経路を切っても範囲を引き継ぐ
+  const auto truncated = path.truncated(5.0);
+  EXPECT_NEAR(truncated.progress(1.0, 0.2), 1.0, 1e-9);
+  // 相手の位置を当てる project は、これまでどおり経路全体から探す
+  EXPECT_NEAR(path.project(1.0, 0.2), 7.3, 1e-9);
+}

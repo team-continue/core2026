@@ -111,6 +111,7 @@ if(BUILD_TESTING)
     test_traction_estimator
     test_tracks_sync
     test_yaw_hold
+    test_waypoints
     test_hybrid_astar)
     ament_add_gtest(${name} test/${name}.cpp)
     target_link_libraries(${name} ${PROJECT_NAME}_core)
