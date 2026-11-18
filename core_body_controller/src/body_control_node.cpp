@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <stdexcept>
 
+#include "core_body_controller/target_angle_controller.hpp"
+#include "core_body_controller/velocity_frame.hpp"
+
 BodyControlNode::BodyControlNode()
 : Node("body_control_node")
 {
@@ -19,6 +22,12 @@ BodyControlNode::BodyControlNode()
     this->declare_parameter<double>("waist_front_offset", waist_front_offset_);
   waist_joint_direction_ =
     this->declare_parameter<double>("waist_joint_direction", waist_joint_direction_);
+  acceleration_in_world_frame_ =
+    this->declare_parameter<bool>("acceleration_in_world_frame", acceleration_in_world_frame_);
+  imu_timeout_sec_ = this->declare_parameter<double>("imu_timeout_sec", imu_timeout_sec_);
+  if (!std::isfinite(imu_timeout_sec_) || imu_timeout_sec_ <= 0.0) {
+    throw std::invalid_argument("imu_timeout_sec must be finite and positive");
+  }
   if (!std::isfinite(waist_front_offset_)) {
     throw std::invalid_argument("waist_front_offset must be finite");
   }
@@ -74,6 +83,22 @@ BodyControlNode::BodyControlNode()
     "/rotation", 10, [this](const std_msgs::msg::Int32::SharedPtr msg) {
       rotation_mode_ = msg->data;
     });
+  if (acceleration_in_world_frame_) {
+    imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
+      "imu", rclcpp::SensorDataQoS(), [this](const sensor_msgs::msg::Imu::SharedPtr msg) {
+        double yaw = 0.0;
+        if (!core_body_controller::quaternion_to_yaw(
+          msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w, yaw))
+        {
+          RCLCPP_WARN_THROTTLE(
+            this->get_logger(), *this->get_clock(), 1000,
+            "Ignoring IMU message containing an invalid orientation quaternion");
+          return;
+        }
+        latest_upper_yaw_ = yaw;
+        last_imu_time_ = std::chrono::steady_clock::now();
+      });
+  }
 }
 
 void BodyControlNode::timer_callback()
@@ -104,6 +129,9 @@ void BodyControlNode::timer_callback()
       return current + clamped_step;
     };
 
+  if (acceleration_in_world_frame_) {
+    rotate_output_by_upper_turn(now);
+  }
   const double linear_step = ACCELERATION * TIMER_PERIOD;
   cmd_vel_.linear.x = apply_rate_limit(cmd_vel_.linear.x, target_twist.linear.x, linear_step);
   cmd_vel_.linear.y = apply_rate_limit(cmd_vel_.linear.y, target_twist.linear.y, linear_step);
@@ -148,6 +176,29 @@ void BodyControlNode::timer_callback()
   std_msgs::msg::Float64 body_omega_manual_msg;
   body_omega_manual_msg.data = manual_omega_;
   body_omega_manual_->publish(body_omega_manual_msg);
+}
+
+void BodyControlNode::rotate_output_by_upper_turn(const std::chrono::steady_clock::time_point now)
+{
+  const bool imu_is_fresh = latest_upper_yaw_.has_value() &&
+    std::chrono::duration<double>(now - last_imu_time_).count() <= imu_timeout_sec_;
+  if (!imu_is_fresh) {
+    // IMU がなければ上半身の座標で制限する（前の向きを捨て、戻ったときに途絶えの間の回りを入れない）
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 2000,
+      "No fresh IMU; limiting acceleration in the upper body frame");
+    last_tick_upper_yaw_.reset();
+    return;
+  }
+  if (last_tick_upper_yaw_.has_value()) {
+    const double turned = core_body_controller::limited_turn(
+      *last_tick_upper_yaw_, *latest_upper_yaw_, MAX_UPPER_TURN_PER_TICK);
+    const auto rotated = core_body_controller::in_turned_frame(
+      core_body_controller::PlanarVelocity{cmd_vel_.linear.x, cmd_vel_.linear.y}, turned);
+    cmd_vel_.linear.x = rotated.x;
+    cmd_vel_.linear.y = rotated.y;
+  }
+  last_tick_upper_yaw_ = latest_upper_yaw_;
 }
 
 void BodyControlNode::emergency_stop()

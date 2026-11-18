@@ -42,6 +42,15 @@ def generate_launch_description() -> LaunchDescription:
         default_value="0.2",
         description="Maximum accepted age of cmd_vel [s]",
     )
+    acceleration_in_world_frame_arg = DeclareLaunchArgument(
+        "acceleration_in_world_frame",
+        default_value="false",
+        description=(
+            "Apply the linear acceleration limit in the world frame using the upper-body "
+            "IMU (/sensing/imu). Keeps TURRET turns and stops from lagging while the upper "
+            "body rotates"
+        ),
+    )
     imu_timeout_arg = DeclareLaunchArgument(
         "imu_timeout_sec",
         default_value="0.2",
@@ -140,10 +149,15 @@ def generate_launch_description() -> LaunchDescription:
             ("can/tx", "/hardware/can/tx"),
             ("joint_states", "/hardware/joint_states"),
             ("/rotation", "/control/rotation"),
+            ("imu", "/sensing/imu"),
         ],
         parameters=[
             {
                 "acceleration": LaunchConfiguration("acceleration"),
+                "acceleration_in_world_frame": ParameterValue(
+                    LaunchConfiguration("acceleration_in_world_frame"), value_type=bool
+                ),
+                "imu_timeout_sec": LaunchConfiguration("imu_timeout_sec"),
                 "rotation_acceleration": LaunchConfiguration("rotation_acceleration"),
                 "auto_rotation_velocity": LaunchConfiguration("auto_rotation_velocity"),
                 "high_rotation_velocity": LaunchConfiguration("high_rotation_velocity"),
@@ -234,6 +248,7 @@ def generate_launch_description() -> LaunchDescription:
             auto_rotation_velocity_arg,
             high_rotation_velocity_arg,
             cmd_vel_timeout_arg,
+            acceleration_in_world_frame_arg,
             imu_timeout_arg,
             body_omega_timeout_arg,
             use_sim_time_arg,

@@ -108,6 +108,9 @@ def generate_launch_description() -> LaunchDescription:
                     'use_sim_time': 'true',
                     'use_control_mode_manager': 'false',
                     'yaw_mode': LaunchConfiguration('yaw_mode'),
+                    # 上半身が回っても加速度の制限を世界の座標で効かせる（上半身の座標で制限すると、TURRET で
+                    # 上半身を回しながら速く走ったときに、曲がる・止まる指令に遅れて構造物へ寄る）
+                    'acceleration_in_world_frame': 'true',
                 }.items(),
             ),
         ],

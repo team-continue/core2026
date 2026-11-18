@@ -59,6 +59,9 @@ if(BUILD_TESTING)
   ament_add_gtest(test_control_mode test/test_control_mode.cpp)
   target_include_directories(test_control_mode PRIVATE include)
 
+  ament_add_gtest(test_velocity_frame test/test_velocity_frame.cpp)
+  target_include_directories(test_velocity_frame PRIVATE include)
+
   add_launch_test(test/test_body_controller_launch.py TIMEOUT 45)
 
   find_package(ament_lint_auto REQUIRED)
