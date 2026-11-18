@@ -35,9 +35,12 @@ std::optional<std::string> driveParamsError(const DriveParams & params)
 MppiState predictDelayedState(
   const MppiState & measured, const double measured_s, const double target_s,
   const std::vector<SentCommand> & sent, const DriveParams & params, const FloorTraction & floor,
-  const double step_s)
+  const double step_s, const std::optional<double> yaw_rate)
 {
   MppiState state = measured;
+  if (yaw_rate.has_value()) {
+    state.wz = *yaw_rate;
+  }
   if (!(target_s > measured_s)) {
     return state;
   }
@@ -85,8 +88,10 @@ MppiState predictDelayedState(
       }
       state.vx += dvx;
       state.vy += dvy;
-      const double max_dw = params.max_angular_accel_radps2 * h;
-      state.wz += std::clamp((active->wz - state.wz) * gain, -max_dw, max_dw);
+      if (!yaw_rate.has_value()) {
+        const double max_dw = params.max_angular_accel_radps2 * h;
+        state.wz += std::clamp((active->wz - state.wz) * gain, -max_dw, max_dw);
+      }
     }
     state.x += state.vx * h;
     state.y += state.vy * h;

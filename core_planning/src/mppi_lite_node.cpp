@@ -31,6 +31,7 @@
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <geometry_msgs/msg/vector3_stamped.hpp>
 #include <core_msgs/msg/localization_health.hpp>
 #include <core_msgs/msg/navigation_status.hpp>
@@ -262,6 +263,9 @@ public:
 
     command_publisher_ =
       create_publisher<geometry_msgs::msg::Twist>("/planning/cmd_vel_nav", rclcpp::QoS(10));
+    // 同じ指令と、それを上半身の座標に直したときの向きの時刻。cmd_yaw_hold が、この時刻の向きから回った分を戻す
+    command_frame_publisher_ = create_publisher<geometry_msgs::msg::TwistStamped>(
+      "/planning/cmd_vel_nav/frame", rclcpp::QoS(10));
     status_publisher_ = create_publisher<NavigationStatus>("/planning/navigation/status", rclcpp::QoS(10));
     local_plan_publisher_ = create_publisher<Path>("/planning/local_plan", rclcpp::QoS(1));
     // 行き詰まった所（map）。大域計画がしばらく通れない所として扱い、計画し直す
@@ -608,6 +612,10 @@ private:
       *this, "heading.follow_yaw_mode", true,
       "腰のモード（/control/yaw_mode）に従う。TURRET（1）の間は上半身の向きを操作に任せ、向きを指令しない");
     declareDouble(
+      *this, "heading.turret_command_lead_s", 0.0, 0.0, 0.5,
+      "TURRET で、指令が足回りに効くまでの間に上半身が回る分を見込む時間 [s]。cmd_yaw_hold を使うときは 0"
+      "（cmd_yaw_hold が、指令を作った時刻の向きから回った分を戻す）。使わないときは、指令から足回りが動くまでの遅れ");
+    declareDouble(
       *this, "heading.operator_hold_s", 1.0, 0.0, 10.0,
       "操作の /control/yaw_target_rate を止めてから、自律移動が上半身の向きを決めるのに戻すまでの時間 [s]"
       "（target_angle_node の operator_hold_sec と同じ値）");
@@ -754,6 +762,7 @@ private:
     mppi.blind_side.speed_mps = get_parameter("heading.blind_side.speed_mps").as_double();
     follow_yaw_mode_ = get_parameter("heading.follow_yaw_mode").as_bool();
     operator_hold_s_ = get_parameter("heading.operator_hold_s").as_double();
+    turret_command_lead_s_ = get_parameter("heading.turret_command_lead_s").as_double();
     chassis_face_params_.enabled = get_parameter("heading.chassis_face.enabled").as_bool();
     chassis_face_params_.gain_per_s = get_parameter("heading.chassis_face.gain_per_s").as_double();
     chassis_face_params_.max_rate_radps =
@@ -957,14 +966,24 @@ private:
 
   void publishCommand(const MppiState & state, const MppiCommand & command)
   {
-    const double c = std::cos(state.yaw);
-    const double s = std::sin(state.yaw);
+    // 指令は上半身の座標で出す。TURRET では、指令が足回りに効くまでの遅れ（安全停止・cmd_yaw_hold を通って
+    // 足回りが動くまで）の間も上半身が回り、cmd_yaw_hold は自分が受けてから回った分しか直さないので、
+    // その遅れの間に回る分を先に見込んだ向きで直す
+    const double lead_s = turret_cycle_ ? turret_command_lead_s_ : 0.0;
+    const double c = std::cos(state.yaw + upper_rate_measured_ * lead_s);
+    const double s = std::sin(state.yaw + upper_rate_measured_ * lead_s);
     geometry_msgs::msg::Twist twist;
     twist.linear.x = c * command.vx + s * command.vy;
     twist.linear.y = -s * command.vx + c * command.vy;
     // TURRET では wz は足回りだけを回すので、足回りの面をそろえる速さにする。上半身を回す速さは
     // 操作が動いていない自動の運転の間だけ target_angle_node へ出す（それ以外は 0。上半身は向きを保つ）
     twist.angular.z = turret_cycle_ ? chassis_rate_cmd_ : command.wz;
+    // 先に時刻つきの指令を出す（cmd_yaw_hold は、安全停止の後の指令を受けた時に、向きの同じものを探す）
+    geometry_msgs::msg::TwistStamped frame;
+    frame.header.stamp = rclcpp::Time(static_cast<int64_t>((state_time_s_ + lead_s) * 1e9), RCL_ROS_TIME);
+    frame.header.frame_id = get_parameter("footprint.base_frame").as_string();
+    frame.twist = twist;
+    command_frame_publisher_->publish(frame);
     command_publisher_->publish(twist);
     std_msgs::msg::Float64 upper_rate;
     upper_rate.data = turret_auto_cycle_ && auto_mode_ ? command.wz : 0.0;
@@ -1164,18 +1183,29 @@ private:
     const double time_s = toSeconds(odometry->header.stamp);
     const MppiState measured = toState(*odometry, 0.0);
     updateTraction(odometry->header.stamp, measured);
-    const std::optional<double> prediction_s = predictionTime(time_s);
-    const MppiState predicted = prediction_s.has_value() ?
-      predictDelayedState(
-      measured, time_s, *prediction_s, sent_commands_, drive_params_,
-      traction_params_.enabled ? floorFor(traction_state_.friction()) : FloorTraction{}) :
-      toState(*odometry, latency_compensation_s_);
     // 腰が TURRET の間: 操作が上半身を回していれば向きを指令しない（向きの目標なし、回る速さ 0）。
     // 操作がなければ、上半身の向きは FRONT と同じく決め、その回る速さは target_angle_node へ、足回りは
     // 面を進む向きにそろえる速さを cmd_vel の wz で出す。どちらでも、上半身は自律移動の指令（wz）では
     // 回らないので、向きは駆動の遅れの先読みで進めず、測った向きを使う
     turret_cycle_ = turretMode();
     turret_auto_cycle_ = turret_cycle_ && !operatorActive();
+    upper_rate_measured_ = measured.wz;
+    // 計画に使う上半身の向きの時刻（指令を上半身の座標に直す向き）。TURRET は yawHeldState と同じく、指令を
+    // 出す時刻まで進めた向き。それ以外は遅れの先読み・補償の先の時刻（cmd_yaw_hold は先の時刻を使わない）
+    const double ahead_s = std::max(get_clock()->now().seconds() + last_compute_s_ - time_s, 0.0);
+    // 遅れの先読みは、送った指令（上半身の座標）を世界の座標に直しながら進める。TURRET では上半身は指令の wz
+    // （足回りを回す速さ）ではなく、操作や target_angle_node が回すので、測った上半身の回る速さで向きを進める。
+    // 指令の wz で進めると、上半身を回す操作の間、先読みした速度の向きが「回る速さ × 遅れ」だけずれ、
+    // 経路から外れて構造物や柵に当たった（sim で操作で上半身を ±0.8rad/s で振ると 15 回中 7 回）
+    const std::optional<double> prediction_s = predictionTime(time_s);
+    const MppiState predicted = prediction_s.has_value() ?
+      predictDelayedState(
+      measured, time_s, *prediction_s, sent_commands_, drive_params_,
+      traction_params_.enabled ? floorFor(traction_state_.friction()) : FloorTraction{}, 0.005,
+      turret_cycle_ ? std::optional<double>(measured.wz) : std::nullopt) :
+      toState(*odometry, latency_compensation_s_);
+    state_time_s_ = turret_cycle_ ? time_s + std::min(ahead_s, kMaxYawHoldAheadS) :
+      prediction_s.value_or(time_s + latency_compensation_s_);
     mppi_params_.heading.yaw_free = turret_cycle_ && !turret_auto_cycle_;
     // 自律移動が上半身を回すときの今の回る速さは、測った値でなく直前に出した指令にする。target_angle_node は
     // 指令の速さを先回りで腰に伝え、ずれを帰還で詰めるので、測った速さには帰還の分が乗る。それを今の速さとして
@@ -1193,10 +1223,17 @@ private:
     const auto map_from_odom = lookupMapFromOdom();
     // 駆動部の向き（腰の角度）に合わせて、機体の形を回す（回転モードの間は外接円）
     if (mppi_params_.footprint.enabled) {
-      if (const auto shape = chassis_.shape(
-          0.5 * get_parameter("footprint.length_m").as_double(),
-          0.5 * get_parameter("footprint.width_m").as_double()))
-      {
+      // TURRET では上半身の向きを先へ進めて使う（yawHeldState）。腰の角度は姿勢と同じ時刻の値にし、進めた分を
+      // 引いて、世界の座標での駆動部の向きを合わせる（上半身を操作で回すと、腰は逆へ同じ速さで回る）
+      const auto shape = turret_cycle_ ?
+        chassis_.shapeAt(
+        0.5 * get_parameter("footprint.length_m").as_double(),
+        0.5 * get_parameter("footprint.width_m").as_double(), odometry->header.stamp,
+        wrapAngle(state.yaw - measured.yaw)) :
+        chassis_.shape(
+        0.5 * get_parameter("footprint.length_m").as_double(),
+        0.5 * get_parameter("footprint.width_m").as_double());
+      if (shape.has_value()) {
         orientFootprint(mppi_params_.footprint, *shape);
       }
     }
@@ -1591,6 +1628,14 @@ private:
   double chassis_rate_cmd_{0.0};
   // 直前に target_angle_node へ出した上半身の回る速さ（/control/auto/yaw_target_rate）
   double upper_rate_cmd_{0.0};
+  // この周期に測った上半身の回る速さと、TURRET で指令の向きに見込む遅れ（heading.turret_command_lead_s）
+  double upper_rate_measured_{0.0};
+  double turret_command_lead_s_{0.0};
+  // 計画に使った上半身の向きの時刻と、時刻つきの指令を出す先
+  double state_time_s_{0.0};
+  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr command_frame_publisher_;
+  // 今の経路の上で、機体が進んだ位置（odom の経路の始点からの距離）。経路を受けたら消す
+  std::optional<double> progress_s_;
   GoalHoldMonitor goal_hold_monitor_;
   OncomingMonitor oncoming_monitor_;
   bool oncoming_yielding_{false};

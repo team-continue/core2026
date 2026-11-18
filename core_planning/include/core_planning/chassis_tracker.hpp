@@ -46,6 +46,24 @@ public:
     return chassisShape(half_length, half_width, lookupYaw(), rotating_);
   }
 
+  // 時刻 stamp の腰の角度で決めた駆動部の形。base_link の向きを先へ進めて使うときは、その分（yaw_offset、
+  // 進めた向き − stamp の向き）を引いて、世界の座標での駆動部の向きをそろえる。stamp の角度がなければ最新の角度
+  std::optional<ChassisShape> shapeAt(
+    const double half_length, const double half_width, const rclcpp::Time & stamp, const double yaw_offset)
+  {
+    if (!enabled_) {
+      return std::nullopt;
+    }
+    auto yaw = lookupYawAt(stamp);
+    if (!yaw.has_value()) {
+      yaw = lookupYaw();
+    }
+    if (yaw.has_value()) {
+      *yaw -= yaw_offset;
+    }
+    return chassisShape(half_length, half_width, yaw, rotating_);
+  }
+
   // 回転モード（/control/rotation が 0 以外）か
   bool rotating() const {return rotating_;}
 
@@ -53,6 +71,17 @@ public:
   std::optional<double> chassisYaw() {return lookupYaw();}
 
 private:
+  std::optional<double> lookupYawAt(const rclcpp::Time & stamp)
+  {
+    try {
+      const auto transform = tf_buffer_.lookupTransform(base_frame_, chassis_frame_, stamp);
+      const auto & q = transform.transform.rotation;
+      return std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+    } catch (const tf2::TransformException &) {
+      return std::nullopt;
+    }
+  }
+
   std::optional<double> lookupYaw()
   {
     try {

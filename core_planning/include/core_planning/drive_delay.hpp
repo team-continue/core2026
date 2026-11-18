@@ -61,11 +61,15 @@ std::optional<std::string> driveParamsError(const DriveParams & params);
 // うち time_s + dead_time_s <= t の最後の指令が効いているとして、速度をその指令（機体座標なので、その時の
 // 向きで世界座標に直す）へ一次遅れと加速度の上限で近づけ（床が出せる加速度を超えれば滑る）、位置と向きを
 // 進める。効いている指令がまだない間は、測った速度を保つ。target_s <= measured_s なら measured をそのまま
-// 返す。step_s は積分の刻み [s]
+// 返す。step_s は積分の刻み [s]。
+// yaw_rate があれば、向きは指令の回る速さではなくこの速さで進める。腰が TURRET の間は、指令の機体座標
+// （上半身）が回る速さは指令の wz（足回りを回す速さ）ではなく、操作や自律移動が上半身を回す速さなので、
+// 測った上半身の回る速さを渡す
 MppiState predictDelayedState(
   const MppiState & measured, double measured_s, double target_s,
   const std::vector<SentCommand> & sent, const DriveParams & params,
-  const FloorTraction & floor = FloorTraction{}, double step_s = 0.005);
+  const FloorTraction & floor = FloorTraction{}, double step_s = 0.005,
+  std::optional<double> yaw_rate = std::nullopt);
 
 // before_s より前に効き始めた指令を捨てる。ただし before_s に効いている指令（その中の最後の 1 つ）は残す
 void pruneSentCommands(std::vector<SentCommand> & sent, double before_s, double dead_time_s);

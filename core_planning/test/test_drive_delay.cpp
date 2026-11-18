@@ -10,6 +10,7 @@ namespace
 {
 using core_planning::DriveParams;
 using core_planning::driveParamsError;
+using core_planning::FloorTraction;
 using core_planning::lagGain;
 using core_planning::MppiController;
 using core_planning::MppiParams;
@@ -159,3 +160,24 @@ TEST(DriveDelay, PlanFirstStepMatchesLaggedCommand)
   }
 }
 }  // namespace
+
+TEST(DriveDelay, TurretUsesMeasuredUpperRateForCommandFrame)
+{
+  // 腰が TURRET の間は、指令の座標（上半身）は指令の wz ではなく、上半身の回る速さで回る。上半身の座標で
+  // 前へ 1m/s の指令を出し続け、上半身が 1rad/s で回る（指令の wz は 0）とき、0.5 秒先の速度の向きは
+  // 上半身と一緒に 0.5rad 回っている
+  MppiState rest;
+  std::vector<SentCommand> sent{SentCommand{0.0, 1.0, 0.0, 0.0}};
+  DriveParams drive;
+  drive.dead_time_s = 0.0;
+  drive.time_constant_s = 0.0;
+  drive.max_accel_mps2 = 100.0;
+  const MppiState with_rate =
+    predictDelayedState(rest, 0.0, 0.5, sent, drive, FloorTraction{}, 0.005, 1.0);
+  EXPECT_NEAR(with_rate.yaw, 0.5, 1e-6);
+  EXPECT_NEAR(std::atan2(with_rate.vy, with_rate.vx), 0.5, 0.02);
+  // 渡さなければ、これまでどおり指令の wz（0）で回さない
+  const MppiState without = predictDelayedState(rest, 0.0, 0.5, sent, drive);
+  EXPECT_NEAR(without.yaw, 0.0, 1e-9);
+  EXPECT_NEAR(std::atan2(without.vy, without.vx), 0.0, 1e-9);
+}

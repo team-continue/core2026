@@ -121,3 +121,27 @@ TEST(YawHold, RejectsInvalidParams)
   EXPECT_THROW(YawHold{params}, std::invalid_argument);
 }
 }  // namespace
+
+TEST(YawHold, UsesYawAtReferenceTimeOfCommand)
+{
+  // 指令を作った側が機体の座標に直した時刻を渡せば、受けた時ではなくその時の向きから回った分を戻す
+  YawHold hold(YawHoldParams{});
+  double t = 0.0;
+  for (int i = 0; i <= 40; ++i) {
+    t = 0.005 * i;
+    hold.onYawRate(t, 1.0);
+  }
+  // 0.2 秒に受けた指令は、0.1 秒に作ったもの（その間に 0.1rad 回った）
+  hold.onCommand(BodyVelocity{2.0, 0.0, 0.0}, t, 0.1);
+  const auto now = hold.output(t);
+  ASSERT_TRUE(now.has_value());
+  EXPECT_NEAR(std::atan2(now->vy, now->vx), -0.1, 1e-6);
+  ASSERT_TRUE(hold.yawAt(0.1).has_value());
+  EXPECT_NEAR(*hold.yawAt(0.1), 0.1, 1e-9);
+  // 覚えている範囲の外（先の時刻・古すぎる時刻）は使わず、受けた時の向きにする
+  EXPECT_FALSE(hold.yawAt(t + 0.1).has_value());
+  hold.onCommand(BodyVelocity{2.0, 0.0, 0.0}, t, t + 0.05);
+  EXPECT_NEAR(std::atan2(hold.output(t)->vy, hold.output(t)->vx), 0.0, 1e-9);
+  hold.onCommand(BodyVelocity{2.0, 0.0, 0.0}, t, t - 1.0);
+  EXPECT_NEAR(std::atan2(hold.output(t)->vy, hold.output(t)->vx), 0.0, 1e-9);
+}

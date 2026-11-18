@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
 
@@ -20,6 +21,7 @@ void validateYawHoldParams(const YawHoldParams & params)
   require("timeout_s", params.timeout_s, 1e-3, 10.0);
   require("max_correction_rad", params.max_correction_rad, 0.0, M_PI);
   require("max_imu_gap_s", params.max_imu_gap_s, 1e-4, 1.0);
+  require("max_reference_age_s", params.max_reference_age_s, 0.0, 5.0);
 }
 
 BodyVelocity holdWorldDirection(
@@ -49,15 +51,50 @@ void YawHold::onYawRate(const double stamp_s, const double yaw_rate_radps)
     if (dt > 0.0 && dt <= params_.max_imu_gap_s) {
       yaw_ += yaw_rate_radps * dt;
     }
+    // 時計が戻ったら、記録を捨てて始め直す（時刻の順を保つ）
+    if (dt <= 0.0) {
+      history_.clear();
+    }
   }
   yaw_stamp_s_ = stamp_s;
+  history_.emplace_back(stamp_s, yaw_);
+  while (!history_.empty() && history_.front().first < stamp_s - params_.max_reference_age_s) {
+    history_.pop_front();
+  }
 }
 
-void YawHold::onCommand(const BodyVelocity & command, const double time_s)
+std::optional<double> YawHold::yawAt(const double stamp_s) const
+{
+  if (history_.empty() || !std::isfinite(stamp_s) || stamp_s < history_.front().first ||
+    stamp_s > history_.back().first)
+  {
+    return std::nullopt;
+  }
+  const auto after = std::lower_bound(
+    history_.begin(), history_.end(), stamp_s,
+    [](const std::pair<double, double> & entry, const double t) {return entry.first < t;});
+  if (after == history_.begin()) {
+    return after->second;
+  }
+  const auto before = std::prev(after);
+  const double span = after->first - before->first;
+  const double ratio = span > 0.0 ? (stamp_s - before->first) / span : 0.0;
+  return before->second + ratio * (after->second - before->second);
+}
+
+void YawHold::onCommand(
+  const BodyVelocity & command, const double time_s, const std::optional<double> reference_s)
 {
   command_ = command;
   command_time_s_ = time_s;
   yaw_at_command_ = yaw_;
+  if (reference_s.has_value() && *reference_s <= time_s &&
+    time_s - *reference_s <= params_.max_reference_age_s)
+  {
+    if (const auto yaw = yawAt(*reference_s)) {
+      yaw_at_command_ = *yaw;
+    }
+  }
 }
 
 std::optional<BodyVelocity> YawHold::output(const double now_s) const
