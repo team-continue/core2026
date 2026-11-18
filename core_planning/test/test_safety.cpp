@@ -2,6 +2,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -17,6 +18,7 @@ using core_planning::safety::Decision;
 using core_planning::safety::evaluateSafety;
 using core_planning::safety::firstReachableViolation;
 using core_planning::safety::Footprint;
+using core_planning::safety::inTurnedFrame;
 using core_planning::safety::limitDeceleration;
 using core_planning::safety::Obstacle;
 using core_planning::safety::ObstacleKind;
@@ -192,6 +194,36 @@ TEST(LimitDeceleration, LimitsReversal)
   const auto result = limitDeceleration(
     BodyVelocity{1.0, 0.0, 0.0}, BodyVelocity{-1.0, 0.0, 0.0}, 3.0, 0.05);
   EXPECT_NEAR(result.vx, 0.85, 1e-9);
+}
+
+TEST(LimitDeceleration, FrameRotationIsNotBraking)
+{
+  // 世界の座標で 2.5m/s のまま、機体（上半身）が 0.1 秒で 0.09rad 回る。機体の座標の指令は −0.09rad 回る
+  const double turned = 0.09;
+  const BodyVelocity previous{2.5, 0.0, 0.0};
+  const BodyVelocity target{2.5 * std::cos(turned), -2.5 * std::sin(turned), 0.0};
+  // 前の出力を今の座標へ直せば、同じ速度なので制限しない
+  const auto result = limitDeceleration(inTurnedFrame(previous, turned), target, 2.0, 0.1);
+  EXPECT_NEAR(result.vx, target.vx, 1e-9);
+  EXPECT_NEAR(result.vy, target.vy, 1e-9);
+  // 直さずに比べると、座標が回った分（約 0.22m/s）を減速とみなして、前の向きへ残してしまう
+  const auto unrotated = limitDeceleration(previous, target, 2.0, 0.1);
+  EXPECT_GT(std::atan2(unrotated.vy, unrotated.vx), std::atan2(target.vy, target.vx) + 0.005);
+}
+
+TEST(InTurnedFrame, KeepsWorldVelocity)
+{
+  const BodyVelocity velocity{1.0, 0.5, 0.3};
+  const double yaw_before = 0.4;
+  const double yaw_after = 1.1;
+  const auto turned = inTurnedFrame(velocity, yaw_after - yaw_before);
+  const auto world = [](const BodyVelocity & v, const double yaw) {
+      return std::make_pair(
+        std::cos(yaw) * v.vx - std::sin(yaw) * v.vy, std::sin(yaw) * v.vx + std::cos(yaw) * v.vy);
+    };
+  EXPECT_NEAR(world(turned, yaw_after).first, world(velocity, yaw_before).first, 1e-12);
+  EXPECT_NEAR(world(turned, yaw_after).second, world(velocity, yaw_before).second, 1e-12);
+  EXPECT_DOUBLE_EQ(turned.wz, 0.3);
 }
 
 TEST(LimitDeceleration, ReachesSmallTargetChange)

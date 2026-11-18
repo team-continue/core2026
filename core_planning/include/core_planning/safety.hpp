@@ -225,6 +225,11 @@ double staticClearance(
 BodyVelocity limitDeceleration(
   const BodyVelocity & previous, const BodyVelocity & target, double max_decel, double dt);
 
+// 機体の座標の速度 velocity を、機体が turned [rad] 回った後の機体の座標で表す（世界の座標での速度は同じ）。
+// 機体が回っている間に減速を確かめるとき、前の出力をこれで今の座標へ直してから比べる（直さないと、
+// 座標が回った分を向きの変化、つまり減速とみなしてしまう）
+BodyVelocity inTurnedFrame(const BodyVelocity & velocity, double turned);
+
 // 正面から来るロボットか。動いているとみなせる（moving_reliable）ロボットが 0.3m/s 以上で、自機の速度
 // （odom の vx, vy。0.3m/s 以上）と進む向きが 150° 以上違い、自機の前方で、進む線からの横のずれが
 // 自機の半幅と余裕と相手の大きさ以内

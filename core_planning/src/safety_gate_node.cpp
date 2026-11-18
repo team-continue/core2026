@@ -289,6 +289,7 @@ public:
       [this](const Twist::ConstSharedPtr & cmd) {
         latest_cmd_ = toVelocity(*cmd);
         last_cmd_time_ = now();
+        latest_cmd_yaw_ = upperYawAt(*last_cmd_time_);
         publishDecision(*last_cmd_time_);
         if (timer_) {
           timer_->reset();
@@ -590,6 +591,19 @@ private:
 
   void onTimer() {publishDecision(now());}
 
+  // 時刻 time の上半身（odometry の child frame）の向き。最新の odometry の向きを、その角速度で
+  // time まで延ばす（odometry は 10Hz 程度で、上半身は 1rad/s 近くで回ることがある）。odometry がなければ nullopt
+  std::optional<double> upperYawAt(const rclcpp::Time & time) const
+  {
+    if (!latest_odometry_) {
+      return std::nullopt;
+    }
+    const double age = std::clamp(
+      (time - rclcpp::Time(latest_odometry_->header.stamp, time.get_clock_type())).seconds(), 0.0,
+      kMaxYawExtrapolationS);
+    return toPose(*latest_odometry_).yaw + latest_odometry_->twist.twist.angular.z * age;
+  }
+
   // 判定して /cmd_vel と /safety/status を出す。指令を受けたときと、タイマーで呼ぶ
   void publishDecision(const rclcpp::Time & time)
   {
@@ -601,12 +615,19 @@ private:
 
     const GateDecision decision = decide(time);
     const safety::BodyVelocity desired = decision.output.value_or(latest_cmd_);
+    // 出す指令は、最後に受けた指令と同じ機体の座標（受けた時の上半身の向き）で表す。前の出力は、その座標を
+    // 決めた時から上半身が回った分だけ直してから比べる（TURRET で上半身が回ると、世界の座標で同じ速度でも
+    // 機体の座標の指令は回る。直さずに比べると、それを減速とみなして前の向きへ残し、進む向きが上半身の
+    // 回る向きへずれる）
+    const safety::BodyVelocity previous = last_output_yaw_.has_value() && latest_cmd_yaw_.has_value() ?
+      safety::inTurnedFrame(last_output_, *latest_cmd_yaw_ - *last_output_yaw_) : last_output_;
     // 止めるときは常に、安全停止が有効なら通常時も、減速度を守る
     const bool limit = params_.safety_enabled || decision.state != SafetyStatus::STATE_PASS;
     const safety::BodyVelocity output = limit ?
-      safety::limitDeceleration(last_output_, desired, params_.safety.max_decel_mps2, dt) :
+      safety::limitDeceleration(previous, desired, params_.safety.max_decel_mps2, dt) :
       desired;
     last_output_ = output;
+    last_output_yaw_ = latest_cmd_yaw_;
 
     Twist cmd;
     cmd.linear.x = output.vx;
@@ -632,6 +653,11 @@ private:
   std::string static_field_unavailable_;
   safety::BodyVelocity latest_cmd_;
   safety::BodyVelocity last_output_;
+  // latest_cmd_ を受けた時の上半身の向き（指令の機体の座標）と、last_output_ を表した座標の向き
+  std::optional<double> latest_cmd_yaw_;
+  std::optional<double> last_output_yaw_;
+  // 上半身の向きを odometry から延ばす時間の上限 [s]
+  static constexpr double kMaxYawExtrapolationS = 0.2;
   safety::ImpactMitigator mitigator_;
   TrackMotionFilter motion_filter_;
   MotionFilterParams motion_filter_params_;

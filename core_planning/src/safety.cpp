@@ -763,6 +763,13 @@ BodyVelocity limitDeceleration(
   return BodyVelocity{previous.vx + dvx * ratio, previous.vy + dvy * ratio, target.wz};
 }
 
+BodyVelocity inTurnedFrame(const BodyVelocity & velocity, const double turned)
+{
+  const double c = std::cos(turned);
+  const double s = std::sin(turned);
+  return BodyVelocity{c * velocity.vx + s * velocity.vy, -s * velocity.vx + c * velocity.vy, velocity.wz};
+}
+
 bool isHeadOnObstacle(
   const Obstacle & obstacle, const PlanarPose & pose, const double velocity_x,
   const double velocity_y, const Footprint & footprint, const SafetyParams & params)
