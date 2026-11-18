@@ -216,7 +216,11 @@ def inside(polygon: Polygon, x: np.ndarray, y: np.ndarray) -> np.ndarray:
 
 def sample_prism(prism: Prism) -> np.ndarray:
     points = []
+    # 側面の点は上の縁（高さ prism.height）にも置く。間隔で刻むだけだと、陣地の羽根（0.08m）は 0・0.05m の
+    # 点しかなく、静止物の高さの下限（0.07m）より低いので外形が地図に入らず、腕の先端が約 0.1m 欠けていた
     heights = np.arange(0.0, prism.height + 1e-9, SURFACE_STEP_M)
+    if heights[-1] < prism.height - 1e-9:
+        heights = np.append(heights, prism.height)
     for i in range(len(prism.polygon)):
         ax, ay = prism.polygon[i - 1]
         bx, by = prism.polygon[i]
