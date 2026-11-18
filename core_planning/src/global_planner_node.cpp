@@ -40,6 +40,7 @@
 #include "core_planning/hybrid_astar.hpp"
 #include "core_planning/jps.hpp"
 #include "core_planning/path_smoother.hpp"
+#include "core_planning/goal_arrival.hpp"
 #include "core_planning/waypoints.hpp"
 
 namespace core_planning
@@ -671,6 +672,7 @@ private:
     path.header.frame_id = get_parameter("map_frame").as_string();
     path_publisher_->publish(path);
     current_cells_.clear();
+    path_end_.reset();
   }
 
   // frame_id の座標系の map での姿勢。map か空なら原点。直せなければ nullopt（ログを出す）
@@ -706,6 +708,7 @@ private:
     goal_free_since_.reset();
     stuck_blocks_.clear();
     blocked_since_.reset();
+    path_end_.reset();
   }
 
   void onGoal(const PoseStamped::ConstSharedPtr & goal)
@@ -844,11 +847,19 @@ private:
     // 前のゴールの到達の通知で、新しいゴールを消さないよう、機体の位置でも確かめる
     const auto robot = lookupPose(
       get_parameter("map_frame").as_string(), get_parameter("base_frame").as_string());
+    // ゴールが占有の中で近くの空きへ移したときは、出した経路の終わり（移したゴール）からの距離でも確かめる
+    const PlanarPose target = alternative_.value_or(*goal_);
     if (robot.has_value() &&
-      std::hypot(
-        robot->x - alternative_.value_or(*goal_).x, robot->y - alternative_.value_or(*goal_).y) <=
-      planner_params_.reached_clear_radius_m)
+      arrivedNearTarget(
+        robot->x, robot->y, ArrivalPoint{target.x, target.y}, path_end_,
+        planner_params_.reached_clear_radius_m))
     {
+      if (std::hypot(robot->x - target.x, robot->y - target.y) > planner_params_.reached_clear_radius_m) {
+        RCLCPP_WARN(
+          get_logger(),
+          "ゴール (%.2f, %.2f) は占有の中なので、近くの空き (%.2f, %.2f) へ向かい、その近くで着いたことにします",
+          target.x, target.y, path_end_->x, path_end_->y);
+      }
       goal_.reset();
       publishStatus(NavigationStatus::STATE_REACHED, 0.0, 0.0);
       std_msgs::msg::Bool reached;
@@ -1050,6 +1061,9 @@ private:
     const auto points = joinSegments(segments);
     path_publisher_->publish(
       makePath(points, target->yaw, get_parameter("map_frame").as_string(), now()));
+    if (!points.empty()) {
+      path_end_ = ArrivalPoint{points.back().first, points.back().second};
+    }
     publishStatus(NavigationStatus::STATE_DRIVING, elapsed_ms(), distance);
   }
 
@@ -1069,6 +1083,8 @@ private:
   std::optional<rclcpp::Time> blocked_since_;
   std::optional<rclcpp::Time> goal_wait_start_;
   std::optional<PlanarPose> alternative_;
+  // 最後に出した経路の終わり（ゴールが占有の中なら、近くの空きへ移した所）。空の経路・新しいゴールで消す
+  std::optional<ArrivalPoint> path_end_;
   std::optional<rclcpp::Time> goal_free_since_;
   std::optional<rclcpp::Time> last_plan_time_;
   std::optional<rclcpp::Time> last_tracks_time_;
