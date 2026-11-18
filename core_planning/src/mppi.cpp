@@ -727,8 +727,8 @@ struct KeepOutPoint
   double radius;
 };
 
-// 機体の 4 隅と中心のうち、静的な障害物に最も近い点を返す
-// 静止物の距離の場を調べる機体の点（base_link）。長方形なら 4 隅、回転中は外接円の上の 8 点
+// 静止物の距離の場を調べる機体の点（base_link）。長方形の 4 隅。回転中（外接円）は keepOutPoint が
+// 中心の距離から求めるので使わない
 std::vector<Point2> footprintProbePoints(const RolloutContext & context)
 {
   const FootprintParams & footprint = context.params.footprint;
@@ -739,16 +739,6 @@ std::vector<Point2> footprintProbePoints(const RolloutContext & context)
       {context.half_length, -context.half_width}, {context.half_length, context.half_width}};
   }
   std::vector<Point2> points;
-  if (chassis.circle) {
-    constexpr int kCirclePoints = 8;
-    const double radius = std::hypot(chassis.half_length, chassis.half_width);
-    points.reserve(kCirclePoints);
-    for (int i = 0; i < kCirclePoints; ++i) {
-      const double angle = 2.0 * M_PI * static_cast<double>(i) / kCirclePoints;
-      points.push_back({radius * std::cos(angle), radius * std::sin(angle)});
-    }
-    return points;
-  }
   const double c = std::cos(chassis.yaw);
   const double s = std::sin(chassis.yaw);
   points.reserve(4U);
@@ -760,6 +750,7 @@ std::vector<Point2> footprintProbePoints(const RolloutContext & context)
   return points;
 }
 
+// 機体の 4 隅と中心のうち、静的な障害物に最も近い点を返す。回転中（外接円）は円の余裕（中心の距離 − 半径）
 KeepOutPoint keepOutPoint(
   const RolloutContext & context, const double x, const double y, const double yaw)
 {
@@ -772,6 +763,15 @@ KeepOutPoint keepOutPoint(
   const double reach = context.circumscribed_radius + params.footprint.margin_m +
     context.keep_out_check_margin + params.keep_out_range_m;
   if (closest.distance > reach || context.circumscribed_radius <= 0.0) {
+    return closest;
+  }
+  // 回転中は、中心の距離から半径を引けば円の余裕がちょうど求まる。円周の点で調べると、点の間から構造物の
+  // 角が入り込む（8 点では約 0.1m。回転モードで壁の角に当たった）。円は回っても動かないので、点は中心にする
+  const FootprintParams & footprint = params.footprint;
+  if (footprint.enabled && footprint.chassis.circle && footprint.chassis.half_length > 0.0 &&
+    footprint.chassis.half_width > 0.0)
+  {
+    closest.distance -= context.circumscribed_radius;
     return closest;
   }
   const double c = std::cos(yaw + context.map_from_odom.yaw);
