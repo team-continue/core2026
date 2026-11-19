@@ -66,7 +66,7 @@ using core_planning::StuckState;
 
 constexpr const char * kUsage =
   "使い方: ros2 run core_planning tracking_bench [オプション]\n"
-  "  --scenario FILE    シナリオ（start と goals だけを使う。既定は core_gazebo の obstacle_goals.yaml）\n"
+  "  --scenario FILE    シナリオ（必須。start と goals だけを使う。core_gazebo の scenarios/obstacle_goals.yaml など）\n"
   "  --config-dir DIR   パラメータファイルの場所（既定は core_launch の config）\n"
   "  --map FILE         静止物の地図（既定は core_launch の maps/arena_obstacles.pcd）\n"
   "  --runs N           条件ごとの実行回数（乱数の種を変える。既定 8）\n"
@@ -1080,9 +1080,10 @@ void writeTrace(
 
 int run(const Arguments & arguments)
 {
-  const fs::path scenario_path = arguments.scenario.empty() ?
-    fs::path(packageShare("core_gazebo")) / "scenarios" / "obstacle_goals.yaml" :
-    fs::path(arguments.scenario);
+  if (arguments.scenario.empty()) {
+    throw std::invalid_argument("--scenario でシナリオを指定してください");
+  }
+  const fs::path scenario_path(arguments.scenario);
   const fs::path config_dir = arguments.config_dir.empty() ?
     fs::path(packageShare("core_launch")) / "config" : fs::path(arguments.config_dir);
   const fs::path map_path = arguments.map.empty() ?

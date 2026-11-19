@@ -28,7 +28,7 @@ namespace fs = std::filesystem;
 constexpr int kDefaultRuns = 240;
 constexpr const char * kUsage =
   "使い方: ros2 run core_planning crowd_stats [オプション]\n"
-  "  --scenario FILE    シナリオ（既定は core_gazebo の crowd_goals.yaml）\n"
+  "  --scenario FILE    シナリオ（必須。sim の core_gazebo の scenarios/crowd_goals.yaml など）\n"
   "  --config-dir DIR   パラメータファイルの場所（既定は core_launch の config）\n"
   "  --runs N           条件ごとの実行回数（既定 240）\n"
   "  --jobs N           同時に動かすスレッドの数（既定は CPU の数）\n"
@@ -105,7 +105,7 @@ std::string packageShare(const std::string & package)
   } catch (const ament_index_cpp::PackageNotFoundError &) {
     throw std::runtime_error(
             "パッケージ " + package + " が見つかりません。install/setup.bash を読み込むか、"
-            "--scenario と --config-dir を指定してください");
+            "--config-dir を指定してください");
   }
 }
 
@@ -199,9 +199,10 @@ void evaluate(
 
 int run(const Arguments & arguments)
 {
-  const fs::path scenario_path = arguments.scenario.empty() ?
-    fs::path(packageShare("core_gazebo")) / "scenarios" / "crowd_goals.yaml" :
-    fs::path(arguments.scenario);
+  if (arguments.scenario.empty()) {
+    throw std::invalid_argument("--scenario でシナリオを指定してください");
+  }
+  const fs::path scenario_path(arguments.scenario);
   const fs::path config_dir = arguments.config_dir.empty() ?
     fs::path(packageShare("core_launch")) / "config" : fs::path(arguments.config_dir);
   const int jobs = arguments.jobs > 0 ? arguments.jobs :
