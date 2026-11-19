@@ -36,7 +36,7 @@ MAP_PRESETS = {
         'init_y': 5.9,
         'init_yaw': 0.0,
     },
-    # CoRE-1 の試験のフィールド（core_gazebo/scripts/make_core1_field.py がルールナビの図 3-1 から作る）。
+    # CoRE-1 の試験のフィールド（core_launch/scripts/make_core1_map.py がルールナビの図 3-1 から作る）。
     # 初期姿勢は赤のスタートゾーンの中
     'core1_2027': {
         'pcd': 'core1_2027.pcd',
@@ -49,7 +49,7 @@ MAP_PRESETS = {
         'init_y': -5.5,
         'init_yaw': 0.0,
     },
-    # core1_2027 の構造物をフィールドの 3D データ（STL）から作ったもの（make_core1_field.py --mesh
+    # core1_2027 の構造物をフィールドの 3D データ（STL）から作ったもの（make_core1_map.py --mesh
     # --name core1_2027_mesh）。STL は配布の条件が分からず git に入れないので、STL がある手元でだけ作れる
     'core1_2027_mesh': {
         'pcd': 'core1_2027_mesh.pcd',

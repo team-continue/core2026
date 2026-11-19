@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""CoRE-1 のフィールドの形（fields/core1_2027_top.json）から、試験のフィールドを作る.
+"""CoRE-1 のフィールドの形（fields/core1_2027_top.json）から、試験のフィールドの地図を作る.
 
-作るもの:
-- Gazebo のワールド（構造物を高さで押し出した立体。会場の壁や天井などは --venue のワールドから写す）
-- 地図照合の PCD（構造物・会場・床の面に点を並べたもの）
+作るもの（実機と sim で同じものを使う）:
+- 構造物の外形（maps/<name>_outlines.yaml。名前・高さ・上から見た多角形）。sim の接触の判定と、core_gazebo の
+  make_core1_field_model.py（外形を押し出した Gazebo のフィールドのモデル）が使う
+- 地図照合の PCD（構造物・会場・床の面に点を並べたもの。会場の壁や天井などは --venue のワールドから写す）
 - UI に出す占有地図（PNG と map_server の yaml）
 - フィールドの設定（範囲、静止物の高さの下限、入らない範囲＝進入禁止ゾーン）
 
 --mesh にフィールドの 3D データ（fields/core1_2027_field.stl。m、z が上、フィールドの角が原点で
 x 0〜24・y −15〜0）を渡すと、構造物は押し出しの代わりにそのメッシュを使う（壁の厚さ、高台の坂、
-置き場の段などが図面の近似より正確）。ワールドはメッシュを 1 つの静止物として置き、PCD はメッシュの面に
-点を並べ、占有地図と構造物の外形（<ワールド名>_outlines.yaml。接触の判定に使う）は、静止物の高さの下限より
-高い所を輪切りにして作る。進入禁止ゾーンとフィールドの設定は、どちらでも --top から作る。
+置き場の段などが図面の近似より正確）。PCD はメッシュの面に点を並べ、占有地図と構造物の外形は、静止物の
+高さの下限より高い所を輪切りにして作る。進入禁止ゾーンとフィールドの設定は、どちらでも --top から作る。
 STL は公式の配布で配布の条件が分からないので git に入れず、メッシュ版は別の名前で作る（git の管理外）:
-  --mesh fields/core1_2027_field.stl --world worlds/core1_2027_mesh.sdf --name core1_2027_mesh
+  --mesh fields/core1_2027_field.stl --name core1_2027_mesh
 （navigation.launch.py の map_name:=core1_2027_mesh で選べる）
 
 座標: 図は mm で y が下向き（左下が赤サイド）。map・world は m で、フィールドの中心を原点、x は図の右向き、
@@ -322,26 +322,12 @@ def write_outlines(outlines: list[Prism], out: Path) -> None:
         {'name': p.name, 'height_m': round(p.height, 3),
          'points': [[round(x, 4), round(y, 4)] for x, y in p.polygon]} for p in outlines]}
     out.write_text(
-        '# make_core1_field.py が 3D データ（--mesh）から作った構造物の外形（静止物の高さの下限より高い所の輪切り）。\n'
-        '# run_scenario.py などが接触の判定に使う。手で直さず、スクリプトで作り直す\n'
+        '# make_core1_map.py が作った構造物の外形（--mesh のときは 3D データの、静止物の高さの下限より高い所の輪切り）。\n'
+        '# run_scenario.py の接触の判定と、core_gazebo の make_core1_field_model.py が使う。手で直さず、スクリプトで作り直す\n'
         + yaml.safe_dump(document, sort_keys=False, allow_unicode=True, default_flow_style=None), encoding='utf-8')
 
 
-# ---------------------------------------------------------------- Gazebo のワールド
-
-def prism_model(prism: Prism) -> str:
-    points = ''.join(f'<point>{x:.4f} {y:.4f}</point>' for x, y in prism.polygon)
-    geometry = f'<geometry><polyline>{points}<height>{prism.height:.3f}</height></polyline></geometry>'
-    return (
-        f'    <model name="{prism.name}">\n'
-        f'      <static>true</static>\n'
-        f'      <link name="link">\n'
-        f'        <collision name="collision">{geometry}</collision>\n'
-        f'        <visual name="visual">{geometry}</visual>\n'
-        f'      </link>\n'
-        f'    </model>\n'
-    )
-
+# ---------------------------------------------------------------- 会場
 
 def venue_models(venue_world: Path) -> tuple[str, list[ET.Element]]:
     """会場のワールドから、柵と試験用の箱を除いた部分（文字列）と、残した模型を返す."""
@@ -351,38 +337,6 @@ def venue_models(venue_world: Path) -> tuple[str, list[ET.Element]]:
     root = ET.fromstring(text)
     models = [m for m in root.iter('model') if m.get('name') != 'ground']
     return text, models
-
-
-def mesh_model(uri: str) -> str:
-    # 3D データの原点（フィールドの角）を map の座標へ移して置く。見た目も同じメッシュ
-    geometry = f'<geometry><mesh><uri>{uri}</uri></mesh></geometry>'
-    return (
-        '    <model name="core1_field">\n'
-        '      <static>true</static>\n'
-        f'      <pose>{MESH_OFFSET_M[0]:.3f} {MESH_OFFSET_M[1]:.3f} 0 0 0 0</pose>\n'
-        '      <link name="link">\n'
-        f'        <collision name="collision">{geometry}</collision>\n'
-        f'        <visual name="visual">{geometry}<material><ambient>0.6 0.6 0.62 1</ambient>'
-        '<diffuse>0.7 0.7 0.72 1</diffuse></material></visual>\n'
-        '      </link>\n'
-        '    </model>\n'
-    )
-
-
-def write_world(venue_world: Path, prisms: list[Prism], out: Path, mesh_uri: str | None = None) -> None:
-    text, _ = venue_models(venue_world)
-    generated = (
-        '\n    <!-- 以下は make_core1_field.py が CoRE-1 のフィールドの形から作ったもの。'
-        '手で直さず、スクリプトで作り直す -->\n'
-        + (mesh_model(mesh_uri) if mesh_uri is not None else ''.join(prism_model(p) for p in prisms))
-    )
-    if '</world>' not in text:
-        raise FieldError(f'{venue_world} に </world> がありません')
-    text = text.replace('</world>', generated + '  </world>', 1)
-    text = text.replace(
-        '<world name="field">',
-        '<!-- CoRE-1 の試験のフィールド（make_core1_field.py で作る） -->\n  <world name="field">', 1)
-    out.write_text(text, encoding='utf-8')
 
 
 # ---------------------------------------------------------------- 地図照合の PCD
@@ -511,7 +465,7 @@ def write_occupancy(prisms: list[Prism], keep_out: list[Polygon], name: str, out
         draw.polygon(pixels(polygon), fill=0)
     image.save(out_dir / f'{name}.png')
     (out_dir / f'{name}.yaml').write_text(
-        f'# make_core1_field.py が作った、UI に出す占有地図（構造物と進入禁止ゾーンが占有）\n'
+        f'# make_core1_map.py が作った、UI に出す占有地図（構造物と進入禁止ゾーンが占有）\n'
         f'image: {name}.png\nresolution: {MAP_RESOLUTION_M}\norigin: [{xmin}, {ymin}, 0.0]\n'
         f'negate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\nmode: trinary\n', encoding='utf-8')
 
@@ -529,7 +483,7 @@ def write_field_config(keep_out: list[Polygon], out: Path) -> None:
         'keep_out': {'x': xs, 'y': ys, 'counts': [len(p) for p in keep_out]},
     }}}
     out.write_text(
-        '# CoRE-1 の試験のフィールド（make_core1_field.py が作る。手で直さず、スクリプトで作り直す）。\n'
+        '# CoRE-1 の試験のフィールド（make_core1_map.py が作る。手で直さず、スクリプトで作り直す）。\n'
         '# navigation.launch.py の map_name:=core1_2027 と sim_nav.launch.py の field_file で config/field.yaml に重ねる。\n'
         '# - static_map.min_height_m: 陣地の羽根 0.08m・フェンス 0.14m・バンカー 0.15m を静止物として拾う\n'
         '# - keep_out: 進入禁止ゾーン（3.2）。計画はここを壁として扱う\n'
@@ -540,30 +494,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--top', type=Path, required=True, help='fields/core1_2027_top.json')
     parser.add_argument('--venue', type=Path, required=True, help='会場を写すワールド（worlds/field_static.sdf）')
-    parser.add_argument('--world', type=Path, required=True, help='作るワールド')
-    parser.add_argument('--maps', type=Path, required=True, help='PCD と占有地図を置く場所（core_launch/maps）')
+    parser.add_argument('--maps', type=Path, required=True, help='外形・PCD・占有地図を置く場所（core_launch/maps）')
     parser.add_argument('--config', type=Path, required=True, help='作るフィールドの設定')
     parser.add_argument('--name', default='core1_2027')
     parser.add_argument(
         '--mesh', type=Path, default=None,
         help='フィールドの 3D データ（fields/core1_2027_field.stl）。渡すと構造物はこのメッシュにする')
-    parser.add_argument(
-        '--mesh-uri', default='model://core_gazebo/fields/core1_2027_field.stl',
-        help='ワールドから見たメッシュの URI（sim.launch.py が core_gazebo の share を GZ_SIM_RESOURCE_PATH に足す）')
     args = parser.parse_args()
     try:
         prisms, keep_out = load_field(args.top)
-        outlines_path = args.world.with_name(f'{args.world.stem}_outlines.yaml')
         if args.mesh is not None:
             structure = sample_mesh(load_stl(args.mesh), MESH_STEP_M)
             outlines = mesh_outlines(structure, prisms)
-            write_world(args.venue, prisms, args.world, args.mesh_uri)
-            write_outlines(outlines, outlines_path)
         else:
             structure = np.concatenate([sample_prism(p) for p in prisms])
             outlines = prisms
-            write_world(args.venue, prisms, args.world)
-            outlines_path.unlink(missing_ok=True)
+        write_outlines(outlines, args.maps / f'{args.name}_outlines.yaml')
         cloud = np.concatenate([structure, venue_points(args.venue), floor_points(-29.5, 29.5, -19.0, 19.0)])
         write_pcd(cloud, args.maps / f'{args.name}.pcd')
         write_occupancy(outlines, keep_out, args.name, args.maps)
@@ -577,7 +523,7 @@ def main() -> int:
         kinds[kind] = kinds.get(kind, 0) + 1
     source = f'メッシュ {args.mesh}（外形 {len(outlines)} 個）' if args.mesh is not None else '押し出し'
     print(f'構造物 {len(prisms)} 個 {kinds}（{source}）、進入禁止ゾーン {len(keep_out)} 個、PCD {len(cloud)} 点')
-    print(f'作ったもの: {args.world}, {args.maps}/{args.name}.(pcd|png|yaml), {args.config}')
+    print(f'作ったもの: {args.maps}/{args.name}(_outlines.yaml|.pcd|.png|.yaml), {args.config}')
     return 0
 
 

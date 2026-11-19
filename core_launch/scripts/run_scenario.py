@@ -96,7 +96,7 @@ WORLD_TO_MAP: Final = {
     'field_static.sdf': 'arena_static.pcd',
     'field_obstacles.sdf': 'arena_obstacles.pcd',
     'field_narrow.sdf': 'arena_narrow.pcd',
-    # CoRE-1 の試験のフィールド（core_gazebo/scripts/make_core1_field.py で作る）
+    # CoRE-1 の試験のフィールド（core_launch の make_core1_map.py と core_gazebo の make_core1_field_model.py で作る）
     'core1_2027.sdf': 'core1_2027.pcd',
     # 構造物をフィールドの 3D データから作ったもの（STL がある手元でだけ作れる）
     'core1_2027_mesh.sdf': 'core1_2027_mesh.pcd',
@@ -508,13 +508,17 @@ def field_config(world: str) -> Path | None:
     return Path(get_package_share_directory('core_launch')) / 'config' / name
 
 
-def load_static_polygons(world_path: Path) -> list[tuple[str, np.ndarray]]:
+def structure_outlines_path(map_path: Path) -> Path:
+    """地図の隣の構造物の外形（core_launch/maps/<地図の名前>_outlines.yaml。make_core1_map.py が作る）."""
+    return map_path.with_name(f'{map_path.stem}_outlines.yaml')
+
+
+def load_static_polygons(world_path: Path, outlines_path: Path) -> list[tuple[str, np.ndarray]]:
     """構造物の外形（CoRE-1 の試験のフィールド）を読む.
 
-    ワールドの隣に <ワールド名>_outlines.yaml（make_core1_field.py が 3D データのメッシュから作る外形）が
-    あればそれを、なければ押し出した構造物（polyline の形の静止物）を SDF から読む。
+    outlines_path（make_core1_map.py が作る外形。Gazebo のフィールドはこれを押し出したものか 3D データ）が
+    あればそれを、なければ polyline の形の静止物を SDF から読む。
     """
-    outlines_path = world_path.with_name(f'{world_path.stem}_outlines.yaml')
     if outlines_path.exists():
         return load_outlines(outlines_path)
     polygons = []
@@ -530,7 +534,7 @@ def load_static_polygons(world_path: Path) -> list[tuple[str, np.ndarray]]:
 
 
 def load_outlines(path: Path) -> list[tuple[str, np.ndarray]]:
-    """make_core1_field.py が作った構造物の外形（outlines: [{name, height_m, points: [[x, y], ...]}]）を読む."""
+    """make_core1_map.py が作った構造物の外形（outlines: [{name, height_m, points: [[x, y], ...]}]）を読む."""
     try:
         document = yaml.safe_load(path.read_text(encoding='utf-8'))
         outlines = document['outlines']
@@ -597,12 +601,14 @@ def outline_points(samples: Sequence['Pose']) -> tuple[np.ndarray, np.ndarray]:
     return xs + c * outline[:, 0] - s * outline[:, 1], ys + s * outline[:, 0] + c * outline[:, 1]
 
 
-def analyze_structures(samples: Sequence['Pose'], world_path: Path, world: str) -> ResultDict:
-    """押し出した構造物までの距離と接触、入らない範囲に機体がかかった回数と時間."""
+def analyze_structures(
+    samples: Sequence['Pose'], world_path: Path, world: str, outlines_path: Path,
+) -> ResultDict:
+    """構造物までの距離と接触、入らない範囲に機体がかかった回数と時間."""
     result: ResultDict = {
         'min_structure_gap_m': None, 'structure_contacts': 0, 'keep_out_entries': 0, 'keep_out_time_s': 0.0,
     }
-    polygons = load_static_polygons(world_path)
+    polygons = load_static_polygons(world_path, outlines_path)
     keep_out = load_keep_out(world)
     if not samples or (not polygons and not keep_out):
         return result
@@ -870,7 +876,7 @@ def analyze_run(
     contact_events = sum(
         1 for (_, a), (_, b) in zip(contact_samples, contact_samples[1:]) if b and not a
     ) + int(bool(contact_samples) and contact_samples[0][1])
-    world_path, _ = resolve_world(spec.world)
+    world_path, map_path = resolve_world(spec.world)
     reached = sum(1 for g in goal_results if g.reached)
     limits = [s.speed_limit_mps for s in navigation if s.state == NavigationStatus.STATE_DRIVING]
 
@@ -901,7 +907,7 @@ def analyze_run(
     result.update(analyze_obstacles(samples, field_obstacles(spec.obstacles), warn_m))
     result['spectators'] = len(spec.obstacles) - len(field_obstacles(spec.obstacles))
     result.update(analyze_static(samples, world_path))
-    result.update(analyze_structures(samples, world_path, spec.world))
+    result.update(analyze_structures(samples, world_path, spec.world, structure_outlines_path(map_path)))
     fence_touched = as_float(result['min_fence_clearance_m']) <= 0.0
     result['ok'] = (
         reached == len(goal_results)

@@ -95,6 +95,7 @@ from run_scenario import (  # noqa: E402
     analyze_structures,
     inside_polygon,
     polygon_distance,
+    structure_outlines_path,
 )
 import numpy as np  # noqa: E402
 
@@ -124,21 +125,24 @@ def test_structures_count_gap_and_contacts(tmp_path: Path) -> None:
     world.write_text(POLYLINE_WORLD)
     # +x へ進み、機体の前の面（x + 0.4）が壁（x = 2.0）に触れて止まる
     poses = [Pose(t=0.02 * i, x=0.5 + 0.02 * i, y=0.0, z=0.0, yaw=0.0) for i in range(56)]
-    result = analyze_structures(poses, world, 'field.sdf')
+    result = analyze_structures(poses, world, 'field.sdf', tmp_path / 'missing_outlines.yaml')
     assert result['min_structure_gap_m'] < 0.01
     assert result['structure_contacts'] == 1
     # field.sdf には入らない範囲がない
     assert result['keep_out_entries'] == 0
 
 
-def test_structures_use_mesh_outlines_next_to_world(tmp_path: Path) -> None:
-    # 3D データのメッシュから作ったワールドには polyline がなく、隣の <ワールド名>_outlines.yaml の外形を使う
+def test_structures_use_outlines_next_to_map(tmp_path: Path) -> None:
+    # CoRE-1 のワールドはフィールドを 1 つのモデルとして読み込み polyline がないので、地図の隣の
+    # <地図の名前>_outlines.yaml（make_core1_map.py が作る）の外形を使う
     world = tmp_path / 'world.sdf'
     world.write_text('<?xml version="1.0"?><sdf version="1.9"><world name="test"></world></sdf>')
-    (tmp_path / 'world_outlines.yaml').write_text(
+    outlines = structure_outlines_path(tmp_path / 'map.pcd')
+    assert outlines == tmp_path / 'map_outlines.yaml'
+    outlines.write_text(
         'outlines:\n- name: wall_1\n  height_m: 1.0\n  points: [[2.0, -1.0], [2.2, -1.0], [2.2, 1.0], [2.0, 1.0]]\n')
     poses = [Pose(t=0.02 * i, x=0.5 + 0.02 * i, y=0.0, z=0.0, yaw=0.0) for i in range(56)]
-    result = analyze_structures(poses, world, 'field.sdf')
+    result = analyze_structures(poses, world, 'field.sdf', outlines)
     assert result['min_structure_gap_m'] < 0.01
     assert result['structure_contacts'] == 1
 

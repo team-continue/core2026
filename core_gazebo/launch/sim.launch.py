@@ -286,10 +286,10 @@ def generate_launch_description() -> LaunchDescription:
         AppendEnvironmentVariable('GZ_SIM_SYSTEM_PLUGIN_PATH', str(plugin_dir)),
         # URDF のメッシュ（package://core_launch/...）を Gazebo が見つけられるよう、share を足す
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', str(description_share.parent)),
-        # フィールドの 3D データ（model://core_gazebo/fields/...。make_core1_field.py --mesh のワールド）を見つけられるよう、
-        # core_gazebo の share も足す
-        AppendEnvironmentVariable(
-            'GZ_SIM_RESOURCE_PATH', str(share.parent)),
+        # CoRE-1 のフィールドのモデル（ワールドの model://core1_2027_field など。make_core1_field_model.py が作る）と、
+        # そのメッシュ（package://core_gazebo/models/...）を見つけられるよう、models と share も足す
+        AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', str(share / 'models')),
+        AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', str(share.parent)),
         gazebo,
         robot_state_publisher,
         spawn_robot,

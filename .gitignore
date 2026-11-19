@@ -70,8 +70,8 @@ vendor
 >>>>>>> origin/feature/hardware
 
 # CoRE-1 のフィールドの 3D データ（公式の配布。配布の条件が分からないので入れない）と、それから作るもの
-# （make_core1_field.py --mesh --name core1_2027_mesh）
-core_gazebo/fields/*.stl
+# （core_launch の make_core1_map.py --mesh と core_gazebo の make_core1_field_model.py --mesh-uri。名前は core1_2027_mesh）
+core_launch/fields/*.stl
+core_launch/maps/core1_2027_mesh*
+core_gazebo/models/core1_2027_mesh_field/
 core_gazebo/worlds/core1_2027_mesh.sdf
-core_gazebo/worlds/core1_2027_mesh_outlines.yaml
-core_launch/maps/core1_2027_mesh.*

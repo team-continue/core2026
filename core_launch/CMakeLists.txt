@@ -17,6 +17,7 @@ install(DIRECTORY
   launch
   urdf
   config
+  fields
   maps
   rviz
   DESTINATION share/${PROJECT_NAME}
@@ -36,6 +37,7 @@ install(PROGRAMS
   scripts/check_long_run.py
   scripts/check_perception.py
   scripts/check_planning.py
+  scripts/make_core1_map.py
   scripts/run_scenario.py
   scripts/setup_thirdparty.sh
   scripts/map_publisher_node.py
