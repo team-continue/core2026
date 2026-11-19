@@ -82,6 +82,7 @@ jobs:
             core_test \
             core_tools \
             ros_tcp_endpoint &&
+          colcon test --packages-select core_mode --ctest-args -R '^test_' &&\
           colcon test-result --verbose
 
       - name: Format with ament_clang_format
