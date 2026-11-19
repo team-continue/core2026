@@ -49,6 +49,19 @@ MAP_PRESETS = {
         'init_y': -5.5,
         'init_yaw': 0.0,
     },
+    # core1_2027 の構造物をフィールドの 3D データ（STL）から作ったもの（make_core1_field.py --mesh
+    # --name core1_2027_mesh）。STL は配布の条件が分からず git に入れないので、STL がある手元でだけ作れる
+    'core1_2027_mesh': {
+        'pcd': 'core1_2027_mesh.pcd',
+        'field': 'field_core1_2027.yaml',
+        'image': 'core1_2027_mesh.png',
+        'resolution': 0.05,
+        'origin_x': -13.0,
+        'origin_y': -8.5,
+        'init_x': -10.25,
+        'init_y': -5.5,
+        'init_yaw': 0.0,
+    },
     'curious_house': {
         'pcd': 'curious_house.pcd',
         'field': 'field_curious_house.yaml',

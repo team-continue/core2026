@@ -98,10 +98,13 @@ WORLD_TO_MAP: Final = {
     'field_narrow.sdf': 'arena_narrow.pcd',
     # CoRE-1 の試験のフィールド（core_gazebo/scripts/make_core1_field.py で作る）
     'core1_2027.sdf': 'core1_2027.pcd',
+    # 構造物をフィールドの 3D データから作ったもの（STL がある手元でだけ作れる）
+    'core1_2027_mesh.sdf': 'core1_2027_mesh.pcd',
 }
 # ワールドごとのフィールドの設定（範囲・静止物の高さ・入らない範囲）。sim_nav.launch.py の field_file に渡す
 WORLD_TO_FIELD: Final = {
     'core1_2027.sdf': 'field_core1_2027.yaml',
+    'core1_2027_mesh.sdf': 'field_core1_2027.yaml',
 }
 # 点群を除いて記録する
 BAG_TOPICS: Final = (
@@ -506,7 +509,14 @@ def field_config(world: str) -> Path | None:
 
 
 def load_static_polygons(world_path: Path) -> list[tuple[str, np.ndarray]]:
-    """押し出した構造物（polyline の形の静止物。CoRE-1 の試験のフィールド）を SDF から読む."""
+    """構造物の外形（CoRE-1 の試験のフィールド）を読む.
+
+    ワールドの隣に <ワールド名>_outlines.yaml（make_core1_field.py が 3D データのメッシュから作る外形）が
+    あればそれを、なければ押し出した構造物（polyline の形の静止物）を SDF から読む。
+    """
+    outlines_path = world_path.with_name(f'{world_path.stem}_outlines.yaml')
+    if outlines_path.exists():
+        return load_outlines(outlines_path)
     polygons = []
     for model in ET.parse(world_path).getroot().findall('./world/model'):
         polyline = model.find('./link/collision/geometry/polyline')
@@ -516,6 +526,22 @@ def load_static_polygons(world_path: Path) -> list[tuple[str, np.ndarray]]:
         if len(points) < 3 or any(len(point) != 2 for point in points):
             raise CheckError(f'{world_path}: {model.attrib["name"]} の polyline の頂点が正しくありません')
         polygons.append((model.attrib['name'], np.array(points, dtype=np.float64)))
+    return polygons
+
+
+def load_outlines(path: Path) -> list[tuple[str, np.ndarray]]:
+    """make_core1_field.py が作った構造物の外形（outlines: [{name, height_m, points: [[x, y], ...]}]）を読む."""
+    try:
+        document = yaml.safe_load(path.read_text(encoding='utf-8'))
+        outlines = document['outlines']
+    except (OSError, yaml.YAMLError, KeyError, TypeError) as error:
+        raise CheckError(f'構造物の外形 {path} を読めません: {error}') from error
+    polygons = []
+    for outline in outlines:
+        points = np.array(outline.get('points', []), dtype=np.float64)
+        if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] != 2 or not np.all(np.isfinite(points)):
+            raise CheckError(f'{path}: {outline.get("name")} の頂点が正しくありません')
+        polygons.append((str(outline['name']), points))
     return polygons
 
 

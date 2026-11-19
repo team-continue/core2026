@@ -7,6 +7,15 @@
 - UI に出す占有地図（PNG と map_server の yaml）
 - フィールドの設定（範囲、静止物の高さの下限、入らない範囲＝進入禁止ゾーン）
 
+--mesh にフィールドの 3D データ（fields/core1_2027_field.stl。m、z が上、フィールドの角が原点で
+x 0〜24・y −15〜0）を渡すと、構造物は押し出しの代わりにそのメッシュを使う（壁の厚さ、高台の坂、
+置き場の段などが図面の近似より正確）。ワールドはメッシュを 1 つの静止物として置き、PCD はメッシュの面に
+点を並べ、占有地図と構造物の外形（<ワールド名>_outlines.yaml。接触の判定に使う）は、静止物の高さの下限より
+高い所を輪切りにして作る。進入禁止ゾーンとフィールドの設定は、どちらでも --top から作る。
+STL は公式の配布で配布の条件が分からないので git に入れず、メッシュ版は別の名前で作る（git の管理外）:
+  --mesh fields/core1_2027_field.stl --world worlds/core1_2027_mesh.sdf --name core1_2027_mesh
+（navigation.launch.py の map_name:=core1_2027_mesh で選べる）
+
 座標: 図は mm で y が下向き（左下が赤サイド）。map・world は m で、フィールドの中心を原点、x は図の右向き、
 y は図の上向き（X = x / 1000 - 12、Y = 7.5 - y / 1000）。赤サイドは map の左下（x < 0, y < 0）になる。
 
@@ -55,6 +64,16 @@ FLOOR_STEP_M: Final = 0.2
 # 静止物として使う点の高さの下限 [m]（陣地の羽根 0.08m・フェンス 0.14m・バンカー 0.15m を拾う。床の点は拾わない）。
 # PCD の高さは float なので、羽根の上の面の点は 0.08 より僅かに低い（0.0799…）。羽根の高さより低くしておく
 STATIC_MIN_HEIGHT_M: Final = 0.07
+# 3D データ（STL）の原点（フィールドの角）を map の座標へ移す量 [m]
+MESH_OFFSET_M: Final = (-FIELD_LENGTH_M / 2.0, FIELD_WIDTH_M / 2.0)
+# メッシュの面に並べる点の間隔、外形を作る格子 [m]
+MESH_STEP_M: Final = 0.025
+OUTLINE_RESOLUTION_M: Final = 0.025
+# 外形を作る範囲（フィールドの外の置き場なども入れる）と、外形とみなす一番高い点 [m]
+OUTLINE_BOUNDS_M: Final = (-13.0, 13.0, -9.0, 9.0)
+OUTLINE_MAX_HEIGHT_M: Final = 2.0
+# 外形を切る区画の大きさ [m]
+OUTLINE_TILE_M: Final = 1.0
 # UI の占有地図
 MAP_RESOLUTION_M: Final = 0.05
 MAP_MARGIN_M: Final = 1.0
@@ -158,6 +177,156 @@ def load_field(path: Path) -> tuple[list[Prism], list[Polygon]]:
     return prisms, keep_out
 
 
+# ---------------------------------------------------------------- 3D データ（STL）
+
+def load_stl(path: Path) -> np.ndarray:
+    """binary STL の三角形（n × 3 頂点 × xyz）を map の座標で返す."""
+    data = path.read_bytes()
+    if len(data) < 84:
+        raise FieldError(f'{path} は STL として短すぎます')
+    count = struct.unpack('<I', data[80:84])[0]
+    if 84 + count * 50 != len(data):
+        raise FieldError(f'{path} は binary STL ではありません（三角形 {count} 個と長さ {len(data)} が合わない）')
+    record = np.dtype([('normal', '<f4', 3), ('vertices', '<f4', (3, 3)), ('attribute', '<u2')])
+    triangles = np.frombuffer(data, dtype=record, count=count, offset=84)['vertices'].astype(np.float64)
+    triangles[:, :, 0] += MESH_OFFSET_M[0]
+    triangles[:, :, 1] += MESH_OFFSET_M[1]
+    return triangles
+
+
+def sample_mesh(triangles: np.ndarray, step: float) -> np.ndarray:
+    """三角形の面に、間隔 step 以下の格子で点を並べる（step の立方体ごとに 1 点にまとめる）.
+
+    床の板（上の面が z = 0 以下）は除く。床の点は floor_points で並べる。
+    """
+    triangles = triangles[triangles[:, :, 2].max(axis=1) > 1e-3]
+    a, b, c = triangles[:, 0], triangles[:, 1], triangles[:, 2]
+    longest = np.max(np.stack([
+        np.linalg.norm(b - a, axis=1), np.linalg.norm(c - a, axis=1), np.linalg.norm(c - b, axis=1)]), axis=0)
+    divisions = np.maximum(np.ceil(longest / step).astype(int), 1)
+    points = []
+    for k in np.unique(divisions):
+        chosen = divisions == k
+        i, j = np.meshgrid(np.arange(k + 1), np.arange(k + 1))
+        keep = i + j <= k
+        u = i[keep] / k
+        v = j[keep] / k
+        ta, tb, tc = a[chosen], b[chosen], c[chosen]
+        grid = ta[:, None, :] + u[None, :, None] * (tb - ta)[:, None, :] + v[None, :, None] * (tc - ta)[:, None, :]
+        points.append(grid.reshape(-1, 3))
+    cloud = np.concatenate(points)
+    _, first = np.unique(np.floor(cloud / step).astype(np.int64), axis=0, return_index=True)
+    return cloud[np.sort(first)]
+
+
+def outline_name(
+    centers: list[tuple[str, tuple[float, float], Polygon]], cx: float, cy: float, max_distance: float = 1.5
+) -> str:
+    """点 (cx, cy) を含む図面の構造物の名前。なければ max_distance 以内で重心が一番近いもの、それもなければ mesh."""
+    for name, _, polygon in centers:
+        if inside(polygon, np.array([cx]), np.array([cy]))[0]:
+            return name
+    nearest = min(centers, key=lambda item: math.hypot(item[1][0] - cx, item[1][1] - cy), default=None)
+    if nearest is not None and math.hypot(nearest[1][0] - cx, nearest[1][1] - cy) <= max_distance:
+        return nearest[0]
+    return 'mesh'
+
+
+def mesh_outlines(cloud: np.ndarray, prisms: list[Prism]) -> list[Prism]:
+    """静止物の高さの下限より高い点がある所を輪切りにした外形.
+
+    柵と壁がつながって床を囲むと、外形の穴（囲まれた床）を埋められないので、OUTLINE_TILE_M 四方の区画ごとに
+    切って外形を作る（区画の中に収まる小さな穴だけが残る。埋めて、その面積を知らせる）。
+    名前は、外形の重心を含む（なければ近い）図面の構造物から付ける（接触の報告で場所が分かるように）。
+    高さは外形の中の一番高い点。
+    """
+    # 外形を作るときだけ使う。rosdep のキーがないので package.xml には書かず、使う手元で
+    # sudo apt install python3-contourpy で入れる
+    try:
+        import contourpy
+    except ImportError as error:
+        raise FieldError('--mesh には contourpy が要ります（sudo apt install python3-contourpy）') from error
+
+    xmin, xmax, ymin, ymax = OUTLINE_BOUNDS_M
+    res = OUTLINE_RESOLUTION_M
+    nx = int(round((xmax - xmin) / res))
+    ny = int(round((ymax - ymin) / res))
+    high = cloud[(cloud[:, 2] >= STATIC_MIN_HEIGHT_M) & (cloud[:, 2] <= OUTLINE_MAX_HEIGHT_M)]
+    ix = np.floor((high[:, 0] - xmin) / res).astype(int)
+    iy = np.floor((high[:, 1] - ymin) / res).astype(int)
+    ok = (ix >= 0) & (ix < nx) & (iy >= 0) & (iy < ny)
+    occupied = np.zeros((ny, nx))
+    occupied[iy[ok], ix[ok]] = 1.0
+    tile = int(round(OUTLINE_TILE_M / res))
+    centers = [(p.name, centroid(p.polygon), p.polygon) for p in prisms]
+    used: dict[str, int] = {}
+    result: list[Prism] = []
+    filled_area = 0.0
+    for ty in range(0, ny, tile):
+        for tx in range(0, nx, tile):
+            block = occupied[ty:ty + tile, tx:tx + tile]
+            if not block.any():
+                continue
+            padded = np.pad(block, 1)
+            xs = xmin + (tx + np.arange(padded.shape[1]) - 0.5) * res
+            ys = ymin + (ty + np.arange(padded.shape[0]) - 0.5) * res
+            generator = contourpy.contour_generator(xs, ys, padded, fill_type=contourpy.FillType.OuterOffset)
+            boundaries, offsets = generator.filled(0.5, 2.0)
+            for points, offset in zip(boundaries, offsets):
+                rings = [points[offset[i]:offset[i + 1]] for i in range(len(offset) - 1)]
+                outer = drop_collinear([(float(x), float(y)) for x, y in rings[0][:-1]])
+                if len(outer) < 3:
+                    continue
+                filled_area += sum(polygon_area(ring) for ring in rings[1:])
+                cx, cy = centroid(outer)
+                name = outline_name(centers, cx, cy)
+                used[name] = used.get(name, 0) + 1
+                unique = name if used[name] == 1 else f'{name}_part{used[name]}'
+                mask = inside(outer, high[:, 0], high[:, 1])
+                height = float(high[mask, 2].max()) if mask.any() else STATIC_MIN_HEIGHT_M
+                result.append(Prism(unique, outer, height))
+    if not result:
+        raise FieldError('メッシュから構造物の外形を作れませんでした')
+    if filled_area > 0.0:
+        print(f'[注意] 外形の中に囲まれた床 {filled_area:.3f} m² を構造物として埋めました')
+    return result
+
+
+def drop_collinear(polygon: Polygon, tolerance: float = 1e-9) -> Polygon:
+    """一直線に並んだ頂点を除く（格子の外形は同じ向きの辺が続くので、頂点が多くなる）."""
+    result = list(polygon)
+    changed = True
+    while changed and len(result) > 3:
+        changed = False
+        kept: Polygon = []
+        count = len(result)
+        for i in range(count):
+            ax, ay = kept[-1] if kept else result[i - 1]
+            bx, by = result[i]
+            cx, cy = result[(i + 1) % count]
+            if abs((bx - ax) * (cy - by) - (by - ay) * (cx - bx)) <= tolerance:
+                changed = True
+                continue
+            kept.append((bx, by))
+        result = kept if len(kept) >= 3 else result
+    return result
+
+
+def polygon_area(ring: np.ndarray) -> float:
+    x, y = ring[:, 0], ring[:, 1]
+    return 0.5 * abs(float(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1))))
+
+
+def write_outlines(outlines: list[Prism], out: Path) -> None:
+    document = {'outlines': [
+        {'name': p.name, 'height_m': round(p.height, 3),
+         'points': [[round(x, 4), round(y, 4)] for x, y in p.polygon]} for p in outlines]}
+    out.write_text(
+        '# make_core1_field.py が 3D データ（--mesh）から作った構造物の外形（静止物の高さの下限より高い所の輪切り）。\n'
+        '# run_scenario.py などが接触の判定に使う。手で直さず、スクリプトで作り直す\n'
+        + yaml.safe_dump(document, sort_keys=False, allow_unicode=True, default_flow_style=None), encoding='utf-8')
+
+
 # ---------------------------------------------------------------- Gazebo のワールド
 
 def prism_model(prism: Prism) -> str:
@@ -184,11 +353,28 @@ def venue_models(venue_world: Path) -> tuple[str, list[ET.Element]]:
     return text, models
 
 
-def write_world(venue_world: Path, prisms: list[Prism], out: Path) -> None:
+def mesh_model(uri: str) -> str:
+    # 3D データの原点（フィールドの角）を map の座標へ移して置く。見た目も同じメッシュ
+    geometry = f'<geometry><mesh><uri>{uri}</uri></mesh></geometry>'
+    return (
+        '    <model name="core1_field">\n'
+        '      <static>true</static>\n'
+        f'      <pose>{MESH_OFFSET_M[0]:.3f} {MESH_OFFSET_M[1]:.3f} 0 0 0 0</pose>\n'
+        '      <link name="link">\n'
+        f'        <collision name="collision">{geometry}</collision>\n'
+        f'        <visual name="visual">{geometry}<material><ambient>0.6 0.6 0.62 1</ambient>'
+        '<diffuse>0.7 0.7 0.72 1</diffuse></material></visual>\n'
+        '      </link>\n'
+        '    </model>\n'
+    )
+
+
+def write_world(venue_world: Path, prisms: list[Prism], out: Path, mesh_uri: str | None = None) -> None:
     text, _ = venue_models(venue_world)
     generated = (
         '\n    <!-- 以下は make_core1_field.py が CoRE-1 のフィールドの形から作ったもの。'
-        '手で直さず、スクリプトで作り直す -->\n' + ''.join(prism_model(p) for p in prisms)
+        '手で直さず、スクリプトで作り直す -->\n'
+        + (mesh_model(mesh_uri) if mesh_uri is not None else ''.join(prism_model(p) for p in prisms))
     )
     if '</world>' not in text:
         raise FieldError(f'{venue_world} に </world> がありません')
@@ -358,14 +544,29 @@ def main() -> int:
     parser.add_argument('--maps', type=Path, required=True, help='PCD と占有地図を置く場所（core_launch/maps）')
     parser.add_argument('--config', type=Path, required=True, help='作るフィールドの設定')
     parser.add_argument('--name', default='core1_2027')
+    parser.add_argument(
+        '--mesh', type=Path, default=None,
+        help='フィールドの 3D データ（fields/core1_2027_field.stl）。渡すと構造物はこのメッシュにする')
+    parser.add_argument(
+        '--mesh-uri', default='model://core_gazebo/fields/core1_2027_field.stl',
+        help='ワールドから見たメッシュの URI（sim.launch.py が core_gazebo の share を GZ_SIM_RESOURCE_PATH に足す）')
     args = parser.parse_args()
     try:
         prisms, keep_out = load_field(args.top)
-        write_world(args.venue, prisms, args.world)
-        cloud = np.concatenate(
-            [sample_prism(p) for p in prisms] + [venue_points(args.venue), floor_points(-29.5, 29.5, -19.0, 19.0)])
+        outlines_path = args.world.with_name(f'{args.world.stem}_outlines.yaml')
+        if args.mesh is not None:
+            structure = sample_mesh(load_stl(args.mesh), MESH_STEP_M)
+            outlines = mesh_outlines(structure, prisms)
+            write_world(args.venue, prisms, args.world, args.mesh_uri)
+            write_outlines(outlines, outlines_path)
+        else:
+            structure = np.concatenate([sample_prism(p) for p in prisms])
+            outlines = prisms
+            write_world(args.venue, prisms, args.world)
+            outlines_path.unlink(missing_ok=True)
+        cloud = np.concatenate([structure, venue_points(args.venue), floor_points(-29.5, 29.5, -19.0, 19.0)])
         write_pcd(cloud, args.maps / f'{args.name}.pcd')
-        write_occupancy(prisms, keep_out, args.name, args.maps)
+        write_occupancy(outlines, keep_out, args.name, args.maps)
         write_field_config(keep_out, args.config)
     except (FieldError, OSError, ET.ParseError, KeyError, ValueError) as error:
         print(f'[NG] {error}', file=sys.stderr)
@@ -374,7 +575,8 @@ def main() -> int:
     for prism in prisms:
         kind = prism.name.rsplit('_', 1)[0]
         kinds[kind] = kinds.get(kind, 0) + 1
-    print(f'構造物 {len(prisms)} 個 {kinds}、進入禁止ゾーン {len(keep_out)} 個、PCD {len(cloud)} 点')
+    source = f'メッシュ {args.mesh}（外形 {len(outlines)} 個）' if args.mesh is not None else '押し出し'
+    print(f'構造物 {len(prisms)} 個 {kinds}（{source}）、進入禁止ゾーン {len(keep_out)} 個、PCD {len(cloud)} 点')
     print(f'作ったもの: {args.world}, {args.maps}/{args.name}.(pcd|png|yaml), {args.config}')
     return 0
 
