@@ -92,8 +92,17 @@ install(DIRECTORY config launch models rviz scenarios urdf worlds DESTINATION sh
 install(
   PROGRAMS
     scripts/build_truth_map.py
+    scripts/check_ekf.py
+    scripts/check_features.py
+    scripts/check_lio.py
+    scripts/check_localization.py
+    scripts/check_localization_stress.py
+    scripts/check_long_run.py
+    scripts/check_perception.py
+    scripts/check_planning.py
     scripts/check_sim.py
     scripts/make_core1_field_model.py
+    scripts/run_scenario.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -110,6 +119,10 @@ if(BUILD_TESTING)
   target_include_directories(test_command_delay PRIVATE include)
   ament_add_gtest(test_sim_hardware_model test/test_sim_hardware_model.cpp)
   target_include_directories(test_sim_hardware_model PRIVATE include)
+
+  find_package(ament_cmake_pytest REQUIRED)
+  # run_scenario.py の静止物との接触の判定
+  ament_add_pytest_test(test_run_scenario_static test/test_run_scenario_static.py)
 endif()
 
 ament_package()

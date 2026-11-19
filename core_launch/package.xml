@@ -16,7 +16,6 @@
   <exec_depend>core_damiao_imu</exec_depend>
 
   <!-- 自律移動（設計: 1 台構成・コンポーネント版） -->
-  <!-- sim_*.launch.py は core_gazebo を使う。core_gazebo が URDF のためにこのパッケージに依存するので、ここには書かない -->
   <exec_depend>core_localization</exec_depend>
   <exec_depend>core_mode</exec_depend>
   <exec_depend>core_msgs</exec_depend>

@@ -112,7 +112,7 @@ def generate_launch_description() -> LaunchDescription:
         ),
         GroupAction([
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(str(share / 'launch' / 'sim_localization.launch.py')),
+                PythonLaunchDescriptionSource(str(sim_share / 'launch' / 'sim_localization.launch.py')),
                 launch_arguments={
                     'map_path': map_path,
                     **{name: LaunchConfiguration(name) for name in forwarded},

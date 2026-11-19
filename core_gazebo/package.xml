@@ -28,7 +28,18 @@
   <depend>tf2_ros</depend>
   <depend>yaml_cpp_vendor</depend>
 
+  <!-- sim の launch（sim_*.launch.py）と、sim で確かめるスクリプト（run_scenario.py、check_*.py）が使う -->
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>core_body_controller</exec_depend>
   <exec_depend>core_launch</exec_depend>
+  <exec_depend>core_localization</exec_depend>
+  <exec_depend>core_mode</exec_depend>
+  <exec_depend>core_planning</exec_depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>fast_lio</exec_depend>
+  <exec_depend>lidar_localization_ros2</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>rclpy</exec_depend>
@@ -40,6 +51,7 @@
   <exec_depend>xacro</exec_depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

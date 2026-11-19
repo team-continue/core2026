@@ -25,20 +25,11 @@ install(DIRECTORY
 
 install(PROGRAMS
   scripts/navigation.sh
-  scripts/check_lio.py
-  scripts/check_ekf.py
-  scripts/check_localization.py
   scripts/check_localization_jumps.py
-  scripts/check_localization_stress.py
   scripts/convert_livox_pointcloud_bag.py
   scripts/record_localization_bag.sh
   scripts/replay_localization.py
-  scripts/check_features.py
-  scripts/check_long_run.py
-  scripts/check_perception.py
-  scripts/check_planning.py
   scripts/make_core1_map.py
-  scripts/run_scenario.py
   scripts/setup_thirdparty.sh
   scripts/map_publisher_node.py
   scripts/localization_status_marker_node.py
@@ -61,8 +52,6 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_point_extraction_launch test/test_point_extraction_launch.py)
   # LIO に入れる IMU の選択と外部パラメータ（Damiao は URDF から求める）
   ament_add_pytest_test(test_imu_source test/test_imu_source.py)
-  # run_scenario.py の静止物との接触の判定
-  ament_add_pytest_test(test_run_scenario_static test/test_run_scenario_static.py)
   # ノードを別のプロセスにするか、コンテナにまとめるか（composition）と、確認スクリプトのプロセスの探し方
   ament_add_pytest_test(test_composition test/test_composition.py)
   # 自己位置の跳びの指標（map→odom の段差、動きの区分ごとの集計）

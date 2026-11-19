@@ -261,7 +261,7 @@ def start_stack(
             raise CheckError(f'--launch-arg は NAME=VALUE の形で指定してください: {item}')
         arguments[name] = value
     command = [
-        'ros2', 'launch', 'core_launch', 'sim_nav.launch.py',
+        'ros2', 'launch', 'core_gazebo', 'sim_nav.launch.py',
         *(f'{name}:={value}' for name, value in arguments.items()),
     ]
     with log_path.open('wb') as log:

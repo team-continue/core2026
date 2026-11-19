@@ -62,7 +62,7 @@ def start_stack(scenario: Path, launch_args: Sequence[str], log_path: Path) -> s
         if not separator:
             raise CheckError(f'--launch-arg は NAME=VALUE の形で指定してください: {item}')
         arguments[name] = value
-    command = ['ros2', 'launch', 'core_launch', 'sim_localization.launch.py',
+    command = ['ros2', 'launch', 'core_gazebo', 'sim_localization.launch.py',
                *(f'{name}:={value}' for name, value in arguments.items())]
     with log_path.open('wb') as log:
         return subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
