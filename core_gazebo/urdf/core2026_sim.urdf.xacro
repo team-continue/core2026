@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!-- Gazebo の core2026 の機体（sim.launch.py が読む）。core_launch の機体の URDF を gazebo:=true（可動の関節を
+     固定にし、腰は sim_waist のときだけ回す）で読み込み、シミュレーションの定義（core2026.gazebo.xacro: センサ・
+     駆動・正解の位置）を足す。機体の URDF は core_gazebo を知らない（依存は core_gazebo から core_launch の向きだけ） -->
+<robot name="core2026" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- xacro:arg は先に宣言した既定値が使われるので、機体の URDF の gazebo の既定（false）より先に true にする -->
+  <xacro:arg name="gazebo" default="true"/>
+  <xacro:include filename="$(find core_launch)/urdf/core2026.urdf.xacro"/>
+  <xacro:include filename="$(find core_gazebo)/urdf/core2026.gazebo.xacro"/>
+</robot>

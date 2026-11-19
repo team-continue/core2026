@@ -28,7 +28,7 @@ WSL_GPU_ENV: Final = {
     'GALLIUM_DRIVER': 'd3d12',
     'MESA_D3D12_DEFAULT_ADAPTER_NAME': 'NVIDIA',
 }
-# 駆動の無駄時間と床との滑り（omni_force_drive の設定。core2026.urdf.xacro の同じ名前の引数へ渡す）。
+# 駆動の無駄時間と床との滑り（omni_force_drive の設定。core2026.gazebo.xacro の同じ名前の引数へ渡す）。
 # 既定は遅れなし・滑らない
 SLIP_ARGUMENTS: Final = {
     'drive_dead_time': ('0.0', '速度指令を受けてから駆動が応え始めるまでの時間（無駄時間）[s]'),
@@ -115,7 +115,7 @@ def generate_launch_description() -> LaunchDescription:
 
     robot_description = ParameterValue(
         Command([
-            'xacro ', str(description_share / 'urdf' / 'core2026.urdf.xacro'),
+            'xacro ', str(share / 'urdf' / 'core2026_sim.urdf.xacro'),
             ' lidar_x:=', LaunchConfiguration('lidar_x'),
             ' lidar_height:=', LaunchConfiguration('lidar_height'),
             ' lidar_roll:=', LaunchConfiguration('lidar_roll'),

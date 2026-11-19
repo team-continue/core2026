@@ -1,6 +1,19 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
   <!-- シミュレーション専用の定義。実機では Gazebo に読まれないだけで影響しない -->
+  <!-- core2026_sim.urdf.xacro が、core_launch の機体の URDF のあとに読み込む。sim_waist・rear_lidar は機体の
+       URDF の引数（と式で使う値）を使う -->
+
+  <!-- 駆動の無駄時間と床との滑り（omni_force_drive。sim.launch.py の同じ名前の引数から渡る） -->
+  <xacro:arg name="drive_dead_time" default="0.0"/>
+  <xacro:arg name="slip_longitudinal_ratio" default="1.0"/>
+  <xacro:arg name="slip_lateral_ratio" default="1.0"/>
+  <xacro:arg name="slip_yaw_ratio" default="1.0"/>
+  <xacro:arg name="slip_time_constant" default="0.0"/>
+  <xacro:arg name="slip_static_friction_accel" default="0.0"/>
+  <xacro:arg name="slip_kinetic_friction_accel" default="0.0"/>
+  <xacro:arg name="slip_noise_ratio" default="0.0"/>
+  <xacro:arg name="slip_noise_time" default="0.5"/>
 
   <!-- IMUのノイズは資料で確認していない仮の値 -->
   <xacro:macro name="axis_noise" params="axis stddev">

@@ -4,7 +4,8 @@
      木に組み替えたもの:
        base_link    = 上半身（Unity の LowerYawAxisJoint より上。LiDAR・IMU・砲塔が付く）を床に投影した中心
        chassis_link = 駆動部（Unity の RootLink: 車台と 4 輪）。上半身の下で回る（関節 base_to_chassis）
-     実機の robot_state_publisher と Gazebo（gazebo:=true）で同じものを使う -->
+     実機の robot_state_publisher と Gazebo で同じものを使う。Gazebo は core_gazebo の core2026_sim.urdf.xacro が
+     これを gazebo:=true で読み込み、シミュレーションの定義（センサ・駆動）を足す -->
 <robot name="core2026" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <!-- Mid-360 の取り付け（base_link から livox_frame）。既定は Unity の機体の Mid-360 の計測点（Mid-360_ros の
        Sensor）: 前へ 0.132m、床から 0.484m、上下逆さ -->
@@ -26,19 +27,10 @@
   <xacro:arg name="sim_waist" default="false"/>
   <!-- 以前の衝突の箱の高さ。今の形は Unity の機体の形なので使わない（launch が渡すので引数だけ残す） -->
   <xacro:arg name="body_height" default="0.95"/>
-  <!-- 以下は Gazebo（core2026.gazebo.xacro）だけで使う -->
+  <!-- Gazebo の検出のための 2 台目の LiDAR の取り付け（gazebo が true のときだけ付ける） -->
   <xacro:arg name="rear_lidar" default="false"/>
   <xacro:arg name="rear_lidar_x" default="-0.44"/>
   <xacro:arg name="rear_lidar_height" default="0.25"/>
-  <xacro:arg name="drive_dead_time" default="0.0"/>
-  <xacro:arg name="slip_longitudinal_ratio" default="1.0"/>
-  <xacro:arg name="slip_lateral_ratio" default="1.0"/>
-  <xacro:arg name="slip_yaw_ratio" default="1.0"/>
-  <xacro:arg name="slip_time_constant" default="0.0"/>
-  <xacro:arg name="slip_static_friction_accel" default="0.0"/>
-  <xacro:arg name="slip_kinetic_friction_accel" default="0.0"/>
-  <xacro:arg name="slip_noise_ratio" default="0.0"/>
-  <xacro:arg name="slip_noise_time" default="0.5"/>
 
   <!-- 引数は文字列なので、式で使えるよう真偽値にする -->
   <xacro:property name="gazebo" value="${'$(arg gazebo)'.lower() == 'true'}"/>
@@ -857,8 +849,4 @@
     <child link="damiao_imu_link"/>
     <origin xyz="$(arg damiao_imu_x) $(arg damiao_imu_y) $(arg damiao_imu_z)" rpy="$(arg damiao_imu_roll) 0 0"/>
   </joint>
-
-  <xacro:if value="${gazebo}">
-    <xacro:include filename="$(find core_gazebo)/urdf/core2026.gazebo.xacro"/>
-  </xacro:if>
 </robot>
