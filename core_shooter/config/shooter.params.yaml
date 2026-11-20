@@ -217,10 +217,34 @@
     shoot_motor_id: 15
     loading_motor_id: 12
 
+    # 発射機構の選択（左右で個別設定）
+    #   "rotary_loader": 装填モータを 1 発ごとに π rad 回す方式（従来方式）
+    #   "belt_flick":    サーボ（loading_motor_id）でベルトを揺動させる方式
+    #                    INIT で 角度2→角度1 と往復し、発射ごとに 角度1→角度2→(hold)→角度1
+    shoot_mechanism: "rotary_loader"
+    # belt_flick parameters（shoot_mechanism="belt_flick" のとき使用）
+    flick_home_angle_deg: 0.0 # 角度1（初期位置）[deg]
+    flick_strike_angle_deg: 5.0 # 角度2 [deg]
+    flick_hold_sec: 0.2 # 角度2に到達してから保持する時間[s]
+    flick_angle_tolerance_deg: 0.5 # この誤差以内で到達とみなす[deg]
+    flick_move_timeout_sec: 1.0 # 到達待ちの上限[s]。超えたら warning を出して次の段階へ進む
+
 /**/right/shooter_controller:
   ros__parameters:
     shoot_motor_id: 16
     loading_motor_id: 8
+
+    # 発射機構の選択（左右で個別設定）
+    #   "rotary_loader": 装填モータを 1 発ごとに π rad 回す方式（従来方式）
+    #   "belt_flick":    サーボ（loading_motor_id）でベルトを揺動させる方式
+    #                    INIT で 角度2→角度1 と往復し、発射ごとに 角度1→角度2→(hold)→角度1
+    shoot_mechanism: "rotary_loader"
+    # belt_flick parameters（shoot_mechanism="belt_flick" のとき使用）
+    flick_home_angle_deg: 0.0 # 角度1（初期位置）[deg]
+    flick_strike_angle_deg: 5.0 # 角度2 [deg]
+    flick_hold_sec: 0.2 # 角度2に到達してから保持する時間[s]
+    flick_angle_tolerance_deg: 0.5 # この誤差以内で到達とみなす[deg]
+    flick_move_timeout_sec: 1.0 # 到達待ちの上限[s]。超えたら warning を出して次の段階へ進む
 
 /**/left/magazine_manager:
   ros__parameters:
