@@ -1,7 +1,7 @@
 // 経路の追従（大域計画の線からのはみ出し）を、Gazebo を使わずに比べるコマンド。
 //
 // 大域計画（JPS と曲線化）、局所計画（MPPI）、安全停止（静止物だけ）を実機と同じライブラリで動かし、
-// 機体は core_gazebo の omni_force_drive と同じ式（加速度の上限と、床との滑り）で進める。
+// 機体は sim（core_field_sim）の omni_force_drive と同じ式（加速度の上限と、床との滑り）で進める。
 // 動く相手は置かない（シナリオの相手は読まない）。crowd_stats と同じ設定ファイルを読み、--case で
 // 指定した値だけを変えて、同じ乱数の列で比べる。
 //
@@ -66,7 +66,7 @@ using core_planning::StuckState;
 
 constexpr const char * kUsage =
   "使い方: ros2 run core_planning tracking_bench [オプション]\n"
-  "  --scenario FILE    シナリオ（必須。start と goals だけを使う。core_gazebo の scenarios/obstacle_goals.yaml など）\n"
+  "  --scenario FILE    シナリオ（必須。start と goals だけを使う。core_field_sim の scenarios/obstacle_goals.yaml など）\n"
   "  --config-dir DIR   パラメータファイルの場所（既定は core_launch の config）\n"
   "  --map FILE         静止物の地図（既定は core_launch の maps/arena_obstacles.pcd）\n"
   "  --runs N           条件ごとの実行回数（乱数の種を変える。既定 8）\n"
@@ -91,7 +91,7 @@ constexpr double kSampleMinSpeedMps = 0.3;
 constexpr double kTurnSpanM = 1.5;
 constexpr double kTurnMinRad = 10.0 * M_PI / 180.0;
 
-// 床と車輪の滑りを含む機体の運動。core_gazebo/src/omni_force_drive.cpp と同じ式なので、変えるときは
+// 床と車輪の滑りを含む機体の運動。core_field_sim の core_field_sim/src/omni_force_drive.cpp と同じ式なので、変えるときは
 // 両方を直す。
 // - 指令の機体座標の速度に、前後・横・回転の比（床が出せる割合）をかけたものを目標にする
 // - 目標と今の速度の差を time_constant_s で埋める加速度（0 なら 1 ステップで埋める）を、駆動の上限

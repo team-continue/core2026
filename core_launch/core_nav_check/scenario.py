@@ -1,6 +1,6 @@
 """シナリオファイルの読み込みと、他ロボットと人間の真の位置の計算.
 
-core_gazebo/src/moving_obstacles.cpp と同じ式を使う。変えるときは両方を直す。
+sim（core_field_sim）の core_field_sim/src/moving_obstacles.cpp と同じ式を使う。変えるときは両方を直す。
 z（足元の高さ）と spectator（観客。フィールドの外の人）は省略できる。
 """
 

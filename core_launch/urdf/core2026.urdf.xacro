@@ -4,7 +4,7 @@
      木に組み替えたもの:
        base_link    = 上半身（Unity の LowerYawAxisJoint より上。LiDAR・IMU・砲塔が付く）を床に投影した中心
        chassis_link = 駆動部（Unity の RootLink: 車台と 4 輪）。上半身の下で回る（関節 base_to_chassis）
-     実機の robot_state_publisher と Gazebo で同じものを使う。Gazebo は core_gazebo の core2026_sim.urdf.xacro が
+     実機の robot_state_publisher と Gazebo で同じものを使う。Gazebo は sim（core_field_sim）の core2026_sim.urdf.xacro が
      これを gazebo:=true で読み込み、シミュレーションの定義（センサ・駆動）を足す -->
 <robot name="core2026" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <!-- Mid-360 の取り付け（base_link から livox_frame）。既定は Unity の機体の Mid-360 の計測点（Mid-360_ros の
@@ -23,7 +23,7 @@
   <!-- Gazebo で使うとき true。可動の関節（腰・砲塔・車輪）を固定にし、シミュレーションの定義を読む -->
   <xacro:arg name="gazebo" default="false"/>
   <!-- Gazebo で、腰（base_to_chassis）だけは回る関節にする（sim の waist:=true）。足回りは body_controller の
-       指令で動き、上半身は腰で向きを保つ（core_gazebo の sim_hardware）。gazebo が false なら使わない -->
+       指令で動き、上半身は腰で向きを保つ（sim の core_field_sim の sim_hardware）。gazebo が false なら使わない -->
   <xacro:arg name="sim_waist" default="false"/>
   <!-- 以前の衝突の箱の高さ。今の形は Unity の機体の形なので使わない（launch が渡すので引数だけ残す） -->
   <xacro:arg name="body_height" default="0.95"/>

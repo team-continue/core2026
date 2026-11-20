@@ -2,7 +2,7 @@
 """CoRE-1 のフィールドの形（fields/core1_2027_top.json）から、試験のフィールドの地図を作る.
 
 作るもの（実機と sim で同じものを使う）:
-- 構造物の外形（maps/<name>_outlines.yaml。名前・高さ・上から見た多角形）。sim の接触の判定と、core_gazebo の
+- 構造物の外形（maps/<name>_outlines.yaml。名前・高さ・上から見た多角形）。sim の接触の判定と、sim（core_field_sim）の
   make_core1_field_model.py（外形を押し出した Gazebo のフィールドのモデル）が使う
 - 地図照合の PCD（構造物・会場・床の面に点を並べたもの。会場の壁や天井などは --venue のワールドから写す）
 - UI に出す占有地図（PNG と map_server の yaml）
@@ -323,7 +323,7 @@ def write_outlines(outlines: list[Prism], out: Path) -> None:
          'points': [[round(x, 4), round(y, 4)] for x, y in p.polygon]} for p in outlines]}
     out.write_text(
         '# make_core1_map.py が作った構造物の外形（--mesh のときは 3D データの、静止物の高さの下限より高い所の輪切り）。\n'
-        '# run_scenario.py の接触の判定と、core_gazebo の make_core1_field_model.py が使う。手で直さず、スクリプトで作り直す\n'
+        '# run_scenario.py の接触の判定と、sim（core_field_sim）の make_core1_field_model.py が使う。手で直さず、スクリプトで作り直す\n'
         + yaml.safe_dump(document, sort_keys=False, allow_unicode=True, default_flow_style=None), encoding='utf-8')
 
 

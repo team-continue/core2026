@@ -174,7 +174,7 @@ inline constexpr double kHardImpactSpeedMps = 1.5;
 // 同じ値で数え、設定の違う build どうしを比べられるようにする
 inline constexpr double kHumanRegionM = 1.0;
 
-// core_gazebo/src/moving_obstacles.cpp と同じ式。変えるときは両方を直す
+// sim（core_field_sim）の core_field_sim/src/moving_obstacles.cpp と同じ式。変えるときは両方を直す
 LaneState laneStateAt(const Lane & lane, double time_s);
 
 // 自機の箱と相手の間の距離。重なっていれば負。core_nav_check/scenario.py の footprint_gap と同じ

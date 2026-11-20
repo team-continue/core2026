@@ -61,7 +61,7 @@ def generate_launch_description() -> LaunchDescription:
         default_value="0.2",
         description="Maximum accepted age of body_omega feedforward [s]",
     )
-    # sim（core_gazebo の sim_nav.launch.py の waist:=true）から使うときの設定。実機の既定は変えない
+    # sim（core_field_sim の sim_nav.launch.py の waist:=true）から使うときの設定。実機の既定は変えない
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time",
         default_value="false",

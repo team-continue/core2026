@@ -1,8 +1,0 @@
-# 相手なし。点群に干渉を足す試験（points_to_livox の interference_points）に使う
-start: [-6.0, -2.5, 0.0]
-goals:
-  - [6.0, -2.5, 0.0]
-  - [-6.0, -2.5, 0.0]
-timeout_s: 60
-repeat: 1
-obstacles: []

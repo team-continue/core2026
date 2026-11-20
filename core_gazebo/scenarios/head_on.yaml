@@ -1,9 +1,0 @@
-# 自機の経路上を、相手が正面から往復する。すれ違いの規則の確認にも使う
-start: [-10.0, 0.0, 0.0]
-goals:
-  - [10.0, 0.0, 0.0]
-  - [-10.0, 0.0, 0.0]
-timeout_s: 90
-repeat: 1
-obstacles:
-  - {name: robot_head_on, type: robot, start: [11.0, 0.0], end: [-11.0, 0.0], peak_speed: 3.0, phase: 0.0}

@@ -1,5 +1,5 @@
 # make_core1_map.py が作った構造物の外形（--mesh のときは 3D データの、静止物の高さの下限より高い所の輪切り）。
-# run_scenario.py の接触の判定と、core_gazebo の make_core1_field_model.py が使う。手で直さず、スクリプトで作り直す
+# run_scenario.py の接触の判定と、sim（core_field_sim）の make_core1_field_model.py が使う。手で直さず、スクリプトで作り直す
 outlines:
 - name: fence_1
   height_m: 0.14

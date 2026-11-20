@@ -28,7 +28,7 @@ namespace fs = std::filesystem;
 constexpr int kDefaultRuns = 240;
 constexpr const char * kUsage =
   "使い方: ros2 run core_planning crowd_stats [オプション]\n"
-  "  --scenario FILE    シナリオ（必須。sim の core_gazebo の scenarios/crowd_goals.yaml など）\n"
+  "  --scenario FILE    シナリオ（必須。sim の core_field_sim の scenarios/crowd_goals.yaml など）\n"
   "  --config-dir DIR   パラメータファイルの場所（既定は core_launch の config）\n"
   "  --runs N           条件ごとの実行回数（既定 240）\n"
   "  --jobs N           同時に動かすスレッドの数（既定は CPU の数）\n"

@@ -1,9 +1,0 @@
-# 同じ向きに遅く進む相手を追い越す
-start: [-10.0, 1.0, 0.0]
-goals:
-  - [10.0, 1.0, 0.0]
-  - [-10.0, 1.0, 0.0]
-timeout_s: 90
-repeat: 1
-obstacles:
-  - {name: robot_slow, type: robot, start: [-8.0, 1.0], end: [10.5, 1.0], peak_speed: 1.0, phase: 0.0}
