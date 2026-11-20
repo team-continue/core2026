@@ -14,7 +14,7 @@
   <depend>geometry_msgs</depend>
   <depend>core_nav_common</depend>
   <depend>core_msgs</depend>
-  <depend>livox_ros_driver2</depend>
+  <!-- livox_ros_driver2（Livox の点群 CustomMsg）は依存に書かず、各自で入れる（実機は Livox のドライバ本体、sim はメッセージだけのパッケージ）。ビルドと実行には要るので、先にビルドして source しておく -->
   <depend>nav_msgs</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>

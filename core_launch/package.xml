@@ -23,7 +23,7 @@
   <exec_depend>core_planning</exec_depend>
   <exec_depend>fast_lio</exec_depend>
   <exec_depend>lidar_localization_ros2</exec_depend>
-  <exec_depend>livox_ros_driver2</exec_depend>
+  <!-- livox_ros_driver2 のドライバは navigation.launch.py が起動する。依存には書かず、各自で入れる（実機は Livox のドライバ本体）。先にビルドして source しておく -->
   <exec_depend>rclcpp_components</exec_depend>
 
   <exec_depend>geometry_msgs</exec_depend>

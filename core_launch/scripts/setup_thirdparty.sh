@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 外部パッケージをワークスペースの src/thirdparty（core2026 の外）に取得し、Jazzy で動かすためのパッチを当てる。
-# livox_ros_driver2 がワークスペースに無ければ、メッセージ定義だけのパッケージ（シミュレーション用）を置く。
+# livox_ros_driver2（Livox のドライバ）は取らない。各自で入れる（実機はドライバ本体、sim は core_field_sim の
+# scripts/setup_livox_msgs.sh が置くメッセージだけのパッケージ）。
 # 何度実行してもよい。
 set -euo pipefail
 
@@ -11,15 +12,6 @@ fast_lio_dir="${thirdparty_dir}/FAST_LIO"
 localization_dir="${thirdparty_dir}/lidar_localization_ros2"
 mkdir -p "${thirdparty_dir}"
 vcs import --recursive --input "${bringup_dir}/thirdparty/core_nav.repos" "${thirdparty_dir}"
-
-src_dir="$(cd "${thirdparty_dir}/.." && pwd)"
-# core_launch/thirdparty の雛形（COLCON_IGNORE 付き）は数えない
-if ! grep -rqs --include=package.xml --exclude-dir=livox_ros_driver2_msgs '<name>livox_ros_driver2</name>' "${src_dir}"; then
-  mkdir -p "${thirdparty_dir}/livox_ros_driver2"
-  cp -r "${bringup_dir}/thirdparty/livox_ros_driver2_msgs/." "${thirdparty_dir}/livox_ros_driver2/"
-  rm -f "${thirdparty_dir}/livox_ros_driver2/COLCON_IGNORE"
-  echo "livox_ros_driver2: メッセージ定義だけのパッケージを置きました"
-fi
 
 # パッチは前のパッチの行を文脈に含むので、1 枚ずつでは適用済みかを判定できない。
 # 作業ツリーがきれいならすべて順に当てる。変更があれば、きれいな取り出しに当てた結果と同じかを確かめる。
