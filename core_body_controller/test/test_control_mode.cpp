@@ -9,6 +9,7 @@ using core_body_controller::CommandSource;
 using core_body_controller::ControlMode;
 using core_body_controller::ControlModeLogic;
 using core_body_controller::NavigationPhase;
+using core_body_controller::effectiveRotationMode;
 using core_body_controller::routeError;
 
 TEST(ControlModeLogic, StartsManualAndPassesOnlyManual)
@@ -99,4 +100,12 @@ TEST(RouteError, RejectsEmptyTooLongAndNonFinite)
   const auto error = routeError({{0.0, 0.0}, {std::nan(""), 1.0}}, 3);
   ASSERT_TRUE(error.has_value());
   EXPECT_NE(error->find("2 番目"), std::string::npos);
+}
+
+TEST(RotationMode, AutoUsesR1InsteadOfR2)
+{
+  EXPECT_EQ(effectiveRotationMode(2, ControlMode::kManual), 2);
+  EXPECT_EQ(effectiveRotationMode(2, ControlMode::kAuto), 1);
+  EXPECT_EQ(effectiveRotationMode(1, ControlMode::kAuto), 1);
+  EXPECT_EQ(effectiveRotationMode(0, ControlMode::kAuto), 0);
 }

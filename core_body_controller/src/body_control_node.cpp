@@ -83,6 +83,13 @@ BodyControlNode::BodyControlNode()
     "/rotation", 10, [this](const std_msgs::msg::Int32::SharedPtr msg) {
       rotation_mode_ = msg->data;
     });
+  // control_mode_manager は最後のモードを残して出す（後から起動しても受け取れる）
+  control_mode_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "/control/mode", rclcpp::QoS(1).reliable().transient_local(),
+    [this](const std_msgs::msg::String::SharedPtr msg) {
+      control_mode_ = msg->data == "auto" ?
+      core_body_controller::ControlMode::kAuto : core_body_controller::ControlMode::kManual;
+    });
   if (acceleration_in_world_frame_) {
     imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
       "imu", rclcpp::SensorDataQoS(), [this](const sensor_msgs::msg::Imu::SharedPtr msg) {
@@ -138,9 +145,12 @@ void BodyControlNode::timer_callback()
 
   const double angular_step = ROTATION_ACCELERATION * TIMER_PERIOD;
   double rotation_velocity = 0.0;
-  if (rotation_mode_ == 1) {
+  // 自律移動中は R2 を R1 にする
+  const int rotation_mode =
+    core_body_controller::effectiveRotationMode(rotation_mode_, control_mode_);
+  if (rotation_mode == 1) {
     rotation_velocity = AUTO_ROTATION_VELOCITY;
-  } else if (rotation_mode_ == 2) {
+  } else if (rotation_mode == 2) {
     rotation_velocity = HIGH_ROTATION_VELOCITY;
   }
   // 無限回転の分と操作の分を別々に制限する。target_angle_node は操作の分だけ腰の目標に足すので、

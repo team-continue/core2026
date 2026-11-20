@@ -36,6 +36,13 @@ inline std::string toString(const ControlMode mode)
   return mode == ControlMode::kAuto ? "auto" : "manual";
 }
 
+// 回転モード（/control/rotation: 0 なし、1 R1、2 R2）のうち、足回りで使うもの。自律移動中は R2 で回らない
+// よう R1 にする（R2 で回りながら速く走ると、柵や構造物に寄って当たった）
+inline int effectiveRotationMode(const int requested, const ControlMode mode)
+{
+  return mode == ControlMode::kAuto && requested == 2 ? 1 : requested;
+}
+
 // 経路（通過点…、最後がゴール。各点は map の (x, y)）を受け付けない理由。受け付けるなら nullopt
 inline std::optional<std::string> routeError(
   const std::vector<std::array<double, 2>> & points, const std::size_t max_points)

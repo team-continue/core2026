@@ -11,6 +11,9 @@
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/int32.hpp"
+#include "std_msgs/msg/string.hpp"
+
+#include "core_body_controller/control_mode.hpp"
 
 class BodyControlNode : public rclcpp::Node
 {
@@ -30,6 +33,9 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr body_omega_manual_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rotation_flag_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
+  // 運転モード（/control/mode の "manual" / "auto"）。自律移動中は回転モードの R2 を R1 にする
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr control_mode_sub_;
+  core_body_controller::ControlMode control_mode_ = core_body_controller::ControlMode::kManual;
 
   void timer_callback();
   // 前の出力（上半身の座標）を、前の周期から上半身が回った分だけ今の上半身の座標へ直す
