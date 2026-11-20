@@ -37,11 +37,14 @@ jobs:
           cp -r $GITHUB_WORKSPACE /ros2_ws/src/core2026
           find /ros2_ws/src -name '_codeql*' -exec rm -rf {} + 2>/dev/null || true
 
+      # CI でビルドしない Livox を使うパッケージ（下の Build tests を見る）の依存は入れない
       - name: Install dependencies
         run: |
           apt-get update &&
           rosdep update &&
-          rosdep install --from-paths /ros2_ws/src -i -y --rosdistro ${{ matrix.rosdistro }}
+          cd /ros2_ws &&
+          rosdep install -i -y --rosdistro ${{ matrix.rosdistro }} --from-paths \
+            $(colcon list --packages-skip core_launch core_localization core_perception --paths-only)
 
       - name: Install diagnostic-updater
         run: apt-get install -y ros-${{ matrix.rosdistro }}-diagnostic-updater
@@ -58,11 +61,12 @@ jobs:
       - name: Install DepthAI
         run: bash /ros2_ws/src/core2026/core_enemy_detection/scripts/depthAI_install.sh
 
+      # Livox の点群（livox_ros_driver2、各自で入れる）を使うパッケージと、それに頼る core_launch は CI ではビルドしない
       - name: Build tests
         run: |
           . /opt/ros/${{ matrix.rosdistro }}/setup.sh &&
           cd /ros2_ws &&
-          colcon build
+          colcon build --packages-skip core_launch core_localization core_perception
 
       - name: Run tests
         run: |
@@ -74,7 +78,6 @@ jobs:
             core_costmap_builder \
             core_damiao_imu \
             core_hardware \
-            core_launch \
             core_mppi \
             core_msgs \
             core_path_follower \
