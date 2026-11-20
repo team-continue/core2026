@@ -433,6 +433,12 @@ public:
     route_subscription_ = create_subscription<Path>(
       "/behavior/goal_route", rclcpp::QoS(1).reliable(),
       std::bind(&GlobalPlannerNode::onRoute, this, std::placeholders::_1));
+    // 試しの計画（UI が目標を置いたとき）。ゴールにはしない
+    preview_publisher_ =
+      create_publisher<Path>("/planning/plan_preview", rclcpp::QoS(1).reliable().transient_local());
+    preview_subscription_ = create_subscription<Path>(
+      "/ui/auto/preview", rclcpp::QoS(1).reliable(),
+      std::bind(&GlobalPlannerNode::onPreview, this, std::placeholders::_1));
     // 残りの通過点。UI が後から繋いでも分かるよう、最後の値を残して出す
     waypoints_publisher_ = create_publisher<geometry_msgs::msg::PoseArray>(
       "/planning/waypoints", rclcpp::QoS(1).reliable().transient_local());
@@ -927,6 +933,84 @@ private:
     return alternative_;
   }
 
+  // 区間ごとの経路を折れ線にして曲線にし、つなぐ（曲線にしても、区間の端の通過点は通る）。obstacles は
+  // 曲線にするときに避ける相手。cells があれば、通るセルの列を入れる（塞がれたかの確かめ用）
+  std::vector<std::pair<double, double>> joinLegs(
+    const std::vector<PlannedRoute> & legs, const std::vector<PlanarPose> & stops,
+    const OccupancyGrid & grid, const std::vector<SlowObstacle> & obstacles,
+    std::vector<GridCell> * cells)
+  {
+    std::vector<std::vector<std::pair<double, double>>> segments;
+    segments.reserve(legs.size());
+    for (std::size_t i = 0U; i < legs.size(); ++i) {
+      const PlannedRoute & leg = legs[i];
+      if (cells != nullptr) {
+        for (const auto & cell : leg.cells) {
+          if (cells->empty() || !(cells->back() == cell)) {
+            cells->push_back(cell);
+          }
+        }
+      }
+      // hybrid_astar の点の列は、始点と終点をセルの中心から区間の端の位置に置き換える
+      std::vector<std::pair<double, double>> raw_points;
+      if (leg.points.has_value()) {
+        raw_points = *leg.points;
+        raw_points.front() = {stops[i].x, stops[i].y};
+        raw_points.back() = {stops[i + 1U].x, stops[i + 1U].y};
+      } else {
+        raw_points = toPoints(grid, leg.cells, stops[i], stops[i + 1U]);
+      }
+      segments.push_back(smoothedPoints(raw_points, obstacles));
+    }
+    return joinSegments(segments);
+  }
+
+  // 試しの計画（/ui/auto/preview）。ゴールにはせず、今の機体の位置から通過点を順に通ってゴールまでの経路を、
+  // 固定物（地図・柵・進入禁止ゾーン）だけで 1 回作って /planning/plan_preview に出す。周りのロボットは
+  // 走り出すまでに動くので入れない（走り出した後の経路は相手を避けるので、形が少し変わることがある）。
+  // 通過点は走るときと同じく静止物から離す。経路がなければ点のない経路を出す
+  void onPreview(const Path::ConstSharedPtr & request)
+  {
+    Path empty;
+    empty.header.stamp = now();
+    empty.header.frame_id = get_parameter("map_frame").as_string();
+    const bool finite = std::all_of(
+      request->poses.begin(), request->poses.end(), [](const PoseStamped & pose) {
+        return std::isfinite(pose.pose.position.x) && std::isfinite(pose.pose.position.y);
+      });
+    if (request->poses.empty() || !finite) {
+      // 目標を消した（または有限でない）。試しの経路も消す
+      preview_publisher_->publish(empty);
+      return;
+    }
+    const auto frame_in_map = frameInMap(request->header.frame_id, "試しの計画");
+    const auto robot = lookupPose(
+      get_parameter("map_frame").as_string(), get_parameter("base_frame").as_string());
+    if (!frame_in_map.has_value() || !robot.has_value()) {
+      preview_publisher_->publish(empty);
+      return;
+    }
+    std::vector<PlanarPose> stops{*robot};
+    for (std::size_t i = 0U; i + 1U < request->poses.size(); ++i) {
+      const PlanarPose point = toMapFrame(*frame_in_map, planarPose(request->poses[i].pose));
+      const Waypoint moved = reachableWaypoint({point.x, point.y}, i + 1U);
+      stops.push_back({moved.x, moved.y, 0.0});
+    }
+    const PlanarPose goal = toMapFrame(*frame_in_map, planarPose(request->poses.back().pose));
+    stops.push_back(goal);
+    const auto legs = planLegs(inflated_, stops);
+    if (!legs.has_value()) {
+      RCLCPP_WARN(
+        get_logger(), "試しの計画: ゴール (%.2f, %.2f) への経路がありません", goal.x, goal.y);
+      preview_publisher_->publish(empty);
+      return;
+    }
+    preview_publisher_->publish(
+      makePath(
+        joinLegs(*legs, stops, inflated_, {}, nullptr), goal.yaw,
+        get_parameter("map_frame").as_string(), now()));
+  }
+
   // stops（機体 → 通過点 → … → 目標）の区間ごとに経路を探す。どこかの区間で見つからなければ nullopt
   std::optional<std::vector<PlannedRoute>> planLegs(
     const OccupancyGrid & grid, const std::vector<PlanarPose> & stops) const
@@ -1033,32 +1117,11 @@ private:
       return;
     }
 
-    // 区間ごとに折れ線を作って曲線にし、つなぐ（曲線にしても、区間の端の通過点は通る）
+    // 固定物だけで計画し直した経路は相手を通るので、固定物だけの距離場で曲線にする
     current_cells_.clear();
-    std::vector<std::vector<std::pair<double, double>>> segments;
-    segments.reserve(legs->size());
-    for (std::size_t i = 0U; i < legs->size(); ++i) {
-      const PlannedRoute & leg = (*legs)[i];
-      for (const auto & cell : leg.cells) {
-        if (current_cells_.empty() || !(current_cells_.back() == cell)) {
-          current_cells_.push_back(cell);
-        }
-      }
-      // hybrid_astar の点の列は、始点と終点をセルの中心から区間の端の位置に置き換える
-      std::vector<std::pair<double, double>> raw_points;
-      if (leg.points.has_value()) {
-        raw_points = *leg.points;
-        raw_points.front() = {stops[i].x, stops[i].y};
-        raw_points.back() = {stops[i + 1U].x, stops[i + 1U].y};
-      } else {
-        raw_points = toPoints(*used_grid, leg.cells, stops[i], stops[i + 1U]);
-      }
-      // 固定物だけで計画し直した経路は相手を通るので、固定物だけの距離場で曲線にする
-      segments.push_back(
-        smoothedPoints(
-          raw_points, used_grid == &blocked ? obstacles : std::vector<SlowObstacle>{}));
-    }
-    const auto points = joinSegments(segments);
+    const auto points = joinLegs(
+      *legs, stops, *used_grid, used_grid == &blocked ? obstacles : std::vector<SlowObstacle>{},
+      &current_cells_);
     path_publisher_->publish(
       makePath(points, target->yaw, get_parameter("map_frame").as_string(), now()));
     if (!points.empty()) {
@@ -1097,6 +1160,8 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_publisher_;
   rclcpp::Subscription<PoseStamped>::SharedPtr goal_subscription_;
   rclcpp::Subscription<Path>::SharedPtr route_subscription_;
+  rclcpp::Subscription<Path>::SharedPtr preview_subscription_;
+  rclcpp::Publisher<Path>::SharedPtr preview_publisher_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr waypoints_publisher_;
   // 残りの通過点（map）。先頭から順に通る
   std::vector<Waypoint> waypoints_;
