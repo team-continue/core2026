@@ -281,9 +281,14 @@ public:
     test_mode_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "/test_mode", 10,
       std::bind(&ShooterController::testModeCallback, this, std::placeholders::_1));
-    regrip_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "regrip_active", rclcpp::QoS(1).transient_local(),
-      std::bind(&ShooterController::regripActiveCallback, this, std::placeholders::_1));
+    // belt_flick はリグリップを使わないため購読しない（regrip_active_ は false のまま）
+    if (shoot_mechanism_ == ShootMechanism::BeltFlick) {
+      RCLCPP_INFO(this->get_logger(), "belt_flick: regrip_active is not used");
+    } else {
+      regrip_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+        "regrip_active", rclcpp::QoS(1).transient_local(),
+        std::bind(&ShooterController::regripActiveCallback, this, std::placeholders::_1));
+    }
 
     //========================================
     // subscribers shoot cmd
