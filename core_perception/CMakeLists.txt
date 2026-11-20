@@ -87,6 +87,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_lidar_merge ${PROJECT_NAME}_core)
   ament_add_gtest(test_pose_timing test/test_pose_timing.cpp)
   target_link_libraries(test_pose_timing ${PROJECT_NAME}_core)
+  ament_add_gtest(test_track_frame test/test_track_frame.cpp)
+  target_link_libraries(test_track_frame ${PROJECT_NAME}_core)
 endif()
 
 ament_package()

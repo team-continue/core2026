@@ -37,6 +37,7 @@
 #include "core_perception/detection.hpp"
 #include "core_perception/pose_timing.hpp"
 #include "core_perception/static_map.hpp"
+#include "core_perception/track_frame.hpp"
 #include "core_perception/tracker.hpp"
 
 namespace core_perception
@@ -245,6 +246,9 @@ public:
     }
 
     tracks_publisher_ = create_publisher<TrackedObjectArray>("/perception/tracks", rclcpp::QoS(10));
+    // 同じ追跡結果を地図の座標に直したもの（操縦の UI が地図に重ねて描く）
+    map_tracks_publisher_ =
+      create_publisher<TrackedObjectArray>("/perception/tracks_map", rclcpp::QoS(10));
     stats_publisher_ = create_publisher<ProcessStats>("/perception/stats", rclcpp::QoS(10));
     detections_publisher_ = create_publisher<Marker>("/perception/detections", rclcpp::QoS(10));
     cloud_subscription_ = create_subscription<CustomMsg>(
@@ -429,7 +433,7 @@ private:
     last_stamp_ns_ = stamp_ns;
     tracker_.update(detections, dt, tracking_params_);
 
-    publishTracks(cloud);
+    publishTracks(cloud, *map_to_odom);
     ProcessStats stats;
     stats.header = cloud.header;
     stats.input_points = static_cast<std::uint32_t>(counts.input);
@@ -466,7 +470,7 @@ private:
     detections_publisher_->publish(marker);
   }
 
-  void publishTracks(const CustomMsg & cloud)
+  void publishTracks(const CustomMsg & cloud, const Eigen::Isometry3f & map_to_odom)
   {
     TrackedObjectArray output;
     output.header.stamp = cloud.header.stamp;
@@ -495,6 +499,21 @@ private:
       output.objects.push_back(object);
     }
     tracks_publisher_->publish(output);
+    if (map_tracks_publisher_->get_subscription_count() == 0U) {
+      return;
+    }
+    TrackedObjectArray in_map = output;
+    in_map.header.frame_id = get_parameter("map_frame").as_string();
+    for (auto & object : in_map.objects) {
+      const PlanarTrackState odom_state{
+        object.position.x, object.position.y, object.velocity.x, object.velocity.y};
+      const auto state = transformTrackState(odom_state, map_to_odom);
+      object.position.x = state.x;
+      object.position.y = state.y;
+      object.velocity.x = state.vx;
+      object.velocity.y = state.vy;
+    }
+    map_tracks_publisher_->publish(in_map);
   }
 
   DetectionParams detection_params_;
@@ -513,6 +532,7 @@ private:
   std::uint32_t skipped_frames_{0U};
   rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr parameter_callback_;
   rclcpp::Publisher<TrackedObjectArray>::SharedPtr tracks_publisher_;
+  rclcpp::Publisher<TrackedObjectArray>::SharedPtr map_tracks_publisher_;
   rclcpp::Publisher<ProcessStats>::SharedPtr stats_publisher_;
   rclcpp::Publisher<Marker>::SharedPtr detections_publisher_;
   rclcpp::Subscription<CustomMsg>::SharedPtr cloud_subscription_;
