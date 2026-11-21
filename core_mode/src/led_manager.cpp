@@ -11,6 +11,7 @@
 #include "core_msgs/msg/led_command.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/empty.hpp"
 #include "std_msgs/msg/int32.hpp"
 #include "std_msgs/msg/int8_multi_array.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -154,11 +155,11 @@ private:
     turret_subs_.push_back(bool_sub(prefix + "/jam_state", turret.jam));
     turret_subs_.push_back(bool_sub(prefix + "/loading_motor_error_state", turret.loading_error));
     turret_subs_.push_back(bool_sub(prefix + "/shoot_motor_error_state", turret.shooting_error));
-    // shooter_controller は 1 発ごとに撃ち始めで false、撃ち終わりで true を出す
-    turret_subs_.push_back(
-      this->create_subscription<std_msgs::msg::Bool>(
-        prefix + "/shoot_status", 10,
-        [this, &turret](const std_msgs::msg::Bool::SharedPtr) {
+    // shooter_controller はディスクが出たとみなした時点で 1 発ごとに 1 回 shot_fired を出す
+    shot_fired_subs_.push_back(
+      this->create_subscription<std_msgs::msg::Empty>(
+        prefix + "/shot_fired", 10,
+        [this, &turret](const std_msgs::msg::Empty::SharedPtr) {
           turret.last_shot_event = this->now();
         }));
     aim_status_subs_.push_back(
@@ -239,6 +240,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr enemy_detected_sub_;
   std::vector<rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr> turret_subs_;
   std::vector<rclcpp::Subscription<std_msgs::msg::String>::SharedPtr> aim_status_subs_;
+  std::vector<rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr> shot_fired_subs_;
   rclcpp::Publisher<core_msgs::msg::LedCommand>::SharedPtr led_upper_pub_;
   rclcpp::Publisher<core_msgs::msg::LedCommand>::SharedPtr led_bottom_pub_;
   rclcpp::TimerBase::SharedPtr timer_;

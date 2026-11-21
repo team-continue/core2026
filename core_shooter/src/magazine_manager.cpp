@@ -4,6 +4,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/empty.hpp"
 #include "std_msgs/msg/int8.hpp"
 #include "std_msgs/msg/int32.hpp"
 #include "core_msgs/msg/can.hpp"
@@ -125,9 +126,9 @@ public:
     //========================================
     // subscribers
     //========================================
-    shoot_status_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "shoot_status", 10,
-      std::bind(&MagazineManager::shootStatusCallback, this, std::placeholders::_1));
+    shot_fired_sub_ = this->create_subscription<std_msgs::msg::Empty>(
+      "shot_fired", 10,
+      std::bind(&MagazineManager::shotFiredCallback, this, std::placeholders::_1));
 
     reloading_sub_ = this->create_subscription<std_msgs::msg::Bool>(
       "reloading", 10,
@@ -184,31 +185,20 @@ private:
   //========================================
   // magazine callbacks
   //========================================
-  void shootStatusCallback(const std_msgs::msg::Bool::SharedPtr msg)
+  /// shooter_controller がディスクが出たとみなした時点で、1 発ごとに 1 回届く。
+  void shotFiredCallback(const std_msgs::msg::Empty::SharedPtr)
   {
-    // 初回受信は現在状態の同期として扱い、誤って減算しない
-    if (!shoot_status_initialized_) {
-      prev_shoot_status_ = msg->data;
-      shoot_status_initialized_ = true;
-      return;
-    }
+    // 押さえ中はセンサが歪むので、通常はカウントで減算
+    decrementRemainingDisk();
 
-    const bool rising = msg->data && !prev_shoot_status_;
-    prev_shoot_status_ = msg->data;
-
-    if (rising) {
-      // 押さえ中はセンサが歪むので、通常はカウントで減算
-      decrementRemainingDisk();
-
-      // 保持可能枚数を超えている間だけ、hold中の射撃回数を数える
-      if (
-        state_ == State::HOLDING && hold_on_ && !hazard_active_ &&
-        remaining_disks_ > kMinHoldDisks)
-      {
-        ++hold_shots_since_grip_;
-        RCLCPP_INFO(this->get_logger(), "hold_shots_since_grip: %d", hold_shots_since_grip_);
-        maybeStartRegrip();
-      }
+    // 保持可能枚数を超えている間だけ、hold中の射撃回数を数える
+    if (
+      state_ == State::HOLDING && hold_on_ && !hazard_active_ &&
+      remaining_disks_ > kMinHoldDisks)
+    {
+      ++hold_shots_since_grip_;
+      RCLCPP_INFO(this->get_logger(), "hold_shots_since_grip: %d", hold_shots_since_grip_);
+      maybeStartRegrip();
     }
   }
 
@@ -566,7 +556,7 @@ private:
   //========================================
   // Subscription valids
   //========================================
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr shoot_status_sub_;
+  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr shot_fired_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reloading_sub_;
   rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr reloading_increment_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr disk_distance_sensor_sub_;
@@ -610,8 +600,6 @@ private:
   // disk hold state
   bool hold_request_on_ = false;  // operator request from disk_hold_state topic
   bool hold_on_ = false;  // effective hold state after hazard/remaining/regrip conditions
-  bool prev_shoot_status_ = false;
-  bool shoot_status_initialized_ = false;
   bool hazard_active_ = true;
   State state_ = State::IDLE_RELEASED;
   int hold_shots_since_grip_ = 0;

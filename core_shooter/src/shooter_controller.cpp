@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/empty.hpp"
 #include "std_msgs/msg/int32.hpp"
 #include "std_msgs/msg/float32.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -307,8 +308,12 @@ public:
     //========================================
     // publishers
     //========================================
+    // shoot_status: 発射できる状態か（true=待機中、false=発射中・非常停止中・初期化中）
     shoot_status_pub_ = this->create_publisher<std_msgs::msg::Bool>(
       "shoot_status", 10);
+    // shot_fired: ディスクが出たとみなした時点で 1 発ごとに 1 回だけ出す（残弾・LED 用）
+    shot_fired_pub_ = this->create_publisher<std_msgs::msg::Empty>(
+      "shot_fired", 10);
     can_pub_ = this->create_publisher<core_msgs::msg::CANArray>(
       "/can/tx", 10);
     jam_state_pub_ = this->create_publisher<std_msgs::msg::Bool>(
@@ -491,6 +496,7 @@ private:
           if (hazard_state_) {
             state_ = EMERGENCY;
             resetShootMotorRotationCommandState();
+            shootStatePublish(false);
             RCLCPP_INFO(get_logger(), "Set EMERGENCY in CMD_WAIT");
             break;
           }
@@ -527,6 +533,7 @@ private:
           state_ = EMERGENCY;
           resetShootMotorRotationCommandState();
           setAngle(loading_motor_id_, loading_motor_rad_);
+          shootStatePublish(false);
 
           RCLCPP_INFO(get_logger(), "Set EMERGENCY in SHOOT");
           break;
@@ -539,11 +546,12 @@ private:
 
         if (target_angle_ - kShootCompletionMarginRad < loading_motor_rad_) {
           shoot_completed_ = true;
+          shootStatePublish(shoot_completed_);
 
           if (!init_sync_in_progress_) {
-            shootStatePublish(shoot_completed_);
+            shotFiredPublish();
           } else {
-            RCLCPP_INFO(get_logger(), "Initial sync completed without publishing shoot_status");
+            RCLCPP_INFO(get_logger(), "Initial sync completed without publishing shot_fired");
           }
 
           if (shoot_repeat_count_ >= 1) {
@@ -638,6 +646,8 @@ private:
       stateName(state_), flickPhaseName(flick_phase_), loading_motor_rad_);
     flick_phase_ = FlickPhase::Idle;
     requested_shoot_motor_speed_ = 0.0f;
+    shoot_completed_ = false;
+    shootStatePublish(shoot_completed_);
     state_ = EMERGENCY;
   }
 
@@ -645,6 +655,7 @@ private:
   void resetFlickState()
   {
     flick_phase_ = FlickPhase::Idle;
+    flick_strike_reached_ = false;
     shoot_repeat_count_ = 0;
     shoot_completed_ = false;
     init_sync_in_progress_ = false;
@@ -672,6 +683,7 @@ private:
         if (finishFlickMove()) {
           flick_phase_ = FlickPhase::Idle;
           shoot_completed_ = true;
+          shootStatePublish(shoot_completed_);
           state_ = CMD_WAIT;
           RCLCPP_INFO(get_logger(), "Flick init completed, change CMD_WAIT");
         }
@@ -697,6 +709,7 @@ private:
     last_shoot_time_ = this->now();
     shoot_completed_ = false;
     shootStatePublish(shoot_completed_);
+    flick_strike_reached_ = false;
 
     startFlickMove(flick_strike_rad_, FlickPhase::Strike);
     state_ = SHOOT;
@@ -707,14 +720,27 @@ private:
   {
     switch (flick_phase_) {
       case FlickPhase::Strike:
-        if (finishFlickMove()) {
-          flick_phase_ = FlickPhase::Hold;
-          flick_phase_start_time_ = this->now();
+        {
+          // 時間切れで先へ進む場合と区別するため、判定前に到達を見ておく
+          const bool reached = isFlickAt(flick_target_rad_);
+          if (finishFlickMove()) {
+            flick_strike_reached_ = reached;
+            flick_phase_ = FlickPhase::Hold;
+            flick_phase_start_time_ = this->now();
+          }
+          break;
         }
-        break;
 
       case FlickPhase::Hold:
         if ((this->now() - flick_phase_start_time_).seconds() >= flick_hold_sec_) {
+          // ディスクは角度2到達から hold 終了までの間に出る想定。
+          // hold を最後まで終え、かつ角度2到達を確認できたときだけ 1 発として数える。
+          if (flick_strike_reached_) {
+            shotFiredPublish();
+          } else {
+            RCLCPP_WARN(
+              get_logger(), "Flick strike was not confirmed, shot_fired is not published");
+          }
           startFlickMove(flick_home_rad_, FlickPhase::Return);
         }
         break;
@@ -1080,6 +1106,12 @@ private:
     shoot_status_pub_->publish(message);
   }
 
+  void shotFiredPublish()
+  {
+    shot_fired_pub_->publish(std_msgs::msg::Empty());
+    RCLCPP_INFO(get_logger(), "shot_fired");
+  }
+
   //========================================
   // Subscription valids
   //========================================
@@ -1096,6 +1128,7 @@ private:
   // publisher valids
   //========================================
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr shoot_status_pub_;
+  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr shot_fired_pub_;
   rclcpp::Publisher<core_msgs::msg::CANArray>::SharedPtr can_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr jam_state_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr loading_error_state_pub_;
@@ -1163,6 +1196,7 @@ private:
   double flick_target_rad_ = 0.0;
   rclcpp::Time flick_phase_start_time_ = now();
   bool flick_move_warning_active_ = false;
+  bool flick_strike_reached_ = false;
   bool joint_state_received_ = false;
   float requested_shoot_motor_speed_ = 0.0f;
   bool shoot_motor_running_ = false;
