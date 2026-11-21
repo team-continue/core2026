@@ -15,6 +15,7 @@
 
 #include "core_shooter/can_command.hpp"
 #include "core_shooter/parameter_utils.hpp"
+#include "core_shooter/shoot_mechanism.hpp"
 #include "core_shooter/test_mode_gate.hpp"
 
 namespace
@@ -26,32 +27,8 @@ constexpr double kShootCompletionMarginRad = M_PI * 0.05;
 /// joint_states のうち、シャーシに対する砲塔角が入るインデックス。
 constexpr size_t kTurretAngleJointIndex = 4;
 
-/// 発射機構の種類。yaml の shoot_mechanism で左右別々に選ぶ。
-enum class ShootMechanism
-{
-  RotaryLoader,  ///< 装填モータを 1 発ごとに π rad 回す方式
-  BeltFlick      ///< サーボでベルトを揺動させ（角度1→角度2→角度1）ディスクを飛ばす方式
-};
-
-std::optional<ShootMechanism> parseShootMechanism(const std::string & name)
-{
-  if (name == "rotary_loader") {
-    return ShootMechanism::RotaryLoader;
-  }
-  if (name == "belt_flick") {
-    return ShootMechanism::BeltFlick;
-  }
-  return std::nullopt;
-}
-
-const char * shootMechanismName(ShootMechanism mechanism)
-{
-  switch (mechanism) {
-    case ShootMechanism::RotaryLoader: return "rotary_loader";
-    case ShootMechanism::BeltFlick: return "belt_flick";
-  }
-  return "unknown";
-}
+using core_shooter::ShootMechanism;
+using core_shooter::shootMechanismName;
 
 /// belt_flick のサーボ動作の段階。
 enum class FlickPhase
@@ -155,17 +132,7 @@ public:
     //========================================
     // shoot mechanism parameters
     //========================================
-    const std::string shoot_mechanism_name =
-      core_shooter::declareAndGet<std::string>(*this, "shoot_mechanism", "rotary_loader");
-    const auto shoot_mechanism = parseShootMechanism(shoot_mechanism_name);
-    if (!shoot_mechanism) {
-      RCLCPP_FATAL(
-        this->get_logger(),
-        "Invalid shoot_mechanism=\"%s\" (expected \"rotary_loader\" or \"belt_flick\")",
-        shoot_mechanism_name.c_str());
-      throw std::runtime_error("invalid shoot_mechanism");
-    }
-    shoot_mechanism_ = *shoot_mechanism;
+    shoot_mechanism_ = core_shooter::declareShootMechanism(*this);
 
     flick_home_rad_ =
       degToRad(core_shooter::declareAndGet<double>(*this, "flick_home_angle_deg", 0.0));
@@ -194,7 +161,7 @@ public:
     RCLCPP_INFO(
       this->get_logger(),
       "shoot_mechanism: %s, flick home_rad: %f, strike_rad: %f, hold_sec: %f, tolerance_rad: %f, move_timeout_sec: %f",
-      shoot_mechanism_name.c_str(), flick_home_rad_, flick_strike_rad_, flick_hold_sec_,
+      shootMechanismName(shoot_mechanism_), flick_home_rad_, flick_strike_rad_, flick_hold_sec_,
       flick_tolerance_rad_, flick_move_timeout_sec_);
 
     //========================================

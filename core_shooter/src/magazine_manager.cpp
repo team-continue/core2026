@@ -17,6 +17,7 @@
 
 #include "core_shooter/can_command.hpp"
 #include "core_shooter/parameter_utils.hpp"
+#include "core_shooter/shoot_mechanism.hpp"
 
 using namespace std::chrono_literals;
 
@@ -95,6 +96,12 @@ public:
     // regrip parameters
     //========================================
     regrip_enabled_ = core_shooter::declareAndGet<bool>(*this, "regrip_enabled", true);
+    // belt_flick の機構にはリグリップがないため、regrip_enabled によらず無効にする
+    const auto shoot_mechanism = core_shooter::declareShootMechanism(*this);
+    if (shoot_mechanism == core_shooter::ShootMechanism::BeltFlick && regrip_enabled_) {
+      regrip_enabled_ = false;
+      RCLCPP_INFO(this->get_logger(), "shoot_mechanism=belt_flick: regrip is disabled");
+    }
     regrip_release_ms_ = core_shooter::declareAndGet<int>(*this, "regrip_release_ms", 200);
     regrip_trigger_shots_ = core_shooter::declareAndGet<int>(*this, "regrip_trigger_shots", 6);
     if (regrip_release_ms_ < 0) {
