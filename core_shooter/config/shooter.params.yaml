@@ -240,7 +240,7 @@
     #   "belt_flick":    サーボ（loading_motor_id）でベルトを揺動させる方式
     #                    INIT で 角度2→角度1 と往復し、発射ごとに 角度1→角度2→(hold)→角度1
     #                    リグリップ機構はないため、magazine_manager のリグリップは無効になる
-    shoot_mechanism: "rotary_loader"
+    shoot_mechanism: "belt_flick"
 
 /**/right/shooter_controller:
   ros__parameters:
