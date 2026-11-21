@@ -44,6 +44,15 @@ std::optional<ShootMechanism> parseShootMechanism(const std::string & name)
   return std::nullopt;
 }
 
+const char * shootMechanismName(ShootMechanism mechanism)
+{
+  switch (mechanism) {
+    case ShootMechanism::RotaryLoader: return "rotary_loader";
+    case ShootMechanism::BeltFlick: return "belt_flick";
+  }
+  return "unknown";
+}
+
 /// belt_flick のサーボ動作の段階。
 enum class FlickPhase
 {
@@ -422,32 +431,7 @@ private:
 
   void shootMotorCallback(const std_msgs::msg::Float32::SharedPtr msg)
   {
-    if (shoot_mechanism_ == ShootMechanism::BeltFlick) {
-      handleShootMotorCommandBeltFlick(msg->data);
-      return;
-    }
-
-    float commanded_speed = 0.0f;
-    switch (state_) {
-      case EMERGENCY:
-        commanded_speed = 0.0f;
-        break;
-
-      default:
-        commanded_speed = mapShootMotorSpeed(msg->data);
-        break;
-    }
-    setSpeed(shoot_motor_id_, commanded_speed);
-    const bool nonzero_command = commanded_speed > 0.0f;
-    if (nonzero_command) {
-      if (!shoot_motor_rotation_cmd_requested_) {
-        shoot_motor_rotation_cmd_requested_ = true;
-        shoot_motor_rotation_cmd_start_time_ = this->now();
-      }
-    } else {
-      resetShootMotorRotationCommandState();
-    }
-    updateShootMotorRotationCommandFlag();
+    handleShootMotorCommand(msg->data);
   }
 
   /// shoot_motor の入力（0..1）を目標速度に変換する。
@@ -475,6 +459,7 @@ private:
 
     updateShootMotorRotationCommandFlag();
     jamStatePublish(is_jam_detected_);
+    tryStartShootMotor();
 
     switch (state_) {
       case INIT:
@@ -566,6 +551,8 @@ private:
       case EMERGENCY:
         shoot_completed_ = false;
         shoot_repeat_count_ = 0;
+        requested_shoot_motor_speed_ = 0.0f;
+        shoot_motor_running_ = false;
         resetShootMotorRotationCommandState();
 
         setSpeed(shoot_motor_id_, 0.0f);
@@ -594,7 +581,7 @@ private:
       return;
     }
 
-    tryStartShootMotorBeltFlick();
+    tryStartShootMotor();
 
     switch (state_) {
       case INIT:
@@ -827,9 +814,10 @@ private:
   }
 
   //========================================
-  // belt_flick shoot motor (belt drive)
+  // shoot motor (belt drive)
   //========================================
-  void handleShootMotorCommandBeltFlick(float input)
+  /// shoot_motor の指令を保存し、回せる状態なら回す。INIT 中の指令は保留し、hazard 中は 0 にする。
+  void handleShootMotorCommand(float input)
   {
     const float speed =
       (state_ == EMERGENCY || hazard_state_) ? 0.0f : mapShootMotorSpeed(input);
@@ -849,13 +837,14 @@ private:
       return;
     }
 
-    tryStartShootMotorBeltFlick();
+    tryStartShootMotor();
   }
 
   /// 保留中の回転指令があり、阻害要因がなければベルトを回し始める。
-  void tryStartShootMotorBeltFlick()
+  void tryStartShootMotor()
   {
-    if (shoot_motor_running_ || requested_shoot_motor_speed_ <= 0.0f) {
+    // hazard 中は EMERGENCY 遷移で指令を破棄するので、ここでは何もしない
+    if (shoot_motor_running_ || requested_shoot_motor_speed_ <= 0.0f || hazard_state_) {
       return;
     }
 
@@ -864,8 +853,9 @@ private:
         RCLCPP_ERROR_THROTTLE(
           get_logger(),
           *this->get_clock(), 1000,
-          "Cannot start shoot motor: flick servo initialization is not completed (state=%s, phase=%s)",
-          stateName(state_), flickPhaseName(flick_phase_));
+          "Cannot start shoot motor: shooter initialization is not completed (mechanism=%s, state=%s, flick phase=%s, init_sync=%s)",
+          shootMechanismName(shoot_mechanism_), stateName(state_), flickPhaseName(flick_phase_),
+          init_sync_in_progress_ ? "true" : "false");
         return;
 
       case ShootMotorStartBlocker::ServoNotAtHome:
@@ -892,10 +882,11 @@ private:
 
   ShootMotorStartBlocker shootMotorStartBlocker() const
   {
-    if (state_ == INIT || state_ == EMERGENCY) {
+    // rotary_loader は INIT 後の位置合わせ（init_sync）が終わるまで INIT 扱い
+    if (state_ == INIT || state_ == EMERGENCY || init_sync_in_progress_) {
       return ShootMotorStartBlocker::InitNotCompleted;
     }
-    if (!isFlickAt(flick_home_rad_)) {
+    if (shoot_mechanism_ == ShootMechanism::BeltFlick && !isFlickAt(flick_home_rad_)) {
       return ShootMotorStartBlocker::ServoNotAtHome;
     }
     return ShootMotorStartBlocker::None;
