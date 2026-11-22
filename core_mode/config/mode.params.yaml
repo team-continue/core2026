@@ -15,19 +15,33 @@
     manual_fire_window_ms: 500 # shooter_controller の発射通知からこの時間は手動の射撃中とみなす[ms]
     shooter_namespace: "/mecha/shooter" # 砲塔の状態トピックの名前空間 ({shooter_namespace}/left/... など)
     # 状態ごとの表示 [パターン, 色]。パターンと色の番号は Teensy の led.h と同じ
-    # 色: 0 = 白, 1 = 赤, 2 = 黄, 3 = 緑, 4 = 青
+    # パターン: 2 = kChase (一方向に流れる。向きは Teensy の区間ごとの定数), 8 = kBlink, 9 = kDoubleFlash,
+    #   10 = kFade, 11 = kSingleFlash, 12 = kTripleFlash, 13 = kBlinkMedium, 14 = kBlinkSlow, 15 = kInwardChase
+    # 色: 0 = 白, 1 = 赤, 2 = 黄, 3 = 緑, 4 = 青。赤 = 異常、白 = 手動、黄 = 自動
+    # 上のテープは 左の砲塔・全体 (behavior の状態)・右の砲塔 の 3 区間。異常はすべての区間に同じ表示を出す
+    # 砲塔の区間に出るもの (異常と turret_*) は、パターン 0〜15・色 0〜7 に限る
+    # 砲塔の手動・自動は砲塔ごとの manual_mode で決まり、behavior の状態とは別
     commands:
       microcontroller_timeout: [12, 1] # kTripleFlash・赤
       controller_disconnected: [9, 1] # kDoubleFlash・赤
       destroy: [14, 1] # kBlinkSlow・赤
       software_emergency: [11, 1] # kSingleFlash・赤
-      turret_error: [8, 2] # kBlink・黄
-      turret_auto_firing: [9, 0] # kDoubleFlash・白
-      turret_manual_firing: [11, 0] # kSingleFlash・白
-      turret_enemy_detected: [8, 0] # kBlink・白
-      turret_auto_idle: [6, 0] # kCenterOutChase・白
+      turret_error: [2, 1] # kChase・赤。手動・自動で同じ
+      turret_manual_firing: [8, 0] # kBlink・白
+      turret_manual_motor_on: [11, 0] # kSingleFlash・白。発射モータに回す指令が出ている
       turret_manual: [2, 0] # kChase・白
-      chassis_auto_rotating: [13, 3] # kBlinkMedium・緑
+      turret_auto_firing: [8, 2] # kBlink・黄
+      turret_enemy_detected: [9, 2] # kDoubleFlash・黄。その砲塔の aim_bot が敵を捉えている (射程外・照準が合っていない)
+      turret_auto_motor_on: [11, 2] # kSingleFlash・黄。発射モータに回す指令が出ている
+      turret_auto_fire_off: [2, 2] # kChase・黄。UI の turret_auto がオフ。待機と同じ
+      turret_auto_idle: [2, 2] # kChase・黄
+      chassis_auto_rotating: [13, 2] # kBlinkMedium・黄
       chassis_manual_rotating: [13, 0] # kBlinkMedium・白
-      chassis_auto: [2, 3] # kChase・緑
+      chassis_auto: [2, 2] # kChase・黄
       chassis_manual: [2, 0] # kChase・白
+      behavior_manual: [2, 0] # kChase・白
+      behavior_attack: [8, 2] # kBlink・黄
+      behavior_auto_selected: [2, 2] # kChase・黄。AUTO の 3 つは同じ
+      behavior_auto_waypoint: [2, 2] # kChase・黄
+      behavior_auto_idle: [2, 2] # kChase・黄
+      behavior_unknown: [10, 0] # kFade・白。behavior の状態が途絶・範囲外

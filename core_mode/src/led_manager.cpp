@@ -11,6 +11,7 @@
 #include "core_msgs/msg/led_command.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/float32.hpp"
 #include "std_msgs/msg/int32.hpp"
 #include "std_msgs/msg/int8_multi_array.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -25,6 +26,9 @@ constexpr std::size_t kHazardDestroy = 4;
 
 constexpr std::array<const char *, 2> kTurretSides{"left", "right"};
 
+// shooter_controller がモータを回す shoot_motor の下限 (これより大きければ回す)
+constexpr float kShootMotorOnThreshold = 0.1F;
+
 // 砲塔 1 つ分の最後に受けた値
 struct TurretState
 {
@@ -33,6 +37,7 @@ struct TurretState
   bool loading_error = false;
   bool shooting_error = false;
   std::optional<rclcpp::Time> last_shot_event;
+  bool shoot_motor_on = false;
   std::string aim_status;
   std::optional<rclcpp::Time> aim_status_stamp;
 };
@@ -80,9 +85,6 @@ public:
     rotation_sub_ = this->create_subscription<std_msgs::msg::Int32>(
       "rotation", 10,
       [this](const std_msgs::msg::Int32::SharedPtr msg) {rotation_ = msg->data;});
-    enemy_detected_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "enemy_detected", 10,
-      [this](const std_msgs::msg::Bool::SharedPtr msg) {enemy_detected_ = msg->data;});
 
     for (std::size_t i = 0; i < kTurretSides.size(); ++i) {
       subscribeTurret(i, shooter_namespace + "/" + kTurretSides[i]);
@@ -91,7 +93,12 @@ public:
     //========================================
     // publishers
     //========================================
+    // 上のテープ: led/upper = 中央 (全体)、led/upper_left・led/upper_right = 左右の砲塔
     led_upper_pub_ = this->create_publisher<core_msgs::msg::LedCommand>("led/upper", 10);
+    led_upper_left_pub_ =
+      this->create_publisher<core_msgs::msg::LedCommand>("led/upper_left", 10);
+    led_upper_right_pub_ =
+      this->create_publisher<core_msgs::msg::LedCommand>("led/upper_right", 10);
     led_bottom_pub_ = this->create_publisher<core_msgs::msg::LedCommand>("led/bottom", 10);
 
     // core_hardware は指令の途絶で LED を「指令なし」にするので、変化がなくても一定周期で出す
@@ -114,33 +121,55 @@ private:
   // commands.<状態名>: [パターン, 色]
   void loadCommandTable()
   {
-    const auto load = [this](const std::string & name, core_mode::LedCommand & command) {
+    const auto load_with_limit = [this](
+      const std::string & name, core_mode::LedCommand & command,
+      int64_t max_pattern, int64_t max_color) {
         const auto value = this->declare_parameter<std::vector<int64_t>>(
           "commands." + name,
           std::vector<int64_t>{command.pattern, command.color});
-        if (value.size() != 2 || value[0] < 0 || value[0] > 255 || value[1] < 0 ||
-          value[1] > 255)
+        if (value.size() != 2 || value[0] < 0 || value[0] > max_pattern || value[1] < 0 ||
+          value[1] > max_color)
         {
           throw std::invalid_argument(
-                  "commands." + name + " must be [pattern, color] with values in 0..255");
+                  "commands." + name + " must be [pattern, color] with pattern in 0.." +
+                  std::to_string(max_pattern) + " and color in 0.." + std::to_string(max_color));
         }
         command.pattern = static_cast<uint8_t>(value[0]);
         command.color = static_cast<uint8_t>(value[1]);
       };
-    load("microcontroller_timeout", table_.microcontroller_timeout);
-    load("controller_disconnected", table_.controller_disconnected);
-    load("destroy", table_.destroy);
-    load("software_emergency", table_.software_emergency);
-    load("turret_error", table_.turret_error);
-    load("turret_auto_firing", table_.turret_auto_firing);
-    load("turret_manual_firing", table_.turret_manual_firing);
-    load("turret_enemy_detected", table_.turret_enemy_detected);
-    load("turret_auto_idle", table_.turret_auto_idle);
-    load("turret_manual", table_.turret_manual);
+    const auto load = [&load_with_limit](const std::string & name,
+      core_mode::LedCommand & command) {
+        load_with_limit(name, command, 255, 255);
+      };
+    // 砲塔の区間は、core_hardware が左右を 1 枠にまとめて送るので 1 byte (パターン 4 bit・色 3 bit) に収める。
+    // 異常の表示もこの区間に出るので同じ制限にする
+    const auto load_turret = [&load_with_limit](
+      const std::string & name, core_mode::LedCommand & command) {
+        load_with_limit(name, command, 15, 7);
+      };
+    load_turret("microcontroller_timeout", table_.microcontroller_timeout);
+    load_turret("controller_disconnected", table_.controller_disconnected);
+    load_turret("destroy", table_.destroy);
+    load_turret("software_emergency", table_.software_emergency);
+    load_turret("turret_error", table_.turret_error);
+    load_turret("turret_auto_firing", table_.turret_auto_firing);
+    load_turret("turret_manual_firing", table_.turret_manual_firing);
+    load_turret("turret_manual_motor_on", table_.turret_manual_motor_on);
+    load_turret("turret_enemy_detected", table_.turret_enemy_detected);
+    load_turret("turret_auto_motor_on", table_.turret_auto_motor_on);
+    load_turret("turret_auto_fire_off", table_.turret_auto_fire_off);
+    load_turret("turret_auto_idle", table_.turret_auto_idle);
+    load_turret("turret_manual", table_.turret_manual);
     load("chassis_auto_rotating", table_.chassis_auto_rotating);
     load("chassis_manual_rotating", table_.chassis_manual_rotating);
     load("chassis_auto", table_.chassis_auto);
     load("chassis_manual", table_.chassis_manual);
+    load("behavior_manual", table_.behavior_manual);
+    load("behavior_attack", table_.behavior_attack);
+    load("behavior_auto_selected", table_.behavior_auto_selected);
+    load("behavior_auto_waypoint", table_.behavior_auto_waypoint);
+    load("behavior_auto_idle", table_.behavior_auto_idle);
+    load("behavior_unknown", table_.behavior_unknown);
   }
 
   void subscribeTurret(std::size_t index, const std::string & prefix)
@@ -160,6 +189,13 @@ private:
         prefix + "/shoot_status", 10,
         [this, &turret](const std_msgs::msg::Bool::SharedPtr) {
           turret.last_shot_event = this->now();
+        }));
+    // 発射モータの指令。UI の切り替え時にだけ、手動・自動に関係なく左右へ出るので、最後の値を使い続ける
+    shoot_motor_subs_.push_back(
+      this->create_subscription<std_msgs::msg::Float32>(
+        prefix + "/shoot_motor", 10,
+        [&turret](const std_msgs::msg::Float32::SharedPtr msg) {
+          turret.shoot_motor_on = msg->data > kShootMotorOnThreshold;
         }));
     aim_status_subs_.push_back(
       this->create_subscription<std_msgs::msg::String>(
@@ -191,23 +227,25 @@ private:
       in.behavior_state = behavior_state_;
     }
     in.rotating = rotation_ != 0;
-    in.enemy_detected = enemy_detected_;
     for (std::size_t i = 0; i < turrets_.size(); ++i) {
       const TurretState & turret = turrets_[i];
       in.turrets[i].manual_mode = turret.manual_mode;
       in.turrets[i].error = turret.jam || turret.loading_error || turret.shooting_error;
       in.turrets[i].manual_firing = isWithin(turret.last_shot_event, manual_fire_window_);
-      in.turrets[i].auto_firing =
-        isWithin(turret.aim_status_stamp, input_timeout_) && turret.aim_status == "firing";
+      in.turrets[i].shoot_motor_on = turret.shoot_motor_on;
+      in.turrets[i].aim = isWithin(turret.aim_status_stamp, input_timeout_) ?
+        core_mode::classifyAimStatus(turret.aim_status) : core_mode::AimStatus::kUnknown;
     }
     return in;
   }
 
   void publishCommands()
   {
-    const core_mode::LedCommandPair commands =
+    const core_mode::LedCommands commands =
       core_mode::selectLedCommands(collectInputs(), table_);
-    led_upper_pub_->publish(toMsg(commands.upper));
+    led_upper_pub_->publish(toMsg(commands.upper_overall));
+    led_upper_left_pub_->publish(toMsg(commands.upper_left));
+    led_upper_right_pub_->publish(toMsg(commands.upper_right));
     led_bottom_pub_->publish(toMsg(commands.bottom));
   }
 
@@ -229,17 +267,18 @@ private:
   int32_t behavior_state_ = 0;
   std::optional<rclcpp::Time> behavior_state_stamp_;
   int32_t rotation_ = 0;
-  bool enemy_detected_ = false;
   std::array<TurretState, 2> turrets_{};
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_status_sub_;
   rclcpp::Subscription<std_msgs::msg::Int8MultiArray>::SharedPtr hazard_states_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr behavior_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rotation_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr enemy_detected_sub_;
   std::vector<rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr> turret_subs_;
   std::vector<rclcpp::Subscription<std_msgs::msg::String>::SharedPtr> aim_status_subs_;
+  std::vector<rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr> shoot_motor_subs_;
   rclcpp::Publisher<core_msgs::msg::LedCommand>::SharedPtr led_upper_pub_;
+  rclcpp::Publisher<core_msgs::msg::LedCommand>::SharedPtr led_upper_left_pub_;
+  rclcpp::Publisher<core_msgs::msg::LedCommand>::SharedPtr led_upper_right_pub_;
   rclcpp::Publisher<core_msgs::msg::LedCommand>::SharedPtr led_bottom_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };

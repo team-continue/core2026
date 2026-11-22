@@ -18,13 +18,17 @@ float bottom_led_blink_period_sec = 0.2f;
 float bottom_led_double_flash_period_sec = 0.5f;
 uint8_t bottom_led_center_out_multi_base_brightness = 0;
 uint8_t bottom_led_brightness = 32;
-Led bottom_led(LED1_SERIAL_PIN, bottom_led_count, 20,
+// 一方向に流れるパターン (kChase / kRainbowChase) の向き。false = テープの先頭から末尾へ、true = 末尾から先頭へ
+constexpr bool BOTTOM_LED_REVERSE = false;
+LedStrip bottom_led_strip(LED1_SERIAL_PIN, bottom_led_count, bottom_led_brightness);
+// bottom はテープ全体で 1 区間
+Led bottom_led(bottom_led_strip, 0, bottom_led_count, 20,
               bottom_led_chase_speed_leds_per_sec,
               bottom_led_multi_chase_speed_leds_per_sec,
               bottom_led_blink_period_sec,
               bottom_led_double_flash_period_sec,
               bottom_led_center_out_multi_base_brightness,
-              bottom_led_brightness);
+              BOTTOM_LED_REVERSE);
 
 unsigned long can3_receive_ts = 0;
 CAN_message_t can3_msg;

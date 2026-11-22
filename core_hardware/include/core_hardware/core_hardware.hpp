@@ -32,7 +32,8 @@ class CoreHardware : public rclcpp::Node {
   rclcpp::Subscription<core_msgs::msg::CANArray>::SharedPtr can_sub_;
   rclcpp::Subscription<core_msgs::msg::LedCommand>::SharedPtr led_upper_sub_;
   rclcpp::Subscription<core_msgs::msg::LedCommand>::SharedPtr led_bottom_sub_;
-  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr led_bottom2_sub_;
+  rclcpp::Subscription<core_msgs::msg::LedCommand>::SharedPtr led_upper_left_sub_;
+  rclcpp::Subscription<core_msgs::msg::LedCommand>::SharedPtr led_upper_right_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   core_hardware::IpcClient client_;
@@ -40,10 +41,13 @@ class CoreHardware : public rclcpp::Node {
   core_hardware::HardwareSnapshot latest_state_{};
   core_msgs::msg::CANArray pending_can_array_;
   std::string socket_path_;
-  // led/upper, led/bottom の最後の指令と受信時刻。途絶したら 0 (指令なし) を送る
+  // LED の区間ごとの最後の指令と受信時刻。途絶したら 0 (指令なし) を送る。
+  // [kLedUpper] と [kLedBottom] は LED_TAPE の 1 枠分 (16 bit)、
+  // [kLedUpperLeft] と [kLedUpperRight] は LED_TAPE[2] の半分 (8 bit) の値を持つ
+  enum LedSlot : std::size_t { kLedUpper = 0, kLedBottom, kLedUpperLeft, kLedUpperRight, kLedSlotNum };
   std::chrono::milliseconds led_timeout_{1000};
-  std::array<uint16_t, 2> led_last_value_{};
-  std::array<std::optional<std::chrono::steady_clock::time_point>, 2> led_last_rx_tp_{};
+  std::array<uint16_t, kLedSlotNum> led_last_value_{};
+  std::array<std::optional<std::chrono::steady_clock::time_point>, kLedSlotNum> led_last_rx_tp_{};
   bool connected_ = false;
   bool ethercat_connected_ = false;
   uint32_t sequence_ = 0;
@@ -64,6 +68,6 @@ class CoreHardware : public rclcpp::Node {
   void handle_float_packet(uint8_t id, const std::vector<float>& data);
   void handle_uint8_packet(uint8_t id, const std::vector<uint8_t>& data);
   void update_led_tape();
-  void store_led_command(std::size_t slot, const core_msgs::msg::LedCommand& msg);
-  void led_bottom2_cb(const std_msgs::msg::UInt8::SharedPtr msg);
+  void store_led_value(LedSlot slot, uint16_t value);
+  void store_turret_led_command(LedSlot slot, const core_msgs::msg::LedCommand& msg);
 };
