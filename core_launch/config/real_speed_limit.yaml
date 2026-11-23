@@ -1,0 +1,10 @@
+# 実機で、壁や物との間隔は既定（0.1m）のまま、速さの上限だけを下げる設定。real_cautious から間隔の変更を除いたもの。
+# navigation.launch.py（core2026_system.xml）の planning_params_file:=real_speed_limit で、既定の設定の後から重ねる。
+#
+# 局所計画（MPPI）の静止物の余裕は footprint.margin_m + 速さ × mppi.static_margin_time_s なので、速さを下げると
+# 壁との余裕は既定より小さくなる（遅いほど近くを通る）。
+/**:
+  ros__parameters:
+    mppi:
+      # 既定 3.0m/s
+      max_speed_mps: 1.0
