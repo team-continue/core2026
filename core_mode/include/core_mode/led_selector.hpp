@@ -56,11 +56,11 @@ struct LedCommandTable
   // 砲塔の異常は手動・自動で同じ
   LedCommand turret_error{led_pattern::kChase, led_color::kRed};
   LedCommand turret_manual_firing{led_pattern::kBlink, led_color::kWhite};
-  LedCommand turret_manual_motor_on{led_pattern::kSingleFlash, led_color::kWhite};
+  LedCommand turret_manual_motor_on{led_pattern::kInwardChase, led_color::kWhite};
   LedCommand turret_manual{led_pattern::kChase, led_color::kWhite};
   LedCommand turret_auto_firing{led_pattern::kBlink, led_color::kYellow};
   LedCommand turret_enemy_detected{led_pattern::kDoubleFlash, led_color::kYellow};
-  LedCommand turret_auto_motor_on{led_pattern::kSingleFlash, led_color::kYellow};
+  LedCommand turret_auto_motor_on{led_pattern::kInwardChase, led_color::kYellow};
   LedCommand turret_auto_fire_off{led_pattern::kChase, led_color::kYellow};  // 待機と同じ
   LedCommand turret_auto_idle{led_pattern::kChase, led_color::kYellow};
 
