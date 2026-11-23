@@ -75,7 +75,9 @@ def generate_launch_description() -> LaunchDescription:
     use_sim_time = ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool)
     waist_front_offset_arg = DeclareLaunchArgument(
         "waist_front_offset",
-        default_value="3.7822790145874023",
+        # 2026-11-23 に実機で、上半身（LiDAR の向き）と駆動部の正面をそろえた状態で読んだ /hardware/joint_states の
+        # position[4]（以前は 3.7822790145874023 で、駆動部が上半身から約 40° 回っていると誤って扱っていた）
+        default_value="3.084347",
         description="Waist motor position when the upper body faces the chassis front [rad]",
     )
     waist_joint_direction_arg = DeclareLaunchArgument(
