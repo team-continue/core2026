@@ -69,5 +69,6 @@ class CoreHardware : public rclcpp::Node {
   void handle_uint8_packet(uint8_t id, const std::vector<uint8_t>& data);
   void update_led_tape();
   void store_led_value(LedSlot slot, uint16_t value);
+  void store_led_command(LedSlot slot, const core_msgs::msg::LedCommand& msg);
   void store_turret_led_command(LedSlot slot, const core_msgs::msg::LedCommand& msg);
 };

@@ -63,6 +63,11 @@ public:
     const auto shooter_namespace =
       this->declare_parameter<std::string>("shooter_namespace", "/mecha/shooter");
     loadCommandTable();
+    // 一方向に流れるパターンの向き。区間ごとに固定し、Teensy には毎回送る
+    reverse_upper_left_ = this->declare_parameter<bool>("reverse.upper_left", false);
+    reverse_upper_overall_ = this->declare_parameter<bool>("reverse.upper_overall", false);
+    reverse_upper_right_ = this->declare_parameter<bool>("reverse.upper_right", false);
+    reverse_bottom_ = this->declare_parameter<bool>("reverse.bottom", false);
 
     //========================================
     // subscribers
@@ -143,7 +148,8 @@ private:
       };
     const auto load = [&load_with_limit](const std::string & name,
       core_mode::LedCommand & command) {
-        load_with_limit(name, command, 255, 255);
+        // 全体と下のテープは、core_hardware が色の byte の bit 7 に向きを載せるので、色は 7 bit に収める
+        load_with_limit(name, command, 255, 127);
       };
     // 砲塔の区間は、core_hardware が左右を 1 枠にまとめて送るので 1 byte (パターン 4 bit・色 3 bit) に収める。
     // 異常の表示もこの区間に出るので同じ制限にする
@@ -248,21 +254,26 @@ private:
   {
     const core_mode::LedCommands commands =
       core_mode::selectLedCommands(collectInputs(), table_);
-    led_upper_pub_->publish(toMsg(commands.upper_overall));
-    led_upper_left_pub_->publish(toMsg(commands.upper_left));
-    led_upper_right_pub_->publish(toMsg(commands.upper_right));
-    led_bottom_pub_->publish(toMsg(commands.bottom));
+    led_upper_pub_->publish(toMsg(commands.upper_overall, reverse_upper_overall_));
+    led_upper_left_pub_->publish(toMsg(commands.upper_left, reverse_upper_left_));
+    led_upper_right_pub_->publish(toMsg(commands.upper_right, reverse_upper_right_));
+    led_bottom_pub_->publish(toMsg(commands.bottom, reverse_bottom_));
   }
 
-  static core_msgs::msg::LedCommand toMsg(const core_mode::LedCommand & command)
+  static core_msgs::msg::LedCommand toMsg(const core_mode::LedCommand & command, bool reverse)
   {
     core_msgs::msg::LedCommand msg;
     msg.pattern = command.pattern;
     msg.color = command.color;
+    msg.reverse = reverse;
     return msg;
   }
 
   core_mode::LedCommandTable table_;
+  bool reverse_upper_left_ = false;
+  bool reverse_upper_overall_ = false;
+  bool reverse_upper_right_ = false;
+  bool reverse_bottom_ = false;
   std::chrono::milliseconds state_timeout_{1000};
   std::chrono::milliseconds input_timeout_{1000};
   std::chrono::milliseconds manual_fire_window_{500};

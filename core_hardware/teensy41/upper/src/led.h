@@ -54,13 +54,14 @@ class LedStrip {
 
 // テープの一部 (first から count 個) に 1 つのパターンを描く区間。
 // パターンの長さ・中心はこの区間の中で決まる。
-// reverse = true なら、一方向に流れるパターン (kChase / kRainbowChase) を区間の末尾から先頭へ流す
+// 一方向に流れるパターン (kChase / kMultiChase / kRainbowChase / kRainbowMultiChase) の向きは
+// write() の reverse で毎回受け取る。true なら区間の末尾から先頭へ流す
 class Led {
  public:
   Led(LedStrip &strip, uint16_t first, uint16_t count, unsigned long update_ms,
       float chase_speed_leds_per_sec, float multi_chase_speed_leds_per_sec,
       float blink_period_sec, float double_flash_period_sec,
-      uint8_t center_out_multi_base_brightness, bool reverse = false)
+      uint8_t center_out_multi_base_brightness)
       : strip_(strip),
         first_(first),
         led_num_(count),
@@ -69,15 +70,14 @@ class Led {
         multi_chase_speed_leds_per_sec_(multi_chase_speed_leds_per_sec),
         blink_period_sec_(blink_period_sec),
         double_flash_period_sec_(double_flash_period_sec),
-        center_out_multi_base_brightness_(center_out_multi_base_brightness),
-        reverse_(reverse) {}
+        center_out_multi_base_brightness_(center_out_multi_base_brightness) {}
 
   // 指令の下位 8 bit。2 は一方向の流れ (以前の両端から中央への流れは 15 に移した)。
   // 砲塔の区間には 4 bit で送るので、0〜15 に収める
   enum Pattern : uint8_t {
     kOff = 0,  // ROS からの指令では「指令なし」の意味でも使う
     kGaming = 1,
-    kChase = 2,  // 一方向に流れる。向きは区間の reverse で決まる
+    kChase = 2,  // 一方向に流れる。向きは write() の reverse で決まる
     kMultiChase = 3,
     kRainbowChase = 4,
     kRainbowMultiChase = 5,
@@ -102,12 +102,14 @@ class Led {
     kBlue = 4,
   };
 
-  void write(uint8_t pattern, uint8_t color) {
-    if (pattern_ == pattern && color_ == color) {
+  // reverse は一方向に流れるパターンだけに効く。左右対称のパターンや点滅では無視する
+  void write(uint8_t pattern, uint8_t color, bool reverse = false) {
+    if (pattern_ == pattern && color_ == color && reverse_ == reverse) {
       return;
     }
     pattern_ = pattern;
     color_ = color;
+    reverse_ = reverse;
     resetAnimationState();
   }
 
@@ -412,7 +414,9 @@ class Led {
       uint8_t intensity = kChaseBaseBrightness;
       for (uint8_t band = 0; band < kMultiChaseBandCount; ++band) {
         const float head_position = chase_head_position_ + spacing * band;
-        float distance_from_head = head_position - static_cast<float>(i);
+        // reverse なら末尾を流れの始まりとして数える
+        const uint16_t position = reverse_ ? static_cast<uint16_t>(led_num_ - 1U - i) : i;
+        float distance_from_head = head_position - static_cast<float>(position);
         while (distance_from_head < 0.0f) {
           distance_from_head += static_cast<float>(led_num_);
         }

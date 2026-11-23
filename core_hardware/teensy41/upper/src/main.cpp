@@ -41,10 +41,6 @@ constexpr uint16_t UPPER_LED_OVERALL_FIRST = UPPER_LED_LEFT_FIRST + UPPER_LED_LE
 constexpr uint16_t UPPER_LED_OVERALL_COUNT = 15;
 constexpr uint16_t UPPER_LED_RIGHT_FIRST = UPPER_LED_OVERALL_FIRST + UPPER_LED_OVERALL_COUNT;
 constexpr uint16_t UPPER_LED_RIGHT_COUNT = 14;
-// 一方向に流れるパターン (kChase / kRainbowChase) の向き。false = 区間の先頭から末尾へ、true = 末尾から先頭へ
-constexpr bool UPPER_LED_LEFT_REVERSE = false;
-constexpr bool UPPER_LED_OVERALL_REVERSE = false;
-constexpr bool UPPER_LED_RIGHT_REVERSE = true;
 float upper_led_chase_speed_leds_per_sec = 100.0f;
 float upper_led_multi_chase_speed_leds_per_sec = 10.0f;
 float upper_led_blink_period_sec = 0.2f;
@@ -52,21 +48,18 @@ float upper_led_double_flash_period_sec = 0.5f;
 uint8_t upper_led_center_out_multi_base_brightness = 0;
 uint8_t upper_led_brightness = 32;
 LedStrip upper_led_strip(LED_UPPER_SERIAL_PIN, upper_led_count, upper_led_brightness);
-Led make_upper_led_segment(uint16_t first, uint16_t count, bool reverse) {
+Led make_upper_led_segment(uint16_t first, uint16_t count) {
   return Led(upper_led_strip, first, count, 20,
              upper_led_chase_speed_leds_per_sec,
              upper_led_multi_chase_speed_leds_per_sec,
              upper_led_blink_period_sec,
              upper_led_double_flash_period_sec,
-             upper_led_center_out_multi_base_brightness,
-             reverse);
+             upper_led_center_out_multi_base_brightness);
 }
-Led upper_led_overall = make_upper_led_segment(
-    UPPER_LED_OVERALL_FIRST, UPPER_LED_OVERALL_COUNT, UPPER_LED_OVERALL_REVERSE);
-Led upper_led_left = make_upper_led_segment(
-    UPPER_LED_LEFT_FIRST, UPPER_LED_LEFT_COUNT, UPPER_LED_LEFT_REVERSE);
-Led upper_led_right = make_upper_led_segment(
-    UPPER_LED_RIGHT_FIRST, UPPER_LED_RIGHT_COUNT, UPPER_LED_RIGHT_REVERSE);
+// 一方向に流れるパターンの向きは、ROS から指令ごとに受け取る (bit 7)
+Led upper_led_overall = make_upper_led_segment(UPPER_LED_OVERALL_FIRST, UPPER_LED_OVERALL_COUNT);
+Led upper_led_left = make_upper_led_segment(UPPER_LED_LEFT_FIRST, UPPER_LED_LEFT_COUNT);
+Led upper_led_right = make_upper_led_segment(UPPER_LED_RIGHT_FIRST, UPPER_LED_RIGHT_COUNT);
 
 // ROS から届いた LED 指令の区間
 enum LedSegment : uint8_t {
@@ -78,6 +71,7 @@ enum LedSegment : uint8_t {
 };
 uint8_t ros_led_pattern[LED_SEGMENT_NUM] = {Led::kOff, Led::kOff, Led::kOff, Led::kOff};
 uint8_t ros_led_color[LED_SEGMENT_NUM] = {Led::kWhite, Led::kWhite, Led::kWhite, Led::kWhite};
+bool ros_led_reverse[LED_SEGMENT_NUM] = {false, false, false, false};
 #define ECAT_LINK_CHECK_INTERVAL_MS 50
 bool ecat_link = false;
 unsigned long prev_ecat_link_check_ms = 0;
@@ -193,19 +187,24 @@ void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
 
 void ecat_PacketCallBack(const uint8_t id, const uint8_t *data, const uint8_t len) {
   // data は LED_TAPE[0..2] の下位・上位 8 bit の並び。表示は update_led_outputs() で決める
-  //   LED_TAPE[0], [1]: (パターン, 色)
-  //   LED_TAPE[2]: 左右の砲塔 1 byte ずつ。下位 4 bit = パターン、bit 4〜6 = 色
+  //   LED_TAPE[0], [1]: (パターン, 色の byte)。色の byte の下位 7 bit = 色、bit 7 = reverse
+  //   LED_TAPE[2]: 左右の砲塔 1 byte ずつ。下位 4 bit = パターン、bit 4〜6 = 色、bit 7 = reverse
+  //   reverse = 一方向に流れるパターンを区間の末尾から先頭へ流す
   if (id != 100 || data == nullptr || len < 6) {
     return;
   }
   ros_led_pattern[LED_UPPER_OVERALL] = data[0];
-  ros_led_color[LED_UPPER_OVERALL] = data[1];
+  ros_led_color[LED_UPPER_OVERALL] = data[1] & 0x7F;
+  ros_led_reverse[LED_UPPER_OVERALL] = (data[1] & 0x80) != 0;
   ros_led_pattern[LED_BOTTOM] = data[2];
-  ros_led_color[LED_BOTTOM] = data[3];
+  ros_led_color[LED_BOTTOM] = data[3] & 0x7F;
+  ros_led_reverse[LED_BOTTOM] = (data[3] & 0x80) != 0;
   ros_led_pattern[LED_UPPER_LEFT] = data[4] & 0x0F;
   ros_led_color[LED_UPPER_LEFT] = (data[4] >> 4) & 0x07;
+  ros_led_reverse[LED_UPPER_LEFT] = (data[4] & 0x80) != 0;
   ros_led_pattern[LED_UPPER_RIGHT] = data[5] & 0x0F;
   ros_led_color[LED_UPPER_RIGHT] = (data[5] >> 4) & 0x07;
+  ros_led_reverse[LED_UPPER_RIGHT] = (data[5] & 0x80) != 0;
 }
 
 // 接続の状態と ROS からの指令から、各区間の表示を決める。
@@ -220,6 +219,7 @@ void update_led_outputs(){
 
   uint8_t pattern[LED_SEGMENT_NUM];
   uint8_t color[LED_SEGMENT_NUM];
+  bool reverse[LED_SEGMENT_NUM];
   for (int i = 0; i < LED_SEGMENT_NUM; ++i) {
     if (!ecat_link || !connect_ros2) {
       // ケーブルが抜けた、または daemon から process data が来ない (PC が落ちた・起動中・daemon が停止)。
@@ -227,19 +227,26 @@ void update_led_outputs(){
       // フレームが来ないときもリンクなしと同じ表示にする
       pattern[i] = Led::kRainbowChase;
       color[i] = Led::kWhite;  // レインボー系は色を使わない
+      reverse[i] = false;
     } else if (ros_led_pattern[i] == Led::kOff) {
       // EtherCAT は疎通しているが LED の指令がない (led_manager が未起動・停止)
       pattern[i] = Led::kFade;
       color[i] = Led::kGreen;
+      reverse[i] = false;
     } else {
       pattern[i] = ros_led_pattern[i];
       color[i] = ros_led_color[i];
+      reverse[i] = ros_led_reverse[i];
     }
   }
-  upper_led_overall.write(pattern[LED_UPPER_OVERALL], color[LED_UPPER_OVERALL]);
-  upper_led_left.write(pattern[LED_UPPER_LEFT], color[LED_UPPER_LEFT]);
-  upper_led_right.write(pattern[LED_UPPER_RIGHT], color[LED_UPPER_RIGHT]);
-  bottom_can3.setLedBytes(pattern[LED_BOTTOM], color[LED_BOTTOM]);
+  upper_led_overall.write(
+      pattern[LED_UPPER_OVERALL], color[LED_UPPER_OVERALL], reverse[LED_UPPER_OVERALL]);
+  upper_led_left.write(pattern[LED_UPPER_LEFT], color[LED_UPPER_LEFT], reverse[LED_UPPER_LEFT]);
+  upper_led_right.write(pattern[LED_UPPER_RIGHT], color[LED_UPPER_RIGHT], reverse[LED_UPPER_RIGHT]);
+  // bottom には色の byte の bit 7 に reverse を載せたまま送る
+  const uint8_t bottom_color_byte =
+      static_cast<uint8_t>(color[LED_BOTTOM] | (reverse[LED_BOTTOM] ? 0x80 : 0x00));
+  bottom_can3.setLedBytes(pattern[LED_BOTTOM], bottom_color_byte);
 }
 
 void setup(void) {

@@ -18,8 +18,6 @@ float bottom_led_blink_period_sec = 0.2f;
 float bottom_led_double_flash_period_sec = 0.5f;
 uint8_t bottom_led_center_out_multi_base_brightness = 0;
 uint8_t bottom_led_brightness = 32;
-// 一方向に流れるパターン (kChase / kRainbowChase) の向き。false = テープの先頭から末尾へ、true = 末尾から先頭へ
-constexpr bool BOTTOM_LED_REVERSE = false;
 LedStrip bottom_led_strip(LED1_SERIAL_PIN, bottom_led_count, bottom_led_brightness);
 // bottom はテープ全体で 1 区間
 Led bottom_led(bottom_led_strip, 0, bottom_led_count, 20,
@@ -27,16 +25,16 @@ Led bottom_led(bottom_led_strip, 0, bottom_led_count, 20,
               bottom_led_multi_chase_speed_leds_per_sec,
               bottom_led_blink_period_sec,
               bottom_led_double_flash_period_sec,
-              bottom_led_center_out_multi_base_brightness,
-              BOTTOM_LED_REVERSE);
+              bottom_led_center_out_multi_base_brightness);
 
 unsigned long can3_receive_ts = 0;
 CAN_message_t can3_msg;
 
 void can3_cb(const CAN_message_t &msg) {
   // Serial.println("ok");//動かすときはここをコメントアウトにしないとエラー
-  if(msg.id == 0xff && msg.len == 2){// bottom テープの (パターン, 色)。upper が LED_TAPE[1] から作る
-      bottom_led.write(msg.buf[0], msg.buf[1]);
+  if(msg.id == 0xff && msg.len == 2){// bottom テープの (パターン, 色の byte)。upper が LED_TAPE[1] から作る
+      // 色の byte の下位 7 bit = 色、bit 7 = reverse (一方向に流れるパターンを末尾から先頭へ流す)
+      bottom_led.write(msg.buf[0], msg.buf[1] & 0x7F, (msg.buf[1] & 0x80) != 0);
       can3_msg.buf[0] = client.destoy;
       can3_msg.buf[1] = client.hp;
       can3_msg.buf[2] = client.color;

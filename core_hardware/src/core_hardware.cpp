@@ -31,11 +31,11 @@ CoreHardware::CoreHardware()
   // 上のテープは 左の砲塔・中央 (全体)・右の砲塔 の 3 区間。led/upper は中央に出す
   led_upper_sub_ = create_subscription<core_msgs::msg::LedCommand>(
       "led/upper", 10, [this](const core_msgs::msg::LedCommand::SharedPtr msg) {
-        store_led_value(kLedUpper, core_hardware::pack_led_command(msg->pattern, msg->color));
+        store_led_command(kLedUpper, *msg);
       });
   led_bottom_sub_ = create_subscription<core_msgs::msg::LedCommand>(
       "led/bottom", 10, [this](const core_msgs::msg::LedCommand::SharedPtr msg) {
-        store_led_value(kLedBottom, core_hardware::pack_led_command(msg->pattern, msg->color));
+        store_led_command(kLedBottom, *msg);
       });
   led_upper_left_sub_ = create_subscription<core_msgs::msg::LedCommand>(
       "led/upper_left", 10, [this](const core_msgs::msg::LedCommand::SharedPtr msg) {
@@ -203,8 +203,23 @@ void CoreHardware::store_led_value(LedSlot slot, uint16_t value) {
   led_last_rx_tp_[slot] = std::chrono::steady_clock::now();
 }
 
+void CoreHardware::store_led_command(LedSlot slot, const core_msgs::msg::LedCommand& msg) {
+  const std::optional<uint16_t> packed =
+      core_hardware::pack_led_command(msg.pattern, msg.color, msg.reverse);
+  if (!packed.has_value()) {
+    // 色の byte の bit 7 は向きに使うので、収まらない指令は「指令なし」にして Teensy 側で目に見えるようにする
+    RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "LED command (pattern=%u, color=%u) on %s does not fit (color <= %u); sending 'no command'",
+        msg.pattern, msg.color, slot == kLedUpper ? "led/upper" : "led/bottom",
+        core_hardware::kLedMaxColor);
+  }
+  store_led_value(slot, packed.value_or(0U));
+}
+
 void CoreHardware::store_turret_led_command(LedSlot slot, const core_msgs::msg::LedCommand& msg) {
-  const std::optional<uint8_t> packed = core_hardware::pack_turret_led_byte(msg.pattern, msg.color);
+  const std::optional<uint8_t> packed =
+      core_hardware::pack_turret_led_byte(msg.pattern, msg.color, msg.reverse);
   if (!packed.has_value()) {
     // 1 byte に収まらない指令は「指令なし」にして、Teensy 側で目に見えるようにする
     RCLCPP_WARN_THROTTLE(
