@@ -1,0 +1,43 @@
+# 機体のデバッグログ（ros2 bag record）の設定。debug_log_recorder.py が読む。
+#
+# 名前が include のどれかに当てはまり、exclude のどれにも当てはまらないトピックを記録する。
+# どちらも部分一致の正規表現。ros2 bag（C++ の std::regex）に渡すので、後読みなどは使えない。
+include:
+  - '^/rosout$'          # 全ノードのログ
+  - '^/tf_static$'
+  - '^/joint_states$'
+  - '^/diagnostics$'
+  - '^/goal_reached$'
+  - '^/system/'          # 緊急停止の要因・health
+  - '^/ui/'              # 操縦の入力（スマホ・無線）
+  - '^/bridge/'          # スマホとの接続
+  - '^/behavior/'
+  - '^/control/'         # cmd_vel・rotation など
+  - '^/hardware/'        # CAN・joint_states・モータの状態・無線の受信
+  - '^/mecha/'           # 射撃
+  - '^/planning/'
+  - '^/localization/'
+  - '^/perception/enemy_detection/[^/]+/target_pose$'
+
+# 画像・点群・コストマップは重いので残さない
+exclude:
+  - 'image'
+  - 'compressed'
+  - 'theora'
+  - 'cloud'
+  - 'costmap'
+  - 'global_map'
+  - '(^|/)(points|scan)'
+
+# 記録の合計の上限 [MB]。起動のたびに、超えた分を古い記録から消す。
+# 起動したあとの記録はこの判定に入らないので、そのぶん超えることがある（1 時間でおよそ 1 GB）
+max_total_mb: 4000
+
+# ディスクの空きの下限 [MB]。足りなければ古い記録から消す。全部消しても足りないときは、何も消さずに記録しない
+min_free_mb: 2000
+
+# 1 ファイルの長さ [s]。0 で分けない
+split_duration_s: 300
+
+# 書き込む前にためておく量 [MB]。急に電源を切ったときに失うのはこの分まで
+max_cache_mb: 1

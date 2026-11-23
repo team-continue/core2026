@@ -19,6 +19,8 @@ install(PROGRAMS
   scripts/map_server_node.py
   scripts/odom_bridge_node.py
   scripts/navigation.sh
+  scripts/debug_log_recorder.py
+  scripts/debug_log_timeline.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -28,6 +30,9 @@ if(BUILD_TESTING)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_debug_log test/test_debug_log.py TIMEOUT 120)
 endif()
 
 ament_package()

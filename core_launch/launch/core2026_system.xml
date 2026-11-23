@@ -1,4 +1,10 @@
 <launch>
+  <!-- デバッグログ: 要点のトピックと /rosout を ros2 bag で記録する（debug_log:=false で止める）。
+       置き場所は $CORE_DEBUG_LOG_DIR、無ければ ~/rosbag/core_debug_log。見返すときは
+       ros2 run core_launch debug_log_timeline.py -->
+  <arg name="debug_log" default="true"/>
+  <include file="$(find-pkg-share core_launch)/launch/debug_log.launch.py" if="$(var debug_log)"/>
+
   <!-- ROS 2 Bridge (Android 操作UI用。/bridge/connected を core_mode の diagnostic が監視する) -->
   <node pkg="ros2_ws_bridge" exec="bridge" name="ros2_websocket_bridge" output="screen">
     <param name="port" value="8765"/>

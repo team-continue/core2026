@@ -24,6 +24,8 @@ services:
       - QT_X11_NO_MITSHM=1
       - XDG_RUNTIME_DIR=/tmp/runtime/
       - ROS_DOMAIN_ID=0
+      # デバッグログ (core_launch/launch/debug_log.launch.py) をホストの ~/rosbag に残す
+      - CORE_DEBUG_LOG_DIR=/rosbag/core_debug_log
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
