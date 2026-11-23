@@ -4,7 +4,7 @@ using namespace core_enemy_detection;
 
 oakdTargetDetector::oakdTargetDetector() : Node("oakd_target_detector")
 {
-    panelInfoSub = this->create_subscription<core_msgs::msg::DetectedPanelInfoArray>("detected_panel_info", 1, std::bind(&oakdTargetDetector::detectEnemy, this, _1));
+    panelInfoSub = this->create_subscription<core_msgs::msg::OakdDetectedPanelInfoArray>("detected_panel_info", 1, std::bind(&oakdTargetDetector::detectEnemy, this, _1));
     colorSub = this->create_subscription<std_msgs::msg::UInt8>("color", 10, std::bind(&oakdTargetDetector::changeTarget, this, _1));
     dpInfoPub = this->create_publisher<core_msgs::msg::DamagePanelInfoArray>("damage_panels_infomation", 1);
     parameter_callback_handle_ = this->add_on_set_parameters_callback(std::bind(&oakdTargetDetector::changeParameter, this, _1));
@@ -21,7 +21,7 @@ void oakdTargetDetector::changeTarget(const std_msgs::msg::UInt8::SharedPtr msg)
     return;
 }
 
-void oakdTargetDetector::detectEnemy(const core_msgs::msg::DetectedPanelInfoArray::ConstSharedPtr panelInfoMsg){
+void oakdTargetDetector::detectEnemy(const core_msgs::msg::OakdDetectedPanelInfoArray::ConstSharedPtr panelInfoMsg){
     // int num = panelInfoMsg->num;
     detectedPanels = panelInfoMsg->array;
     rawImage = cv_bridge::toCvShare(panelInfoMsg->image, panelInfoMsg, "bgr8")->image;

@@ -8,7 +8,7 @@
 #include <cv_bridge/cv_bridge.h>
 
 #include <image_transport/image_transport.hpp>
-#include <core_msgs/msg/detected_panel_info_array.hpp>
+#include <core_msgs/msg/oakd_detected_panel_info_array.hpp>
 #include <core_msgs/msg/damage_panel_info_array.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <std_msgs/msg/u_int8.hpp>
@@ -47,18 +47,18 @@ private:
     labeledImage ledLabelMap;
     
     std::vector<core_msgs::msg::DamagePanelInfo> damagePanels;
-    std::vector<core_msgs::msg::DetectedPanelInfo> detectedPanels;
+    std::vector<core_msgs::msg::OakdDetectedPanelInfo> detectedPanels;
     std::map<std::string, image_transport::Publisher> imgPub;
 
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_handle_;
     
-    rclcpp::Subscription<core_msgs::msg::DetectedPanelInfoArray>::SharedPtr panelInfoSub;
+    rclcpp::Subscription<core_msgs::msg::OakdDetectedPanelInfoArray>::SharedPtr panelInfoSub;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr colorSub;
 
     rclcpp::Publisher<core_msgs::msg::DamagePanelInfoArray>::SharedPtr dpInfoPub;
 
     void changeTarget(const std_msgs::msg::UInt8::SharedPtr);
-    void detectEnemy(const core_msgs::msg::DetectedPanelInfoArray::ConstSharedPtr);
+    void detectEnemy(const core_msgs::msg::OakdDetectedPanelInfoArray::ConstSharedPtr);
     void extractHsvRange();
     void applyMorphology();
     void detectDamagePanel();

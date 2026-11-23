@@ -29,8 +29,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CANArray.msg"
   "msg/DamagePanelInfo.msg"
   "msg/DamagePanelInfoArray.msg"
-  "msg/DetectedPanelInfo.msg"
-  "msg/DetectedPanelInfoArray.msg"
+  "msg/OakdDetectedPanelInfo.msg"
+  "msg/OakdDetectedPanelInfoArray.msg"
   "msg/PoseWithWeight.msg"
   "msg/Path.msg"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs
