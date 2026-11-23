@@ -10,6 +10,7 @@
 # ヘッダの時刻（シミュレーションの時刻）と合わない。
 # 止めるときは Ctrl-C（ros2 bag record が SIGINT で書き終える）。
 set -euo pipefail
+# トピックは replay_localization.py の INPUT_TOPICS と、check_localization_jumps.py が読むものに合わせる
 
 if [[ $# -lt 1 ]]; then
   echo "使い方: $0 <出力のディレクトリ> [--with-outputs] [ros2 bag record の引数 ...]" >&2
@@ -18,18 +19,18 @@ fi
 output="$1"
 shift
 topics=(
-  /livox/lidar      # Livox の点群（CustomMsg、10Hz）
-  /livox/imu        # Mid-360 の内蔵 IMU（200Hz、FAST-LIO の既定の入力）
-  /imu/damiao       # Damiao IMU（200Hz、imu_source:=fused と、異常の判定に使う）
-  /tf_static        # 機体の固定の変換（robot_state_publisher）
-  /cmd_vel          # 速度指令（速さや旋回の場面を探すため）
+  /sensing/livox/lidar  # Livox の点群（CustomMsg、10Hz）
+  /sensing/livox/imu    # Mid-360 の内蔵 IMU（200Hz、FAST-LIO の既定の入力）
+  /sensing/imu          # Damiao IMU（200Hz、imu_source:=fused と、異常の判定に使う）
+  /tf_static            # 機体の固定の変換（robot_state_publisher）
+  /control/cmd_vel      # 速度指令（速さや旋回の場面を探すため）
 )
 if [[ "${1:-}" == --with-outputs ]]; then
   shift
   topics+=(
     /tf                     # map→odom と odom→base_link
-    /lio/odom               # LIO の姿勢と速度
-    /alignment_status       # 地図照合の採否と補正の大きさ
+    /localization/lio/odom  # LIO の姿勢と速度
+    /localization/alignment_status  # 地図照合の採否と補正の大きさ
     /localization/health    # 自己位置の状態
     /perception/tracks      # 追跡（混雑の判定に使う）
   )
