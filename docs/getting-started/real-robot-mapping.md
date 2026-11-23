@@ -17,10 +17,14 @@
         | **ゆっくり（平均 0.5m/s、既定の設定）** | 3 | すべて 7/7 | 0.17〜0.26m | 0 | 0.01m |
         | 速く（最高 3m/s） | 6 | すべて 7/7 | -0.05〜0.21m | 3 回の走りで触れた | 0.02m |
         | 正しい地図（参考） | 4 | すべて 7/7 | 0.17〜0.36m | 0 | 0.01m |
+        | ゆっくり、`real_cautious` | 3 | すべて 7/7 | 0.64〜0.65m | 0 | 0.01m |
+        | 速く、`real_cautious` | 3 | すべて 7/7 | 0.69〜0.70m | 0 | 0.02m |
 
     - ゆっくり作った地図は、正しい地図とのずれの偏りが 2mm 以下、床の高さ -0.01m、床の傾き 0.05° でした。
     - 速く走って作ると、薄い台や裏側の面の点が欠け、計画が構造物に近い道を選びます（自己位置のずれは小さいまま）。
       **ゆっくり、構造物の周りを回って作ってください**。ボクセルを 0.05m に細かくしても良くはなりませんでした。
+    - 安全側の設定（`planning_params_file:=real_cautious`、3 章）では、構造物まで 0.64m 以上離れて走りました。
+      7 つのゴールを回る時間は約 55 秒から約 117 秒に延びます。
     - 実機と Humble では、まだ試していません。下の「実機で要確認」を見てください。
 
 ## 0. 準備
@@ -191,13 +195,21 @@ source install/setup.bash
 3. 全体を、作った地図の名前で起動します。
 
 ```bash
-ros2 launch core_launch core2026_system.xml map_name:=lab
+ros2 launch core_launch core2026_system.xml map_name:=lab planning_params_file:=real_cautious
 ```
+
+`planning_params_file:=real_cautious` は、壁や物との間隔を安全側に倒す設定です（`core_launch/config/real_cautious.yaml`）。
+
+- 機体と静止物の間の余裕を 0.1m → 0.25m にします（大域計画の膨らみ、局所計画、安全停止）。
+- 速さの上限を 3.0m/s → 1.0m/s にします。
+- 余裕を広げるので、狭い所は通れなくなります（既定でも幅 1.6m 以下の長い通路は通れません。この設定では、
+  さらに約 0.3m 広い所が要ります）。通れない所にゴールを置くと、手前で止まるか、計画に失敗します。
+- 走りに慣れたら、`planning_params_file:=` を外すと既定の設定に戻ります。
 
 自律移動の部分だけを起動するときは、次のようにします。
 
 ```bash
-ros2 launch core_launch navigation.launch.py environment:=real map_name:=lab
+ros2 launch core_launch navigation.launch.py environment:=real map_name:=lab planning_params_file:=real_cautious
 ```
 
 印と違う所から始めるときは、`init_x:=`・`init_y:=`・`init_yaw:=`（地図の上の位置 [m] と向き [rad]）を付けるか、
@@ -228,8 +240,10 @@ ros2 topic pub --once /ui/auto/stop std_msgs/msg/Bool "{data: true}"
 ```
 
 !!! warning "初めて走らせるとき"
-    非常停止をすぐ押せる所に人を置き、1〜2m 先の近いゴールから始めます。操縦アプリの速度の上限
-    （`/ui/auto/max_speed`）を下げておきます。
+    `planning_params_file:=real_cautious` を付けて起動します。非常停止をすぐ押せる所に人を置き、1〜2m 先の
+    近いゴールから始めます。速さの上限を局所計画の速さ（`mppi.max_speed_mps`）より下げたいときは、操縦アプリの
+    速度の上限（`/ui/auto/max_speed`）で下げます。速さを下げても壁との間隔は広がりません（局所計画の静止物の余裕は
+    「余裕 + 速さ × 0.1 秒」なので、遅いほど近くを通ります）。
 
 ## うまくいかないとき
 

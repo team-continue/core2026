@@ -79,6 +79,17 @@ MAP_PRESETS = {
 }
 
 
+def _planning_params_file(core_launch_share, value):
+    """planning_params_file の値。ファイルの場所か、core_launch/config の名前（real_cautious など、.yaml なし）."""
+    if not value or os.path.isfile(value):
+        return value
+    named = os.path.join(core_launch_share, 'config', f'{value}.yaml')
+    if os.path.isfile(named):
+        return named
+    raise RuntimeError(
+        f"planning_params_file '{value}' が見つかりません（ファイルの場所か、core_launch/config の名前を渡してください）")
+
+
 def _launch_nodes(context):
     """Resolve map preset and return all node actions."""
     # ── Resolve launch arguments ─────────────────────────────────────
@@ -193,6 +204,8 @@ def _launch_nodes(context):
         planning_arguments = {
             'map_path': map_path, 'field_file': field_file, 'composition': composition,
             'yaw_mode': yaw_mode,
+            'planning_params_file': _planning_params_file(
+                core_launch_share, context.launch_configurations['planning_params_file']),
         }
         if context.launch_configurations['cmd_yaw_hold'].lower() == 'true':
             # 安全停止の出力を cmd_yaw_hold で受け、指令の間に上半身が回った分だけ並進を戻して出し直す。
@@ -316,6 +329,11 @@ def generate_launch_description():
             'yaw_mode', default_value='1', choices=['0', '1'],
             description='腰の起動時のモード（0: FRONT、1: TURRET）。body_controller と局所計画に渡す。'
                         'TURRET の間、局所計画は上半身の向きを指令しない',
+        ),
+        DeclareLaunchArgument(
+            'planning_params_file', default_value='',
+            description='計画のノードに既定の設定の後から重ねる設定（ファイルか core_launch/config の名前）。'
+                        '実機で初めて試すときは real_cautious（壁との間隔を広げ、速さを 1.0m/s までにする）',
         ),
         DeclareLaunchArgument(
             'cmd_yaw_hold', default_value='false', choices=['true', 'false'],
