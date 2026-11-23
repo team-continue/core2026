@@ -59,7 +59,7 @@ public:
     }
     state_timeout_ = millisecondsParameter("state_timeout_ms", 1000);
     input_timeout_ = millisecondsParameter("input_timeout_ms", 1000);
-    manual_fire_window_ = millisecondsParameter("manual_fire_window_ms", 500);
+    manual_fire_window_ = millisecondsParameter("manual_fire_window_ms", 1500);
     const auto shooter_namespace =
       this->declare_parameter<std::string>("shooter_namespace", "/mecha/shooter");
     loadCommandTable();

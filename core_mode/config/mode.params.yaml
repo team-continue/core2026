@@ -12,7 +12,7 @@
     publish_rate_hz: 10.0 # LED 指令の出力周期[Hz]。core_hardware の途絶判定に使うので変化がなくても出す
     state_timeout_ms: 1000 # behavior の状態がこの時間来なければ、足回りを manual として表示する[ms]
     input_timeout_ms: 1000 # aim_bot の aim_status (2 Hz) の途絶判定[ms]
-    manual_fire_window_ms: 500 # shooter_controller の発射通知からこの時間は手動の射撃中とみなす[ms]
+    manual_fire_window_ms: 1500 # shooter_controller の発射通知からこの時間は手動の射撃中とみなす[ms]。1 発ごとの表示が見えるよう長めにする
     shooter_namespace: "/mecha/shooter" # 砲塔の状態トピックの名前空間 ({shooter_namespace}/left/... など)
     # 状態ごとの表示 [パターン, 色]。パターンと色の番号は Teensy の led.h と同じ
     # パターン: 2 = kChase (一方向に流れる。向きは Teensy の区間ごとの定数), 8 = kBlink, 9 = kDoubleFlash,
@@ -28,11 +28,11 @@
       software_emergency: [11, 1] # kSingleFlash・赤
       turret_error: [2, 1] # kChase・赤。手動・自動で同じ
       turret_manual_firing: [8, 0] # kBlink・白
-      turret_manual_motor_on: [11, 0] # kSingleFlash・白。発射モータに回す指令が出ている
+      turret_manual_motor_on: [15, 0] # kInwardChase・白。発射中 (点滅) と見分けやすいよう点滅しない表示にする。発射モータに回す指令が出ている
       turret_manual: [2, 0] # kChase・白
       turret_auto_firing: [8, 2] # kBlink・黄
       turret_enemy_detected: [9, 2] # kDoubleFlash・黄。その砲塔の aim_bot が敵を捉えている (射程外・照準が合っていない)
-      turret_auto_motor_on: [11, 2] # kSingleFlash・黄。発射モータに回す指令が出ている
+      turret_auto_motor_on: [15, 2] # kInwardChase・黄。発射中 (点滅) と見分けやすいよう点滅しない表示にする。発射モータに回す指令が出ている
       turret_auto_fire_off: [2, 2] # kChase・黄。UI の turret_auto がオフ。待機と同じ
       turret_auto_idle: [2, 2] # kChase・黄
       chassis_auto_rotating: [13, 2] # kBlinkMedium・黄
