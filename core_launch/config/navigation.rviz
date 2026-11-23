@@ -36,7 +36,7 @@ Visualization Manager:
       Name: Global Path
       Enabled: true
       Topic:
-        Value: /planned_path
+        Value: /planning/plan
         Depth: 5
       Color: 0; 255; 0
       Line Style: Lines
@@ -47,7 +47,7 @@ Visualization Manager:
       Name: Robot Pose
       Enabled: true
       Topic:
-        Value: /odom
+        Value: /localization/lio/odom
         Depth: 5
       Arrow Length: 0.5
       Color: 255; 0; 0
@@ -92,7 +92,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /Laser_map
+        Value: /localization/Laser_map
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -125,7 +125,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /cloud_registered
+        Value: /localization/cloud_registered
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -150,9 +150,9 @@ Visualization Manager:
       Style: Flat Squares
       Topic:
         Depth: 1
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         Reliability Policy: Reliable
-        Value: /localization/global_map
+        Value: /localization/initial_map
       Use Fixed Frame: true
       Value: true
 
@@ -182,11 +182,11 @@ Visualization Manager:
       Use Fixed Frame: true
       Value: true
 
-    - Class: rviz_default_plugins/Pose
+    - Class: rviz_default_plugins/PoseWithCovariance
       Name: Localization Pose
       Enabled: true
       Topic:
-        Value: /localization/pose
+        Value: /localization/pcl_pose
         Depth: 5
       Color: 255; 165; 0
       Arrow Length: 0.6
