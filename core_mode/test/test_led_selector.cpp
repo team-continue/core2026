@@ -235,6 +235,43 @@ TEST(LedCommandTable, DefaultRedIsOnlyForErrors)
   }
 }
 
+TEST(SelectLedCommands, TestModeShowsBothTurretsAsManual)
+{
+  LedInputs in = normalInputs();
+  in.behavior_state = 2;  // AUTO_SELECTED
+  in.test_mode = true;
+  in.turrets[0].manual_mode = false;
+  in.turrets[0].aim = AimStatus::kFiring;  // 自動の入力は見ない
+  in.turrets[1].manual_mode = false;
+  in.turrets[1].shoot_motor_on = true;
+  LedCommands out = selectLedCommands(in, kTable);
+  EXPECT_EQ(out.upper_left, kTable.turret_manual);
+  EXPECT_EQ(out.upper_right, kTable.turret_manual_motor_on);
+  // 全体・足回りは test_mode に関係なく behavior の状態で決まる
+  EXPECT_EQ(out.upper_overall, kTable.behavior_auto_selected);
+  EXPECT_EQ(out.bottom, kTable.chassis_auto);
+
+  in.turrets[0].manual_firing = true;
+  in.turrets[1].error = true;  // 異常は test_mode でも出す
+  out = selectLedCommands(in, kTable);
+  EXPECT_EQ(out.upper_left, kTable.turret_manual_firing);
+  EXPECT_EQ(out.upper_right, kTable.turret_error);
+
+  in.test_mode = false;
+  in.turrets[1].error = false;
+  out = selectLedCommands(in, kTable);
+  EXPECT_EQ(out.upper_left, kTable.turret_auto_firing);
+  EXPECT_EQ(out.upper_right, kTable.turret_auto_motor_on);
+}
+
+TEST(SelectLedCommands, EmergencyOverridesTestMode)
+{
+  LedInputs in = normalInputs();
+  in.test_mode = true;
+  in.software_emergency = true;
+  expectAllSegments(selectLedCommands(in, kTable), kTable.software_emergency);
+}
+
 TEST(SelectLedCommands, ManualTurretIgnoresAutoInputs)
 {
   LedInputs in = normalInputs();

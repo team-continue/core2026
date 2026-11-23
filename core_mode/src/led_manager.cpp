@@ -85,6 +85,10 @@ public:
     rotation_sub_ = this->create_subscription<std_msgs::msg::Int32>(
       "rotation", 10,
       [this](const std_msgs::msg::Int32::SharedPtr msg) {rotation_ = msg->data;});
+    // UI の test_mode は切り替え時にだけ publish されるので、最後の値を使い続ける
+    test_mode_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+      "test_mode", 10,
+      [this](const std_msgs::msg::Bool::SharedPtr msg) {test_mode_ = msg->data;});
 
     for (std::size_t i = 0; i < kTurretSides.size(); ++i) {
       subscribeTurret(i, shooter_namespace + "/" + kTurretSides[i]);
@@ -227,6 +231,7 @@ private:
       in.behavior_state = behavior_state_;
     }
     in.rotating = rotation_ != 0;
+    in.test_mode = test_mode_;
     for (std::size_t i = 0; i < turrets_.size(); ++i) {
       const TurretState & turret = turrets_[i];
       in.turrets[i].manual_mode = turret.manual_mode;
@@ -267,12 +272,14 @@ private:
   int32_t behavior_state_ = 0;
   std::optional<rclcpp::Time> behavior_state_stamp_;
   int32_t rotation_ = 0;
+  bool test_mode_ = false;
   std::array<TurretState, 2> turrets_{};
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hazard_status_sub_;
   rclcpp::Subscription<std_msgs::msg::Int8MultiArray>::SharedPtr hazard_states_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr behavior_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rotation_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr test_mode_sub_;
   std::vector<rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr> turret_subs_;
   std::vector<rclcpp::Subscription<std_msgs::msg::String>::SharedPtr> aim_status_subs_;
   std::vector<rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr> shoot_motor_subs_;
