@@ -1,0 +1,9 @@
+# make_map_files.py が map_20261123_182231_clean.pcd から作ったフィールドの範囲（走って見た床の外接の長方形）。
+# navigation.launch.py の map_name:=<地図の名前> で config/field.yaml に重ねる。
+/**:
+  ros__parameters:
+    field:
+      x_min: -4.8
+      x_max: 5.5
+      y_min: -3.6
+      y_max: 3.0
