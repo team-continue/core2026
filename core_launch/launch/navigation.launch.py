@@ -53,6 +53,8 @@ def _launch_nodes(context):
     is_real = (env == 'real')
     use_damiao_imu = is_real and context.launch_configurations.get(
         'use_damiao_imu', 'true').lower() == 'true'
+    use_body_controller = context.launch_configurations.get(
+        'use_body_controller', 'true').lower() == 'true'
 
     # ── Map preset ───────────────────────────────────────────────────
     preset = MAP_PRESETS.get(map_name)
@@ -313,19 +315,22 @@ def _launch_nodes(context):
     # ]))
 
     # ── 11. Body controller ─────────────────────────────────────────
-    actions.append(IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(body_ctrl_share, 'launch', 'body_controller.launch.py'),
-        ),
-        launch_arguments={
-            'use_damiao_imu': 'true' if use_damiao_imu else 'false',
-            'imu_port': context.launch_configurations['imu_port'],
-            'imu_baudrate': context.launch_configurations['imu_baudrate'],
-            'imu_frame_id': context.launch_configurations['imu_frame_id'],
-            'imu_output_rate_hz': context.launch_configurations[
-                'imu_output_rate_hz'],
-        }.items(),
-    ))
+    # core2026_system.xml は body_controller を自前で起動するので false で渡す。
+    # 二重に起動すると damiao_imu が同じシリアルポートを2つのノードで開いてしまう
+    if use_body_controller:
+        actions.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(body_ctrl_share, 'launch', 'body_controller.launch.py'),
+            ),
+            launch_arguments={
+                'use_damiao_imu': 'true' if use_damiao_imu else 'false',
+                'imu_port': context.launch_configurations['imu_port'],
+                'imu_baudrate': context.launch_configurations['imu_baudrate'],
+                'imu_frame_id': context.launch_configurations['imu_frame_id'],
+                'imu_output_rate_hz': context.launch_configurations[
+                    'imu_output_rate_hz'],
+            }.items(),
+        ))
 
     # ── 12. RViz ────────────────────────────────────────────────────
     if use_rviz.lower() == 'true':
@@ -369,6 +374,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_localization', default_value='false',
             description='Enable NDT/ICP localization (dynamic map→odom TF)',
+        ),
+        DeclareLaunchArgument(
+            'use_body_controller', default_value='true',
+            description='Include core_body_controller (and DM-IMU-L1). '
+                        'Set false when the caller launches it itself',
         ),
         DeclareLaunchArgument(
             'use_damiao_imu', default_value='true',
