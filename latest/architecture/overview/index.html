@@ -6,13 +6,13 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width,initial-scale=1" name="viewport"/>
 <meta content="CoRE2026 ロボット ROS2 プロジェクトドキュメント" name="description"/>
-<link href="../../getting-started/unity-sim/" rel="prev"/>
+<link href="../../getting-started/real-robot-mapping/" rel="prev"/>
 <link href="../topics/" rel="next"/>
 <link href="../../assets/continue_logo.png" rel="icon"/>
-<meta content="mkdocs-1.6.1, mkdocs-material-9.7.7" name="generator"/>
+<meta content="mkdocs-1.6.1, mkdocs-material-9.8.2" name="generator"/>
 <title>システム概要 - core2026 ドキュメント</title>
-<link href="../../assets/stylesheets/main.ec1eaa64.min.css" rel="stylesheet"/>
-<link href="../../assets/stylesheets/palette.ab4e12ef.min.css" rel="stylesheet"/>
+<link href="../../assets/stylesheets/main.57a0d79d.min.css" rel="stylesheet"/>
+<link href="../../assets/stylesheets/palette.fb2fffe2.min.css" rel="stylesheet"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback" rel="stylesheet"/>
 <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
@@ -310,6 +310,18 @@
   </span>
 </a>
 </li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../../getting-started/real-robot-mapping/">
+<span class="md-ellipsis">
+    
+  
+    実機で地図を作って自律移動
+  
+
+    
+  </span>
+</a>
+</li>
 </ul>
 </nav>
 </li>
@@ -419,6 +431,15 @@
 <span class="md-ellipsis">
       
         ナビゲーションパイプライン
+      
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#lidar-1台構成のナビゲーション">
+<span class="md-ellipsis">
+      
+        LiDAR 1台構成のナビゲーション
       
     </span>
 </a>
@@ -2160,6 +2181,15 @@
 </a>
 </li>
 <li class="md-nav__item">
+<a class="md-nav__link" href="#lidar-1台構成のナビゲーション">
+<span class="md-ellipsis">
+      
+        LiDAR 1台構成のナビゲーション
+      
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
 <a class="md-nav__link" href="#敵検出射撃パイプライン">
 <span class="md-ellipsis">
       
@@ -3030,6 +3060,145 @@
 <p class="admonition-title">経路追従ノードの使い分け</p>
 <p><code>core_mppi_node</code> と <code>core_path_follower_node</code> はどちらも <code>/planning/planned_path</code> と <code>/localization/odom</code> を購読する<strong>排他的な選択肢</strong>で、同時には起動しません。速度指令の出力先が異なり <code>cmd_vel_smoother_node</code> を経由するかどうかが変わるため、切り替える際は<a href="../topics/#ナビゲーションパイプライン">トピック・メッセージ一覧</a>で経路を確認してください。</p>
 </div>
+<h2 id="lidar-1台構成のナビゲーション">LiDAR 1台構成のナビゲーション<a class="headerlink" href="#lidar-1台構成のナビゲーション" title="Permanent link">¶</a></h2>
+<p>Livox Mid-360 を 1 台だけ使う自律移動の構成です（ブランチ <code>feature/single-lidar-nav</code>）。実機は <code>core_launch/navigation.launch.py</code>、シミュレーションは <code>core_launch/sim_nav.launch.py</code>（Gazebo）で起動します。破線枠のノードは sim だけで起動し、実機にはまだ入れていません。</p>
+<pre class="mermaid"><code>graph LR
+  subgraph SENS1["Sensing　/sensing"]
+    LV["livox_ros_driver2&lt;br&gt;（sim: Gazebo）"]
+  end
+
+  subgraph LOC1["Localization　/localization"]
+    FLIO["fastlio_mapping"]
+    LOA["lio_odom_adapter"]
+    SF["scan_filter"]
+    LL["lidar_localization_node"]
+    LH["localization_health"]
+  end
+
+  subgraph PERC1["Perception　/perception"]
+    PN["perception_node"]
+  end
+
+  subgraph PLAN1["Planning　/planning"]
+    GP["global_planner"]
+    ML["mppi_lite"]
+    SG["safety_gate"]
+    CYH["cmd_yaw_hold&lt;br&gt;（sim のみ）"]
+    CM["contact_monitor"]
+  end
+
+  subgraph CTRL1["Control　/control"]
+    CMM["control_mode_manager"]
+    BC1["body_control_node&lt;br&gt;（sim: Gazebo の駆動）"]
+  end
+
+  subgraph SYS1["System　/system/emergency"]
+    EH1["emergency_handler"]
+  end
+
+  UI1["操縦アプリ / RViz"]
+
+  LV --&gt;|"/sensing/livox/lidar"| FLIO
+  LV --&gt;|"/sensing/livox/lidar"| PN
+  LV --&gt;|"/sensing/livox/imu"| FLIO
+  LV -.-&gt;|"/sensing/livox/imu"| CYH
+  FLIO --&gt;|"/localization/Odometry"| LOA
+  FLIO --&gt;|"/localization/cloud_registered_body"| SF
+  SF --&gt;|"/localization/cloud"| LL
+  LL --&gt;|"/localization/alignment_status"| LH
+  LOA --&gt;|"/localization/lio/odom"| LH
+  LOA --&gt;|"/localization/lio/odom"| ML
+  LOA --&gt;|"/localization/lio/odom"| SG
+  LOA --&gt;|"/localization/lio/odom"| PN
+  LH --&gt;|"/localization/health"| ML
+  LH --&gt;|"/localization/health"| SG
+
+  PN --&gt;|"/perception/tracks"| GP
+  PN --&gt;|"/perception/tracks"| ML
+  PN --&gt;|"/perception/tracks"| SG
+
+  UI1 --&gt;|"/ui/auto/start&lt;br&gt;/ui/auto/stop"| CMM
+  UI1 --&gt;|"/control/manual/cmd_vel"| CMM
+  UI1 --&gt;|"/system/emergency/software_emergency"| EH1
+  CMM --&gt;|"/behavior/goal_pose"| GP
+  GP --&gt;|"/planning/plan"| ML
+  GP --&gt;|"/behavior/goal_reached"| CMM
+  ML --&gt;|"/planning/navigation/status"| CMM
+  ML --&gt;|"/planning/cmd_vel_nav"| SG
+  CM --&gt;|"/planning/contact/status"| SG
+  SG --&gt;|"/control/auto/cmd_vel&lt;br&gt;（sim: /control/auto/cmd_vel_raw）"| CMM
+  SG -.-&gt;|"/control/auto/cmd_vel_raw"| CYH
+  CYH -.-&gt;|"/control/auto/cmd_vel"| CMM
+  EH1 --&gt;|"/system/emergency/hazard_status"| CMM
+  CMM --&gt;|"/control/cmd_vel"| BC1
+  CMM --&gt;|"/control/cmd_vel"| ML
+
+  style CYH stroke-dasharray: 5 4</code></pre>
+<table>
+<thead>
+<tr>
+<th>ノード</th>
+<th>パッケージ</th>
+<th>役割</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lio_odom_adapter</code></td>
+<td>core_localization</td>
+<td>FAST-LIO の姿勢を <code>base_link</code> の odom（<code>/localization/lio/odom</code>）に直す</td>
+</tr>
+<tr>
+<td><code>lidar_localization_node</code></td>
+<td>lidar_localization_ros2</td>
+<td>事前地図との照合で <code>map → odom</code> を出す</td>
+</tr>
+<tr>
+<td><code>localization_health</code></td>
+<td>core_localization</td>
+<td>照合と LIO の状態から自己位置の健全さを判定する</td>
+</tr>
+<tr>
+<td><code>perception_node</code></td>
+<td>core_perception</td>
+<td>地図の固定物を除いた点群から相手を検出・追跡する</td>
+</tr>
+<tr>
+<td><code>global_planner</code></td>
+<td>core_planning</td>
+<td>格子の経路探索（JPS / Theta*）と、静止物の周りの曲線化</td>
+</tr>
+<tr>
+<td><code>mppi_lite</code></td>
+<td>core_planning</td>
+<td>MPPI の局所計画。速度指令を <code>/planning/cmd_vel_nav</code> に出す</td>
+</tr>
+<tr>
+<td><code>safety_gate</code></td>
+<td>core_planning</td>
+<td>静止物・相手・接触・自己位置の健全さで指令を止める・落とす</td>
+</tr>
+<tr>
+<td><code>cmd_yaw_hold</code></td>
+<td>core_planning</td>
+<td><strong>sim のみ</strong>。自動の指令の並進の向きを、IMU（約 200Hz）で世界の座標に保って出し直す。指令は 0.1 秒ごとにしか来ず、その間に機体が回ると向きがずれるため。実機に入れる前に、実機の IMU の周期・遅れ・零点のずれと、足回りの応答を測る</td>
+</tr>
+<tr>
+<td><code>contact_monitor</code></td>
+<td>core_planning</td>
+<td>指令と動きの食い違い・IMU の衝撃から接触を検知する</td>
+</tr>
+<tr>
+<td><code>control_mode_manager</code></td>
+<td>core_body_controller</td>
+<td>手動と自動のモードを切り替え、今のモードの指令だけを <code>/control/cmd_vel</code> へ通す</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">sim だけの設定</p>
+<p><code>sim_nav.launch.py</code> は、計画のノードに <code>core_launch/config/sim_drive.yaml</code>（駆動の遅れを見込む <code>mppi.drive.predict_delay: true</code>、<code>dead_time_s: 0.06</code>）を重ね、<code>cmd_yaw_hold</code> を挟みます。どちらも Gazebo の値で、実機の駆動の無駄時間・時定数を測ってから実機に入れます。</p>
+</div>
 <h2 id="敵検出射撃パイプライン">敵検出・射撃パイプライン<a class="headerlink" href="#敵検出射撃パイプライン" title="Permanent link">¶</a></h2>
 <p>敵検出は砲塔ごと（<code>left</code> / <code>right</code>）に独立した <code>target_detector</code> + <code>target_selector</code> の組が動作します。</p>
 <pre class="mermaid"><code>graph LR
@@ -3484,7 +3653,7 @@
 </main>
 <footer class="md-footer">
 <nav aria-label="フッター" class="md-footer__inner md-grid">
-<a aria-label="前: Unityシミュレータ" class="md-footer__link md-footer__link--prev" href="../../getting-started/unity-sim/">
+<a aria-label="前: 実機で地図を作って自律移動" class="md-footer__link md-footer__link--prev" href="../../getting-started/real-robot-mapping/">
 <div class="md-footer__button md-icon">
 <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
 </div>
@@ -3493,7 +3662,7 @@
                 前
               </span>
 <div class="md-ellipsis">
-                Unityシミュレータ
+                実機で地図を作って自律移動
               </div>
 </div>
 </a>
@@ -3528,7 +3697,7 @@
 <div class="md-dialog" data-md-component="dialog">
 <div class="md-dialog__inner md-typeset"></div>
 </div>
-<script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.tracking", "navigation.top", "navigation.footer", "toc.follow", "search.highlight", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u30b3\u30d4\u30fc\u3057\u307e\u3057\u305f", "clipboard.copy": "\u30af\u30ea\u30c3\u30d7\u30dc\u30fc\u30c9\u3078\u30b3\u30d4\u30fc", "search.result.more.one": "\u3053\u306e\u30da\u30fc\u30b8\u5185\u306b\u3082\u30461\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.more.other": "\u3053\u306e\u30da\u30fc\u30b8\u5185\u306b\u3042\u3068#\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.none": "\u4f55\u3082\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3067\u3057\u305f", "search.result.one": "1\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.other": "#\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.placeholder": "\u691c\u7d22\u30ad\u30fc\u30ef\u30fc\u30c9\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044", "search.result.term.missing": "\u691c\u7d22\u306b\u542b\u307e\u308c\u306a\u3044", "select.version": "\u30d0\u30fc\u30b8\u30e7\u30f3\u5207\u308a\u66ff\u3048"}, "version": {"default": "latest", "provider": "mike"}}</script>
-<script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+<script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.tracking", "navigation.top", "navigation.footer", "toc.follow", "search.highlight", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "\u30b3\u30d4\u30fc\u3057\u307e\u3057\u305f", "clipboard.copy": "\u30af\u30ea\u30c3\u30d7\u30dc\u30fc\u30c9\u3078\u30b3\u30d4\u30fc", "search.result.more.one": "\u3053\u306e\u30da\u30fc\u30b8\u5185\u306b\u3082\u30461\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.more.other": "\u3053\u306e\u30da\u30fc\u30b8\u5185\u306b\u3042\u3068#\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.none": "\u4f55\u3082\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3067\u3057\u305f", "search.result.one": "1\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.other": "#\u4ef6\u898b\u3064\u304b\u308a\u307e\u3057\u305f", "search.result.placeholder": "\u691c\u7d22\u30ad\u30fc\u30ef\u30fc\u30c9\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044", "search.result.term.missing": "\u691c\u7d22\u306b\u542b\u307e\u308c\u306a\u3044", "select.version": "\u30d0\u30fc\u30b8\u30e7\u30f3\u5207\u308a\u66ff\u3048"}, "version": {"default": "latest", "provider": "mike"}}</script>
+<script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
 </body>
 </html>
