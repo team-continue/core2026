@@ -221,14 +221,12 @@ void update_led_outputs(){
   uint8_t pattern[LED_SEGMENT_NUM];
   uint8_t color[LED_SEGMENT_NUM];
   for (int i = 0; i < LED_SEGMENT_NUM; ++i) {
-    if (!ecat_link) {
-      // PC が落ちた、またはケーブルが抜けた
+    if (!ecat_link || !connect_ros2) {
+      // ケーブルが抜けた、または daemon から process data が来ない (PC が落ちた・起動中・daemon が停止)。
+      // PC の電源が切れても NIC がリンクを保つことがあり、物理リンクだけでは PC の停止を見分けられないので、
+      // フレームが来ないときもリンクなしと同じ表示にする
       pattern[i] = Led::kRainbowChase;
       color[i] = Led::kWhite;  // レインボー系は色を使わない
-    } else if (!connect_ros2) {
-      // PC は起動しているが daemon / core_hardware から受信していない
-      pattern[i] = Led::kRainbowMultiChase;
-      color[i] = Led::kWhite;
     } else if (ros_led_pattern[i] == Led::kOff) {
       // EtherCAT は疎通しているが LED の指令がない (led_manager が未起動・停止)
       pattern[i] = Led::kFade;
