@@ -11,8 +11,8 @@
 #include <filesystem>
 #include <chrono>
 
-#include "core_msgs/msg/detected_panel_info.hpp"
-#include "core_msgs/msg/detected_panel_info_array.hpp"
+#include "core_msgs/msg/oakd_detected_panel_info.hpp"
+#include "core_msgs/msg/oakd_detected_panel_info_array.hpp"
 
 using namespace std::placeholders;
 
@@ -26,11 +26,12 @@ class oakdPanelLocalizer : public rclcpp::Node{
 
     private:
         dai::Pipeline pipeline;
+        std::shared_ptr<dai::MessageQueue> syncedQueue;
         std::shared_ptr<dai::MessageQueue> frameQueue;
         std::shared_ptr<dai::MessageQueue> detectionQueue;
 
         rclcpp::TimerBase::SharedPtr timer;
-        rclcpp::Publisher<core_msgs::msg::DetectedPanelInfoArray>::SharedPtr panelInfoPub;
+        rclcpp::Publisher<core_msgs::msg::OakdDetectedPanelInfoArray>::SharedPtr panelInfoPub;
 
         // 経過時間はROS時刻ではなく単調増加時計で計測する。
         // rosbagの時刻変更やシステム時計の補正に影響されない。
@@ -42,7 +43,7 @@ class oakdPanelLocalizer : public rclcpp::Node{
         double processingMs = 0.0;
         
         void detectPanel();
-        void processDetection(const std::shared_ptr<dai::ImgFrame>&, const std::shared_ptr<dai::ImgDetections>&);
+        void processDetection(const std::shared_ptr<dai::ImgFrame>&, const std::shared_ptr<dai::SpatialImgDetections>&);
 
 };
 
