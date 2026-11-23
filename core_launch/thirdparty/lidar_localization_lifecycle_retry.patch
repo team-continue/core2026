@@ -1,0 +1,52 @@
+diff --git a/scripts/start_lifecycle_node.py b/scripts/start_lifecycle_node.py
+index b5a6b80..fe7fabf 100755
+--- a/scripts/start_lifecycle_node.py
++++ b/scripts/start_lifecycle_node.py
+@@ -11,6 +11,10 @@ from lifecycle_msgs.srv import ChangeState, GetState
+ from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
+ from rclpy.utilities import remove_ros_args
+ 
++# A response can be lost while discovery is still running ("failed to send response ...
++# client will not receive response"), so do not wait for it until the startup deadline.
++CHANGE_STATE_RESPONSE_TIMEOUT_S = 5.0
++
+ 
+ def activate(node, target, timeout):
+     """Use a wall-clock deadline, including service discovery and responses."""
+@@ -26,18 +30,21 @@ def activate(node, target, timeout):
+ 
+     retry_delay = 1.0
+ 
+-    def call(client, request):
++    def call(client, request, response_timeout=None):
+         nonlocal retry_delay
+         while not client.wait_for_service(timeout_sec=min(0.1, remaining())):
+             pass
+         futures = [client.call_async(request)]
+         retry_at = time.monotonic() + retry_delay
++        give_up_at = None if response_timeout is None else time.monotonic() + response_timeout
+         try:
+             while True:
+                 left = remaining()
+                 for future in futures:
+                     if future.done():
+                         return future.result()
++                if give_up_at is not None and time.monotonic() >= give_up_at:
++                    return None
+                 if client is get_state and time.monotonic() >= retry_at:
+                     # Keep late responses usable; back off across startup to
+                     # avoid adding steady request load to a slow service.
+@@ -76,7 +83,12 @@ def activate(node, target, timeout):
+                 attempted.add(transition)
+                 request = ChangeState.Request()
+                 request.transition.id = transition
+-                if not call(change_state, request).success:
++                response = call(change_state, request, CHANGE_STATE_RESPONSE_TIMEOUT_S)
++                if response is None:
++                    # get_state tells whether the transition happened. If it did not, retry it.
++                    node.get_logger().warning(f"{target}: no response to transition {transition}")
++                    attempted.discard(transition)
++                elif not response.success:
+                     raise RuntimeError(f"{target}: transition {transition} failed")
+             elif state.id in (
+                 State.TRANSITION_STATE_CONFIGURING,

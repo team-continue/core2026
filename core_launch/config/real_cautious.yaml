@@ -1,0 +1,20 @@
+# 実機で初めて自律移動を試すときに、計画のノードに既定の設定の後から重ねる設定（壁や物との間隔を安全側に倒す）。
+# navigation.launch.py（core2026_system.xml）の planning_params_file に渡す。既定では読まない。
+#
+# 局所計画（MPPI）の静止物の余裕は footprint.margin_m + 速さ × mppi.static_margin_time_s なので、速さを下げると
+# 余裕は逆に小さくなる。間隔は margin で広げ、速さは当たったときの勢いを抑えるために下げる。
+# 余裕を広げると狭い所を通れなくなる（既定でも幅 1.6m 以下の長い通路は通れない。0.25m では通れる幅がさらに約 0.3m 広がる）。
+/**:
+  ros__parameters:
+    # 大域計画の膨らみ（外接円 + margin_m）と、局所計画の静止物の余裕。既定 0.1m
+    footprint:
+      margin_m: 0.25
+    mppi:
+      # 既定 3.0m/s
+      max_speed_mps: 1.0
+    safety_stop:
+      # 安全停止で機体の外形に足す余裕。既定 0.1m
+      footprint_margin_m: 0.2
+      static:
+        # 安全停止の静止物の判定で、機体と静止物の間に保つ余裕（footprint.margin_m と同じにする）。既定 0.1m
+        margin_m: 0.25

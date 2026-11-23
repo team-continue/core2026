@@ -1,0 +1,95 @@
+# 地図照合（lidar_localization_ros2）の設定。map→odom を出し、odom→base_link は FAST-LIO に任せる。
+/**:
+  ros__parameters:
+    registration_method: NDT_OMP
+    score_threshold: 2.0
+    # NDT の格子 [m]。LiDAR を機体の前の端の低い所（床から 0.25m、後ろ 168 度は見えない）に付けたら、1.0m では照合の
+    # 最適解そのものが真値から数 cm ずれた（収束を厳しく transform_epsilon 0.001 にすると位置 RMSE 1.8→2.8cm、
+    # 格子 0.5m では 33cm と悪化し、地図を同じ取り付けで作り直しても変わらなかった）。2.0m では、評価の経路
+    # （静止、直進 2m/s、旋回 1rad/s、周回 3m/s）を動く物なしで RMSE 1.61→0.62cm、最大 6.0→2.7cm、観客 32 人の
+    # field で 1.80〜1.83→0.70〜0.72cm になり、1 回の照合も 3.8→2.8ms に減った。静止物のある field_obstacles では
+    # RMSE 1.85〜2.13→1.46〜1.88cm で、1〜2 周期だけ 10〜40cm 跳ねる回は残る（1.0m でも 15〜61cm）。
+    # 跳ねを seed_correction_guard_translation_m（0.2m、0.1m）で捨てると、跳ねた後の正しい結果まで捨てて
+    # 誤差が長く続いたので、0.5m のままにする。跳ねの原因と直し方は enable_degenerate_correction_projection
+    ndt_resolution: 2.0
+    ndt_step_size: 0.1
+    # N100 は 4 コアなので、FAST-LIO の分を残す
+    ndt_num_threads: 2
+    ndt_max_iterations: 35
+    transform_epsilon: 0.01
+    # 入力の点群は scan_filter で減らす
+    voxel_leaf_size: 0.2
+    enable_scan_voxel_filter: false
+    scan_max_range: 100.0
+    # 近くの他ロボットの点を地図と照合しない
+    scan_min_range: 1.0
+    scan_period: 0.1
+    cloud_queue_depth: 1
+    use_pcd_map: true
+    set_initial_pose: true
+    # 照合の初期値は map→odom と LIO の odom→base_link から作る。
+    # 速度の積分（use_odom）だと、柵への衝突で速度が乱れたときに初期値が飛び、3m ずれたまま戻らなかった
+    use_odom: false
+    use_odom_tf_prediction: true
+    use_twist_prediction: false
+    use_imu_preintegration: false
+    # 入力は FAST-LIO が歪み補正した点群なので、ここでは補正しない
+    use_continuous_time_deskew: false
+    # LIO の姿勢は信頼できるので、そこから大きく離れた照合結果は捨てる
+    enable_seed_correction_guard: true
+    seed_correction_guard_translation_m: 0.5
+    seed_correction_guard_yaw_deg: 5.0
+    # 速いときや密集したときに跳ばないための設定（thirdparty/lidar_localization_robust_gate.patch、issue #3）。
+    # 0 か false で切れる（パッチの前と同じ動き）。段差の制限と動きの除外は、シミュレーションの試験（負荷の試験 18 回、
+    # check_localization の決まった走り方 4 回、crowd_goals 30 分 × 2）で確かめて入れた（2026-11-12）。
+    # - 照合を捨てた回の扱い。min_consistent が 0 なら、10 回続けて捨てるとガードが外れ、補正の大きさに上限なく採用する
+    #   （パッチの前と同じ）。1 以上なら、捨てた回の候補（照合の結果の map→odom）が min_consistent 回続けてそろい、
+    #   今回の結果もそろい、評価値が下の上限以下のときに、10 回を待たずに外して map→odom を一度で合わせる。回数だけでは外さない。
+    #   瞬間移動の試験（2m 横・10 度・30 度で、違う場所に合ったまま走ることがなくなった）と負荷の試験 3 本で確かめて
+    #   入れた（2026-11-13）
+    seed_correction_guard_release_min_consistent: 3
+    seed_correction_guard_release_consistency_translation_m: 0.1
+    seed_correction_guard_release_consistency_yaw_deg: 2.0
+    # 上の解除で大きな補正を採用した後も、ガードを効かせたままにする（false なら 5 回の warmup に戻る）
+    seed_correction_guard_keep_warmup_after_release: true
+    # 評価値の上限を、直近に採用した照合（100 回）の評価値の中央値の何倍にするか（0 で使わない）。下限は floor。
+    # 評価値の上限 2.0 はふだんの値（シミュレーションで 0.007〜0.02）よりずっと大きく、違う場所に合った照合（0.7〜0.95）も
+    # 通ってしまう。そこで、大きな補正を一度に採るとき（上の解除と、下の local re-acquisition の提案）はこの上限も使う
+    seed_correction_guard_release_max_fitness_ratio: 3.0
+    local_reacquisition_max_fitness_ratio: 5.0
+    relative_fitness_floor: 0.05
+    # TF に出す map→odom の、1 周期の変化の上限（機体の位置で測る）。0 で制限しない。照合の初期値は制限しない値を使う。
+    # 初期位置を入れたときは、その位置にすぐ合わせる。照合で直す分は 1 周期ずつ（30cm のずれなら約 1.5 秒）
+    map_to_odom_max_step_translation_m: 0.02
+    map_to_odom_max_step_yaw_deg: 0.3
+    # これより速く回っている・走っているスキャンの照合は使わない（map→odom はそのまま、捨てた回にも数えない）。0 で使う。
+    # 速い旋回のスキャンは歪みが大きく、照合が誤った補正を返しやすい。その間は LIO だけで進める
+    motion_gate_max_yaw_rate_rad_s: 3.0
+    motion_gate_max_speed_mps: 0.0
+    # 点群が水平のある向きの位置を決められないときは、その向きの補正を捨てて LIO で進めた姿勢のままにする
+    # （thirdparty/lidar_localization_degenerate_correction.patch）。NDT の 1 点あたりの情報行列の水平（x, y）の
+    # 固有値が degenerate_correction_min_information [1/m^2] より小さい向きが対象。
+    # LiDAR を前の端の低い所に付けると、正面の壁が届く距離（シミュレーションは 40m）の外にある向きでは、前後の位置を
+    # 決める点が場内の物だけになる（天井・床・左右の壁の点は前後に動かしても合い方が変わらない）。そこで NDT が
+    # 格子の境目の評価値のわずかな傾きに引かれ、正しい初期値から 1 周期に 8〜24cm 動いた（その周期の固有値は
+    # 0.3〜0.7、全周期の中央値は 3.9）。これが 1〜2 周期だけ 10〜40cm 跳ねる原因。
+    # 記録した点群での照合のやり直しでは、閾値 1.0〜2.0 で結果がほぼ同じ（最大 38→13cm、19→5cm、26→7cm）で、
+    # 固有値 1.24 の周期で 8cm 跳ねた例も含める 1.5 にした。評価の経路では周期の 1〜2 割で働き（field 13〜14%、
+    # field_obstacles 20%）、地図照合の最大は 7〜43cm→3.4〜10.6cm になった。基準の取り付け（0.85m、全周が見える）では
+    # 働かない（固有値の最小 3.9）。残る誤差は、補正を捨てている間の LIO のずれ（評価の経路で最大 9cm）。
+    # 格子（ndt_resolution）や点の数を変えたら、値を確かめ直す
+    enable_degenerate_correction_projection: true
+    degenerate_correction_min_information: 1.5
+    # 照合が通らない間も、LIO で進めた姿勢を出し続ける
+    publish_bridge_pose_when_lost: true
+    # LIO が大きくずれて照合の収束範囲を外れたら、周囲を探して捕まえ直す
+    local_reacquisition_min_rejections: 10
+    local_reacquisition_attempt_interval_scans: 10
+    local_reacquisition_search_radius_m: 15.0
+    local_reacquisition_yaw_window_deg: 20.0
+    local_reacquisition_max_candidates: 6
+    enable_map_odom_tf: true
+    publish_tf: true
+    global_frame_id: map
+    odom_frame_id: odom
+    base_frame_id: base_link

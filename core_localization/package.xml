@@ -2,22 +2,28 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>core_localization</name>
-  <version>0.1.0</version>
-  <description>NDT/ICP-based global localization against pre-built PCD maps for core2026</description>
-  <maintainer email="team@continue.dev">team-continue</maintainer>
-  <license>MIT</license>
+  <version>0.0.0</version>
+  <description>自己位置推定の出力を機体の座標系に揃えるノード</description>
+  <maintainer email="yuusk@todo.todo">yuusk</maintainer>
+  <license>TODO</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>rclcpp</depend>
-  <depend>sensor_msgs</depend>
-  <depend>nav_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>eigen</depend>
   <depend>geometry_msgs</depend>
-  <depend>std_srvs</depend>
-  <depend>tf2_ros</depend>
+  <depend>core_nav_common</depend>
+  <depend>core_msgs</depend>
+  <!-- livox_ros_driver2（Livox の点群 CustomMsg）は依存に書かず、各自で入れる（実機は Livox のドライバ本体、sim はメッセージだけのパッケージ）。ビルドと実行には要るので、先にビルドして source しておく -->
+  <depend>nav_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2</depend>
   <depend>tf2_eigen</depend>
-  <depend>pcl_ros</depend>
-  <depend>pcl_conversions</depend>
+  <depend>tf2_ros</depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -36,6 +36,16 @@ ament_auto_add_executable(target_angle_node
   src/target_angle_node.cpp
 )
 
+# 手動と自動の運転モードを持ち、今のモードの速度指令だけを /control/cmd_vel へ通す
+ament_auto_add_executable(control_mode_manager_node
+  src/control_mode_manager_node.cpp
+)
+
+# 腰の角度に関節名を付けて出す（robot_state_publisher が base_link → chassis_link の TF を出す）
+ament_auto_add_executable(chassis_joint_state_node
+  src/chassis_joint_state_node.cpp
+)
+
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -45,6 +55,12 @@ if(BUILD_TESTING)
     test/test_target_angle_controller.cpp
   )
   target_include_directories(test_target_angle_controller PRIVATE include)
+
+  ament_add_gtest(test_control_mode test/test_control_mode.cpp)
+  target_include_directories(test_control_mode PRIVATE include)
+
+  ament_add_gtest(test_velocity_frame test/test_velocity_frame.cpp)
+  target_include_directories(test_velocity_frame PRIVATE include)
 
   add_launch_test(test/test_body_controller_launch.py TIMEOUT 45)
 

@@ -68,3 +68,8 @@ log/
 =======
 vendor
 >>>>>>> origin/feature/hardware
+
+# CoRE-1 のフィールドの 3D データ（公式の配布。配布の条件が分からないので入れない）と、それから作るもの
+# （core_launch の make_core1_map.py --mesh。sim の core_field_sim の make_core1_field_model.py --mesh-uri も同じ 3D データを使う。名前は core1_2027_mesh）
+core_launch/fields/*.stl
+core_launch/maps/core1_2027_mesh*

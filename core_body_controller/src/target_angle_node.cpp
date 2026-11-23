@@ -82,6 +82,19 @@ private:
   SteadyTime last_body_omega_time_;
   SteadyTime last_body_omega_manual_time_;
   SteadyTime last_target_rate_time_;
+  // 自律移動（局所計画）が TURRET の上半身を回す速さ。操作が動いていない間に使う
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr auto_target_rate_sub_;
+  double latest_auto_target_rate_ = 0.0;
+  bool has_received_auto_target_rate_ = false;
+  SteadyTime last_auto_target_rate_time_;
+  double operator_hold_sec_ = 1.0;
+  std::unique_ptr<core_body_controller::OperatorYawActivity> operator_activity_;
+  double steady_seconds(const SteadyTime & time) const
+  {
+    return std::chrono::duration<double>(time.time_since_epoch()).count();
+  }
+  // TURRET で上半身の目標を回す速さ（操作が優先、止まっていれば自律移動）
+  std::optional<double> turret_rate_now(bool target_rate_is_fresh) const;
   SteadyTime last_joint_states_time_;
   SteadyTime last_control_time_;
 
@@ -137,6 +150,13 @@ TargetAngleNode::TargetAngleNode()
   if (!std::isfinite(yaw_center_velocity_) || yaw_center_velocity_ <= 0.0) {
     throw std::invalid_argument("yaw_center_velocity must be finite and positive");
   }
+  // 操作の yaw_target_rate を止めてから、自律移動の向き（auto/yaw_target_rate）に戻すまでの時間 [s]
+  operator_hold_sec_ = this->declare_parameter<double>("operator_hold_sec", operator_hold_sec_);
+  if (!std::isfinite(operator_hold_sec_) || operator_hold_sec_ < 0.0) {
+    throw std::invalid_argument("operator_hold_sec must be finite and non-negative");
+  }
+  operator_activity_ =
+    std::make_unique<core_body_controller::OperatorYawActivity>(operator_hold_sec_);
   const int initial_yaw_mode =
     this->declare_parameter<int>("yaw_mode", static_cast<int>(yaw_mode_));
   const auto parsed_yaw_mode = core_body_controller::to_yaw_mode(initial_yaw_mode);
@@ -218,6 +238,12 @@ TargetAngleNode::TargetAngleNode()
           "Ignoring unknown yaw_mode %d (0: front, 1: turret)", msg->data);
         return;
       }
+      if (!core_body_controller::accept_yaw_mode(yaw_mode_, *mode, rotation_mode_)) {
+        RCLCPP_WARN_THROTTLE(
+          this->get_logger(), *this->get_clock(), 1000,
+          "Ignoring yaw_mode front during rotation mode %d (stay turret)", rotation_mode_);
+        return;
+      }
       if (*mode != yaw_mode_) {
         RCLCPP_INFO(
           this->get_logger(), "yaw mode: %s",
@@ -235,6 +261,18 @@ TargetAngleNode::TargetAngleNode()
       latest_target_rate_ = std::clamp(msg->data, -yaw_rotation_velocity_, yaw_rotation_velocity_);
       last_target_rate_time_ = std::chrono::steady_clock::now();
       has_received_target_rate_ = true;
+      operator_activity_->update(latest_target_rate_, steady_seconds(last_target_rate_time_));
+    });
+  // 自律移動が TURRET の上半身を回す速さ。操作（yaw_target_rate）が止まっている間だけ使う
+  auto_target_rate_sub_ = this->create_subscription<std_msgs::msg::Float64>(
+    "auto/yaw_target_rate", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) {
+      if (!std::isfinite(msg->data)) {
+        return;
+      }
+      latest_auto_target_rate_ =
+        std::clamp(msg->data, -yaw_rotation_velocity_, yaw_rotation_velocity_);
+      last_auto_target_rate_time_ = std::chrono::steady_clock::now();
+      has_received_auto_target_rate_ = true;
     });
   yaw_center_sub_ = this->create_subscription<std_msgs::msg::Empty>(
     "yaw_center", 10, [this](const std_msgs::msg::Empty::SharedPtr) {center_waist();});
@@ -290,6 +328,17 @@ bool TargetAngleNode::is_fresh(
   return has_received &&
          std::chrono::duration<double>(std::chrono::steady_clock::now() - last_time).count() <=
          timeout_sec;
+}
+
+std::optional<double> TargetAngleNode::turret_rate_now(bool target_rate_is_fresh) const
+{
+  const double now = steady_seconds(std::chrono::steady_clock::now());
+  const bool auto_is_fresh = is_fresh(
+    last_auto_target_rate_time_, has_received_auto_target_rate_, cmd_vel_timeout_sec_);
+  return core_body_controller::turret_rate(
+    target_rate_is_fresh ? std::optional<double>(latest_target_rate_) : std::nullopt,
+    operator_activity_->active(now),
+    auto_is_fresh ? std::optional<double>(latest_auto_target_rate_) : std::nullopt);
 }
 
 void TargetAngleNode::center_waist()
@@ -352,15 +401,27 @@ double TargetAngleNode::gimbal_control(
       front_rate = latest_twist_.angular.z;
     }
     world_target_angle_ = core_body_controller::next_world_target(
-      world_target_angle_, yaw_mode_, front_rate,
-      target_rate_is_fresh ? std::optional<double>(latest_target_rate_) : std::nullopt, dt);
+      world_target_angle_, yaw_mode_, front_rate, turret_rate_now(target_rate_is_fresh), dt);
   }
 
   const double world_angle_error =
     core_body_controller::normalize_angle(world_target_angle_ - latest_world_angle_);
-  // 車体の回転 (body_omega) は回転モードに関係なく打ち消す。モードの切り替えの瞬間に補正を切ると、
-  // 加速・減速中 (body_control_node の加速度の制限で数秒かかる) に腰が車体と一緒に回されて前を向かなくなる
-  const double feedforward = body_omega_is_fresh ? latest_body_omega_ : 0.0;
+  // 車体の回転 (body_omega) の打ち消しは回転モードに関係なく効かせる。モードの切り替えの瞬間に補正を切ると、
+  // 加速・減速中 (body_control_node の加速度の制限で数秒かかる) に腰が車体と一緒に回されて前を向かなくなる。
+  // 上半身を回したい速さ（FRONT は操作の回転、TURRET は yaw_target_rate）は先回りで腰に伝え、
+  // 帰還は残りのずれだけを詰める (waist_feedforward)
+  std::optional<double> upper_rate;
+  if (yaw_mode_ == core_body_controller::YawMode::kFront) {
+    if (is_fresh(
+        last_body_omega_manual_time_, has_received_body_omega_manual_, body_omega_timeout_sec_))
+    {
+      upper_rate = latest_body_omega_manual_;
+    }
+  } else if (!centering_) {
+    upper_rate = turret_rate_now(target_rate_is_fresh);
+  }
+  const double feedforward = core_body_controller::waist_feedforward(
+    body_omega_is_fresh ? std::optional<double>(latest_body_omega_) : std::nullopt, upper_rate);
   return controller_->update(world_angle_error, feedforward, dt);
 }
 

@@ -1,0 +1,8 @@
+# 再現試験（run_scenario.py）の既定値。コマンドラインの指定が優先する。
+/**:
+  ros__parameters:
+    scenario_test:
+      # 空なら --scenario-file で指定する
+      scenario_file: ""
+      record_bag: true
+      min_distance_warn_m: 0.3

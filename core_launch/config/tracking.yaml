@@ -1,0 +1,27 @@
+# 追跡。隠れている間も max_coast_s までは予測で保つ。
+/**:
+  ros__parameters:
+    tracking:
+      max_coast_s: 1.0
+      coast_sigma_growth_mps: 1.0
+      min_hits: 2
+      association_gate_m: 1.5
+      accel_sigma_mps2: 2.0
+      measurement_sigma_m: 0.2
+      initial_velocity_sigma_mps: 3.0
+      max_speed_mps: 4.0
+      # 速度の標準偏差がこれを下回るまでは、速度を不確かとして追跡結果の velocity_sigma に超えた分を出す。
+      # 上の値（加速度 2.0、観測 0.2m、10Hz）のカルマンフィルタは、確定（2 回目）で 2.06、3 回目 1.29、
+      # 4 回目 0.88、5 回目 0.66、落ち着くと 0.40m/s。落ち着いた値より少し大きくし、始めの約 0.5 秒と、
+      # 0.5 秒を超えて隠れた後だけを不確かとする。0.40 以下にすると、落ち着いた追跡もずっと不確かになる
+      velocity_settled_sigma_mps: 0.5
+      # 確定した追跡が消えた（max_coast_s を超えて見失った）ときに、その後に近くで生まれた追跡へ速度と
+      # ID を引き継ぐ。静止物の陰から出た直後などに、速度 0 から推定し直して外れるのを防ぐ
+      handover:
+        enabled: true
+        # 消えてから 0.5 秒（5 フレーム）以内。長くすると、別の物体に引き継ぐことが増える
+        max_gap_s: 0.5
+        # 消えた追跡を等速で進めた位置からの距離。対応の門（association_gate_m）と同じにする
+        max_distance_m: 1.5
+        # 引き継いだ速度の標準偏差に足す値。別の物体に引き継いでも、2〜3 回の観測で直る大きさ
+        extra_velocity_sigma_mps: 0.5

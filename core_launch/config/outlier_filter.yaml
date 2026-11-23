@@ -1,0 +1,7 @@
+# LiDAR 干渉などの孤立した点を除く。
+/**:
+  ros__parameters:
+    outlier_filter:
+      enabled: true
+      radius_m: 0.2
+      min_neighbors: 2

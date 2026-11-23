@@ -64,6 +64,7 @@ nav:
     - クイックスタート: getting-started/quick-start.md
     - Docker環境: getting-started/docker.md
     - Unityシミュレータ: getting-started/unity-sim.md
+    - 実機で地図を作って自律移動: getting-started/real-robot-mapping.md
   - アーキテクチャ:
     - システム概要: architecture/overview.md
     - トピック・メッセージ一覧: architecture/topics.md

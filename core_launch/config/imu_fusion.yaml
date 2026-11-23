@@ -1,0 +1,37 @@
+# 2 つの IMU の融合（imu_fusion ノード）の設定。imu_source が fused のときだけ使う。
+# IMU ごとの値（トピック、座標系、単位、雑音、飽和）は imu_source.yaml にあり、launch が primary.* と secondary.* に渡す。
+# 融合した値は平滑化しない（理由は core_localization/imu_fusion.hpp）。
+/**:
+  ros__parameters:
+    # 測定の間隔がこれを超えたら途絶とみなし、残った側だけで出す。200Hz の 10 周期分。
+    # 短いと通信の揺らぎで切り替わり、長いと途絶した側の測定を待つ時間が延びる
+    timeout_s: 0.05
+    # 補助の測定が主の時刻を超えるまで待つ上限で、出力の遅れの上限になる。FAST-LIO は LiDAR の 1 周期（0.1 秒）の
+    # 終わりまで IMU がそろうのを待つので、ここで待った分だけ LIO の出力も遅れる。200Hz の 4 周期分
+    max_wait_s: 0.02
+    # 補助（Livox）の時刻に足すと主（Damiao）の時刻になる値 [s]。シミュレーションは同じ時計なので 0。
+    # 実機では 2 つの時計を同期（PTP など）したうえで、残りのずれを下の推定か記録から求めて入れる
+    secondary_time_offset_s: 0.0
+    # 角加速度（融合した角速度の差分）の平滑化の時定数。てこの腕の補正 α×r だけに使う。
+    # 差分は雑音を増やす（200Hz、0.002rad/s の雑音で約 0.6rad/s2）ので 4 周期分ほどで均す。長いと補正が遅れる
+    angular_accel_time_constant_s: 0.02
+    time_offset_estimation:
+      # 既定は使わず、secondary_time_offset_s をそのまま使う。実機で時刻のずれを確かめるときに有効にする
+      enabled: false
+      # 回転の速さが変わる区間を含むよう、数秒取る
+      window_s: 5.0
+      # 同期した時計どうしの残りのずれは数 ms の見込みなので、secondary_time_offset_s の前後 50ms を探す
+      search_range_s: 0.05
+      # 200Hz の 1/10。最大の点の前後に放物線を当てて、さらに細かく求める
+      step_s: 0.0005
+      # 角速度の大きさの相関係数。誤った極大を採らないよう高めにする
+      min_correlation: 0.9
+      # 回転の速さがほぼ一定だと相関が雑音で決まるので、変化が十分なときだけ推定する
+      min_excitation_radps: 0.2
+      interval_s: 1.0
+    unit_check:
+      # 起動直後の 1 秒（200Hz）の加速度の平均の大きさを重力と比べ、単位の倍率の誤りを見つけて、その IMU を使わない。
+      # 確認が済むまでは出さない。FAST-LIO の初期化（起動時の加速度の平均）に誤った値を入れないため
+      samples: 200
+      # g 単位を m/s2 とした誤り（大きさ 1）は確実に見つけ、走行中に起動したとき（約 ±3m/s2）は誤らない幅
+      tolerance: 0.3

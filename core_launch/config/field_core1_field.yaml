@@ -1,0 +1,10 @@
+# core1_field のフィールドの範囲（navigation.launch.py の map_name:=core1_field で config/field.yaml に重ねる）。
+# 占有地図 core1_field.png（1104 x 732 画素、0.025m、原点 -13.675, -9.15）の全体の範囲。
+# 柵の内側の面の実測値が分かったら直す（暫定）
+/**:
+  ros__parameters:
+    field:
+      x_min: -13.675
+      x_max: 13.925
+      y_min: -9.15
+      y_max: 9.15

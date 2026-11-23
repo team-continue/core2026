@@ -1,0 +1,407 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -378,6 +378,15 @@
+     COMMAND test_registration_localizability_policy
+   )
+ 
++  add_executable(test_degenerate_correction_policy
++    test/test_degenerate_correction_policy.cpp)
++  target_include_directories(test_degenerate_correction_policy PRIVATE
++    include ${EIGEN3_INCLUDE_DIRS})
++  add_test(
++    NAME degenerate_correction_policy
++    COMMAND test_degenerate_correction_policy
++  )
++
+   add_executable(test_alignment_diagnostics_policy
+     test/test_alignment_diagnostics_policy.cpp)
+   target_include_directories(test_alignment_diagnostics_policy PRIVATE
+--- a/include/lidar_localization/alignment_pipeline_policy.hpp
++++ b/include/lidar_localization/alignment_pipeline_policy.hpp
+@@ -39,6 +39,9 @@
+   double seed_yaw_since_accept_deg{std::numeric_limits<double>::quiet_NaN()};
+   double accepted_gap_sec{std::numeric_limits<double>::quiet_NaN()};
+   RegistrationLocalizabilityMetrics registration_localizability;
++  // 退化した向きの補正を捨てた数（degenerate_correction_policy.hpp）と、水平の情報行列の小さい方の固有値
++  int degenerate_projected_directions{0};
++  double planar_information_min{std::numeric_limits<double>::quiet_NaN()};
+ };
+ 
+ struct AlignmentPipelineInput
+--- a/include/lidar_localization/lidar_localization_component.hpp
++++ b/include/lidar_localization/lidar_localization_component.hpp
+@@ -64,6 +64,7 @@
+ #include "lidar_localization/imu_pose_history_deskew.hpp"
+ #include "lidar_localization/localizability_policy.hpp"
+ #include "lidar_localization/diagnostic_ndt_omp.hpp"
++#include "lidar_localization/degenerate_correction_policy.hpp"
+ #include "lidar_localization/alignment_retry_policy.hpp"
+ #include "lidar_localization/alignment_pipeline_policy.hpp"
+ #include "lidar_localization/alignment_status_policy.hpp"
+@@ -493,6 +494,9 @@
+   double previous_delta_max_extrapolation_sec_{1.0};
+   bool enable_localizability_guard_{false};
+   bool enable_registration_localizability_diagnostics_{false};
++  // 水平の情報が min_information より小さい向きの補正を捨てる（degenerate_correction_policy.hpp）
++  bool enable_degenerate_correction_projection_{false};
++  double degenerate_correction_min_information_{1.0};
+   double localizability_min_xy_eigen_ratio_{0.05};
+   lidar_localization::HorizontalLocalizability latest_horizontal_localizability_;
+   bool latest_localizability_guard_active_{false};
+@@ -513,6 +517,8 @@
+   // The attempt whose status is being published, for /alignment_status.
+   double status_registration_fitness_score_{std::numeric_limits<double>::quiet_NaN()};
+   double status_inlier_ratio_{std::numeric_limits<double>::quiet_NaN()};
++  int status_degenerate_projected_directions_{0};
++  double status_planar_information_min_{std::numeric_limits<double>::quiet_NaN()};
+   int ndt_max_iterations_;
+ 
+   double pose_publish_frequency_;
+@@ -592,12 +598,15 @@
+   void discardLocalMapRebuild();
+   void warmUpRegistrationTarget(const pcl::PointCloud<pcl::PointXYZI>::Ptr & target);
+   void broadcastTransform(const geometry_msgs::msg::TransformStamped & transform);
++  // allow_degenerate_projection: 追従の照合（初期値が LIO で進めた姿勢）だけ true。捕まえ直しの候補は、
++  // 初期値が候補の位置なので、退化した向きの補正を捨てずに照合の結果のまま比べる
+   lidar_localization::AlignmentAttempt runAlignmentAttempt(
+     const Eigen::Matrix4f & attempt_init_guess,
+     const Eigen::Matrix4f & crop_center_pose_matrix,
+     double scan_stamp_sec,
+     lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+-    std::uint64_t seed_generation);
++    std::uint64_t seed_generation,
++    bool allow_degenerate_projection = true);
+   lidar_localization::AlignmentPipelineResult runAlignmentPipelineForScan(
+     const Eigen::Matrix4f & init_guess,
+     double scan_stamp_sec,
+--- a/src/component_alignment.cpp
++++ b/src/component_alignment.cpp
+@@ -557,7 +557,8 @@
+   const Eigen::Matrix4f & crop_center_pose_matrix,
+   double scan_stamp_sec,
+   lidar_localization::CallbackStateCoordinator::StateLock & state_lock,
+-  std::uint64_t seed_generation)
++  std::uint64_t seed_generation,
++  bool allow_degenerate_projection)
+ {
+   lidar_localization::AlignmentAttempt attempt;
+   attempt.init_guess = attempt_init_guess;
+@@ -607,11 +608,18 @@
+     fitness.inlier_ratio, min_inlier_ratio_, measurement_gate_config_.score_threshold) :
+     fitness.score;
+ 
++  // 照合の結果での評価値のヘッセ行列。可観測性の診断と、退化した向きの補正を捨てる処理で使う
++  Eigen::Matrix<double, 6, 6> hessian;
++  hessian.setConstant(std::numeric_limits<double>::quiet_NaN());
++  std::size_t correspondence_count = 0;
++  const bool project_degenerate =
++    enable_degenerate_correction_projection_ && allow_degenerate_projection;
++  const bool need_hessian =
++    (enable_registration_localizability_diagnostics_ || project_degenerate) &&
++    registration_objects_.ndt_omp;
++  const bool hessian_ready = need_hessian &&
++    registration_objects_.ndt_omp->evaluateFinalScoreHessian(hessian, correspondence_count);
+   if (enable_registration_localizability_diagnostics_ && registration_objects_.ndt_omp) {
+-    Eigen::Matrix<double, 6, 6> hessian;
+-    std::size_t correspondence_count = 0;
+-    registration_objects_.ndt_omp->evaluateFinalScoreHessian(
+-      hessian, correspondence_count);
+     attempt.registration_localizability =
+       lidar_localization::analyzeRegistrationHessian(hessian, correspondence_count);
+   }
+@@ -628,6 +636,15 @@
+ 
+   if (attempt.has_converged) {
+     attempt.final_transformation = registration_->getFinalTransformation();
++    if (project_degenerate && hessian_ready) {
++      // 点群が決められない水平の向きは、補正を捨てて初期値（LIO で進めた姿勢）のままにする
++      const auto projected = lidar_localization::projectDegenerateTranslation(
++        attempt_init_guess, attempt.final_transformation, hessian, correspondence_count,
++        degenerate_correction_min_information_);
++      attempt.final_transformation = projected.pose;
++      attempt.degenerate_projected_directions = projected.projected_directions;
++      attempt.planar_information_min = projected.planar_information_min;
++    }
+     const auto correction_metrics =
+       lidar_localization::computeAlignmentCorrectionMetrics(
+       attempt_init_guess,
+--- a/src/component_diagnostics.cpp
++++ b/src/component_diagnostics.cpp
+@@ -10,6 +10,8 @@
+ {
+   status_registration_fitness_score_ = attempt.registration_fitness_score;
+   status_inlier_ratio_ = attempt.inlier_ratio;
++  status_degenerate_projected_directions_ = attempt.degenerate_projected_directions;
++  status_planar_information_min_ = attempt.planar_information_min;
+   publishAlignmentStatus(
+     stamp,
+     level,
+@@ -29,6 +31,8 @@
+     attempt.registration_iterations);
+   status_registration_fitness_score_ = std::numeric_limits<double>::quiet_NaN();
+   status_inlier_ratio_ = std::numeric_limits<double>::quiet_NaN();
++  status_degenerate_projected_directions_ = 0;
++  status_planar_information_min_ = std::numeric_limits<double>::quiet_NaN();
+ }
+ 
+ void PCLLocalization::publishAlignmentStatus(
+@@ -78,6 +82,15 @@
+       evaluation.status_input,
+       evaluation.status_preparation,
+       evaluation.reinitialization_request));
++  // 退化した向きの補正を捨てた数と、水平の情報行列の小さい方の固有値（degenerate_correction_policy.hpp）
++  diagnostic_msgs::msg::KeyValue projected;
++  projected.key = "degenerate_projected_directions";
++  projected.value = std::to_string(status_degenerate_projected_directions_);
++  status.values.push_back(projected);
++  diagnostic_msgs::msg::KeyValue information;
++  information.key = "planar_information_min";
++  information.value = std::to_string(status_planar_information_min_);
++  status.values.push_back(information);
+   publishAlignmentDiagnosticStatus(stamp, status);
+   publishReinitializationRequest(stamp, evaluation.reinitialization_request);
+ }
+--- a/src/component_local_reacquisition.cpp
++++ b/src/component_local_reacquisition.cpp
+@@ -78,8 +78,9 @@
+     guess(1, 3) = static_cast<float>(candidate.y_m);
+     // Candidates lie within search_radius_m of the bridged pose, so the target
+     // this scan already cropped around it serves all of them without a re-crop.
+-    const auto attempt =
+-      runAlignmentAttempt(guess, bridged, scan_stamp_sec, state_lock, seed_generation);
++    // 候補の位置を初期値にした照合なので、退化した向きの補正も捨てずに結果のまま比べる
++    const auto attempt = runAlignmentAttempt(
++      guess, bridged, scan_stamp_sec, state_lock, seed_generation, false);
+     if (!callback_state_coordinator_.initialPoseGenerationMatches(seed_generation)) {
+       return;
+     }
+--- a/src/component_parameters.cpp
++++ b/src/component_parameters.cpp
+@@ -37,6 +37,8 @@
+   declare_parameter("enable_localizability_guard", false);
+   declare_parameter("localizability_min_xy_eigen_ratio", 0.05);
+   declare_parameter("enable_registration_localizability_diagnostics", false);
++  declare_parameter("enable_degenerate_correction_projection", false);
++  declare_parameter("degenerate_correction_min_information", 1.0);
+ }
+ 
+ void PCLLocalization::loadImuPreintegrationParameters()
+@@ -83,6 +85,35 @@
+     "enable_registration_localizability_diagnostics",
+     enable_registration_localizability_diagnostics_);
+   get_parameter(
++    "enable_degenerate_correction_projection", enable_degenerate_correction_projection_);
++  get_parameter(
++    "degenerate_correction_min_information", degenerate_correction_min_information_);
++  if (!std::isfinite(degenerate_correction_min_information_) ||
++    degenerate_correction_min_information_ < 0.0)
++  {
++    // このファイルのほかの値の確かめと同じく、configure を失敗させずに、この機能だけを切る
++    RCLCPP_ERROR(
++      get_logger(),
++      "degenerate_correction_min_information must be finite and non-negative (got %f); "
++      "disabling enable_degenerate_correction_projection",
++      degenerate_correction_min_information_);
++    enable_degenerate_correction_projection_ = false;
++  }
++  RCLCPP_INFO(
++    get_logger(), "enable_degenerate_correction_projection: %d (min_information %.3f)",
++    enable_degenerate_correction_projection_, degenerate_correction_min_information_);
++  if (enable_degenerate_correction_projection_ &&
++    lidar_localization::parseRegistrationBackend(registration_method_) !=
++    lidar_localization::RegistrationBackend::kNdtOmp)
++  {
++    // 情報行列は NDT_OMP の評価値から求めるので、ほかの照合の方法では補正を捨てない
++    RCLCPP_WARN(
++      get_logger(),
++      "enable_degenerate_correction_projection needs registration_method NDT_OMP (got %s); "
++      "corrections are not projected",
++      registration_method_.c_str());
++  }
++  get_parameter(
+     "localizability_min_xy_eigen_ratio", localizability_min_xy_eigen_ratio_);
+   if (
+     continuous_time_deskew_mode_ != "relative_motion" &&
+--- /dev/null
++++ b/include/lidar_localization/degenerate_correction_policy.hpp
+@@ -0,0 +1,71 @@
++#ifndef LIDAR_LOCALIZATION_DEGENERATE_CORRECTION_POLICY_HPP_
++#define LIDAR_LOCALIZATION_DEGENERATE_CORRECTION_POLICY_HPP_
++
++#include <cmath>
++#include <cstddef>
++#include <limits>
++
++#include <Eigen/Dense>
++#include <Eigen/Eigenvalues>
++
++namespace lidar_localization
++{
++
++// 照合の結果のうち、点群が水平のある向きをほとんど決められない（退化した）ときに、その向きの補正を捨てる。
++//
++// NDT の評価値のヘッセ行列の符号を反転し、対応の数で割った 1 点あたりの情報行列の、水平の並進（x, y）の
++// 2x2 の部分を固有分解する。固有値が min_information より小さい向きは、点群がその向きの位置を決められないので、
++// 照合の補正（結果 - 初期値）のその向きの成分を捨て、初期値（LIO で進めた姿勢）のままにする。
++// 例: LiDAR が前しか見えず、正面の壁が届く距離の外にあると、前後の向きは天井・床・左右の壁の点しかなく、
++// NDT の格子の境目で生じる評価値のわずかな傾きに引かれて、補正が数十 cm 動く。
++// 向き（yaw）と高さ、傾きは照合の結果のまま。
++struct DegenerateCorrectionResult
++{
++  Eigen::Matrix4f pose{Eigen::Matrix4f::Identity()};
++  // 補正を捨てた向きの数（0〜2）
++  int projected_directions{0};
++  // 水平の情報行列の小さい方の固有値 [1/m^2]（1 点あたり）。計算できなければ NaN
++  double planar_information_min{std::numeric_limits<double>::quiet_NaN()};
++};
++
++inline DegenerateCorrectionResult projectDegenerateTranslation(
++  const Eigen::Matrix4f & seed,
++  const Eigen::Matrix4f & result,
++  const Eigen::Matrix<double, 6, 6> & score_hessian,
++  std::size_t correspondence_count,
++  double min_information)
++{
++  DegenerateCorrectionResult out;
++  out.pose = result;
++  if (correspondence_count == 0 || !score_hessian.allFinite() || !std::isfinite(min_information)) {
++    return out;
++  }
++  // NDT_OMP は評価値を最大にするので、符号を反転して対称にし、対応の数で割る（analyzeRegistrationHessian と同じ）
++  const Eigen::Matrix<double, 6, 6> information =
++    -0.5 * (score_hessian + score_hessian.transpose()) / static_cast<double>(correspondence_count);
++  const Eigen::Matrix2d planar = information.block<2, 2>(0, 0);
++  Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> solver(planar);
++  if (solver.info() != Eigen::Success || !solver.eigenvalues().allFinite()) {
++    return out;
++  }
++  out.planar_information_min = solver.eigenvalues()(0);
++  const Eigen::Vector2d correction(
++    static_cast<double>(result(0, 3) - seed(0, 3)),
++    static_cast<double>(result(1, 3) - seed(1, 3)));
++  Eigen::Vector2d kept = Eigen::Vector2d::Zero();
++  for (int i = 0; i < 2; ++i) {
++    const Eigen::Vector2d direction = solver.eigenvectors().col(i);
++    if (solver.eigenvalues()(i) >= min_information) {
++      kept += direction * direction.dot(correction);
++    } else {
++      ++out.projected_directions;
++    }
++  }
++  out.pose(0, 3) = seed(0, 3) + static_cast<float>(kept.x());
++  out.pose(1, 3) = seed(1, 3) + static_cast<float>(kept.y());
++  return out;
++}
++
++}  // namespace lidar_localization
++
++#endif  // LIDAR_LOCALIZATION_DEGENERATE_CORRECTION_POLICY_HPP_
+--- /dev/null
++++ b/test/test_degenerate_correction_policy.cpp
+@@ -0,0 +1,106 @@
++// degenerate_correction_policy.hpp の試験。Release（NDEBUG）でも確かめるよう、assert を使わずに失敗を数える
++#include <cmath>
++#include <cstdio>
++#include <limits>
++
++#include <Eigen/Dense>
++
++#include "lidar_localization/degenerate_correction_policy.hpp"
++
++namespace ll = lidar_localization;
++
++namespace
++{
++int failures = 0;
++
++void expect(bool condition, const char * what)
++{
++  if (!condition) {
++    std::fprintf(stderr, "失敗: %s\n", what);
++    ++failures;
++  }
++}
++
++bool near(double a, double b, double tolerance = 1e-5)
++{
++  return std::abs(a - b) <= tolerance;
++}
++
++Eigen::Matrix4f translation(float x, float y, float z)
++{
++  Eigen::Matrix4f m = Eigen::Matrix4f::Identity();
++  m(0, 3) = x;
++  m(1, 3) = y;
++  m(2, 3) = z;
++  return m;
++}
++
++// 1 点あたりの情報が対角で (ix, iy) になる、評価値のヘッセ行列（対応の数 count）
++Eigen::Matrix<double, 6, 6> scoreHessian(double ix, double iy, std::size_t count)
++{
++  Eigen::Matrix<double, 6, 6> h = -Eigen::Matrix<double, 6, 6>::Identity() * static_cast<double>(count);
++  h(0, 0) = -ix * static_cast<double>(count);
++  h(1, 1) = -iy * static_cast<double>(count);
++  return h;
++}
++}  // namespace
++
++int main()
++{
++  const Eigen::Matrix4f seed = translation(1.0f, 2.0f, 0.0f);
++  {
++    // x の情報が小さいので、x の補正を捨てて y の補正だけ残す。高さはそのまま
++    Eigen::Matrix4f result = translation(1.3f, 2.1f, 0.05f);
++    result.block<3, 3>(0, 0) = Eigen::AngleAxisf(0.01f, Eigen::Vector3f::UnitZ()).toRotationMatrix();
++    const auto out = ll::projectDegenerateTranslation(seed, result, scoreHessian(0.3, 20.0, 3000), 3000, 1.0);
++    expect(out.projected_directions == 1, "x だけ捨てる");
++    expect(near(out.pose(0, 3), 1.0), "x は初期値のまま");
++    expect(near(out.pose(1, 3), 2.1), "y は照合の結果");
++    expect(near(out.pose(2, 3), 0.05), "高さは照合の結果");
++    expect(out.pose.block<3, 3>(0, 0).isApprox(result.block<3, 3>(0, 0)), "向きは照合の結果");
++    expect(near(out.planar_information_min, 0.3), "小さい方の固有値");
++  }
++  {
++    // 斜めに退化した向き。情報の小さい向き (1, 1)/√2 の成分だけを捨てる
++    Eigen::Matrix<double, 6, 6> h = scoreHessian(0.0, 0.0, 100);
++    // 情報行列 [[a, b], [b, a]] の固有値は a+b（向き (1,1)）と a-b（向き (1,-1)）
++    h(0, 0) = -10.0 * 100.0;
++    h(1, 1) = -10.0 * 100.0;
++    h(0, 1) = 9.8 * 100.0;
++    h(1, 0) = 9.8 * 100.0;
++    const Eigen::Matrix4f result = translation(1.2f, 2.2f, 0.0f);
++    const auto out = ll::projectDegenerateTranslation(seed, result, h, 100, 1.0);
++    // 情報行列は [[10, -9.8], [-9.8, 10]]。弱い向きは (1, 1)/√2（固有値 0.2）
++    expect(out.projected_directions == 1, "斜めの向きを 1 つ捨てる");
++    expect(near(out.pose(0, 3), 1.0, 1e-4) && near(out.pose(1, 3), 2.0, 1e-4), "(1,1) 向きの補正を捨てる");
++    expect(near(out.planar_information_min, 0.2, 1e-9), "弱い向きの固有値 0.2");
++  }
++  {
++    // どちらの向きも十分なら、照合の結果をそのまま使う
++    const Eigen::Matrix4f result = translation(1.05f, 1.97f, 0.0f);
++    const auto out = ll::projectDegenerateTranslation(seed, result, scoreHessian(5.0, 8.0, 500), 500, 1.0);
++    expect(out.projected_directions == 0, "捨てない");
++    expect(out.pose.isApprox(result), "結果のまま");
++  }
++  {
++    // 対応がない、またはヘッセ行列が有限でないときは、何もしない
++    const Eigen::Matrix4f result = translation(1.5f, 2.5f, 0.0f);
++    const auto none = ll::projectDegenerateTranslation(seed, result, scoreHessian(0.1, 0.1, 10), 0, 1.0);
++    expect(none.projected_directions == 0 && none.pose.isApprox(result), "対応なしは結果のまま");
++    expect(std::isnan(none.planar_information_min), "対応なしは NaN");
++    Eigen::Matrix<double, 6, 6> bad = scoreHessian(0.1, 0.1, 10);
++    bad(0, 0) = std::numeric_limits<double>::quiet_NaN();
++    const auto nan = ll::projectDegenerateTranslation(seed, result, bad, 10, 1.0);
++    expect(nan.projected_directions == 0 && nan.pose.isApprox(result), "NaN は結果のまま");
++  }
++  {
++    // 閾値 0 なら、情報が負（評価値の鞍点）の向き以外は捨てない
++    const Eigen::Matrix4f result = translation(1.2f, 2.2f, 0.0f);
++    const auto out = ll::projectDegenerateTranslation(seed, result, scoreHessian(0.01, 3.0, 100), 100, 0.0);
++    expect(out.projected_directions == 0 && out.pose.isApprox(result), "閾値 0 は捨てない");
++  }
++  if (failures == 0) {
++    std::printf("degenerate_correction_policy: 全て合格\n");
++  }
++  return failures == 0 ? 0 : 1;
++}

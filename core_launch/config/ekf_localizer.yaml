@@ -1,0 +1,38 @@
+# gyro_odometer の速度と、地図照合の姿勢（/pcl_pose）を合わせる EKF（ekf_localizer）の設定。launch の state_source:=ekf で使う。
+# 状態は [x, y, yaw, vx, vy, wz]（速度は機体の座標）。計算は core_localization/ekf_localizer.hpp
+/**:
+  ros__parameters:
+    pose_topic: /localization/pcl_pose
+    twist_topic: /localization/twist_with_covariance
+    output_topic: /localization/kinematic_state
+    map_frame: map
+    base_frame: base_link
+    publish_rate_hz: 50.0
+    # 最後の測定からこれを超えたら、先へ進めた姿勢を出さない
+    max_extrapolation_s: 0.5
+    # /pcl_pose の共分散は下限が 0.2m・2 度（lidar_localization の error_floor）で、照合の実際の誤差（シミュレーションで
+    # RMSE 0.5〜0.8cm）よりずっと大きく、そのままでは地図照合がほとんど効かない。固定の値を使う。
+    # 位置の標準偏差は check_ekf.py（シミュレーション、各 1 回、2026-11-13）で決めた。5cm では、車輪が 0.2〜0.6m/s
+    # 滑る間に照合が 1 回に誤差の 1 割ほどしか直さず、最大 16.8cm ずれた。1cm で最大 9.3cm（衝突を除く）、RMSE は
+    # LIO + 地図照合とほぼ同じ（0.4〜1.5cm）。下の accel_std_mps2 を 1.0 に下げると滑りには強くなるが、柵への衝突で
+    # 本当に止まったときに車輪の速度を外れ値として捨て、44cm ずれた
+    pose_covariance_source: fixed
+    pose_std_xy_m: 0.01
+    pose_std_yaw_rad: 0.01
+    # 照合を捨てた回に出る、LIO で進めた姿勢（標準偏差 5m）は使わない
+    max_message_pose_std_xy_m: 1.0
+    # 予測の雑音。速度は、衝突で急に止まっても車輪の速度についていける大きさにする（上の説明）
+    accel_std_mps2: 3.0
+    angular_accel_std_radps2: 6.0
+    position_noise_std: 0.02
+    yaw_noise_std: 0.01
+    # 測定を捨てるマハラノビス距離の 2 乗（Autoware の ekf_localizer の既定）
+    pose_gate_chi2: 49.5
+    twist_gate_chi2: 46.1
+    min_pose_std_xy_m: 0.01
+    min_pose_std_yaw_rad: 0.002
+    initial_velocity_std: 1.0
+    # 地図照合の姿勢はスキャンの時刻で 0.1〜0.3 秒遅れて届く
+    history_s: 1.0
+    # 地図照合の姿勢を 1 秒（10 回）続けて捨てたら、照合の姿勢に置き換える
+    pose_rejections_before_reset: 10

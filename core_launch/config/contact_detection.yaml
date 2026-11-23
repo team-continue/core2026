@@ -1,0 +1,13 @@
+# 接触の検知。IMU の水平加速度か、指令と実際の速度の差で判定する。
+/**:
+  ros__parameters:
+    contact_detection:
+      enabled: true
+      accel_threshold_mps2: 20.0
+      velocity_error_mps: 1.0
+      velocity_error_hold_s: 0.3
+      hold_s: 1.0
+      # 実際の速さも指令の速さもこれ未満の間（止まっている間）は、IMU の衝撃を接触として数えない。止まっている間の
+      # IMU の振れ（Gazebo の駆動の揺れ。実機では射出の反動など）で、接触していないのに安全停止が働いていた。
+      # 0 で速さによらず数える（前の動き）
+      impact_min_speed_mps: 0.1

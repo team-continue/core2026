@@ -1,0 +1,24 @@
+# 検出と分類。分類の値は文献の裏付けがない暫定値で、実データでの検証が必要。
+/**:
+  ros__parameters:
+    # LiDAR からこの距離未満の点を除く。実機のドライバは返りのない向きの点を (0,0,0) で出すので、自機の箱の外に
+    # LiDAR を付けても障害物にならないようにする（Mid-360 の最短距離）
+    min_range_m: 0.1
+    ground_height_m: 0.12
+    max_height_m: 2.2
+    cluster:
+      cell_size_m: 0.2
+      min_points: 3
+      min_height_m: 0.25
+      # 低い天板は点がまばらなので、近くでも 2 セルまでつなぐ。つながった相手は cluster_split で分ける
+      wide_connect_range_m: 0.0
+      merge_gap_m: 0.7
+    human_size_m: 0.5
+    human_center_min_height_m: 1.2
+    classification:
+      robot_max_height_m: 1.0
+      # 遠くでは点がまばらで細く見える
+      robot_min_width_m: 0.2
+      robot_max_width_m: 1.3
+      human_min_height_m: 1.4
+      human_max_width_m: 0.7

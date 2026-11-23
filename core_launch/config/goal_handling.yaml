@@ -1,0 +1,8 @@
+# ゴールが止まっている相手に塞がれたときの処理。wait_s 待っても空かなければ、周囲に代わりのゴールを探す。
+/**:
+  ros__parameters:
+    goal_handling:
+      enabled: true
+      occupied_radius_m: 0.8
+      wait_s: 3.0
+      alternative_radius_m: 2.0

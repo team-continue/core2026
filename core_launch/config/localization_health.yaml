@@ -1,0 +1,25 @@
+# 自己位置の異常の判定。既定値は暫定で、シミュレーションと実機で調整する。
+/**:
+  ros__parameters:
+    localization_health:
+      enabled: true
+      max_fitness: 2.0
+      min_inlier_ratio: 0.5
+      max_gyro_difference_radps: 0.5
+      fail_timeout_s: 2.0
+      # 以下は issue #3 で足した判定。0 か false で切れる（足す前と同じ判定）
+      # 採用した照合の補正がこれ以上なら跳びとみなし、jump_hold_s の間 DEGRADED（0 で使わない）
+      jump_translation_m: 0.1
+      jump_yaw_deg: 1.5
+      jump_hold_s: 2.0
+      # 角速度の差の上限を、大きい方の角速度のこの割合まで広げる（0 で広げない）
+      gyro_relative_tolerance: 0.15
+      # LIO の角速度を、LIO の 2 つのスキャンの区間の Damiao の平均と比べる（false なら届いた時刻の窓で比べ、
+      # 回り始めと止まるときに違う時刻どうしを比べて誤報する）
+      align_gyro_with_lio: true
+      # 照合を捨てた回の扱い（瞬間移動の試験と負荷の試験で確かめて入れた、2026-11-13）
+      # - 捨てた回は成功に数えない（捨て続けると fail_timeout_s で FAILED）
+      count_rejected_as_failure: true
+      # - 続けて捨てた回数がこれ以上なら DEGRADED（0 で使わない）
+      degraded_rejected_updates: 3
+      degraded_speed_mps: 1.0

@@ -1,0 +1,17 @@
+# 検出のための 2 台目の LiDAR（別案3-1）の点群を 1 台目と合わせる（lidar_merge_node）。
+# perception.launch.py の rear_lidar:=true のときだけ起動する。LIO と地図照合は 1 台目だけを使う。
+/**:
+  ros__parameters:
+    primary_topic: /sensing/livox/lidar
+    secondary_topic: /livox/lidar2
+    output_topic: /perception/livox/lidar_merged
+    # 組にする 2 つのスキャンの時刻（timebase）の差の上限 [s]。10Hz の半周期。2 台の時計は PTP で合わせる前提で、
+    # 2 台のスキャンの区切りがどうずれても、最も近いスキャンは半周期以内にある
+    max_time_difference_s: 0.05
+    # 1 台目が先に届いたとき、組にする 2 台目を待つ上限 [s]。過ぎたら 1 台目だけを出す。検出は LIO の姿勢が
+    # 届くまで点群を待つので、この待ちは姿勢を待つ間に収まる
+    max_wait_s: 0.05
+    # 2 台目がこの間届いていなければ、待たずに 1 台目だけを出す [s]（2 台目が止まっても、検出の遅れを増やさない）
+    secondary_timeout_s: 0.5
+    # 合わせた後に間引く voxel [m]。voxel ごとに時刻の最も早い点を、位置と時刻のまま残す。0 で間引かない
+    voxel_size_m: 0.1

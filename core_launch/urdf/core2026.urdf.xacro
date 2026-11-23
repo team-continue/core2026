@@ -1,0 +1,852 @@
+<?xml version="1.0"?>
+<!-- core2026 の機体。形・質量・関節・センサの取り付けは CoRE2026_Sim（Unity）の CoRE2026_Machine.prefab から
+     作った簡易モデル（~/core2026_sim_description の core2026_sim.urdf.xacro。gen_urdf.py で生成）を、core2026 の
+     木に組み替えたもの:
+       base_link    = 上半身（Unity の LowerYawAxisJoint より上。LiDAR・IMU・砲塔が付く）を床に投影した中心
+       chassis_link = 駆動部（Unity の RootLink: 車台と 4 輪）。上半身の下で回る（関節 base_to_chassis）
+     実機の robot_state_publisher と Gazebo で同じものを使う。Gazebo は sim（core_field_sim）の core2026_sim.urdf.xacro が
+     これを gazebo:=true で読み込み、シミュレーションの定義（センサ・駆動）を足す -->
+<robot name="core2026" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- Mid-360 の取り付け（base_link から livox_frame）。既定は Unity の機体の Mid-360 の計測点（Mid-360_ros の
+       Sensor）: 前へ 0.132m、床から 0.484m、上下逆さ -->
+  <xacro:arg name="lidar_x" default="0.1321"/>
+  <xacro:arg name="lidar_y" default="0.000149"/>
+  <xacro:arg name="lidar_height" default="0.484173"/>
+  <xacro:arg name="lidar_roll" default="3.14159"/>
+  <xacro:arg name="lidar_pitch" default="0.0"/>
+  <xacro:arg name="lidar_yaw" default="0.00113"/>
+  <!-- Damiao IMU の取り付け。既定は Unity の機体の IMU（前へ 0.132m、床から 0.504m、上下逆さ） -->
+  <xacro:arg name="damiao_imu_x" default="0.1321"/>
+  <xacro:arg name="damiao_imu_y" default="0.000149"/>
+  <xacro:arg name="damiao_imu_z" default="0.504182"/>
+  <xacro:arg name="damiao_imu_roll" default="3.14159"/>
+  <!-- Gazebo で使うとき true。可動の関節（腰・砲塔・車輪）を固定にし、シミュレーションの定義を読む -->
+  <xacro:arg name="gazebo" default="false"/>
+  <!-- Gazebo で、腰（base_to_chassis）だけは回る関節にする（sim の waist:=true）。足回りは body_controller の
+       指令で動き、上半身は腰で向きを保つ（sim の core_field_sim の sim_hardware）。gazebo が false なら使わない -->
+  <xacro:arg name="sim_waist" default="false"/>
+  <!-- 以前の衝突の箱の高さ。今の形は Unity の機体の形なので使わない（launch が渡すので引数だけ残す） -->
+  <xacro:arg name="body_height" default="0.95"/>
+  <!-- Gazebo の検出のための 2 台目の LiDAR の取り付け（gazebo が true のときだけ付ける） -->
+  <xacro:arg name="rear_lidar" default="false"/>
+  <xacro:arg name="rear_lidar_x" default="-0.44"/>
+  <xacro:arg name="rear_lidar_height" default="0.25"/>
+
+  <!-- 引数は文字列なので、式で使えるよう真偽値にする -->
+  <xacro:property name="gazebo" value="${'$(arg gazebo)'.lower() == 'true'}"/>
+  <xacro:property name="sim_waist" value="${'$(arg sim_waist)'.lower() == 'true'}"/>
+  <!-- 腰を固定にするか（Gazebo で sim_waist でないとき） -->
+  <xacro:property name="waist_fixed" value="${gazebo and not sim_waist}"/>
+  <xacro:property name="rear_lidar" value="${'$(arg rear_lidar)'.lower() == 'true'}"/>
+  <!-- FAST-LIO の mid360.yaml の extrinsic_T の符号を反転した値（LiDAR 座標系での IMU の位置） -->
+  <xacro:property name="livox_imu_x" value="0.011"/>
+  <xacro:property name="livox_imu_y" value="0.02329"/>
+  <xacro:property name="livox_imu_z" value="-0.04412"/>
+
+  <material name="frame"><color rgba="0.75 0.75 0.78 1"/></material>
+  <material name="turret"><color rgba="0.2 0.45 0.85 1"/></material>
+  <material name="wheel"><color rgba="0.15 0.15 0.15 1"/></material>
+
+  <!-- ここから base_link・body_link・chassis_link・砲塔・車輪・カメラ。形は Unity の Collider の箱と円柱。
+       Gazebo の衝突形状は車輪を除くすべて（いちばん低い所でも床から 0.048m 浮く。機体は omni_force_drive の
+       力で動かす） -->
+  <!-- 上半身（Unity の LowerYawAxisJoint より上）。形だけ。KDL は慣性を持つルートを扱えない -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0.056 6.31995e-05 0.744773" rpy="1.5708 0 0.00113"/>
+      <geometry><box size="0.012 0.4 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.161894 -0.0941826 0.171773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.09 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0950926 0.0818932 0.198773" rpy="0 0 0.00113"/>
+      <geometry><box size="0.31 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.055 -6.23606e-05 0.209773" rpy="0 0 -1.56967"/>
+      <geometry><box size="0.4 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-9.28997e-05 0.0820005 0.132773" rpy="0 0 0.00113"/>
+      <geometry><box size="0.5 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.044079 -0.0699502 0.164773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.1 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.043921 -0.0700492 0.164773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.1 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="9.25083e-05 -0.0820001 0.132773" rpy="0 0 0.00113"/>
+      <geometry><box size="0.5 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.15 -0.00016895 0.210773" rpy="0.889413 -1.57079 -0.888285"/>
+      <geometry><box size="0.012 0.2 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.044079 0.0699502 0.164773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.1 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.043921 0.0700492 0.164773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.1 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0559999 -6.29554e-05 0.120773" rpy="0 0 1.57193"/>
+      <geometry><box size="0.5 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0949074 -0.0821073 0.198773" rpy="0 0 0.00113"/>
+      <geometry><box size="0.31 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0595612 -0.0370854 0.411331" rpy="1.46608 0.436332 0.00113"/>
+      <geometry><box size="0.012 0.42 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.162106 0.0938172 0.171773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.09 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0549999 6.17692e-05 0.209773" rpy="0 0 -1.56967"/>
+      <geometry><box size="0.4 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0596447 0.0369515 0.411331" rpy="1.67552 0.436332 0.00113"/>
+      <geometry><box size="0.012 0.42 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.044 4.98778e-05 0.364773" rpy="1.5708 0 0.00113"/>
+      <geometry><box size="0.012 0.5 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0559999 6.35954e-05 0.120773" rpy="0 0 1.57193"/>
+      <geometry><box size="0.5 0.012 0.012"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <collision>
+      <origin xyz="0.056 6.31995e-05 0.744773" rpy="1.5708 0 0.00113"/>
+      <geometry><box size="0.012 0.4 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.161894 -0.0941826 0.171773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.09 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0950926 0.0818932 0.198773" rpy="0 0 0.00113"/>
+      <geometry><box size="0.31 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.055 -6.23606e-05 0.209773" rpy="0 0 -1.56967"/>
+      <geometry><box size="0.4 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-9.28997e-05 0.0820005 0.132773" rpy="0 0 0.00113"/>
+      <geometry><box size="0.5 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.044079 -0.0699502 0.164773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.1 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.043921 -0.0700492 0.164773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.1 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="9.25083e-05 -0.0820001 0.132773" rpy="0 0 0.00113"/>
+      <geometry><box size="0.5 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.15 -0.00016895 0.210773" rpy="0.889413 -1.57079 -0.888285"/>
+      <geometry><box size="0.012 0.2 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.044079 0.0699502 0.164773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.1 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.043921 0.0700492 0.164773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.1 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0559999 -6.29554e-05 0.120773" rpy="0 0 1.57193"/>
+      <geometry><box size="0.5 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0949074 -0.0821073 0.198773" rpy="0 0 0.00113"/>
+      <geometry><box size="0.31 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0595612 -0.0370854 0.411331" rpy="1.46608 0.436332 0.00113"/>
+      <geometry><box size="0.012 0.42 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.162106 0.0938172 0.171773" rpy="-2.35563 -1.57079 -0.784835"/>
+      <geometry><box size="0.09 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0549999 6.17692e-05 0.209773" rpy="0 0 -1.56967"/>
+      <geometry><box size="0.4 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0596447 0.0369515 0.411331" rpy="1.67552 0.436332 0.00113"/>
+      <geometry><box size="0.012 0.42 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.044 4.98778e-05 0.364773" rpy="1.5708 0 0.00113"/>
+      <geometry><box size="0.012 0.5 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0559999 6.35954e-05 0.120773" rpy="0 0 1.57193"/>
+      <geometry><box size="0.5 0.012 0.012"/></geometry>
+    </collision>
+  </link>
+
+  <!-- 上半身の質量 -->
+  <link name="body_link">
+    <inertial>
+      <origin xyz="0 0 0.529773"/>
+      <mass value="6.0"/>
+      <inertia ixx="0.46952" ixy="7.96077e-11" ixz="0" iyy="0.46955" iyz="0" izz="0.25017"/>
+    </inertial>
+  </link>
+  <joint name="base_to_body" type="fixed">
+    <parent link="base_link"/>
+    <child link="body_link"/>
+  </joint>
+
+  <!-- 駆動部（Unity の RootLink: 車台と車輪）。上半身の下で回る。腰の角度が 0 のとき base_link と同じ向き -->
+  <link name="chassis_link">
+    <visual>
+      <origin xyz="-0.113137 0.212132 0.0577729" rpy="-3.14159 0 0.785398"/>
+      <geometry><box size="0.29 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0381051 0.022 0.0677729" rpy="0 0 -2.0944"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.339999 0.000385107 0.057773" rpy="0 0 1.57193"/>
+      <geometry><box size="0.5 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.055 0 0.0577729" rpy="0 0 -1.5708"/>
+      <geometry><box size="0.16 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.297194 0.297867 0.0577729" rpy="0 0 -0.784267"/>
+      <geometry><box size="0.11 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.113137 -0.212132 0.0577729" rpy="3.14159 0 -2.35619"/>
+      <geometry><box size="0.29 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0.044 0.0677729" rpy="0 0 0.183869"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0381051 0.022 0.0677729" rpy="0 0 -0.863328"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.297292 0 0.12795" rpy="0 -1.309 0"/>
+      <geometry><box size="0.003 0.34 0.025"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.00038439 0.34 0.0577727" rpy="0 0 -3.14046"/>
+      <geometry><box size="0.5 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0 -0.044 0.0677729" rpy="0 0 -2.95772"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.34 -0.000384183 0.0577729" rpy="0 0 1.57193"/>
+      <geometry><box size="0.5 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.297867 0.297194 0.0577729" rpy="0 0 0.78653"/>
+      <geometry><box size="0.11 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.113137 -0.212132 0.0577729" rpy="0 0 -0.785398"/>
+      <geometry><box size="0.29 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0.0900002 0.0577729" rpy="0 0 3.14159"/>
+      <geometry><box size="0.66 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.297194 -0.297867 0.0577729" rpy="0 0 2.35733"/>
+      <geometry><box size="0.11 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0381051 -0.022 0.0677729" rpy="0 0 -2.0944"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.055 0 0.0577729" rpy="0 0 -1.5708"/>
+      <geometry><box size="0.16 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.00038509 -0.340001 0.0577729" rpy="0 0 -3.14046"/>
+      <geometry><box size="0.5 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.113137 0.212132 0.0577729" rpy="0 0 2.35619"/>
+      <geometry><box size="0.29 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.31421 0 0.11738" rpy="0 -0.523599 6.07869e-07"/>
+      <geometry><box size="0.003 0.34 0.015"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0381051 -0.022 0.0677729" rpy="0 0 -1.91053"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0.297867 -0.297194 0.0577729" rpy="0 0 -2.35506"/>
+      <geometry><box size="0.11 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <visual>
+      <origin xyz="0 -0.0900002 0.0577729" rpy="0 0 3.14159"/>
+      <geometry><box size="0.66 0.02 0.02"/></geometry>
+      <material name="frame"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.113137 0.212132 0.0577729" rpy="-3.14159 0 0.785398"/>
+      <geometry><box size="0.29 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0381051 0.022 0.0677729" rpy="0 0 -2.0944"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.339999 0.000385107 0.057773" rpy="0 0 1.57193"/>
+      <geometry><box size="0.5 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.055 0 0.0577729" rpy="0 0 -1.5708"/>
+      <geometry><box size="0.16 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.297194 0.297867 0.0577729" rpy="0 0 -0.784267"/>
+      <geometry><box size="0.11 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.113137 -0.212132 0.0577729" rpy="3.14159 0 -2.35619"/>
+      <geometry><box size="0.29 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 0.044 0.0677729" rpy="0 0 0.183869"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0381051 0.022 0.0677729" rpy="0 0 -0.863328"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.297292 0 0.12795" rpy="0 -1.309 0"/>
+      <geometry><box size="0.003 0.34 0.025"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.00038439 0.34 0.0577727" rpy="0 0 -3.14046"/>
+      <geometry><box size="0.5 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 -0.044 0.0677729" rpy="0 0 -2.95772"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.34 -0.000384183 0.0577729" rpy="0 0 1.57193"/>
+      <geometry><box size="0.5 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.297867 0.297194 0.0577729" rpy="0 0 0.78653"/>
+      <geometry><box size="0.11 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.113137 -0.212132 0.0577729" rpy="0 0 -0.785398"/>
+      <geometry><box size="0.29 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 0.0900002 0.0577729" rpy="0 0 3.14159"/>
+      <geometry><box size="0.66 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.297194 -0.297867 0.0577729" rpy="0 0 2.35733"/>
+      <geometry><box size="0.11 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0381051 -0.022 0.0677729" rpy="0 0 -2.0944"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.055 0 0.0577729" rpy="0 0 -1.5708"/>
+      <geometry><box size="0.16 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.00038509 -0.340001 0.0577729" rpy="0 0 -3.14046"/>
+      <geometry><box size="0.5 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.113137 0.212132 0.0577729" rpy="0 0 2.35619"/>
+      <geometry><box size="0.29 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.31421 0 0.11738" rpy="0 -0.523599 6.07869e-07"/>
+      <geometry><box size="0.003 0.34 0.015"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0381051 -0.022 0.0677729" rpy="0 0 -1.91053"/>
+      <geometry><cylinder length="0.04" radius="0.0025"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.297867 -0.297194 0.0577729" rpy="0 0 -2.35506"/>
+      <geometry><box size="0.11 0.02 0.02"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 -0.0900002 0.0577729" rpy="0 0 3.14159"/>
+      <geometry><box size="0.66 0.02 0.02"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.0902032"/>
+      <mass value="15.0"/>
+      <inertia ixx="0.622492" ixy="0" ixz="0" iyy="0.622492" iyz="0" izz="1.22698"/>
+    </inertial>
+  </link>
+  <joint name="base_to_chassis" type="${'fixed' if waist_fixed else 'continuous'}">
+    <parent link="base_link"/>
+    <child link="chassis_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <xacro:unless value="${waist_fixed}">
+      <axis xyz="0 0 1"/>
+    </xacro:unless>
+  </joint>
+
+  <!-- 左右の砲塔（yaw と pitch）。Gazebo では固定 -->
+  <link name="left_yaw_link">
+  </link>
+  <joint name="left_yaw_joint" type="${'fixed' if gazebo else 'continuous'}">
+    <parent link="base_link"/>
+    <child link="left_yaw_link"/>
+    <origin xyz="-0.000197569 0.175 0.254273" rpy="0 0 3.14159"/>
+    <xacro:unless value="${gazebo}">
+      <axis xyz="0 0 -1"/>
+    </xacro:unless>
+  </joint>
+
+  <link name="left_pitch_link">
+    <visual>
+      <origin xyz="0.0378316 -0.0884523 0.284405" rpy="-0.251023 1.57079 -0.249893"/>
+      <geometry><box size="0.523 0.012 0.012"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0989297 -0.0697246 0.314" rpy="3.14159 0 -2.0722"/>
+      <geometry><cylinder length="0.432" radius="0.006"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0376245 0.0945476 0.284405" rpy="-0.251023 1.57079 -0.249893"/>
+      <geometry><box size="0.523 0.012 0.012"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="0.018848 0.0869411 0.314" rpy="-3.14159 0 -2.0722"/>
+      <geometry><cylinder length="0.432" radius="0.006"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0339175 -0.100385 0.0289999" rpy="0 0 0.00113167"/>
+      <geometry><box size="0.252 0.012 0.012"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0991071 0.0868077 0.314" rpy="3.14159 0 -2.0722"/>
+      <geometry><cylinder length="0.432" radius="0.006"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0190255 -0.0695911 0.314" rpy="3.14159 0 -2.0722"/>
+      <geometry><cylinder length="0.432" radius="0.006"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0341521 0.106615 0.0289999" rpy="0 0 0.00113167"/>
+      <geometry><box size="0.252 0.012 0.012"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.154036 0.00347834 0.018" rpy="0 0 1.57193"/>
+      <geometry><box size="0.22 0.01 0.01"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <collision>
+      <origin xyz="0.0378316 -0.0884523 0.284405" rpy="-0.251023 1.57079 -0.249893"/>
+      <geometry><box size="0.523 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0989297 -0.0697246 0.314" rpy="3.14159 0 -2.0722"/>
+      <geometry><cylinder length="0.432" radius="0.006"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0376245 0.0945476 0.284405" rpy="-0.251023 1.57079 -0.249893"/>
+      <geometry><box size="0.523 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.018848 0.0869411 0.314" rpy="-3.14159 0 -2.0722"/>
+      <geometry><cylinder length="0.432" radius="0.006"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0339175 -0.100385 0.0289999" rpy="0 0 0.00113167"/>
+      <geometry><box size="0.252 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0991071 0.0868077 0.314" rpy="3.14159 0 -2.0722"/>
+      <geometry><cylinder length="0.432" radius="0.006"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0190255 -0.0695911 0.314" rpy="3.14159 0 -2.0722"/>
+      <geometry><cylinder length="0.432" radius="0.006"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0341521 0.106615 0.0289999" rpy="0 0 0.00113167"/>
+      <geometry><box size="0.252 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.154036 0.00347834 0.018" rpy="0 0 1.57193"/>
+      <geometry><box size="0.22 0.01 0.01"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-0.0340348 0.00347825 0.279452"/>
+      <mass value="2.0"/>
+      <inertia ixx="0.0553987" ixy="0" ixz="0" iyy="0.0579361" iyz="0" izz="0.0186724"/>
+    </inertial>
+  </link>
+  <joint name="left_pitch_joint" type="${'fixed' if gazebo else 'continuous'}">
+    <parent link="left_yaw_link"/>
+    <child link="left_pitch_link"/>
+    <origin xyz="3.55811e-06 -0.00315286 0.0265"/>
+    <xacro:unless value="${gazebo}">
+      <axis xyz="0 1 0"/>
+    </xacro:unless>
+  </joint>
+
+  <link name="right_yaw_link">
+  </link>
+  <joint name="right_yaw_joint" type="${'fixed' if gazebo else 'continuous'}">
+    <parent link="base_link"/>
+    <child link="right_yaw_link"/>
+    <origin xyz="0.000197571 -0.174999 0.254273" rpy="0 0 3.14159"/>
+    <xacro:unless value="${gazebo}">
+      <axis xyz="0 0 -1"/>
+    </xacro:unless>
+  </joint>
+
+  <link name="right_pitch_link">
+    <visual>
+      <origin xyz="0.0376244 0.088538 0.284405" rpy="2.49441 1.57079 2.49554"/>
+      <geometry><box size="0.523 0.012 0.012"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0990951 0.069501 0.314" rpy="3.14159 0 1.22971"/>
+      <geometry><cylinder length="0.432" radius="0.00600001"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0190385 -0.0868984 0.314" rpy="-3.14159 0 -1.63952"/>
+      <geometry><cylinder length="0.432" radius="0.006"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0188611 0.0696345 0.314" rpy="-3.14159 0 2.07446"/>
+      <geometry><cylinder length="0.432001" radius="0.00600001"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0339174 -0.106692 0.0289997" rpy="0 0 -3.14046"/>
+      <geometry><box size="0.252 0.012 0.012"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0341519 0.100308 0.0289997" rpy="0 0 -3.14046"/>
+      <geometry><box size="0.252 0.012 0.012"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0989177 -0.087032 0.314" rpy="-3.14159 0 2.61128"/>
+      <geometry><cylinder length="0.432001" radius="0.00600001"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0378315 -0.0944619 0.284405" rpy="2.49441 1.57079 2.49554"/>
+      <geometry><box size="0.523 0.012 0.012"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.154036 -0.00282735 0.0180002" rpy="0 0 1.57193"/>
+      <geometry><box size="0.22 0.01 0.01"/></geometry>
+      <material name="turret"/>
+    </visual>
+    <collision>
+      <origin xyz="0.0376244 0.088538 0.284405" rpy="2.49441 1.57079 2.49554"/>
+      <geometry><box size="0.523 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0990951 0.069501 0.314" rpy="3.14159 0 1.22971"/>
+      <geometry><cylinder length="0.432" radius="0.00600001"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0190385 -0.0868984 0.314" rpy="-3.14159 0 -1.63952"/>
+      <geometry><cylinder length="0.432" radius="0.006"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0188611 0.0696345 0.314" rpy="-3.14159 0 2.07446"/>
+      <geometry><cylinder length="0.432001" radius="0.00600001"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0339174 -0.106692 0.0289997" rpy="0 0 -3.14046"/>
+      <geometry><box size="0.252 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0341519 0.100308 0.0289997" rpy="0 0 -3.14046"/>
+      <geometry><box size="0.252 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0989177 -0.087032 0.314" rpy="-3.14159 0 2.61128"/>
+      <geometry><cylinder length="0.432001" radius="0.00600001"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0.0378315 -0.0944619 0.284405" rpy="2.49441 1.57079 2.49554"/>
+      <geometry><box size="0.523 0.012 0.012"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.154036 -0.00282735 0.0180002" rpy="0 0 1.57193"/>
+      <geometry><box size="0.22 0.01 0.01"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-0.0340346 -0.00282812 0.279452"/>
+      <mass value="2.0"/>
+      <inertia ixx="0.0553988" ixy="0" ixz="0" iyy="0.057936" iyz="0" izz="0.0186724"/>
+    </inertial>
+  </link>
+  <joint name="right_pitch_joint" type="${'fixed' if gazebo else 'continuous'}">
+    <parent link="right_yaw_link"/>
+    <child link="right_pitch_link"/>
+    <origin xyz="-3.54832e-06 0.00315283 0.0265"/>
+    <xacro:unless value="${gazebo}">
+      <axis xyz="0 1 0"/>
+    </xacro:unless>
+  </joint>
+
+  <!-- 車輪（メカナム）。Gazebo では固定にし、衝突形状を持たせない -->
+  <link name="wheel1_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="3.14159 1.57079 3.14159"/>
+      <geometry><cylinder length="0.04" radius="0.065"/></geometry>
+      <material name="wheel"/>
+    </visual>
+    <xacro:unless value="${gazebo}">
+      <collision>
+        <origin xyz="0 0 0"/>
+        <geometry><sphere radius="0.065"/></geometry>
+      </collision>
+    </xacro:unless>
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.00105625" ixy="0" ixz="0" iyy="0.000528125" iyz="0" izz="0.000528125"/>
+    </inertial>
+  </link>
+  <joint name="wheel1_joint" type="${'fixed' if gazebo else 'continuous'}">
+    <parent link="chassis_link"/>
+    <child link="wheel1_link"/>
+    <origin xyz="0.265 0.265 0.065" rpy="0 0 0.785398"/>
+    <xacro:unless value="${gazebo}">
+      <axis xyz="1 0 0"/>
+    </xacro:unless>
+  </joint>
+
+  <link name="wheel2_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="3.14159 1.57079 3.14159"/>
+      <geometry><cylinder length="0.04" radius="0.065"/></geometry>
+      <material name="wheel"/>
+    </visual>
+    <xacro:unless value="${gazebo}">
+      <collision>
+        <origin xyz="0 0 0"/>
+        <geometry><sphere radius="0.065"/></geometry>
+      </collision>
+    </xacro:unless>
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.00105625" ixy="0" ixz="0" iyy="0.000528125" iyz="0" izz="0.000528125"/>
+    </inertial>
+  </link>
+  <joint name="wheel2_joint" type="${'fixed' if gazebo else 'continuous'}">
+    <parent link="chassis_link"/>
+    <child link="wheel2_link"/>
+    <origin xyz="-0.265 0.265 0.065" rpy="0 0 2.35619"/>
+    <xacro:unless value="${gazebo}">
+      <axis xyz="1 0 0"/>
+    </xacro:unless>
+  </joint>
+
+  <link name="wheel3_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="3.14159 1.57079 3.14159"/>
+      <geometry><cylinder length="0.04" radius="0.065"/></geometry>
+      <material name="wheel"/>
+    </visual>
+    <xacro:unless value="${gazebo}">
+      <collision>
+        <origin xyz="0 0 0"/>
+        <geometry><sphere radius="0.065"/></geometry>
+      </collision>
+    </xacro:unless>
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.00105625" ixy="0" ixz="0" iyy="0.000528125" iyz="0" izz="0.000528125"/>
+    </inertial>
+  </link>
+  <joint name="wheel3_joint" type="${'fixed' if gazebo else 'continuous'}">
+    <parent link="chassis_link"/>
+    <child link="wheel3_link"/>
+    <origin xyz="-0.265 -0.265 0.065" rpy="0 0 -2.35619"/>
+    <xacro:unless value="${gazebo}">
+      <axis xyz="1 0 0"/>
+    </xacro:unless>
+  </joint>
+
+  <link name="wheel4_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="3.14159 1.57079 3.14159"/>
+      <geometry><cylinder length="0.04" radius="0.065"/></geometry>
+      <material name="wheel"/>
+    </visual>
+    <xacro:unless value="${gazebo}">
+      <collision>
+        <origin xyz="0 0 0"/>
+        <geometry><sphere radius="0.065"/></geometry>
+      </collision>
+    </xacro:unless>
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.00105625" ixy="0" ixz="0" iyy="0.000528125" iyz="0" izz="0.000528125"/>
+    </inertial>
+  </link>
+  <joint name="wheel4_joint" type="${'fixed' if gazebo else 'continuous'}">
+    <parent link="chassis_link"/>
+    <child link="wheel4_link"/>
+    <origin xyz="0.265 -0.265 0.065" rpy="0 0 -0.785398"/>
+    <xacro:unless value="${gazebo}">
+      <axis xyz="1 0 0"/>
+    </xacro:unless>
+  </joint>
+
+  <!-- 上のカメラ（Unity の TopCamera）-->
+  <link name="camera1_link"/>
+  <joint name="base_link_to_camera1_link" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera1_link"/>
+    <origin xyz="0.0854216 9.65787e-05 0.931562" rpy="3.14159 0.610865 -5.30718e-06"/>
+  </joint>
+  <!-- 砲塔のカメラ -->
+  <link name="left_turret_camera_frame"/>
+  <joint name="left_pitch_link_to_left_turret_camera_frame" type="fixed">
+    <parent link="left_pitch_link"/>
+    <child link="left_turret_camera_frame"/>
+    <origin xyz="-0.167241 0.00846442 0.11" rpy="0 0 -3.14046"/>
+  </joint>
+  <link name="right_turret_camera_frame"/>
+  <joint name="right_pitch_link_to_right_turret_camera_frame" type="fixed">
+    <parent link="right_pitch_link"/>
+    <child link="right_turret_camera_frame"/>
+    <origin xyz="-0.167228 -0.0088429 0.11" rpy="0 0 3.14159"/>
+  </joint>
+
+  <!-- 実機のドライバと同じフレーム名。点群の原点になる -->
+  <link name="livox_frame"/>
+  <joint name="base_to_livox" type="fixed">
+    <parent link="base_link"/>
+    <child link="livox_frame"/>
+    <origin xyz="$(arg lidar_x) $(arg lidar_y) $(arg lidar_height)"
+            rpy="$(arg lidar_roll) $(arg lidar_pitch) $(arg lidar_yaw)"/>
+  </joint>
+
+  <link name="livox_imu_link"/>
+  <joint name="livox_to_imu" type="fixed">
+    <parent link="livox_frame"/>
+    <child link="livox_imu_link"/>
+    <origin xyz="${livox_imu_x} ${livox_imu_y} ${livox_imu_z}"/>
+  </joint>
+
+  <xacro:if value="${gazebo and rear_lidar}">
+    <link name="livox_rear_frame"/>
+    <joint name="base_to_livox_rear" type="fixed">
+      <parent link="base_link"/>
+      <child link="livox_rear_frame"/>
+      <origin xyz="$(arg rear_lidar_x) 0 $(arg rear_lidar_height)" rpy="0 0 ${pi}"/>
+    </joint>
+  </xacro:if>
+
+  <link name="damiao_imu_link"/>
+  <joint name="base_to_damiao_imu" type="fixed">
+    <parent link="base_link"/>
+    <child link="damiao_imu_link"/>
+    <origin xyz="$(arg damiao_imu_x) $(arg damiao_imu_y) $(arg damiao_imu_z)" rpy="$(arg damiao_imu_roll) 0 0"/>
+  </joint>
+</robot>
