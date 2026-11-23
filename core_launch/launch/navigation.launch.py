@@ -6,6 +6,7 @@ control modes, and map presets.
 """
 
 import os
+from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -15,10 +16,12 @@ from launch.actions import (
     OpaqueFunction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, PathJoinSubstitution
+from launch.substitutions import Command
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
-from launch_ros.substitutions import FindPackageShare
+
+from core_nav_launch.custom_map import available_custom_maps, custom_map_preset, CustomMapError
+from core_nav_launch.livox_driver import livox_driver_node
 
 # ── Map presets ──────────────────────────────────────────────────────
 # map_name で、地図の PCD（core_launch/maps/<pcd>）、初期姿勢（地図上の位置と向き）、
@@ -87,23 +90,24 @@ def _launch_nodes(context):
     use_damiao_imu = is_real and context.launch_configurations.get(
         'use_damiao_imu', 'true').lower() == 'true'
 
+    core_launch_share = get_package_share_directory('core_launch')
+
     # ── Map preset ───────────────────────────────────────────────────
+    # プリセットにない名前は、core_launch/maps に作った地図（make_map_files.py。core_nav_launch/custom_map.py）
+    maps_dir = Path(core_launch_share) / 'maps'
     preset = MAP_PRESETS.get(map_name)
     if preset is None:
-        available = ', '.join(MAP_PRESETS.keys())
-        raise RuntimeError(
-            f"Unknown map_name '{map_name}'. Available: {available}")
-
-    core_launch_share = get_package_share_directory('core_launch')
+        try:
+            preset = custom_map_preset(maps_dir, map_name)
+        except CustomMapError as error:
+            available = ', '.join([*MAP_PRESETS.keys(), *available_custom_maps(maps_dir)])
+            raise RuntimeError(
+                f"Unknown map_name '{map_name}'. Available: {available}. {error}") from error
 
     # ── Package directories ──────────────────────────────────────────
     body_ctrl_share = get_package_share_directory('core_body_controller')
 
     rviz_config = os.path.join(core_launch_share, 'config', 'navigation.rviz')
-
-    livox_user_config = PathJoinSubstitution([
-        FindPackageShare('livox_ros_driver2'), 'config', 'MID360_config.json',
-    ])
 
     actions = []
 
@@ -118,30 +122,9 @@ def _launch_nodes(context):
         ))
 
     # ── 2. Livox driver (real only) ──────────────────────────────────
-    # FAST-LIO と検出は CustomMsg（xfer_format 1）を受ける
+    # FAST-LIO と検出は CustomMsg（xfer_format 1）を受ける。設定は mapping.launch.py と共通（core_nav_launch/livox_driver.py）
     if is_real:
-        actions.append(Node(
-            package='livox_ros_driver2',
-            executable='livox_ros_driver2_node',
-            name='livox_driver',
-            namespace='sensing',
-            output='screen',
-            remappings=[
-                ('livox/lidar', '/sensing/livox/lidar'),
-                ('livox/imu', '/sensing/livox/imu'),
-            ],
-            parameters=[{
-                'xfer_format': 1,  # CustomMsg (MID-360)
-                'multi_topic': 0,
-                'data_src': 0,
-                'publish_freq': 10.0,
-                'output_data_type': 0,
-                'frame_id': 'livox_frame',
-                'lvx_file_path': '/home/livox/livox_test.lvx',
-                'user_config_path': livox_user_config,
-                'cmdline_input_bd_code': 'livox0000000001',
-            }],
-        ))
+        actions.append(livox_driver_node())
 
     # ── 3. 自律移動（real only） ─────────────────────────────────────
     # 設計: 1 台構成・コンポーネント版。base_link→センサの固定 TF は URDF から出す
@@ -181,7 +164,9 @@ def _launch_nodes(context):
                 'origin_y': float(preset['origin_y']),
             }],
         ))
-        # init_yaw を指定しなければ、プリセットの向き
+        # init_x・init_y・init_yaw を指定しなければ、プリセットの位置と向き
+        init_x = context.launch_configurations['init_x'] or str(preset['init_x'])
+        init_y = context.launch_configurations['init_y'] or str(preset['init_y'])
         init_yaw = context.launch_configurations['init_yaw'] or str(preset['init_yaw'])
         composition = context.launch_configurations['composition']
 
@@ -194,8 +179,8 @@ def _launch_nodes(context):
 
         actions.append(include('localization_stack.launch.py', {
             'map_path': map_path,
-            'initial_x': str(preset['init_x']),
-            'initial_y': str(preset['init_y']),
+            'initial_x': init_x,
+            'initial_y': init_y,
             'initial_yaw': init_yaw,
             'field_file': field_file,
             'composition': composition,
@@ -275,7 +260,16 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'map_name', default_value='core1_field',
-            description=f"Map preset: {', '.join(MAP_PRESETS.keys())}",
+            description=f"Map preset: {', '.join(MAP_PRESETS.keys())}, "
+                        'or a map made with make_map_files.py in core_launch/maps',
+        ),
+        DeclareLaunchArgument(
+            'init_x', default_value='',
+            description='Initial x on the map [m] (empty: the map preset value)',
+        ),
+        DeclareLaunchArgument(
+            'init_y', default_value='',
+            description='Initial y on the map [m] (empty: the map preset value)',
         ),
         DeclareLaunchArgument(
             'init_yaw', default_value='',

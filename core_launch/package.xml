@@ -30,6 +30,11 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <!-- 地図を作るとき（lio_map_saver_node.py）の点群・保存のサービス -->
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>sensor_msgs_py</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>rclpy</exec_depend>

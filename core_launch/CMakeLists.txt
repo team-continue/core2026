@@ -12,6 +12,8 @@ find_package(ament_cmake_python REQUIRED)
 ament_python_install_package(core_nav_check)
 # 自律移動の launch で共通に使う処理（NodeSpec と composition、IMU の選択など）
 ament_python_install_package(core_nav_launch)
+# 実機で地図を作る処理（点群を貯める、PCD・占有地図・フィールドの範囲を書く）
+ament_python_install_package(core_nav_map)
 
 install(DIRECTORY
   launch
@@ -33,6 +35,8 @@ install(PROGRAMS
   scripts/setup_thirdparty.sh
   scripts/map_publisher_node.py
   scripts/localization_status_marker_node.py
+  scripts/lio_map_saver_node.py
+  scripts/make_map_files.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -64,6 +68,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_occupancy_map test/test_occupancy_map.py)
   # RViz に出す自己位置の状態の文字と色（localization_status_marker_node.py）
   ament_add_pytest_test(test_localization_status test/test_localization_status.py)
+  # 実機で地図を作る処理（点群を貯める、PCD の読み書き、占有地図とフィールドの範囲、作った地図の選び方）
+  ament_add_pytest_test(test_map_making test/test_map_making.py)
 endif()
 
 ament_package()
