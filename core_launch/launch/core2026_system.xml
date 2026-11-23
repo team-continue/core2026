@@ -12,6 +12,8 @@
   <!-- Navigation -->
   <include file="$(find-pkg-share core_launch)/launch/navigation.launch.py">
     <arg name="environment" value="real"/>
+    <!-- body_controller は下の Body Controller で起動するので、navigation 側では起動しない -->
+    <arg name="use_body_controller" value="false"/>
     <arg name="map_name" value="$(var map_name)"/>
     <arg name="planning_params_file" value="$(var planning_params_file)"/>
     <!-- <arg name="use_localization" value="true"/> -->
