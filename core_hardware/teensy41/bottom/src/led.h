@@ -3,27 +3,81 @@
 #include <Arduino.h>
 #include <WS2812Serial.h>
 
+// テープ 1 本の出力。区間 (Led) が setPixel で描き、全区間を描いたあとで show() で送る
+class LedStrip {
+ public:
+  LedStrip(uint8_t serial_pin, uint16_t led_num, uint8_t brightness)
+      : serial_pin_(serial_pin), led_num_(led_num), brightness_(brightness) {}
+
+  void init() {
+    if (pixels_ != nullptr || led_num_ == 0) {
+      return;
+    }
+    drawing_memory_ = new uint8_t[led_num_ * 3];
+    display_memory_ = new uint8_t[led_num_ * 12];
+    pixels_ = new WS2812Serial(led_num_, display_memory_, drawing_memory_, serial_pin_, WS2812_GRB);
+    pixels_->begin();
+    pixels_->setBrightness(brightness_);
+    pixels_->clear();
+    pixels_->show();
+  }
+
+  bool ready() const { return pixels_ != nullptr; }
+  uint16_t size() const { return led_num_; }
+
+  void setBrightness(uint8_t brightness) { brightness_ = brightness; }
+
+  // 範囲外の番号は無視する
+  void setPixel(uint16_t index, uint32_t rgb) {
+    if (pixels_ == nullptr || index >= led_num_) {
+      return;
+    }
+    pixels_->setPixel(index, rgb);
+  }
+
+  void show() {
+    if (pixels_ == nullptr) {
+      return;
+    }
+    pixels_->setBrightness(brightness_);
+    pixels_->show();
+  }
+
+ private:
+  uint8_t serial_pin_;
+  uint16_t led_num_;
+  uint8_t brightness_;
+  uint8_t *drawing_memory_ = nullptr;
+  uint8_t *display_memory_ = nullptr;
+  WS2812Serial *pixels_ = nullptr;
+};
+
+// テープの一部 (first から count 個) に 1 つのパターンを描く区間。
+// パターンの長さ・中心はこの区間の中で決まる。
+// reverse = true なら、一方向に流れるパターン (kChase / kRainbowChase) を区間の末尾から先頭へ流す
 class Led {
  public:
-  Led(uint8_t serial_pin, uint16_t led_num, unsigned long update_ms,
+  Led(LedStrip &strip, uint16_t first, uint16_t count, unsigned long update_ms,
       float chase_speed_leds_per_sec, float multi_chase_speed_leds_per_sec,
       float blink_period_sec, float double_flash_period_sec,
-      uint8_t center_out_multi_base_brightness, uint8_t brightness)
-      : serial_pin_(serial_pin),
-        led_num_(led_num),
+      uint8_t center_out_multi_base_brightness, bool reverse = false)
+      : strip_(strip),
+        first_(first),
+        led_num_(count),
         update_ms_(update_ms),
         chase_speed_leds_per_sec_(chase_speed_leds_per_sec),
         multi_chase_speed_leds_per_sec_(multi_chase_speed_leds_per_sec),
         blink_period_sec_(blink_period_sec),
         double_flash_period_sec_(double_flash_period_sec),
         center_out_multi_base_brightness_(center_out_multi_base_brightness),
-        brightness_(brightness) {}
+        reverse_(reverse) {}
 
-  // 指令の下位 8 bit。0〜10 は従来の番号のまま。
+  // 指令の下位 8 bit。2 は一方向の流れ (以前の両端から中央への流れは 15 に移した)。
+  // 砲塔の区間には 4 bit で送るので、0〜15 に収める
   enum Pattern : uint8_t {
     kOff = 0,  // ROS からの指令では「指令なし」の意味でも使う
     kGaming = 1,
-    kChase = 2,
+    kChase = 2,  // 一方向に流れる。向きは区間の reverse で決まる
     kMultiChase = 3,
     kRainbowChase = 4,
     kRainbowMultiChase = 5,
@@ -36,6 +90,7 @@ class Led {
     kTripleFlash = 12,
     kBlinkMedium = 13,
     kBlinkSlow = 14,
+    kInwardChase = 15,  // 両端から中央へ流れる
   };
 
   // 指令の上位 8 bit。レインボー系のパターンでは無視する。
@@ -46,18 +101,6 @@ class Led {
     kGreen = 3,
     kBlue = 4,
   };
-
-  void init() {
-    if (pixels_ != nullptr || led_num_ == 0) {
-      return;
-    }
-    drawing_memory_ = new uint8_t[led_num_ * 3];
-    display_memory_ = new uint8_t[led_num_ * 12];
-    pixels_ = new WS2812Serial(led_num_, display_memory_, drawing_memory_, serial_pin_, WS2812_GRB);
-    pixels_->begin();
-    pixels_->clear();
-    pixels_->show();
-  }
 
   void write(uint8_t pattern, uint8_t color) {
     if (pattern_ == pattern && color_ == color) {
@@ -70,10 +113,6 @@ class Led {
 
   void setChaseSpeed(float leds_per_sec) {
     chase_speed_leds_per_sec_ = leds_per_sec < 0.0f ? 0.0f : leds_per_sec;
-  }
-
-  void setBrightness(uint8_t brightness) {
-    brightness_ = brightness;
   }
 
   void setMultiChaseSpeed(float leds_per_sec) {
@@ -92,19 +131,25 @@ class Led {
     center_out_multi_base_brightness_ = brightness;
   }
 
-  void update() {
-    const unsigned long now_ms = millis();
+  // 描いたら true。呼び出し側は、どれかの区間が true を返したら LedStrip::show() を呼ぶ
+  bool update(unsigned long now_ms) {
     if ((now_ms - last_update_ms_) < update_ms_) {
-      return;
+      return false;
     }
     float dt_sec = 0.0f;
     if (last_update_ms_ != 0) {
       dt_sec = static_cast<float>(now_ms - last_update_ms_) / 1000.0f;
     }
     last_update_ms_ = now_ms;
-    if (pixels_ == nullptr) {
-      return;
+    if (!strip_.ready()) {
+      return false;
     }
+    render(dt_sec);
+    return true;
+  }
+
+ private:
+  void render(float dt_sec) {
 
     const uint32_t base_color = paletteColor(color_);
     switch (pattern_) {
@@ -115,6 +160,9 @@ class Led {
         renderGaming();
         return;
       case kChase:
+        renderChase(dt_sec, base_color);
+        return;
+      case kInwardChase:
         renderInwardChase(dt_sec, base_color);
         return;
       case kMultiChase:
@@ -159,7 +207,6 @@ class Led {
     }
   }
 
- private:
   void resetAnimationState() {
     rainbow_offset_ = 0;
     chase_head_position_ = -static_cast<float>(kChaseBandLength);
@@ -171,28 +218,21 @@ class Led {
   }
 
   void renderOff() {
-    pixels_->setBrightness(brightness_);
-    pixels_->clear();
-    pixels_->show();
+    fill(0U);
   }
 
   void renderGaming() {
-    pixels_->setBrightness(brightness_);
     for (uint16_t i = 0; i < led_num_; ++i) {
       const uint16_t scaled_index = led_num_ > 0 ? (i * 256U / led_num_) : 0U;
       const uint8_t wheel_pos =
           static_cast<uint8_t>((scaled_index + rainbow_offset_) & 0xFFU);
-      pixels_->setPixel(i, wheel(wheel_pos));
+      setPixel(i, wheel(wheel_pos));
     }
-    pixels_->show();
     rainbow_offset_ = static_cast<uint8_t>(rainbow_offset_ + 1U);
   }
 
   void renderChase(float dt_sec, uint32_t base_color, bool rainbow = false) {
-    pixels_->setBrightness(brightness_);
     if (led_num_ == 0) {
-      pixels_->clear();
-      pixels_->show();
       return;
     }
 
@@ -212,7 +252,9 @@ class Led {
 
     for (uint16_t i = 0; i < led_num_; ++i) {
       uint8_t intensity = kChaseBaseBrightness;
-      const float distance_from_head = chase_head_position_ - static_cast<float>(i);
+      // reverse なら末尾を流れの始まりとして数える
+      const uint16_t position = reverse_ ? static_cast<uint16_t>(led_num_ - 1U - i) : i;
+      const float distance_from_head = chase_head_position_ - static_cast<float>(position);
       if (distance_from_head >= 0.0f &&
           distance_from_head < static_cast<float>(kChaseBandLength)) {
         const float blend =
@@ -222,20 +264,16 @@ class Led {
             (kChasePeakBrightness - kChaseBaseBrightness) * blend);
       }
       const uint32_t pixel_base = rainbow ? rainbowColorAt(i) : base_color;
-      pixels_->setPixel(i, scaleColor(pixel_base, intensity));
+      setPixel(i, scaleColor(pixel_base, intensity));
     }
 
-    pixels_->show();
     if (rainbow) {
       rainbow_offset_ = static_cast<uint8_t>(rainbow_offset_ + 1U);
     }
   }
 
   void renderInwardChase(float dt_sec, uint32_t base_color) {
-    pixels_->setBrightness(brightness_);
     if (led_num_ == 0) {
-      pixels_->clear();
-      pixels_->show();
       return;
     }
 
@@ -269,17 +307,13 @@ class Led {
             kChaseBaseBrightness +
             (kChasePeakBrightness - kChaseBaseBrightness) * blend);
       }
-      pixels_->setPixel(i, scaleColor(base_color, intensity));
+      setPixel(i, scaleColor(base_color, intensity));
     }
 
-    pixels_->show();
   }
 
   void renderCenterOutChase(float dt_sec, uint32_t base_color) {
-    pixels_->setBrightness(brightness_);
     if (led_num_ == 0) {
-      pixels_->clear();
-      pixels_->show();
       return;
     }
 
@@ -312,17 +346,13 @@ class Led {
             kChaseBaseBrightness +
             (kChasePeakBrightness - kChaseBaseBrightness) * blend);
       }
-      pixels_->setPixel(i, scaleColor(base_color, intensity));
+      setPixel(i, scaleColor(base_color, intensity));
     }
 
-    pixels_->show();
   }
 
   void renderCenterOutMultiChase(float dt_sec, uint32_t base_color) {
-    pixels_->setBrightness(brightness_);
     if (led_num_ == 0) {
-      pixels_->clear();
-      pixels_->show();
       return;
     }
 
@@ -359,17 +389,13 @@ class Led {
           }
         }
       }
-      pixels_->setPixel(i, scaleColor(base_color, intensity));
+      setPixel(i, scaleColor(base_color, intensity));
     }
 
-    pixels_->show();
   }
 
   void renderMultiChase(float dt_sec, uint32_t base_color, bool rainbow = false) {
-    pixels_->setBrightness(brightness_);
     if (led_num_ == 0) {
-      pixels_->clear();
-      pixels_->show();
       return;
     }
 
@@ -405,17 +431,15 @@ class Led {
         }
       }
       const uint32_t pixel_base = rainbow ? rainbowColorAt(i) : base_color;
-      pixels_->setPixel(i, scaleColor(pixel_base, intensity));
+      setPixel(i, scaleColor(pixel_base, intensity));
     }
 
-    pixels_->show();
     if (rainbow) {
       rainbow_offset_ = static_cast<uint8_t>(rainbow_offset_ + 1U);
     }
   }
 
   void renderBlink(float dt_sec, float period_sec, uint32_t base_color) {
-    pixels_->setBrightness(brightness_);
     if (dt_sec > 0.0f && period_sec > 0.0f) {
       blink_phase_ += dt_sec / period_sec;
       while (blink_phase_ >= 1.0f) {
@@ -426,14 +450,12 @@ class Led {
     const bool is_on = blink_phase_ < 0.5f;
     const uint32_t blink_color = scaleColor(base_color, is_on ? kChasePeakBrightness : 0U);
     fill(blink_color);
-    pixels_->show();
   }
 
   // flash_count 回光ってから休む。1 回の点灯と消灯はそれぞれ周期の 12%、
   // 最後の点灯の後の休みは周期の 64% (いずれも double_flash_period_sec_ 基準)。
   // flash_count = 2 のとき従来の kDoubleFlash と同じ見た目になる。
   void renderFlash(float dt_sec, uint8_t flash_count, uint32_t base_color) {
-    pixels_->setBrightness(brightness_);
     const float unit_sec = double_flash_period_sec_ * kFlashUnitRatio;
     const float cycle_sec =
         double_flash_period_sec_ * (kFlashUnitRatio * 2.0f * flash_count + kFlashRestRatio -
@@ -454,11 +476,9 @@ class Led {
       }
     }
     fill(scaleColor(base_color, is_on ? kChasePeakBrightness : 0U));
-    pixels_->show();
   }
 
   void renderFade(float dt_sec, uint32_t base_color) {
-    pixels_->setBrightness(brightness_);
     if (dt_sec > 0.0f) {
       fade_phase_ += dt_sec / kFadePeriodSec;
       while (fade_phase_ >= 1.0f) {
@@ -470,13 +490,17 @@ class Led {
         fade_phase_ < 0.5f ? fade_phase_ * 2.0f : (1.0f - fade_phase_) * 2.0f;
     const uint8_t intensity = static_cast<uint8_t>(kChasePeakBrightness * triangle);
     fill(scaleColor(base_color, intensity));
-    pixels_->show();
   }
 
   void fill(uint32_t pixel_color) {
     for (uint16_t i = 0; i < led_num_; ++i) {
-      pixels_->setPixel(i, pixel_color);
+      setPixel(i, pixel_color);
     }
+  }
+
+  // 区間の中の番号で描く
+  void setPixel(uint16_t index, uint32_t pixel_color) {
+    strip_.setPixel(static_cast<uint16_t>(first_ + index), pixel_color);
   }
 
   uint32_t wheel(uint8_t wheel_pos) const {
@@ -529,12 +553,10 @@ class Led {
            static_cast<uint32_t>(blue);
   }
 
-  uint8_t serial_pin_;
-  uint16_t led_num_;
+  LedStrip &strip_;
+  uint16_t first_;
+  uint16_t led_num_;  // 区間の長さ
   unsigned long update_ms_;
-  uint8_t *drawing_memory_ = nullptr;
-  uint8_t *display_memory_ = nullptr;
-  WS2812Serial *pixels_ = nullptr;
   unsigned long last_update_ms_ = 0;
   uint8_t pattern_ = kOff;
   uint8_t color_ = kWhite;
@@ -548,9 +570,9 @@ class Led {
   float blink_period_sec_ = 0.5f;
   float double_flash_period_sec_ = 0.9f;
   uint8_t center_out_multi_base_brightness_ = 18U;
+  bool reverse_ = false;
   bool chase_waiting_ = false;
   unsigned long chase_wait_started_ms_ = 0;
-  uint8_t brightness_ = 32;
   static constexpr float kFadePeriodSec = 2.5f;
   static constexpr float kBlinkMediumPeriodSec = 0.5f;
   static constexpr float kBlinkSlowPeriodSec = 1.0f;

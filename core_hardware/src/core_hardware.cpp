@@ -37,14 +37,23 @@ CoreHardware::CoreHardware()
 
   can_sub_ = create_subscription<core_msgs::msg::CANArray>(
       "can/tx", 10, std::bind(&CoreHardware::can_cb, this, _1));
+  // 上のテープは 左の砲塔・中央 (全体)・右の砲塔 の 3 区間。led/upper は中央に出す
   led_upper_sub_ = create_subscription<core_msgs::msg::LedCommand>(
-      "led/upper", 10,
-      [this](const core_msgs::msg::LedCommand::SharedPtr msg) { store_led_command(0U, *msg); });
+      "led/upper", 10, [this](const core_msgs::msg::LedCommand::SharedPtr msg) {
+        store_led_value(kLedUpper, core_hardware::pack_led_command(msg->pattern, msg->color));
+      });
   led_bottom_sub_ = create_subscription<core_msgs::msg::LedCommand>(
-      "led/bottom", 10,
-      [this](const core_msgs::msg::LedCommand::SharedPtr msg) { store_led_command(1U, *msg); });
-  led_bottom2_sub_ = create_subscription<std_msgs::msg::UInt8>(
-      "led/bottom2", 10, std::bind(&CoreHardware::led_bottom2_cb, this, _1));
+      "led/bottom", 10, [this](const core_msgs::msg::LedCommand::SharedPtr msg) {
+        store_led_value(kLedBottom, core_hardware::pack_led_command(msg->pattern, msg->color));
+      });
+  led_upper_left_sub_ = create_subscription<core_msgs::msg::LedCommand>(
+      "led/upper_left", 10, [this](const core_msgs::msg::LedCommand::SharedPtr msg) {
+        store_turret_led_command(kLedUpperLeft, *msg);
+      });
+  led_upper_right_sub_ = create_subscription<core_msgs::msg::LedCommand>(
+      "led/upper_right", 10, [this](const core_msgs::msg::LedCommand::SharedPtr msg) {
+        store_turret_led_command(kLedUpperRight, *msg);
+      });
   timer_ = create_wall_timer(10ms, std::bind(&CoreHardware::timer_cb, this));
   status_timer_ = create_wall_timer(100ms, std::bind(&CoreHardware::status_timer_cb, this));
 
@@ -209,21 +218,35 @@ void CoreHardware::handle_uint8_packet(uint8_t id, const std::vector<uint8_t>& d
   }
 }
 
-void CoreHardware::store_led_command(std::size_t slot, const core_msgs::msg::LedCommand& msg) {
-  led_last_value_[slot] = core_hardware::pack_led_command(msg.pattern, msg.color);
+void CoreHardware::store_led_value(LedSlot slot, uint16_t value) {
+  led_last_value_[slot] = value;
   led_last_rx_tp_[slot] = std::chrono::steady_clock::now();
+}
+
+void CoreHardware::store_turret_led_command(LedSlot slot, const core_msgs::msg::LedCommand& msg) {
+  const std::optional<uint8_t> packed = core_hardware::pack_turret_led_byte(msg.pattern, msg.color);
+  if (!packed.has_value()) {
+    // 1 byte に収まらない指令は「指令なし」にして、Teensy 側で目に見えるようにする
+    RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "turret LED command (pattern=%u, color=%u) on %s does not fit in 1 byte "
+        "(pattern <= %u, color <= %u); sending 'no command'",
+        msg.pattern, msg.color, slot == kLedUpperLeft ? "led/upper_left" : "led/upper_right",
+        core_hardware::kTurretLedMaxPattern, core_hardware::kTurretLedMaxColor);
+  }
+  store_led_value(slot, packed.value_or(0U));
 }
 
 void CoreHardware::update_led_tape() {
   const auto now_tp = std::chrono::steady_clock::now();
-  for (std::size_t slot = 0; slot < led_last_value_.size(); ++slot) {
-    latest_command_.led_tape[slot] = core_hardware::led_tape_output(
+  const auto output = [&](LedSlot slot) {
+    return core_hardware::led_tape_output(
         led_last_value_[slot], led_last_rx_tp_[slot], now_tp, led_timeout_);
-  }
-}
-
-void CoreHardware::led_bottom2_cb(const std_msgs::msg::UInt8::SharedPtr msg) {
-  latest_command_.led_tape[2] = msg->data;
+  };
+  latest_command_.led_tape[0] = output(kLedUpper);
+  latest_command_.led_tape[1] = output(kLedBottom);
+  latest_command_.led_tape[2] = core_hardware::pack_turret_led_pair(
+      static_cast<uint8_t>(output(kLedUpperLeft)), static_cast<uint8_t>(output(kLedUpperRight)));
 }
 
 int main(int argc, char* argv[]) {
