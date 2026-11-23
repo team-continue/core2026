@@ -55,12 +55,79 @@ inline double step_toward_angle(double current, double goal, double max_step)
 }
 
 // 腰を車体の正面に向ける目標の向き [rad]。IMU は上半身にあるので、
-// 車体の正面の向き = 上半身の向き - 腰の角度 (車体の正面からのずれ)
+// 車体の正面の向き = 上半身の向き + 腰の角度。腰の角度は waist_direction × (waist_position −
+// waist_front_offset) で、上半身から見た車体の向き（車体 − 上半身）。body_control_node が上半身の座標の
+// 指令を車体の座標へ回す角度（invert_kinematics_calc）と同じ決め方
 // waist_direction は腰のモータの角度の正の向きが、ワールドの yaw の正の向きと同じなら 1、逆なら -1
 inline double front_world_target(
   double world_angle, double waist_position, double waist_front_offset, double waist_direction)
 {
-  return normalize_angle(world_angle - waist_direction * (waist_position - waist_front_offset));
+  return normalize_angle(world_angle + waist_direction * (waist_position - waist_front_offset));
+}
+
+// 腰のモータの回る速さに足す先回り [rad/s] = 車体の回転（body_omega）− 上半身を回したい速さ。
+// 上半身の回る速さ = 車体の回る速さ − 腰の回る速さ なので、上半身は回したい速さで回り始め、帰還は残りの
+// ずれだけを詰める。先回りが車体の回転だけだと、上半身は帰還（比例 2.0）だけで目標を追い、回したい速さの
+// 約半分 [rad] 遅れる（0.5rad/s で約 0.25rad）。
+// 上半身を回したい速さは、FRONT なら操作の回転（body_omega_manual。無限回転の分は打ち消す）、TURRET なら
+// 操作の yaw_target_rate（車体が回ってもワールドでの向きを保つ）。届いていなければ nullopt を渡し、車体の
+// 回転を全部打ち消す。body_omega がなければ 0
+inline double waist_feedforward(std::optional<double> body_omega, std::optional<double> upper_rate)
+{
+  if (!body_omega || !std::isfinite(*body_omega)) {
+    return 0.0;
+  }
+  if (upper_rate && std::isfinite(*upper_rate)) {
+    return *body_omega - *upper_rate;
+  }
+  return *body_omega;
+}
+
+// 操作の yaw_target_rate が動いているか。0 でない速さを最後に受けてから hold_sec の間は動いているとみなす
+// （操作を止めても、すぐには自律移動の向きに戻さない）
+class OperatorYawActivity
+{
+public:
+  explicit OperatorYawActivity(double hold_sec, double threshold = 1e-3)
+  : hold_sec_(hold_sec), threshold_(threshold) {}
+
+  void update(double rate, double now_sec)
+  {
+    if (std::isfinite(rate) && std::abs(rate) > threshold_) {
+      last_active_sec_ = now_sec;
+    }
+  }
+
+  bool active(double now_sec) const
+  {
+    return last_active_sec_.has_value() && now_sec - *last_active_sec_ <= hold_sec_;
+  }
+
+private:
+  double hold_sec_;
+  double threshold_;
+  std::optional<double> last_active_sec_;
+};
+
+// TURRET で上半身の目標を回す速さ。操作が動いていれば操作、そうでなければ自律移動（auto/yaw_target_rate）、
+// どちらも届いていなければ操作の値（届いていなければ nullopt で、目標を保つ）
+inline std::optional<double> turret_rate(
+  std::optional<double> operator_rate, bool operator_active, std::optional<double> auto_rate)
+{
+  if (operator_active && operator_rate) {
+    return operator_rate;
+  }
+  if (auto_rate) {
+    return auto_rate;
+  }
+  return operator_rate;
+}
+
+// 腰のモードの切り替えを受けるか。車体が回り続けている（回転モード中）間は、TURRET から FRONT へは
+// 切り替えない（FRONT は上半身を車体と一体に動かすモードなので、回転モードと組み合わせない）
+inline bool accept_yaw_mode(YawMode current, YawMode requested, int rotation_mode)
+{
+  return !(current == YawMode::kTurret && requested == YawMode::kFront && rotation_mode != 0);
 }
 
 inline bool quaternion_to_yaw(double x, double y, double z, double w, double & yaw)

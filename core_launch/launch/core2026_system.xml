@@ -1,4 +1,9 @@
 <launch>
+  <!-- 自律移動の地図（navigation.launch.py の map_name）。core_launch/maps に make_map_files.py で作った地図の名前も使える -->
+  <arg name="map_name" default="core1_field"/>
+  <!-- 計画に重ねる設定（navigation.launch.py の planning_params_file）。実機で初めて試すときは real_cautious -->
+  <arg name="planning_params_file" default=""/>
+
   <!-- ROS 2 Bridge (Android 操作UI用。/bridge/connected を core_mode の diagnostic が監視する) -->
   <node pkg="ros2_ws_bridge" exec="bridge" name="ros2_websocket_bridge" output="screen">
     <param name="port" value="8765"/>
@@ -7,6 +12,8 @@
   <!-- Navigation -->
   <include file="$(find-pkg-share core_launch)/launch/navigation.launch.py">
     <arg name="environment" value="real"/>
+    <arg name="map_name" value="$(var map_name)"/>
+    <arg name="planning_params_file" value="$(var planning_params_file)"/>
     <!-- <arg name="use_localization" value="true"/> -->
     <!-- <arg name="use_rviz" value="false"/> -->
   </include>

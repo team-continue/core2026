@@ -1,0 +1,69 @@
+# グローバル計画（JPS）。占有の半径は footprint の外接円半径に margin_m を足した値。
+/**:
+  ros__parameters:
+    planner:
+      rate_hz: 2.0
+      resolution_m: 0.1
+      # これより遅い相手は止まっているとみなし、経路の閉塞の判定に使う
+      blocked_speed_mps: 0.3
+      # 局所計画の到着（到達が難しいゴールで着いたことにした場合を含む。stuck_recovery.near_goal_accept_m
+      # 1.0）でゴールを解除する、機体とゴールの距離の上限
+      reached_clear_radius_m: 1.1
+      # JPS の 8 方向の折れ線を、ジャンプポイントの間のセルにも見通しで飛んで短くする。false ではジャンプ
+      # ポイントの間だけを直線にするので、本当は直線で行ける所に 45° などの折れが残り、そこで減速していた
+      any_angle_shortcut: true
+      # 探索の方法。jps（8 方向）/ theta_star（Theta*。任意の角度）/ jps_theta（JPS に Theta* の親の飛ばしを
+      # 入れたもの。任意の角度）/ hybrid_astar（曲率に上限のある円弧でつなぐ。見つからなければ JPS）。
+      # any_angle_shortcut は jps のときだけ使う
+      search: jps
+      # search が hybrid_astar のときの設定（起動したときだけ読む）
+      hybrid:
+        step_m: 0.3
+        min_radius_m: 1.0
+        curvature_weight: 0.5
+        curvature_change_weight: 0.5
+        max_expansions: 100000
+      # 局所計画が行き詰まった所（/planning/stuck_point）を、止まっている相手と同じく通れない円にして、
+      # duration_s の間そこを避けて計画する（0 で使わない）。ゴールから goal_handling.occupied_radius_m と
+      # 半径の和より近い点は塞がない（ゴールが塞がれたとみなされるため）
+      stuck_block:
+        radius_m: 0.4
+        duration_s: 20.0
+      # 静止物（地図の固定物と柵）と止まっている相手の周りでだけ、JPS の折れ線を曲線にする。障害物から
+      # 遠い直線は動かさない。膨らみの外（外接円の半径 + footprint.margin_m）は守り、守れなければ折れ線を
+      # 出す。機体の位置からの区間がもともと膨らみの中にあるときは、元の折れ線より障害物に近づけない。
+      # enabled: false で元の折れ線。値は arena_static.pcd の 22 区間（check_planning のゴール）で比べた
+      smoothing:
+        enabled: true
+        # 点を動かす方法。laplacian: 両隣の中点へ引く（線の長さを小さくする。曲がりは折れ線の角に集まる）。
+        # bending: 曲げのエネルギー（2 階差分の二乗和）を小さくする。曲がりを bending_length_m ほどに広げて
+        # 最大の曲率を下げる。corridor: bending と同じ目的を、各点が膨らみの外の範囲にあるという条件の下で
+        # 解く（ADMM）（起動したときだけ読む）
+        mode: laplacian
+        bending_length_m: 1.0
+        # 格子（resolution_m）と同じ。0.05m は時間が倍（平均 0.52ms）で形は同じ（曲率 1.3/m）。
+        # 0.2m は 1 点の曲がりが 12° になる
+        spacing_m: 0.1
+        # 膨らみの外に、さらに取る余裕。膨らみは狭い通路を使わないときの半径（外接円 + margin_m、0.67m）で
+        # 数え、中心から静止物まで約 1.27m になる（狭い通路の中では両側から押されて真ん中に来る）。
+        # 局所計画は機体の角が margin_m + keep_out_range_m + 速さ × static_margin_time_s（2.5m/s で 0.85m）より
+        # 近いと罰を受け、速いときは静止物から中心で約 1.3〜1.6m 離れて走る。0.3m（約 0.97m）では、その分だけ
+        # 機体が線の外へ膨らんでいた（撮影の記録で、0.3m 超のはみ出しの 1〜2 割と、残りの多く）。
+        # tracking_bench（滑りなし、3m/s、obstacle_goals 16 回）で、線からのはみ出しの 95% 点 0.31→0.15m、
+        # 曲がりの外 0.35→0.18m、周回は同じ（35.2→35.3 秒）。線の長さは短い区間で 10% 以上延びる
+        # （0.4m で 10.6%、0.5m で 14.6%）が、機体はもともとその線を走っていた
+        extra_clearance_m: 0.6
+        # 50 回でほぼ形が決まる（曲率 1.12/m、200 回で 1.13/m）。200 回で 1 回 平均 0.3ms、最大 0.8ms
+        iterations: 200
+        # 0.1〜1.0 で形はほとんど変わらない（1 点の最大の曲がり 6.5〜7.2°）
+        smooth_weight: 0.25
+        clearance_weight: 0.25
+    goal_handling:
+      # ゴールの上に障害物（止まっている相手）があり、wait_s（既定 3 秒）待ってもどかなければ、代わりのゴールへ
+      # 行かずに FAILED で止まる（2026-11-16）。false で以前の動き（ゴールの周りの空いた所へ行く）
+      fail_when_occupied: true
+      # 止まっている相手（と局所計画が行き詰まった所）を避けるとゴールへの経路がない状態が blocked_wait_s 続いたら、
+      # FAILED で止まる（2026-11-16）。false で以前の動き（固定物だけで計画し直し、塞がれた所へ向かう。
+      # 通れる 3 つの通路を止まったロボットで塞いだ試験では、90 秒の間通路の間を動き回った）
+      fail_when_blocked: true
+      blocked_wait_s: 5.0

@@ -178,18 +178,68 @@ TEST(TargetAngleControllerTest, StepTowardAngleMovesSlowlyAlongTheShorterWay)
   EXPECT_NEAR(core_body_controller::step_toward_angle(0.3, 1.0, 0.0), 0.3, 1e-12);
 }
 
-TEST(TargetAngleControllerTest, FrontTargetRemovesTheWaistOffsetFromTheUpperBodyYaw)
+TEST(TargetAngleControllerTest, FrontTargetAddsTheWaistAngleToTheUpperBodyYaw)
 {
-  // 上半身が 1.0 rad、腰が車体の正面から 0.4 rad 回っていれば、車体の正面は 0.6 rad
-  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.0, 1.0), 0.6, 1e-12);
+  // 上半身が 1.0 rad、腰の角度（車体 − 上半身。body_control_node と同じ決め方）が 0.4 rad なら、
+  // 車体の正面は 1.4 rad
+  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.0, 1.0), 1.4, 1e-12);
   // 腰の角度 0 が正面からずれている (オフセット 0.1 rad)
-  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.1, 1.0), 0.7, 1e-12);
+  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.1, 1.0), 1.3, 1e-12);
   // モータの正の向きがワールドの yaw と逆
-  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.0, -1.0), 1.4, 1e-12);
+  EXPECT_NEAR(core_body_controller::front_world_target(1.0, 0.4, 0.0, -1.0), 0.6, 1e-12);
   // 角度は -π〜π に収める
   EXPECT_NEAR(
-    core_body_controller::front_world_target(-3.0, 0.5, 0.0, 1.0), 2.7831853071795862,
+    core_body_controller::front_world_target(3.0, 0.5, 0.0, 1.0), -2.7831853071795862,
     1e-12);
+}
+
+TEST(TargetAngleControllerTest, FeedforwardTurnsTheUpperBodyAtTheWantedRate)
+{
+  using core_body_controller::waist_feedforward;
+  // FRONT: 無限回転 -3.14 rad/s と操作 0.5 rad/s（車体 -2.64 rad/s）。上半身は操作の 0.5 rad/s で回す
+  EXPECT_NEAR(waist_feedforward(-2.64, 0.5), -3.14, 1e-12);
+  // 無限回転なしの FRONT は打ち消さない（上半身は車体と一緒に回る）
+  EXPECT_NEAR(waist_feedforward(0.5, 0.5), 0.0, 1e-12);
+  // TURRET: 車体 -2.64 rad/s の間に、操作で上半身を -0.8 rad/s で回す
+  EXPECT_NEAR(waist_feedforward(-2.64, -0.8), -1.84, 1e-12);
+  // 回したい速さが届いていなければ、車体の回転を全部打ち消す。車体の回転がなければ 0
+  EXPECT_NEAR(waist_feedforward(0.5, std::nullopt), 0.5, 1e-12);
+  EXPECT_NEAR(waist_feedforward(std::nullopt, 0.5), 0.0, 1e-12);
+}
+
+TEST(TargetAngleControllerTest, OperatorStaysActiveForTheHoldTime)
+{
+  core_body_controller::OperatorYawActivity activity(1.0);
+  EXPECT_FALSE(activity.active(0.0));
+  activity.update(0.0, 0.0);  // 0 の操作では動いていない
+  EXPECT_FALSE(activity.active(0.0));
+  activity.update(0.5, 2.0);
+  EXPECT_TRUE(activity.active(2.5));
+  activity.update(0.0, 2.6);  // 止めても hold_sec の間は動いているとみなす
+  EXPECT_TRUE(activity.active(3.0));
+  EXPECT_FALSE(activity.active(3.1));
+}
+
+TEST(TargetAngleControllerTest, TurretRatePrefersTheOperatorThenTheAutoRate)
+{
+  using core_body_controller::turret_rate;
+  // 操作が動いていれば操作、止まっていれば自律移動
+  EXPECT_DOUBLE_EQ(*turret_rate(0.8, true, -0.3), 0.8);
+  EXPECT_DOUBLE_EQ(*turret_rate(0.0, false, -0.3), -0.3);
+  // 自律移動が届いていなければ操作の値。どちらもなければ目標を保つ
+  EXPECT_DOUBLE_EQ(*turret_rate(0.0, false, std::nullopt), 0.0);
+  EXPECT_FALSE(turret_rate(std::nullopt, false, std::nullopt).has_value());
+}
+
+TEST(TargetAngleControllerTest, FrontIsRefusedOnlyFromTurretDuringRotation)
+{
+  using core_body_controller::YawMode;
+  using core_body_controller::accept_yaw_mode;
+  EXPECT_FALSE(accept_yaw_mode(YawMode::kTurret, YawMode::kFront, 1));
+  EXPECT_FALSE(accept_yaw_mode(YawMode::kTurret, YawMode::kFront, 2));
+  EXPECT_TRUE(accept_yaw_mode(YawMode::kTurret, YawMode::kFront, 0));
+  EXPECT_TRUE(accept_yaw_mode(YawMode::kFront, YawMode::kTurret, 1));
+  EXPECT_TRUE(accept_yaw_mode(YawMode::kTurret, YawMode::kTurret, 1));
 }
 
 }  // namespace

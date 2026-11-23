@@ -1,0 +1,38 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -1051,17 +1051,31 @@
+             cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
+ 
+         /*** ROS subscribe initialization ***/
++        // 点群と、スキャンの終わりより後の IMU がそろったら、10ms のタイマーを待たずにすぐ処理する
++        // （タイマーを待つと、そろってから最大 10ms 遅れる）。タイマーは残し、受信のない間の処理に使う
+         if (p_pre->lidar_type == AVIA)
+         {
+-            sub_pcl_livox_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(lid_topic, 20, livox_pcl_cbk);
++            sub_pcl_livox_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(
++                lid_topic, 20, [this](livox_ros_driver2::msg::CustomMsg::UniquePtr msg) {
++                    livox_pcl_cbk(std::move(msg));
++                    timer_callback();
++                });
+         }
+         else
+         {
+-            sub_pcl_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lid_topic, rclcpp::SensorDataQoS(), standard_pcl_cbk);
++            sub_pcl_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
++                lid_topic, rclcpp::SensorDataQoS(), [this](sensor_msgs::msg::PointCloud2::UniquePtr msg) {
++                    standard_pcl_cbk(std::move(msg));
++                    timer_callback();
++                });
+         }
+         // 1 フレームの処理中は IMU を受け取れない。深さ 10（50ms 分）だと処理が遅れたときに IMU を失い、
+         // 姿勢が数十 cm ずれるので、1 秒分を確保する
+-        sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, 200, imu_cbk);
++        sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
++            imu_topic, 200, [this](sensor_msgs::msg::Imu::UniquePtr msg) {
++                imu_cbk(std::move(msg));
++                timer_callback();
++            });
+         pubLaserCloudFull_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered", 20);
+         pubLaserCloudFull_body_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_body", 20);
+         pubLaserCloudEffect_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_effected", 20);

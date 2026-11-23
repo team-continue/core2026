@@ -1,0 +1,8 @@
+# 姿勢、追跡結果、速度指令が途絶えたときの停止。無効にして動くときは警告を出し続ける。
+/**:
+  ros__parameters:
+    watchdog:
+      enabled: true
+      pose_timeout_s: 0.3
+      tracks_timeout_s: 0.3
+      cmd_timeout_s: 0.3

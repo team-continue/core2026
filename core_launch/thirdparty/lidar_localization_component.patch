@@ -1,0 +1,57 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -25,6 +25,7 @@
+ find_package(Python3 REQUIRED COMPONENTS Interpreter)
+ find_package(ament_cmake REQUIRED)
+ find_package(rclcpp_lifecycle REQUIRED)
++find_package(rclcpp_components REQUIRED)
+ find_package(lifecycle_msgs REQUIRED)
+ find_package(diagnostic_msgs REQUIRED)
+ find_package(std_msgs REQUIRED)
+@@ -69,12 +70,16 @@
+   src/component_pose_publisher.cpp
+   src/component_reinit_recovery.cpp
+   src/component_diagnostics.cpp
++  src/component_registration.cpp
+   src/ndt_omp_instantiation.cpp
+ )
+ target_link_libraries(lidar_localization_component Eigen3::Eigen)
+ 
++# A component container does not link rclcpp_lifecycle, so the library links it itself.
+ ament_target_dependencies(lidar_localization_component
+   rclcpp
++  rclcpp_components
++  rclcpp_lifecycle
+   tf2_ros
+   tf2_geometry_msgs
+   tf2_sensor_msgs
+@@ -87,6 +92,9 @@
+   pcl_conversions
+   ndt_omp_ros2
+ )
++# Lets PCLLocalization be loaded into a component container, so that it can share a process
++# (and intra-process messages) with the nodes that feed it. lidar_localization_node is unchanged.
++rclcpp_components_register_nodes(lidar_localization_component "PCLLocalization")
+ 
+ if(small_gicp_FOUND)
+   target_compile_definitions(lidar_localization_component PUBLIC LIDAR_LOCALIZATION_HAVE_SMALL_GICP=1)
+--- a/package.xml
++++ b/package.xml
+@@ -22,6 +22,7 @@
+   <build_depend>tf2_eigen</build_depend>
+   <build_depend>pcl_conversions</build_depend>
+   <depend>eigen</depend>
++  <depend>rclcpp_components</depend>
+   <!-- Optional: builds the bbs_cpp backend for the global localization node.
+        The build degrades gracefully (Python fallback) if it is unavailable. -->
+   <build_depend>pybind11_vendor</build_depend>
+--- /dev/null
++++ b/src/component_registration.cpp
+@@ -0,0 +1,7 @@
++// Registers PCLLocalization as an rclcpp component (see rclcpp_components_register_nodes in
++// CMakeLists.txt).
++#include <rclcpp_components/register_node_macro.hpp>
++
++#include "lidar_localization/lidar_localization_component.hpp"
++
++RCLCPP_COMPONENTS_REGISTER_NODE(PCLLocalization)

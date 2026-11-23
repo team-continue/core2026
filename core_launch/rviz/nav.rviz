@@ -1,0 +1,236 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Tool Properties
+    Name: Tool Properties
+  - Class: rviz_common/Time
+    Name: Time
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Reference Frame: map
+      Plane Cell Count: 40
+      Cell Size: 1
+      Color: 80; 80; 90
+    # 起動した地図（map_publisher）。構造物と進入禁止ゾーンが占有。最後の値を残して出すので Transient Local で受ける
+    - Class: rviz_default_plugins/Map
+      Name: Map
+      Enabled: true
+      Alpha: 0.6
+      Color Scheme: map
+      Draw Behind: true
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: false
+      Show Names: true
+      Show Arrows: true
+      Show Axes: true
+    # 推定した自己位置（map→odom→base_link の TF）に描く
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Alpha: 0.8
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+    # 自己位置が合っているかを見る
+    - Class: rviz_common/Group
+      Name: Localization
+      Enabled: true
+      Displays:
+        # 地図照合（NDT）が使う地図の点群（灰色）
+        - Class: rviz_default_plugins/PointCloud2
+          Name: Prior map (NDT)
+          Enabled: true
+          Topic:
+            Depth: 1
+            Durability Policy: Transient Local
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /localization/initial_map
+          Style: Points
+          Size (Pixels): 1
+          Alpha: 0.7
+          Color Transformer: FlatColor
+          Color: 150; 150; 165
+          Decay Time: 0
+        # いまの点群（FAST-LIO が位置合わせしたもの、桃色）。自己位置が合っていれば灰色の地図に重なり、
+        # ずれると壁や構造物が二重に見える
+        - Class: rviz_default_plugins/PointCloud2
+          Name: Scan (now)
+          Enabled: true
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /localization/cloud_registered
+          Style: Points
+          Size (Pixels): 3
+          Alpha: 1
+          Color Transformer: FlatColor
+          Color: 255; 70; 200
+          Decay Time: 0
+        # 自己位置の状態（localization_health）。機体の床の円の色（OK 緑・DEGRADED 黄・FAILED 赤・届かない 灰）と、
+        # 評価値・最後に地図照合が成功してからの時間の文字（localization_status_marker_node.py が出す）
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Status
+          Enabled: true
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /localization/status_markers
+        # Gazebo の真値（シミュレーションだけ）。機体のモデルと重なっていれば自己位置が合っている
+        - Class: rviz_default_plugins/Odometry
+          Name: Ground truth (sim)
+          Enabled: true
+          Keep: 1
+          Shape:
+            Value: Axes
+            Axes Length: 0.7
+            Axes Radius: 0.05
+          Covariance:
+            Value: false
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /ground_truth/odom
+        # 地図照合が出した姿勢と共分散
+        - Class: rviz_default_plugins/PoseWithCovariance
+          Name: NDT pose
+          Enabled: true
+          Shape: Arrow
+          Color: 255; 140; 40
+          Alpha: 1
+          Shaft Length: 0.6
+          Shaft Radius: 0.05
+          Head Length: 0.25
+          Head Radius: 0.12
+          Covariance:
+            Value: true
+          Topic:
+            Depth: 1
+            Durability Policy: Transient Local
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /localization/pcl_pose
+        # 地図照合の姿勢の軌跡。跳びが線の折れで見える（長く走ると重くなるので既定は切る）
+        - Class: rviz_default_plugins/Path
+          Name: NDT path
+          Enabled: false
+          Color: 255; 140; 40
+          Line Style: Lines
+          Alpha: 1
+          Topic:
+            Depth: 1
+            Durability Policy: Transient Local
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /localization/path
+    - Class: rviz_common/Group
+      Name: Planning
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/Path
+          Name: Global plan
+          Enabled: true
+          Color: 80; 220; 120
+          Line Style: Billboards
+          Line Width: 0.06
+          Alpha: 1
+          Topic:
+            Depth: 1
+            Durability Policy: Transient Local
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /planning/plan
+        - Class: rviz_default_plugins/Path
+          Name: Local plan
+          Enabled: true
+          Color: 255; 170; 60
+          Line Style: Billboards
+          Line Width: 0.05
+          Alpha: 1
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /planning/local_plan
+        # 計画が受けたゴール（control_mode_manager が /ui/auto/start から渡す）
+        - Class: rviz_default_plugins/Pose
+          Name: Goal
+          Enabled: true
+          Shape: Arrow
+          Color: 255; 210; 0
+          Shaft Length: 0.8
+          Shaft Radius: 0.08
+          Head Length: 0.3
+          Head Radius: 0.2
+          Topic:
+            Depth: 1
+            Durability Policy: Transient Local
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /behavior/goal_pose
+        # 検出した物体の外形（odom 座標系の LINE_LIST）
+        - Class: rviz_default_plugins/Marker
+          Name: Detections
+          Enabled: true
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /perception/detections
+  Global Options:
+    Background Color: 30; 30; 34
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    # 自己位置をやり直す（地図照合の lidar_localization が /initialpose を受ける）
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+    # 目標を決めて自動で走らせる（操縦の UI の AUTO と同じ /ui/auto/start。control_mode_manager が自動に入る）
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: /ui/auto/start
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Current View
+      Target Frame: map
+      Scale: 26.5
+      X: 0
+      Y: 0
+      Angle: 0
+    Saved: ~
+Window Geometry:
+  Height: 900
+  Width: 1400

@@ -1,0 +1,2481 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index e5ef5d1..197c12f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -633,6 +633,12 @@ if(BUILD_TESTING)
+   add_test(NAME initial_pose_bridge_reset COMMAND test_initial_pose_bridge_reset)
+   set_tests_properties(initial_pose_bridge_reset PROPERTIES TIMEOUT 30)
+ 
++  add_executable(test_robust_gate_node test/test_robust_gate_node.cpp)
++  target_link_libraries(test_robust_gate_node
++    lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
++  add_test(NAME robust_gate_node COMMAND test_robust_gate_node)
++  set_tests_properties(robust_gate_node PROPERTIES TIMEOUT 30)
++
+   add_executable(test_localization_followup_integration test/test_localization_followup_integration.cpp)
+   target_link_libraries(test_localization_followup_integration
+     lidar_localization_component ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+@@ -841,6 +847,48 @@ if(BUILD_TESTING)
+     COMMAND test_measurement_gate_policy
+   )
+ 
++  add_executable(test_seed_guard_release_policy
++    test/test_seed_guard_release_policy.cpp)
++  target_include_directories(test_seed_guard_release_policy PRIVATE
++    include)
++  target_link_libraries(test_seed_guard_release_policy
++    Eigen3::Eigen)
++  add_test(
++    NAME seed_guard_release_policy
++    COMMAND test_seed_guard_release_policy
++  )
++
++  add_executable(test_relative_fitness_policy
++    test/test_relative_fitness_policy.cpp)
++  target_include_directories(test_relative_fitness_policy PRIVATE
++    include)
++  add_test(
++    NAME relative_fitness_policy
++    COMMAND test_relative_fitness_policy
++  )
++
++  add_executable(test_map_to_odom_step_policy
++    test/test_map_to_odom_step_policy.cpp)
++  target_include_directories(test_map_to_odom_step_policy PRIVATE
++    include)
++  target_link_libraries(test_map_to_odom_step_policy
++    Eigen3::Eigen)
++  add_test(
++    NAME map_to_odom_step_policy
++    COMMAND test_map_to_odom_step_policy
++  )
++
++  add_executable(test_motion_gate_policy
++    test/test_motion_gate_policy.cpp)
++  target_include_directories(test_motion_gate_policy PRIVATE
++    include)
++  target_link_libraries(test_motion_gate_policy
++    Eigen3::Eigen)
++  add_test(
++    NAME motion_gate_policy
++    COMMAND test_motion_gate_policy
++  )
++
+   add_executable(test_localization_update_policy
+     test/test_localization_update_policy.cpp)
+   target_include_directories(test_localization_update_policy PRIVATE
+diff --git a/include/lidar_localization/lidar_localization_component.hpp b/include/lidar_localization/lidar_localization_component.hpp
+index 8589e63..3f25844 100644
+--- a/include/lidar_localization/lidar_localization_component.hpp
++++ b/include/lidar_localization/lidar_localization_component.hpp
+@@ -75,6 +75,10 @@
+ #include "lidar_localization/imu_queue_policy.hpp"
+ #include "lidar_localization/imu_seed_consistency_policy.hpp"
+ #include "lidar_localization/measurement_gate_policy.hpp"
++#include "lidar_localization/map_to_odom_step_policy.hpp"
++#include "lidar_localization/motion_gate_policy.hpp"
++#include "lidar_localization/seed_guard_release_policy.hpp"
++#include "lidar_localization/relative_fitness_policy.hpp"
+ #include "lidar_localization/localization_update_policy.hpp"
+ #include "lidar_localization/pose_backend_result_policy.hpp"
+ #include "lidar_localization/pose_covariance_policy.hpp"
+@@ -486,6 +490,11 @@ public:
+   bool enable_map_odom_anchor_fitness_gate_{false};
+   double map_odom_anchor_max_fitness_{1.5};
+   double map_odom_anchor_max_correction_rotation_deg_{10.0};
++  // Opt-in step limit of the broadcast map -> odom (map_to_odom_step_policy.hpp).
++  // last_good_map_to_odom_ stays the target, which the registration seed uses;
++  // only the TF broadcast moves toward it step by step. Resets snap to it.
++  lidar_localization::MapToOdomStepParams map_to_odom_step_params_;
++  lidar_localization::MapToOdomStepState map_to_odom_step_;
+   bool viz_downsample_{false};
+   double viz_voxel_leaf_size_{0.5};
+   bool predict_pose_from_previous_delta_{true};
+@@ -544,6 +553,25 @@ public:
+   double last_gated_correction_translation_m_{std::numeric_limits<double>::infinity()};
+   double last_gated_correction_yaw_deg_{std::numeric_limits<double>::infinity()};
+   double last_odom_seed_stamp_sec_{std::numeric_limits<double>::quiet_NaN()};
++  // Whether the last gated update passed the released seed correction guard
++  // (nextSettledAccepts), and the map -> odom candidates of the rejected
++  // updates since the last accept, for the consistent release
++  // (seed_guard_release_policy.hpp).
++  bool last_gated_seed_guard_released_{false};
++  std::deque<Eigen::Isometry3d> seed_guard_rejected_candidates_;
++  // The fitness of the recently accepted updates, and the limits relative to
++  // it for the consistent release and the local re-acquisition proposal
++  // (relative_fitness_policy.hpp).
++  std::deque<double> recent_accepted_fitness_;
++  lidar_localization::RelativeFitnessParams seed_guard_release_fitness_params_;
++  lidar_localization::RelativeFitnessParams local_reacquisition_fitness_params_;
++  // The odom -> base_link this scan was seeded with (unset without an odometry
++  // seed), and the previous one, for the release candidates and the motion gate.
++  std::optional<Eigen::Isometry3d> scan_seed_odom_to_base_;
++  std::optional<lidar_localization::TimedOdomToBase> previous_seed_odom_to_base_;
++  // Opt-in motion-aware skip (motion_gate_policy.hpp) and this scan's decision.
++  lidar_localization::MotionGateParams motion_gate_params_;
++  lidar_localization::MotionGateDecision motion_gate_;
+   // Lock order: localization state (when needed), then short twist history lock.
+   std::mutex twist_history_mutex_;
+   std::uint64_t twist_subscription_generation_{0};
+@@ -617,6 +645,11 @@ public:
+   lidar_localization::MeasurementGateDecision evaluateMeasurementGateForAttempt(
+     const lidar_localization::AlignmentAttempt & attempt,
+     lidar_localization::RegistrationSeedSource seed_source);
++  // The map -> odom an attempt implies with this scan's odometry seed (unset
++  // without one), and whether it allows the seed correction guard's release.
++  std::optional<Eigen::Isometry3d> scanCandidateMapToOdom(
++    const lidar_localization::AlignmentAttempt & attempt) const;
++  bool seedGuardReleaseConsistent(const lidar_localization::AlignmentAttempt & attempt) const;
+   void applySoftOdomCorrectionGate(lidar_localization::AlignmentPipelineResult & result);
+   void logAlignmentPipelineRecovery(
+     const lidar_localization::AlignmentPipelineResult & pipeline_result);
+@@ -749,14 +782,24 @@ public:
+     const geometry_msgs::msg::TransformStamped & map_to_base_link_stamped,
+     bool freeze_as_last_good = true);
+   void republishFrozenMapToOdomTransform(const builtin_interfaces::msg::Time & stamp);
++  // The map -> odom to broadcast for `target` under the step limit
++  // (map_to_odom_step_policy.hpp); the target itself while the limit is off.
++  // odom_to_base_link, when given, is the robot pose the step is taken about;
++  // otherwise the latest odom -> base_link is used.
++  geometry_msgs::msg::TransformStamped stepPublishedMapToOdom(
++    const geometry_msgs::msg::TransformStamped & target,
++    const geometry_msgs::msg::TransformStamped * odom_to_base_link = nullptr);
+   void publishOdomBridgePose(
+     const builtin_interfaces::msg::Time & stamp,
+     const geometry_msgs::msg::TransformStamped & frozen_map_to_odom);
++  // odom_to_base, when given, receives the odom -> base_link the bridge pose was
++  // composed from.
+   bool lookupOdomBridgePoseMatrix(
+     const builtin_interfaces::msg::Time & stamp,
+     Eigen::Matrix4f & out_pose_matrix,
+     bool use_latest_odom_transform = false,
+-    builtin_interfaces::msg::Time * resolved_stamp = nullptr);
++    builtin_interfaces::msg::Time * resolved_stamp = nullptr,
++    Eigen::Isometry3d * odom_to_base = nullptr);
+   void publishBridgePoseAsRejectedOutput(const builtin_interfaces::msg::Time & stamp);
+   void fillPoseCovariance(double fitness_score);
+ 
+diff --git a/include/lidar_localization/map_to_odom_step_policy.hpp b/include/lidar_localization/map_to_odom_step_policy.hpp
+new file mode 100644
+index 0000000..ecf65a5
+--- /dev/null
++++ b/include/lidar_localization/map_to_odom_step_policy.hpp
+@@ -0,0 +1,187 @@
++#ifndef LIDAR_LOCALIZATION_MAP_TO_ODOM_STEP_POLICY_HPP_
++#define LIDAR_LOCALIZATION_MAP_TO_ODOM_STEP_POLICY_HPP_
++
++#include <cmath>
++#include <limits>
++#include <string>
++#include <vector>
++
++#include <Eigen/Geometry>
++
++#include "lidar_localization/alignment_diagnostics_policy.hpp"
++
++namespace lidar_localization
++{
++
++// Step limiting of the broadcast map -> odom.
++//
++// An accepted registration replaces the map -> odom anchor at once, so the
++// map -> base_link read off TF jumps by the whole correction.  With a step
++// limit the broadcast map -> odom instead moves toward the accepted one (the
++// target) by at most max_translation_m and max_yaw_deg per publish cycle; the
++// rest carries over to the following cycles, including the frozen republish on
++// rejected scans.  The registration seed keeps using the target.
++//
++// Steps are measured at the robot.  A rotation of map -> odom turns the odom
++// frame about the map origin, so far from the odom origin even a small heading
++// correction moves the translation part of map -> odom a lot while the robot
++// itself barely moves.  Both transforms are therefore applied to the robot's
++// position in odom (the pivot): the translation is the distance between the
++// two robot positions, and the rotation turns about the robot.
++
++constexpr double kMapToOdomStepRadiansToDegrees = 180.0 / 3.14159265358979323846;
++
++struct MapToOdomStepParams
++{
++  // Largest move of the robot's map position per publish cycle [m]. 0 = no limit.
++  double max_translation_m{0.0};
++  // Largest heading change per publish cycle [deg]. 0 = no limit.
++  double max_yaw_deg{0.0};
++};
++
++inline bool isMapToOdomStepLimitEnabled(const MapToOdomStepParams & params)
++{
++  return params.max_translation_m > 0.0 || params.max_yaw_deg > 0.0;
++}
++
++// Yaw (ZYX) of a rotation, as an absolute angle in degrees; the same measure
++// as computeAlignmentCorrectionMetrics.
++inline double absoluteYawDeg(const Eigen::Matrix3d & rotation)
++{
++  return std::abs(std::atan2(rotation(1, 0), rotation(0, 0))) * kMapToOdomStepRadiansToDegrees;
++}
++
++struct MapToOdomDifference
++{
++  double translation_m{0.0};
++  double yaw_deg{0.0};
++};
++
++// How far the robot at pivot_in_odom moves on the map, and how much its
++// heading turns, when map -> odom changes from `from` to `to`.
++inline MapToOdomDifference mapToOdomDifferenceAt(
++  const Eigen::Isometry3d & from,
++  const Eigen::Isometry3d & to,
++  const Eigen::Vector3d & pivot_in_odom)
++{
++  return {
++    (to * pivot_in_odom - from * pivot_in_odom).norm(),
++    absoluteYawDeg(to.linear() * from.linear().transpose())};
++}
++
++struct MapToOdomStep
++{
++  Eigen::Isometry3d map_to_odom{Eigen::Isometry3d::Identity()};
++  bool reached_target{true};
++};
++
++// One step from `from` toward `target`: the robot position moves by at most
++// max_translation_m and the heading turns by at most max_yaw_deg, the rotation
++// being about the robot.  Within both limits the step ends on the target itself.
++inline MapToOdomStep stepMapToOdomToward(
++  const Eigen::Isometry3d & from,
++  const Eigen::Isometry3d & target,
++  const Eigen::Vector3d & pivot_in_odom,
++  const MapToOdomStepParams & params)
++{
++  const Eigen::Vector3d robot_from = from * pivot_in_odom;
++  const Eigen::Vector3d displacement = target * pivot_in_odom - robot_from;
++  const Eigen::Matrix3d rotation = target.linear() * from.linear().transpose();
++  const double distance = displacement.norm();
++  const double yaw_deg = absoluteYawDeg(rotation);
++  const double translation_fraction =
++    params.max_translation_m > 0.0 && distance > params.max_translation_m ?
++    params.max_translation_m / distance : 1.0;
++  const double rotation_fraction =
++    params.max_yaw_deg > 0.0 && yaw_deg > params.max_yaw_deg ?
++    params.max_yaw_deg / yaw_deg : 1.0;
++  if (translation_fraction >= 1.0 && rotation_fraction >= 1.0) {
++    return {target, true};
++  }
++
++  // The whole relative rotation is scaled, so a tilt difference closes with the yaw.
++  Eigen::Matrix3d partial_rotation = rotation;
++  if (rotation_fraction < 1.0) {
++    const Eigen::AngleAxisd angle_axis(rotation);
++    partial_rotation = Eigen::AngleAxisd(
++      angle_axis.angle() * rotation_fraction, angle_axis.axis()).toRotationMatrix();
++  }
++  MapToOdomStep step;
++  step.reached_target = false;
++  step.map_to_odom.linear() = partial_rotation * from.linear();
++  // Turn about the robot, then move it along the displacement.
++  step.map_to_odom.translation() =
++    partial_rotation * (from.translation() - robot_from) + robot_from +
++    translation_fraction * displacement;
++  return step;
++}
++
++struct MapToOdomStepState
++{
++  bool initialized{false};
++  // The map -> odom broadcast last, and whether it is the target itself.
++  Eigen::Isometry3d published{Eigen::Isometry3d::Identity()};
++  bool published_is_target{true};
++  // The latest target and the robot position in odom the step was taken about.
++  Eigen::Isometry3d target{Eigen::Isometry3d::Identity()};
++  Eigen::Vector3d pivot_in_odom{Eigen::Vector3d::Zero()};
++  // Broadcasts at one stamp form one publish cycle: an accepted scan republishes
++  // the frozen anchor and then the new one at its stamp.  Each broadcast of the
++  // cycle steps from where the cycle started, so a cycle moves one step, toward
++  // its newest target.
++  double cycle_stamp_sec{std::numeric_limits<double>::quiet_NaN()};
++  Eigen::Isometry3d cycle_start{Eigen::Isometry3d::Identity()};
++};
++
++// The state after broadcasting toward `target` at stamp_sec.  Without a limit,
++// and on the first broadcast after a reset (a default-constructed state), the
++// broadcast is the target itself.
++inline MapToOdomStepState advanceMapToOdomStep(
++  const MapToOdomStepState & state,
++  const Eigen::Isometry3d & target,
++  const Eigen::Vector3d & pivot_in_odom,
++  double stamp_sec,
++  const MapToOdomStepParams & params)
++{
++  MapToOdomStepState next = state;
++  next.target = target;
++  if (pivot_in_odom.allFinite()) {
++    next.pivot_in_odom = pivot_in_odom;
++  }
++  next.cycle_stamp_sec = stamp_sec;
++  if (!state.initialized || !isMapToOdomStepLimitEnabled(params)) {
++    next.initialized = true;
++    next.published = target;
++    next.published_is_target = true;
++    next.cycle_start = target;
++    return next;
++  }
++  next.cycle_start = stamp_sec == state.cycle_stamp_sec ? state.cycle_start : state.published;
++  const MapToOdomStep step =
++    stepMapToOdomToward(next.cycle_start, target, next.pivot_in_odom, params);
++  next.published = step.map_to_odom;
++  next.published_is_target = step.reached_target;
++  return next;
++}
++
++// What is left between the broadcast map -> odom and the target, at the robot.
++inline MapToOdomDifference pendingMapToOdomStep(const MapToOdomStepState & state)
++{
++  if (!state.initialized || state.published_is_target) {
++    return {};
++  }
++  return mapToOdomDifferenceAt(state.published, state.target, state.pivot_in_odom);
++}
++
++inline std::vector<DiagnosticKeyValue> buildMapToOdomStepDiagnosticValues(
++  const MapToOdomStepState & state)
++{
++  const MapToOdomDifference pending = pendingMapToOdomStep(state);
++  return {
++    {"map_to_odom_pending_translation_m", std::to_string(pending.translation_m)},
++    {"map_to_odom_pending_yaw_deg", std::to_string(pending.yaw_deg)}};
++}
++
++}  // namespace lidar_localization
++
++#endif  // LIDAR_LOCALIZATION_MAP_TO_ODOM_STEP_POLICY_HPP_
+diff --git a/include/lidar_localization/measurement_gate_policy.hpp b/include/lidar_localization/measurement_gate_policy.hpp
+index 8f4c23d..c383f6d 100644
+--- a/include/lidar_localization/measurement_gate_policy.hpp
++++ b/include/lidar_localization/measurement_gate_policy.hpp
+@@ -77,6 +77,22 @@ struct MeasurementGateParams
+   // next scan. 0 disables this. Aliased corrections right after an exact
+   // start, e.g. while the scene differs from the map, are then rejected.
+   double seed_correction_guard_exact_start_translation_m{0.0};
++  // With min_consistent > 0 the guard releases as soon as the gated result
++  // agrees with each of the newest min_consistent rejected results on the
++  // map -> odom they imply, within the consistency tolerances, and scores
++  // within MeasurementGateInput::seed_correction_guard_release_max_fitness (see
++  // seed_guard_release_policy.hpp).  It then never releases on the rejection
++  // count alone: a drifted seed re-locks after min_consistent + 1 scans instead
++  // of release_rejections, and scattered (aliased) results keep it holding.
++  // 0 keeps the plain release after release_rejections.
++  int seed_correction_guard_release_min_consistent{0};
++  double seed_correction_guard_release_consistency_translation_m{0.1};
++  double seed_correction_guard_release_consistency_yaw_deg{2.0};
++  // A large correction accepted through the consistent release restarts the
++  // warmup (nextSettledAccepts), which leaves the next warmup_accepts updates
++  // unguarded.  With this set the warmup count is kept instead, so the guard
++  // holds the re-locked track right away.  Needs min_consistent > 0.
++  bool seed_correction_guard_keep_warmup_after_release{false};
+ 
+   bool enable_rejected_seed_update{false};
+   int rejected_seed_update_min_rejections{0};
+@@ -101,6 +117,13 @@ struct MeasurementGateInput
+   // Consecutive accepted updates within the seed correction guard's limits
+   // since the last reset or odometry gap (see nextSettledAccepts).
+   std::size_t accepted_updates_since_reset{std::numeric_limits<std::size_t>::max()};
++  // Whether the gated result agrees with the recent rejected results
++  // (isSeedGuardReleaseConsistent).  Read only with
++  // seed_correction_guard_release_min_consistent > 0.
++  bool seed_correction_guard_release_consistent{false};
++  // The consistent release also needs the gated fitness at or below this
++  // (relative_fitness_policy.hpp); +infinity leaves only score_threshold.
++  double seed_correction_guard_release_max_fitness{std::numeric_limits<double>::infinity()};
+ };
+ 
+ struct MeasurementGateParamConfig : MeasurementGateParams
+@@ -123,6 +146,9 @@ struct MeasurementGateDecision
+   bool open_loop_strict_active{false};
+   bool borderline_seed_gate_active{false};
+   bool rejected_seed_update_applied{false};
++  // The correction exceeded the seed correction guard's limits, but the guard
++  // had released (see nextSettledAccepts).
++  bool seed_correction_guard_released{false};
+   double effective_score_threshold{0.0};
+ };
+ 
+@@ -140,7 +166,9 @@ inline MeasurementGateInput makeMeasurementGateInput(
+   double correction_yaw_deg,
+   std::size_t consecutive_rejected_updates,
+   bool odom_tf_prediction_guard_applicable = false,
+-  std::size_t accepted_updates_since_reset = std::numeric_limits<std::size_t>::max())
++  std::size_t accepted_updates_since_reset = std::numeric_limits<std::size_t>::max(),
++  bool seed_correction_guard_release_consistent = false,
++  double seed_correction_guard_release_max_fitness = std::numeric_limits<double>::infinity())
+ {
+   return {
+     fitness_score,
+@@ -150,7 +178,9 @@ inline MeasurementGateInput makeMeasurementGateInput(
+     correction_yaw_deg,
+     consecutive_rejected_updates,
+     odom_tf_prediction_guard_applicable,
+-    accepted_updates_since_reset};
++    accepted_updates_since_reset,
++    seed_correction_guard_release_consistent,
++    seed_correction_guard_release_max_fitness};
+ }
+ 
+ inline EffectiveScoreThresholdDecision computeEffectiveScoreThreshold(
+@@ -203,13 +233,24 @@ inline bool isBorderlineSeedGateActive(
+ // means the track is still converging, so the count starts over.
+ // first_accept_since_initial_pose marks the first accepted update after an
+ // initial pose; see seed_correction_guard_exact_start_translation_m.
++// accepted_through_guard_release marks an update the released guard let
++// through (MeasurementGateDecision::seed_correction_guard_released); see
++// seed_correction_guard_keep_warmup_after_release.
+ inline std::size_t nextSettledAccepts(
+   std::size_t settled_accepts,
+   const MeasurementGateParams & params,
+   double correction_translation_m,
+   double correction_yaw_deg,
+-  bool first_accept_since_initial_pose = false)
++  bool first_accept_since_initial_pose = false,
++  bool accepted_through_guard_release = false)
+ {
++  if (
++    accepted_through_guard_release &&
++    params.seed_correction_guard_keep_warmup_after_release &&
++    params.seed_correction_guard_release_min_consistent > 0)
++  {
++    return settled_accepts;
++  }
+   const bool settled =
+     correction_translation_m <= params.seed_correction_guard_translation_m &&
+     correction_yaw_deg <= params.seed_correction_guard_yaw_deg;
+@@ -280,20 +321,27 @@ inline MeasurementGateDecision evaluateMeasurementGate(
+     return gate;
+   }
+ 
+-  const bool seed_correction_guard_active =
++  const bool seed_correction_exceeds_guard =
+     params.enable_seed_correction_guard &&
+     input.accepted_updates_since_reset >=
+     static_cast<std::size_t>(std::max(0, params.seed_correction_guard_warmup_accepts)) &&
+-    static_cast<int>(input.consecutive_rejected_updates) <
+-    params.seed_correction_guard_release_rejections &&
+     ((input.correction_translation_m > params.seed_correction_guard_translation_m) ||
+     (input.correction_yaw_deg > params.seed_correction_guard_yaw_deg));
+-  if (seed_correction_guard_active) {
++  // The consistent release (min_consistent > 0) needs agreeing results that
++  // score like the recent accepted ones, not a rejection count.
++  const bool seed_correction_guard_released =
++    params.seed_correction_guard_release_min_consistent > 0 ?
++    (input.seed_correction_guard_release_consistent &&
++    input.fitness_score <= input.seed_correction_guard_release_max_fitness) :
++    static_cast<int>(input.consecutive_rejected_updates) >=
++    params.seed_correction_guard_release_rejections;
++  if (seed_correction_exceeds_guard && !seed_correction_guard_released) {
+     gate.status_level = kMeasurementGateWarn;
+     gate.status_message = "seed_correction_guard_rejected";
+     gate.reject_measurement = true;
+     return gate;
+   }
++  gate.seed_correction_guard_released = seed_correction_exceeds_guard;
+ 
+   const bool threshold_exceeded = input.fitness_score > gate.effective_score_threshold;
+   if (!threshold_exceeded && !gate.borderline_seed_gate_active) {
+diff --git a/include/lidar_localization/motion_gate_policy.hpp b/include/lidar_localization/motion_gate_policy.hpp
+new file mode 100644
+index 0000000..6913f59
+--- /dev/null
++++ b/include/lidar_localization/motion_gate_policy.hpp
+@@ -0,0 +1,118 @@
++#ifndef LIDAR_LOCALIZATION_MOTION_GATE_POLICY_HPP_
++#define LIDAR_LOCALIZATION_MOTION_GATE_POLICY_HPP_
++
++#include <cmath>
++#include <limits>
++#include <string>
++#include <vector>
++
++#include <Eigen/Geometry>
++
++#include "lidar_localization/alignment_diagnostics_policy.hpp"
++
++namespace lidar_localization
++{
++
++// Motion-aware skip of the registration.
++//
++// While the robot turns or drives fast, the odometry seed is least certain and
++// an aliased registration result is most likely.  The motion at a scan is
++// estimated from the odom -> base_link of its odometry seed and of the previous
++// scan's.  Above a limit the registration result is not used: map -> odom stays
++// frozen as on a rejected scan, but the scan counts neither as a rejection (the
++// rejection streak drives the guard release, re-acquisition and the
++// reinitialization request) nor as a candidate for the seed correction guard's
++// consistent release.
++
++constexpr double kMotionGatePi = 3.14159265358979323846;
++
++// Odometry seeds further apart than this do not describe the motion at a scan.
++constexpr double kMotionGateMaxSeedIntervalSec = 1.0;
++
++struct MotionGateParams
++{
++  // 0 disables the corresponding limit.
++  double max_yaw_rate_rad_s{0.0};
++  double max_speed_mps{0.0};
++};
++
++inline bool isMotionGateEnabled(const MotionGateParams & params)
++{
++  return params.max_yaw_rate_rad_s > 0.0 || params.max_speed_mps > 0.0;
++}
++
++// The odom -> base_link a scan was seeded with, at the scan stamp.
++struct TimedOdomToBase
++{
++  double stamp_sec{std::numeric_limits<double>::quiet_NaN()};
++  Eigen::Isometry3d odom_to_base{Eigen::Isometry3d::Identity()};
++};
++
++struct SeedMotionEstimate
++{
++  bool valid{false};
++  double yaw_rate_rad_s{std::numeric_limits<double>::quiet_NaN()};
++  double speed_mps{std::numeric_limits<double>::quiet_NaN()};
++};
++
++// Yaw rate (absolute, from the wrapped yaw change) and planar speed between two
++// odometry seeds.  Invalid unless the later seed follows within
++// kMotionGateMaxSeedIntervalSec.
++inline SeedMotionEstimate estimateSeedMotion(
++  const TimedOdomToBase & previous,
++  const TimedOdomToBase & current)
++{
++  SeedMotionEstimate estimate;
++  const double dt_sec = current.stamp_sec - previous.stamp_sec;
++  if (
++    !std::isfinite(dt_sec) || dt_sec <= 0.0 || dt_sec > kMotionGateMaxSeedIntervalSec ||
++    !previous.odom_to_base.matrix().allFinite() || !current.odom_to_base.matrix().allFinite())
++  {
++    return estimate;
++  }
++  const auto yaw = [](const Eigen::Isometry3d & pose) {
++      return std::atan2(pose.linear()(1, 0), pose.linear()(0, 0));
++    };
++  const double yaw_change = std::remainder(
++    yaw(current.odom_to_base) - yaw(previous.odom_to_base), 2.0 * kMotionGatePi);
++  const Eigen::Vector2d planar_motion =
++    (current.odom_to_base.translation() - previous.odom_to_base.translation()).head<2>();
++  estimate.valid = true;
++  estimate.yaw_rate_rad_s = std::abs(yaw_change) / dt_sec;
++  estimate.speed_mps = planar_motion.norm() / dt_sec;
++  return estimate;
++}
++
++struct MotionGateDecision
++{
++  bool active{false};
++  // The estimate the decision read (NaN without one).
++  double yaw_rate_rad_s{std::numeric_limits<double>::quiet_NaN()};
++  double speed_mps{std::numeric_limits<double>::quiet_NaN()};
++};
++
++inline MotionGateDecision decideMotionGate(
++  const MotionGateParams & params,
++  const SeedMotionEstimate & estimate)
++{
++  MotionGateDecision decision;
++  decision.yaw_rate_rad_s = estimate.yaw_rate_rad_s;
++  decision.speed_mps = estimate.speed_mps;
++  decision.active = estimate.valid &&
++    ((params.max_yaw_rate_rad_s > 0.0 && estimate.yaw_rate_rad_s > params.max_yaw_rate_rad_s) ||
++    (params.max_speed_mps > 0.0 && estimate.speed_mps > params.max_speed_mps));
++  return decision;
++}
++
++inline std::vector<DiagnosticKeyValue> buildMotionGateDiagnosticValues(
++  const MotionGateDecision & decision)
++{
++  return {
++    {"motion_gate_active", boolString(decision.active)},
++    {"motion_gate_yaw_rate_rad_s", std::to_string(decision.yaw_rate_rad_s)},
++    {"motion_gate_speed_mps", std::to_string(decision.speed_mps)}};
++}
++
++}  // namespace lidar_localization
++
++#endif  // LIDAR_LOCALIZATION_MOTION_GATE_POLICY_HPP_
+diff --git a/include/lidar_localization/relative_fitness_policy.hpp b/include/lidar_localization/relative_fitness_policy.hpp
+new file mode 100644
+index 0000000..45d69d4
+--- /dev/null
++++ b/include/lidar_localization/relative_fitness_policy.hpp
+@@ -0,0 +1,96 @@
++#ifndef LIDAR_LOCALIZATION_RELATIVE_FITNESS_POLICY_HPP_
++#define LIDAR_LOCALIZATION_RELATIVE_FITNESS_POLICY_HPP_
++
++#include <algorithm>
++#include <cmath>
++#include <cstddef>
++#include <deque>
++#include <limits>
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "lidar_localization/alignment_diagnostics_policy.hpp"
++
++namespace lidar_localization
++{
++
++// Fitness limits relative to the recently accepted registrations.
++//
++// The absolute score_threshold has to admit every place and crowd the robot
++// meets, so it sits far above a good match: in the arena simulation a good
++// match scores 0.007 to 0.02 against a threshold of 2.0.  A registration that
++// locked onto the wrong place scores far worse than the recent good ones (0.7
++// to 0.95 there), yet still passes it.  The two decisions that hand over a
++// large correction -- the seed correction guard's consistent release and the
++// local re-acquisition proposal -- therefore also compare the fitness with the
++// median of the recently accepted ones.
++
++// How many accepted fitness values are kept, and how many the median needs.
++constexpr std::size_t kRecentFitnessWindow = 100;
++constexpr std::size_t kRecentFitnessMinSamples = 20;
++
++struct RelativeFitnessParams
++{
++  // The limit is max(floor, max_ratio x the median of the recent accepted
++  // fitness).  A max_ratio of 0 turns the limit off.
++  double max_ratio{0.0};
++  double floor{0.05};
++};
++
++// The recent accepted fitness after one more accept, trimmed to the window.
++inline std::deque<double> appendRecentFitness(const std::deque<double> & recent, double fitness)
++{
++  std::deque<double> next = recent;
++  if (!std::isfinite(fitness)) {
++    return next;
++  }
++  next.push_back(fitness);
++  while (next.size() > kRecentFitnessWindow) {
++    next.pop_front();
++  }
++  return next;
++}
++
++// The median of the recent accepted fitness (the upper one of an even count),
++// or nullopt with fewer than kRecentFitnessMinSamples values.
++inline std::optional<double> recentFitnessMedian(const std::deque<double> & recent)
++{
++  if (recent.size() < kRecentFitnessMinSamples) {
++    return std::nullopt;
++  }
++  std::vector<double> sorted(recent.begin(), recent.end());
++  const auto middle = sorted.begin() + static_cast<std::ptrdiff_t>(sorted.size() / 2);
++  std::nth_element(sorted.begin(), middle, sorted.end());
++  return *middle;
++}
++
++// The fitness limit, or +infinity while the limit is off or the median is not
++// known yet (then only the absolute threshold applies).
++inline double relativeFitnessLimit(
++  const RelativeFitnessParams & params, const std::deque<double> & recent)
++{
++  const auto median = recentFitnessMedian(recent);
++  if (!(params.max_ratio > 0.0) || !median) {
++    return std::numeric_limits<double>::infinity();
++  }
++  return std::max(params.floor, params.max_ratio * *median);
++}
++
++inline bool isRelativeFitnessParamsValid(const RelativeFitnessParams & params)
++{
++  return std::isfinite(params.max_ratio) && params.max_ratio >= 0.0 &&
++         std::isfinite(params.floor) && params.floor >= 0.0;
++}
++
++inline std::vector<DiagnosticKeyValue> buildRecentFitnessDiagnosticValues(
++  const std::deque<double> & recent)
++{
++  const auto median = recentFitnessMedian(recent);
++  return {{"recent_accepted_fitness_median",
++    median ? std::to_string(*median) : std::string("nan")}};
++}
++
++}  // namespace lidar_localization
++
++#endif  // LIDAR_LOCALIZATION_RELATIVE_FITNESS_POLICY_HPP_
+diff --git a/include/lidar_localization/seed_guard_release_policy.hpp b/include/lidar_localization/seed_guard_release_policy.hpp
+new file mode 100644
+index 0000000..5c407ab
+--- /dev/null
++++ b/include/lidar_localization/seed_guard_release_policy.hpp
+@@ -0,0 +1,90 @@
++#ifndef LIDAR_LOCALIZATION_SEED_GUARD_RELEASE_POLICY_HPP_
++#define LIDAR_LOCALIZATION_SEED_GUARD_RELEASE_POLICY_HPP_
++
++#include <algorithm>
++#include <cstddef>
++#include <deque>
++#include <iterator>
++
++#include <Eigen/Geometry>
++
++#include "lidar_localization/map_to_odom_step_policy.hpp"
++#include "lidar_localization/measurement_gate_policy.hpp"
++
++namespace lidar_localization
++{
++
++// Consistent release of the seed correction guard.
++//
++// After seed_correction_guard_release_rejections consecutive rejections the
++// guard lets any correction through, so that a genuinely drifted odometry seed
++// can re-lock.  What gets through then can as well be an aliased match (a
++// crowd of robots around the sensor, a fast turn).  With
++// seed_correction_guard_release_min_consistent > 0 the release also needs the
++// gated result to agree with each of the newest min_consistent rejected
++// results on the map -> odom they imply: a real drift gives the same
++// map -> odom scan after scan, aliased matches scatter.
++
++// The map -> odom a registration result implies: the registered map -> base_link
++// composed with the inverse of the odom -> base_link the scan was seeded with.
++inline Eigen::Isometry3d candidateMapToOdom(
++  const Eigen::Isometry3d & registered_map_to_base,
++  const Eigen::Isometry3d & seed_odom_to_base)
++{
++  return registered_map_to_base * seed_odom_to_base.inverse();
++}
++
++// How many rejected candidates the release check reads (and keeps).
++inline std::size_t seedGuardReleaseHistoryLength(const MeasurementGateParams & params)
++{
++  return static_cast<std::size_t>(std::max(0, params.seed_correction_guard_release_min_consistent));
++}
++
++// Whether `candidate` (the gated result's map -> odom) lies within the
++// consistency tolerances of each of the newest min_consistent rejected
++// candidates (ordered oldest first), measured at the robot (robot_in_odom, see
++// mapToOdomDifferenceAt).  Always true while the check is off.
++inline bool isSeedGuardReleaseConsistent(
++  const MeasurementGateParams & params,
++  const std::deque<Eigen::Isometry3d> & rejected_candidates,
++  const Eigen::Isometry3d & candidate,
++  const Eigen::Vector3d & robot_in_odom)
++{
++  const std::size_t needed = seedGuardReleaseHistoryLength(params);
++  if (needed == 0) {
++    return true;
++  }
++  if (rejected_candidates.size() < needed) {
++    return false;
++  }
++  const auto first = std::prev(rejected_candidates.end(), static_cast<std::ptrdiff_t>(needed));
++  return std::all_of(
++    first, rejected_candidates.end(),
++    [&](const Eigen::Isometry3d & rejected) {
++      const MapToOdomDifference difference =
++        mapToOdomDifferenceAt(rejected, candidate, robot_in_odom);
++      return difference.translation_m <=
++             params.seed_correction_guard_release_consistency_translation_m &&
++             difference.yaw_deg <= params.seed_correction_guard_release_consistency_yaw_deg;
++    });
++}
++
++// The rejected candidates after one more rejection, trimmed to what the check
++// reads.  Accepts and resets clear the history.
++inline std::deque<Eigen::Isometry3d> appendRejectedCandidate(
++  const std::deque<Eigen::Isometry3d> & rejected_candidates,
++  const Eigen::Isometry3d & candidate,
++  const MeasurementGateParams & params)
++{
++  std::deque<Eigen::Isometry3d> next = rejected_candidates;
++  next.push_back(candidate);
++  const std::size_t keep = seedGuardReleaseHistoryLength(params);
++  while (next.size() > keep) {
++    next.pop_front();
++  }
++  return next;
++}
++
++}  // namespace lidar_localization
++
++#endif  // LIDAR_LOCALIZATION_SEED_GUARD_RELEASE_POLICY_HPP_
+diff --git a/src/component_alignment.cpp b/src/component_alignment.cpp
+index cc18e81..7d90add 100644
+--- a/src/component_alignment.cpp
++++ b/src/component_alignment.cpp
+@@ -113,13 +113,26 @@ PCLLocalization::SelectedRegistrationSeed PCLLocalization::selectRegistrationSee
+   }
+ 
+   Eigen::Matrix4f odom_tf_prediction = Eigen::Matrix4f::Identity();
++  Eigen::Isometry3d seed_odom_to_base = Eigen::Isometry3d::Identity();
+   const bool odom_tf_bridge_available =
+-    use_odom_tf_prediction_ && lookupOdomBridgePoseMatrix(stamp, odom_tf_prediction);
++    use_odom_tf_prediction_ &&
++    lookupOdomBridgePoseMatrix(stamp, odom_tf_prediction, false, nullptr, &seed_odom_to_base);
++  scan_seed_odom_to_base_.reset();
++  motion_gate_ = lidar_localization::MotionGateDecision{};
+   if (odom_tf_bridge_available) {
+     if (lidar_localization::isOdomSeedGap(last_odom_seed_stamp_sec_, scan_stamp_sec)) {
+       settled_accepts_since_reset_ = 0;
++      seed_guard_rejected_candidates_.clear();
+     }
+     last_odom_seed_stamp_sec_ = scan_stamp_sec;
++    scan_seed_odom_to_base_ = seed_odom_to_base;
++    const lidar_localization::TimedOdomToBase seed{scan_stamp_sec, seed_odom_to_base};
++    if (previous_seed_odom_to_base_) {
++      motion_gate_ = lidar_localization::decideMotionGate(
++        motion_gate_params_,
++        lidar_localization::estimateSeedMotion(*previous_seed_odom_to_base_, seed));
++    }
++    previous_seed_odom_to_base_ = seed;
+   }
+   local_reacquisition_confirmation_scan_ = false;
+   scan_seeded_from_reacquisition_ = false;
+@@ -715,11 +728,15 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
+     attempt.correction_yaw_deg,
+     prediction_state_.consecutive_rejected_updates,
+     use_odom_tf_prediction_ && has_last_good_map_to_odom_,
+-    settled_accepts_since_reset_);
++    settled_accepts_since_reset_,
++    seedGuardReleaseConsistent(attempt),
++    lidar_localization::relativeFitnessLimit(
++      seed_guard_release_fitness_params_, recent_accepted_fitness_));
+   last_gated_correction_translation_m_ = attempt.correction_translation_m;
+   last_gated_correction_yaw_deg_ = attempt.correction_yaw_deg;
+   auto gate =
+     lidar_localization::evaluateMeasurementGate(measurementGateParams(), gate_input);
++  last_gated_seed_guard_released_ = gate.seed_correction_guard_released;
+   if (gate.status_level == lidar_localization::kMeasurementGateWarn) {
+     RCLCPP_WARN(
+       get_logger(),
+@@ -731,6 +748,35 @@ lidar_localization::MeasurementGateDecision PCLLocalization::evaluateMeasurement
+   return gate;
+ }
+ 
++std::optional<Eigen::Isometry3d> PCLLocalization::scanCandidateMapToOdom(
++  const lidar_localization::AlignmentAttempt & attempt) const
++{
++  if (
++    !scan_seed_odom_to_base_ || !attempt.has_converged ||
++    !attempt.final_transformation.allFinite())
++  {
++    return std::nullopt;
++  }
++  return lidar_localization::candidateMapToOdom(
++    Eigen::Isometry3d(attempt.final_transformation.cast<double>()), *scan_seed_odom_to_base_);
++}
++
++bool PCLLocalization::seedGuardReleaseConsistent(
++  const lidar_localization::AlignmentAttempt & attempt) const
++{
++  const auto params = measurementGateParams();
++  if (params.seed_correction_guard_release_min_consistent <= 0) {
++    return true;
++  }
++  // Without this scan's odometry seed there is no candidate to compare, and
++  // the consistent release holds.
++  const auto candidate = scanCandidateMapToOdom(attempt);
++  return candidate.has_value() &&
++         lidar_localization::isSeedGuardReleaseConsistent(
++    params, seed_guard_rejected_candidates_, *candidate,
++    scan_seed_odom_to_base_->translation());
++}
++
+ void PCLLocalization::applySoftOdomCorrectionGate(
+   lidar_localization::AlignmentPipelineResult & result)
+ {
+@@ -740,7 +786,10 @@ void PCLLocalization::applySoftOdomCorrectionGate(
+     attempt.fitness_score, attempt.accepted_gap_sec, attempt.seed_translation_since_accept_m,
+     attempt.correction_translation_m, attempt.correction_yaw_deg,
+     prediction_state_.consecutive_rejected_updates,
+-    use_odom_tf_prediction_ && has_last_good_map_to_odom_, settled_accepts_since_reset_);
++    use_odom_tf_prediction_ && has_last_good_map_to_odom_, settled_accepts_since_reset_,
++    seedGuardReleaseConsistent(attempt),
++    lidar_localization::relativeFitnessLimit(
++      seed_guard_release_fitness_params_, recent_accepted_fitness_));
+   lidar_localization::applySoftOdomCorrectionGate(
+     result, measurementGateParams(), input, enable_soft_odom_correction_gate_);
+   if (result.gate_result.status_message == "odom_tf_prediction_correction_guard_soft_accepted") {
+@@ -822,6 +871,17 @@ bool PCLLocalization::applyAcceptedAlignmentPipelineResult(
+   {
+     return false;
+   }
++  if (
++    local_reacquisition_confirmation_scan_ ||
++    (pipeline_result.gate_result.seed_correction_guard_released &&
++    measurement_gate_config_.seed_correction_guard_release_min_consistent > 0))
++  {
++    // A confirmed re-acquisition, or a drift re-locked by the consistent
++    // release, replaces the anchor outright, like a reset: the broadcast
++    // map -> odom snaps to it instead of stepping (stepping a 2 m re-lock at
++    // 2 cm a scan would leave the published pose wrong for 10 s).
++    map_to_odom_step_ = lidar_localization::MapToOdomStepState{};
++  }
+ 
+   if (lidar_localization::shouldPublishAcceptedPoseImmediately(
+       enable_timer_publishing_, publish_bridge_pose_when_lost_))
+diff --git a/src/component_diagnostics.cpp b/src/component_diagnostics.cpp
+index 64df41e..22d2da0 100644
+--- a/src/component_diagnostics.cpp
++++ b/src/component_diagnostics.cpp
+@@ -91,6 +91,18 @@ void PCLLocalization::publishAlignmentStatus(
+   information.key = "planar_information_min";
+   information.value = std::to_string(status_planar_information_min_);
+   status.values.push_back(information);
++  // What the broadcast map -> odom still has to move (map_to_odom_step_policy.hpp),
++  // this scan's motion gate (motion_gate_policy.hpp), and the median of the
++  // recent accepted fitness (relative_fitness_policy.hpp).
++  for (const auto & values : {
++      lidar_localization::buildMapToOdomStepDiagnosticValues(map_to_odom_step_),
++      lidar_localization::buildMotionGateDiagnosticValues(motion_gate_),
++      lidar_localization::buildRecentFitnessDiagnosticValues(recent_accepted_fitness_)})
++  {
++    for (const auto & value : lidar_localization::makeRosDiagnosticKeyValues(values)) {
++      status.values.push_back(value);
++    }
++  }
+   publishAlignmentDiagnosticStatus(stamp, status);
+   publishReinitializationRequest(stamp, evaluation.reinitialization_request);
+ }
+diff --git a/src/component_lifecycle.cpp b/src/component_lifecycle.cpp
+index d247d63..f5b09aa 100644
+--- a/src/component_lifecycle.cpp
++++ b/src/component_lifecycle.cpp
+@@ -30,6 +30,8 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
+   declare_parameter("enable_map_odom_anchor_fitness_gate", false);
+   declare_parameter("map_odom_anchor_max_fitness", 1.5);
+   declare_parameter("map_odom_anchor_max_correction_rotation_deg", 10.0);
++  declare_parameter("map_to_odom_max_step_translation_m", 0.0);
++  declare_parameter("map_to_odom_max_step_yaw_deg", 0.0);
+   declare_parameter("registration_method", "NDT");
+   declare_parameter("score_threshold", 2.0);
+   declare_parameter("ndt_resolution", 1.0);
+@@ -146,6 +148,15 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
+   declare_parameter("seed_correction_guard_release_rejections", 10);
+   declare_parameter("seed_correction_guard_warmup_accepts", 5);
+   declare_parameter("seed_correction_guard_exact_start_translation_m", 0.0);
++  declare_parameter("seed_correction_guard_release_min_consistent", 0);
++  declare_parameter("seed_correction_guard_release_consistency_translation_m", 0.1);
++  declare_parameter("seed_correction_guard_release_consistency_yaw_deg", 2.0);
++  declare_parameter("seed_correction_guard_keep_warmup_after_release", false);
++  declare_parameter("seed_correction_guard_release_max_fitness_ratio", 0.0);
++  declare_parameter("local_reacquisition_max_fitness_ratio", 0.0);
++  declare_parameter("relative_fitness_floor", 0.05);
++  declare_parameter("motion_gate_max_yaw_rate_rad_s", 0.0);
++  declare_parameter("motion_gate_max_speed_mps", 0.0);
+   declare_parameter("enable_rejected_seed_update", false);
+   declare_parameter("rejected_seed_update_min_rejections", 0);
+   declare_parameter("rejected_seed_update_max_fitness", 10.0);
+@@ -483,6 +494,12 @@ void PCLLocalization::releaseRuntimeResources(bool leak_target_clouds_for_shutdo
+   odom_bridge_transform_history_.clear();
+   last_odom_bridge_source_advance_node_stamp_ = builtin_interfaces::msg::Time{};
+   has_last_odom_bridge_source_advance_node_stamp_ = false;
++  map_to_odom_step_ = lidar_localization::MapToOdomStepState{};
++  seed_guard_rejected_candidates_.clear();
++  recent_accepted_fitness_.clear();
++  scan_seed_odom_to_base_.reset();
++  previous_seed_odom_to_base_.reset();
++  motion_gate_ = lidar_localization::MotionGateDecision{};
+ 
+   discardLocalMapRebuild();
+   auto registration_execution_lock =
+diff --git a/src/component_local_reacquisition.cpp b/src/component_local_reacquisition.cpp
+index d11be67..7fde0c8 100644
+--- a/src/component_local_reacquisition.cpp
++++ b/src/component_local_reacquisition.cpp
+@@ -95,13 +95,21 @@ void PCLLocalization::maybeRunLocalReacquisition(
+     refined_poses.push_back(attempt.final_transformation);
+   }
+ 
++  // Besides the absolute threshold, the proposal has to score like the recent
++  // accepted updates: a place the scan merely resembles scores far worse
++  // (relative_fitness_policy.hpp).
++  const double proposal_threshold = std::min(
++    measurement_gate_config_.score_threshold,
++    lidar_localization::relativeFitnessLimit(
++      local_reacquisition_fitness_params_, recent_accepted_fitness_));
+   const auto decision = lidar_localization::decideLocalReacquisition(
+-    refined, measurement_gate_config_.score_threshold, local_reacquisition_params_);
++    refined, proposal_threshold, local_reacquisition_params_);
+   if (!decision.propose) {
+     RCLCPP_INFO_THROTTLE(
+       get_logger(), *get_clock(), 5000,
+-      "local re-acquisition: %zu BBS / %zu heading-consistent candidates, no proposal (%s)",
+-      bbs_candidates.size(), candidates.size(), decision.reason.c_str());
++      "local re-acquisition: %zu BBS / %zu heading-consistent candidates, no proposal (%s, "
++      "fitness threshold %.3f)",
++      bbs_candidates.size(), candidates.size(), decision.reason.c_str(), proposal_threshold);
+     return;
+   }
+   const Eigen::Matrix4f frozen_map_to_odom =
+diff --git a/src/component_parameters.cpp b/src/component_parameters.cpp
+index 8a8b2b3..11e1085 100644
+--- a/src/component_parameters.cpp
++++ b/src/component_parameters.cpp
+@@ -204,6 +204,28 @@ void PCLLocalization::initializeParameters()
+   get_parameter(
+     "map_odom_anchor_max_correction_rotation_deg",
+     map_odom_anchor_max_correction_rotation_deg_);
++  get_parameter(
++    "map_to_odom_max_step_translation_m", map_to_odom_step_params_.max_translation_m);
++  get_parameter("map_to_odom_max_step_yaw_deg", map_to_odom_step_params_.max_yaw_deg);
++  if (
++    !(map_to_odom_step_params_.max_translation_m >= 0.0) ||
++    !(map_to_odom_step_params_.max_yaw_deg >= 0.0))
++  {
++    RCLCPP_WARN(
++      get_logger(),
++      "map_to_odom_max_step_translation_m and map_to_odom_max_step_yaw_deg must be "
++      "non-negative (got %f and %f); the map -> odom step limit is disabled",
++      map_to_odom_step_params_.max_translation_m, map_to_odom_step_params_.max_yaw_deg);
++    map_to_odom_step_params_ = lidar_localization::MapToOdomStepParams{};
++  } else if (
++    lidar_localization::isMapToOdomStepLimitEnabled(map_to_odom_step_params_) &&
++    !enable_map_odom_tf_)
++  {
++    RCLCPP_WARN(
++      get_logger(),
++      "map_to_odom_max_step_* limits the map -> odom broadcast, which enable_map_odom_tf "
++      "turns on; without it the limit has no effect");
++  }
+   get_parameter("registration_method", registration_method_);
+   get_parameter("score_threshold", measurement_gate_config_.score_threshold);
+   get_parameter("ndt_resolution", ndt_resolution_);
+@@ -421,6 +443,89 @@ void PCLLocalization::initializeParameters()
+   get_parameter(
+     "seed_correction_guard_exact_start_translation_m",
+     measurement_gate_config_.seed_correction_guard_exact_start_translation_m);
++  get_parameter(
++    "seed_correction_guard_release_min_consistent",
++    measurement_gate_config_.seed_correction_guard_release_min_consistent);
++  get_parameter(
++    "seed_correction_guard_release_consistency_translation_m",
++    measurement_gate_config_.seed_correction_guard_release_consistency_translation_m);
++  get_parameter(
++    "seed_correction_guard_release_consistency_yaw_deg",
++    measurement_gate_config_.seed_correction_guard_release_consistency_yaw_deg);
++  get_parameter(
++    "seed_correction_guard_keep_warmup_after_release",
++    measurement_gate_config_.seed_correction_guard_keep_warmup_after_release);
++  measurement_gate_config_.seed_correction_guard_release_min_consistent =
++    std::max(0, measurement_gate_config_.seed_correction_guard_release_min_consistent);
++  if (measurement_gate_config_.seed_correction_guard_release_min_consistent > 0) {
++    if (!use_odom_tf_prediction_ || !enable_map_odom_tf_) {
++      // The candidates are the map -> odom each result implies with its odometry seed.
++      RCLCPP_WARN(
++        get_logger(),
++        "seed_correction_guard_release_min_consistent needs use_odom_tf_prediction and "
++        "enable_map_odom_tf; the seed correction guard keeps its plain release");
++      measurement_gate_config_.seed_correction_guard_release_min_consistent = 0;
++    } else if (
++      !(measurement_gate_config_.seed_correction_guard_release_consistency_translation_m >=
++      0.0) ||
++      !(measurement_gate_config_.seed_correction_guard_release_consistency_yaw_deg >= 0.0))
++    {
++      RCLCPP_WARN(
++        get_logger(),
++        "seed_correction_guard_release_consistency_translation_m and "
++        "seed_correction_guard_release_consistency_yaw_deg must be non-negative "
++        "(got %f and %f); the seed correction guard keeps its plain release",
++        measurement_gate_config_.seed_correction_guard_release_consistency_translation_m,
++        measurement_gate_config_.seed_correction_guard_release_consistency_yaw_deg);
++      measurement_gate_config_.seed_correction_guard_release_min_consistent = 0;
++    }
++  }
++  get_parameter(
++    "seed_correction_guard_release_max_fitness_ratio",
++    seed_guard_release_fitness_params_.max_ratio);
++  get_parameter(
++    "local_reacquisition_max_fitness_ratio", local_reacquisition_fitness_params_.max_ratio);
++  double relative_fitness_floor = lidar_localization::RelativeFitnessParams{}.floor;
++  get_parameter("relative_fitness_floor", relative_fitness_floor);
++  seed_guard_release_fitness_params_.floor = relative_fitness_floor;
++  local_reacquisition_fitness_params_.floor = relative_fitness_floor;
++  if (
++    !lidar_localization::isRelativeFitnessParamsValid(seed_guard_release_fitness_params_) ||
++    !lidar_localization::isRelativeFitnessParamsValid(local_reacquisition_fitness_params_))
++  {
++    RCLCPP_WARN(
++      get_logger(),
++      "seed_correction_guard_release_max_fitness_ratio, local_reacquisition_max_fitness_ratio "
++      "and relative_fitness_floor must be finite and non-negative (got %f, %f and %f); "
++      "the relative fitness limits are off",
++      seed_guard_release_fitness_params_.max_ratio, local_reacquisition_fitness_params_.max_ratio,
++      relative_fitness_floor);
++    seed_guard_release_fitness_params_ = lidar_localization::RelativeFitnessParams{};
++    local_reacquisition_fitness_params_ = lidar_localization::RelativeFitnessParams{};
++  }
++  get_parameter("motion_gate_max_yaw_rate_rad_s", motion_gate_params_.max_yaw_rate_rad_s);
++  get_parameter("motion_gate_max_speed_mps", motion_gate_params_.max_speed_mps);
++  if (
++    !(motion_gate_params_.max_yaw_rate_rad_s >= 0.0) ||
++    !(motion_gate_params_.max_speed_mps >= 0.0))
++  {
++    RCLCPP_WARN(
++      get_logger(),
++      "motion_gate_max_yaw_rate_rad_s and motion_gate_max_speed_mps must be non-negative "
++      "(got %f and %f); the motion gate is disabled",
++      motion_gate_params_.max_yaw_rate_rad_s, motion_gate_params_.max_speed_mps);
++    motion_gate_params_ = lidar_localization::MotionGateParams{};
++  } else if (
++    lidar_localization::isMotionGateEnabled(motion_gate_params_) &&
++    (!use_odom_tf_prediction_ || !enable_map_odom_tf_))
++  {
++    // The motion is read off consecutive odometry seeds.
++    RCLCPP_WARN(
++      get_logger(),
++      "motion_gate_* needs use_odom_tf_prediction and enable_map_odom_tf; "
++      "the motion gate is disabled");
++    motion_gate_params_ = lidar_localization::MotionGateParams{};
++  }
+   get_parameter("enable_local_reacquisition", local_reacquisition_params_.enable);
+   get_parameter(
+     "local_reacquisition_min_rejections", local_reacquisition_params_.min_rejections);
+@@ -768,6 +873,24 @@ void PCLLocalization::initializeParameters()
+     measurement_gate_config_.seed_correction_guard_release_rejections,
+     measurement_gate_config_.seed_correction_guard_warmup_accepts,
+     measurement_gate_config_.seed_correction_guard_exact_start_translation_m);
++  RCLCPP_INFO(
++    get_logger(), "seed_correction_guard_release: min_consistent=%d "
++    "consistency_translation_m=%lf consistency_yaw_deg=%lf keep_warmup_after_release=%d",
++    measurement_gate_config_.seed_correction_guard_release_min_consistent,
++    measurement_gate_config_.seed_correction_guard_release_consistency_translation_m,
++    measurement_gate_config_.seed_correction_guard_release_consistency_yaw_deg,
++    measurement_gate_config_.seed_correction_guard_keep_warmup_after_release);
++  RCLCPP_INFO(
++    get_logger(), "relative fitness limits: seed_guard_release_max_ratio=%lf "
++    "local_reacquisition_max_ratio=%lf floor=%lf",
++    seed_guard_release_fitness_params_.max_ratio, local_reacquisition_fitness_params_.max_ratio,
++    seed_guard_release_fitness_params_.floor);
++  RCLCPP_INFO(
++    get_logger(), "map_to_odom_max_step: translation_m=%lf yaw_deg=%lf",
++    map_to_odom_step_params_.max_translation_m, map_to_odom_step_params_.max_yaw_deg);
++  RCLCPP_INFO(
++    get_logger(), "motion_gate: max_yaw_rate_rad_s=%lf max_speed_mps=%lf",
++    motion_gate_params_.max_yaw_rate_rad_s, motion_gate_params_.max_speed_mps);
+   RCLCPP_INFO(
+     get_logger(), "enable_odom_tf_prediction_correction_guard: %d",
+     measurement_gate_config_.enable_odom_tf_prediction_correction_guard);
+diff --git a/src/component_pose_publisher.cpp b/src/component_pose_publisher.cpp
+index af18af2..e783786 100644
+--- a/src/component_pose_publisher.cpp
++++ b/src/component_pose_publisher.cpp
+@@ -34,7 +34,7 @@ void PCLLocalization::publishCurrentPose(
+     publishBridgePoseAsRejectedOutput(stamp);
+     geometry_msgs::msg::TransformStamped frozen = last_good_map_to_odom_;
+     frozen.header.stamp = stamp;
+-    broadcastTransform(frozen);
++    broadcastTransform(stepPublishedMapToOdom(frozen));
+     return;
+   }
+   publishPoseMessage(*current_pose_with_cov_stamped_ptr_);
+@@ -123,7 +123,7 @@ bool PCLLocalization::publishMapToOdomTransform(
+       map_to_base_link_stamped,
+       odom_to_base_link_msg,
+       level_map_to_odom_);
+-  broadcastTransform(map_to_odom);
++  broadcastTransform(stepPublishedMapToOdom(map_to_odom, &odom_to_base_link_msg));
+   // Freeze this map -> odom offset so republishFrozenMapToOdomTransform can keep
+   // it alive (re-stamped) through a dropout. Only called from accepted-match /
+   // accepted-reset call sites (see publishPoseTransform's default and its one
+@@ -157,10 +157,47 @@ void PCLLocalization::republishFrozenMapToOdomTransform(
+   }
+   geometry_msgs::msg::TransformStamped frozen = last_good_map_to_odom_;
+   frozen.header.stamp = stamp;
+-  broadcastTransform(frozen);
++  broadcastTransform(stepPublishedMapToOdom(frozen));
+   publishOdomBridgePose(stamp, frozen);
+ }
+ 
++geometry_msgs::msg::TransformStamped PCLLocalization::stepPublishedMapToOdom(
++  const geometry_msgs::msg::TransformStamped & target,
++  const geometry_msgs::msg::TransformStamped * odom_to_base_link)
++{
++  if (!lidar_localization::isMapToOdomStepLimitEnabled(map_to_odom_step_params_)) {
++    return target;
++  }
++  // The step turns about the robot. A pose a scan old is close enough for that;
++  // the latest transform needs no wait, and without one the last pivot is kept.
++  Eigen::Vector3d robot_in_odom = map_to_odom_step_.pivot_in_odom;
++  if (odom_to_base_link != nullptr) {
++    robot_in_odom = tf2::transformToEigen(*odom_to_base_link).translation();
++  } else {
++    try {
++      robot_in_odom = tf2::transformToEigen(
++        tfbuffer_.lookupTransform(odom_frame_id_, base_frame_id_, tf2::TimePointZero))
++        .translation();
++    } catch (const tf2::TransformException & ex) {
++      RCLCPP_WARN_THROTTLE(
++        get_logger(), *get_clock(), 5000,
++        "map -> odom step limit: no %s -> %s transform (%s); stepping about the last robot "
++        "position", odom_frame_id_.c_str(), base_frame_id_.c_str(), ex.what());
++    }
++  }
++  map_to_odom_step_ = lidar_localization::advanceMapToOdomStep(
++    map_to_odom_step_, tf2::transformToEigen(target), robot_in_odom,
++    stamp_to_sec(target.header.stamp), map_to_odom_step_params_);
++  if (map_to_odom_step_.published_is_target) {
++    return target;
++  }
++  geometry_msgs::msg::TransformStamped published =
++    tf2::eigenToTransform(map_to_odom_step_.published);
++  published.header = target.header;
++  published.child_frame_id = target.child_frame_id;
++  return published;
++}
++
+ void PCLLocalization::publishOdomBridgePose(
+   const builtin_interfaces::msg::Time & stamp,
+   const geometry_msgs::msg::TransformStamped & frozen_map_to_odom)
+@@ -241,7 +278,8 @@ bool PCLLocalization::lookupOdomBridgePoseMatrix(
+   const builtin_interfaces::msg::Time & stamp,
+   Eigen::Matrix4f & out_pose_matrix,
+   bool use_latest_odom_transform,
+-  builtin_interfaces::msg::Time * resolved_stamp)
++  builtin_interfaces::msg::Time * resolved_stamp,
++  Eigen::Isometry3d * odom_to_base)
+ {
+   // Same composition as publishOdomBridgePose (frozen map -> odom x live
+   // odom -> base_link(stamp)), but returning an Eigen matrix for use as an
+@@ -301,6 +339,9 @@ bool PCLLocalization::lookupOdomBridgePoseMatrix(
+   if (resolved_stamp != nullptr) {
+     *resolved_stamp = odom_to_base_link_msg.header.stamp;
+   }
++  if (odom_to_base != nullptr) {
++    *odom_to_base = tf2::transformToEigen(odom_to_base_link_msg);
++  }
+   tf2::Transform map_to_odom_tf;
+   tf2::Transform odom_to_base_tf;
+   tf2::fromMsg(last_good_map_to_odom_.transform, map_to_odom_tf);
+@@ -448,7 +489,7 @@ void PCLLocalization::timerPublishPose()
+     // callback budget while /clock is slightly ahead of GLIM's newest TF.
+     geometry_msgs::msg::TransformStamped frozen = last_good_map_to_odom_;
+     frozen.header.stamp = pose_copy.header.stamp;
+-    broadcastTransform(frozen);
++    broadcastTransform(stepPublishedMapToOdom(frozen));
+   } else {
+     publishPoseTransform(pose_copy.header.stamp, pose_copy.pose.pose, false);
+   }
+diff --git a/src/component_prediction_state.cpp b/src/component_prediction_state.cpp
+index d443d8c..614b3a7 100644
+--- a/src/component_prediction_state.cpp
++++ b/src/component_prediction_state.cpp
+@@ -51,6 +51,7 @@ void PCLLocalization::resetPredictionState(const Eigen::Matrix4f & pose_matrix,
+ {
+   prediction_state_ = lidar_localization::resetPredictionState(pose_matrix, stamp_sec);
+   settled_accepts_since_reset_ = 0;
++  seed_guard_rejected_candidates_.clear();
+ }
+ 
+ void PCLLocalization::updatePredictionState(
+@@ -64,7 +65,9 @@ void PCLLocalization::updatePredictionState(
+   settled_accepts_since_reset_ = lidar_localization::nextSettledAccepts(
+     settled_accepts_since_reset_, measurementGateParams(),
+     last_gated_correction_translation_m_, last_gated_correction_yaw_deg_,
+-    prediction_state_.accepted_updates_since_reset == 1);
++    prediction_state_.accepted_updates_since_reset == 1,
++    last_gated_seed_guard_released_);
++  seed_guard_rejected_candidates_.clear();
+ }
+ 
+ void PCLLocalization::advancePredictionWithoutMeasurement(double stamp_sec)
+diff --git a/src/component_subscribers.cpp b/src/component_subscribers.cpp
+index 3a12735..2611a67 100644
+--- a/src/component_subscribers.cpp
++++ b/src/component_subscribers.cpp
+@@ -284,6 +284,8 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
+   }
+   // An admitted reset supersedes the old track even if its TF is not available yet.
+   has_last_good_map_to_odom_ = false;
++  // The broadcast map -> odom snaps to the reset anchor instead of stepping to it.
++  map_to_odom_step_ = lidar_localization::MapToOdomStepState{};
+   has_odom_tf_constraint_anchor_pose_ = false;
+   odom_bridge_transform_history_.clear();
+   has_last_odom_bridge_source_advance_node_stamp_ = false;
+@@ -807,6 +809,22 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
+     return;
+   }
+ 
++  if (motion_gate_.active) {
++    // Too fast to trust this scan's registration (motion_gate_policy.hpp). Hold
++    // map -> odom as on a rejection, without counting one or keeping a candidate.
++    RCLCPP_INFO_THROTTLE(
++      get_logger(), *get_clock(), 1000,
++      "Motion gate: registration not used (yaw rate %.2f rad/s, speed %.2f m/s)",
++      motion_gate_.yaw_rate_rad_s, motion_gate_.speed_mps);
++    publishAlignmentStatusForAttempt(
++      msg->header.stamp, diagnostic_msgs::msg::DiagnosticStatus::WARN, "motion_gate_skipped",
++      pipeline_result.selected_attempt, filtered_point_count, imu_prediction_ready,
++      registration_seed_source);
++    finishLocalReacquisitionConfirmation(false);
++    publishBridgePoseAsRejectedOutput(msg->header.stamp);
++    return;
++  }
++
+   applySoftOdomCorrectionGate(pipeline_result);
+   logAlignmentPipelineRecovery(pipeline_result);
+   if (handleTerminalAlignmentPipelineResult(
+@@ -831,6 +849,22 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
+       imu_prediction_ready,
+       registration_seed_source))
+   {
++    // A rejected registration result is a candidate for the seed correction
++    // guard's consistent release (seed_guard_release_policy.hpp), unless it
++    // scores worse than the release allows (relative_fitness_policy.hpp): such
++    // a result breaks the run of agreeing candidates.
++    if (const auto candidate = scanCandidateMapToOdom(pipeline_result.selected_attempt)) {
++      if (
++        pipeline_result.selected_attempt.fitness_score <=
++        lidar_localization::relativeFitnessLimit(
++          seed_guard_release_fitness_params_, recent_accepted_fitness_))
++      {
++        seed_guard_rejected_candidates_ = lidar_localization::appendRejectedCandidate(
++          seed_guard_rejected_candidates_, *candidate, measurementGateParams());
++      } else {
++        seed_guard_rejected_candidates_.clear();
++      }
++    }
+     finishLocalReacquisitionConfirmation(false);
+     maybeRunLocalReacquisition(
+       tmp_ptr, selected_seed, scan_stamp_sec, state_lock, seed_generation);
+@@ -838,6 +872,8 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
+     return;
+   }
+   finishLocalReacquisitionConfirmation(true);
++  recent_accepted_fitness_ = lidar_localization::appendRecentFitness(
++    recent_accepted_fitness_, pipeline_result.selected_attempt.fitness_score);
+ 
+   printAlignmentDebugInfo(init_guess, pipeline_result.selected_attempt, filtered_point_count);
+ }
+diff --git a/test/test_map_to_odom_step_policy.cpp b/test/test_map_to_odom_step_policy.cpp
+new file mode 100644
+index 0000000..9b5fc36
+--- /dev/null
++++ b/test/test_map_to_odom_step_policy.cpp
+@@ -0,0 +1,266 @@
++// Tests for map_to_odom_step_policy.hpp. Failures are counted instead of
++// asserted, so the checks also run where NDEBUG is defined.
++#include <cmath>
++#include <cstdio>
++#include <string>
++
++#include <Eigen/Geometry>
++
++#include "lidar_localization/map_to_odom_step_policy.hpp"
++
++namespace ll = lidar_localization;
++
++namespace
++{
++int failures = 0;
++
++void expect(bool condition, const char * what)
++{
++  if (!condition) {
++    std::fprintf(stderr, "FAILED: %s\n", what);
++    ++failures;
++  }
++}
++
++bool near(double a, double b, double tolerance = 1e-9)
++{
++  return std::abs(a - b) <= tolerance;
++}
++
++constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
++
++Eigen::Isometry3d planar(double x, double y, double yaw_deg)
++{
++  Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
++  pose.translation() = Eigen::Vector3d(x, y, 0.0);
++  pose.linear() =
++    Eigen::AngleAxisd(yaw_deg * kDegToRad, Eigen::Vector3d::UnitZ()).toRotationMatrix();
++  return pose;
++}
++
++double yawDeg(const Eigen::Isometry3d & pose)
++{
++  return std::atan2(pose.linear()(1, 0), pose.linear()(0, 0)) / kDegToRad;
++}
++
++bool sameTransform(
++  const Eigen::Isometry3d & a, const Eigen::Isometry3d & b, double tolerance = 1e-9)
++{
++  return (a.matrix() - b.matrix()).cwiseAbs().maxCoeff() <= tolerance;
++}
++
++// map -> odom turned by yaw_deg about the robot at robot_in_odom: the robot
++// keeps its map position and only its heading changes.
++Eigen::Isometry3d turnedAboutRobot(
++  const Eigen::Isometry3d & map_to_odom, const Eigen::Vector3d & robot_in_odom, double yaw_deg)
++{
++  const Eigen::Vector3d robot = map_to_odom * robot_in_odom;
++  Eigen::Isometry3d turn = Eigen::Isometry3d::Identity();
++  turn.linear() =
++    Eigen::AngleAxisd(yaw_deg * kDegToRad, Eigen::Vector3d::UnitZ()).toRotationMatrix();
++  turn.translation() = robot - turn.linear() * robot;
++  return turn * map_to_odom;
++}
++
++void test_limit_is_off_by_default()
++{
++  ll::MapToOdomStepParams params;
++  expect(!ll::isMapToOdomStepLimitEnabled(params), "default params disable the limit");
++  params.max_translation_m = 0.05;
++  expect(ll::isMapToOdomStepLimitEnabled(params), "a translation limit enables it");
++  params = {};
++  params.max_yaw_deg = 0.5;
++  expect(ll::isMapToOdomStepLimitEnabled(params), "a yaw limit enables it");
++  params = {-1.0, std::nan("")};
++  expect(!ll::isMapToOdomStepLimitEnabled(params), "negative or NaN limits disable it");
++
++  // Without a limit every broadcast is the target itself.
++  ll::MapToOdomStepState state;
++  const Eigen::Isometry3d first = planar(1.0, 2.0, 10.0);
++  state = ll::advanceMapToOdomStep(state, first, Eigen::Vector3d(5.0, 0.0, 0.0), 1.0, {});
++  const Eigen::Isometry3d jump = planar(4.0, -3.0, 40.0);
++  state = ll::advanceMapToOdomStep(state, jump, Eigen::Vector3d(5.0, 0.0, 0.0), 1.1, {});
++  expect(sameTransform(state.published, jump), "unlimited broadcast is the target");
++  expect(state.published_is_target, "unlimited broadcast is flagged as the target");
++  const auto pending = ll::pendingMapToOdomStep(state);
++  expect(pending.translation_m == 0.0 && pending.yaw_deg == 0.0, "nothing pending without a limit");
++}
++
++void test_difference_is_measured_at_the_robot()
++{
++  const Eigen::Vector3d robot(30.0, 0.0, 0.0);
++  const Eigen::Isometry3d from = Eigen::Isometry3d::Identity();
++  // A 2 degree heading correction about the robot, 30 m from the odom origin.
++  const Eigen::Isometry3d to = turnedAboutRobot(from, robot, 2.0);
++  expect(to.translation().norm() > 1.0, "the translation part of map -> odom moves over 1 m");
++  const auto difference = ll::mapToOdomDifferenceAt(from, to, robot);
++  expect(near(difference.translation_m, 0.0, 1e-9), "the robot itself does not move");
++  expect(near(difference.yaw_deg, 2.0, 1e-9), "the heading turns by 2 degrees");
++
++  // The same change seen from the odom origin is a 30 m arc.
++  const auto at_origin = ll::mapToOdomDifferenceAt(from, to, Eigen::Vector3d::Zero());
++  expect(near(at_origin.translation_m, 2.0 * 30.0 * std::sin(1.0 * kDegToRad), 1e-9),
++    "about the odom origin the robot would move along the arc");
++}
++
++void test_translation_steps_reach_the_target()
++{
++  ll::MapToOdomStepParams params;
++  params.max_translation_m = 0.1;
++  const Eigen::Vector3d robot(2.0, 1.0, 0.0);
++  ll::MapToOdomStepState state =
++    ll::advanceMapToOdomStep({}, Eigen::Isometry3d::Identity(), robot, 0.0, params);
++  expect(state.initialized && state.published_is_target, "the first broadcast snaps");
++
++  const Eigen::Isometry3d target = planar(0.35, 0.0, 0.0);
++  state = ll::advanceMapToOdomStep(state, target, robot, 0.1, params);
++  expect(!state.published_is_target, "a 0.35 m correction does not fit in one step");
++  expect(near((state.published * robot - robot).norm(), 0.1), "the robot moves 0.1 m");
++  auto pending = ll::pendingMapToOdomStep(state);
++  expect(near(pending.translation_m, 0.25), "0.25 m remains");
++  expect(near(pending.yaw_deg, 0.0), "no heading remains");
++
++  // The rest carries over to the following cycles (e.g. republishes of the frozen anchor).
++  state = ll::advanceMapToOdomStep(state, target, robot, 0.2, params);
++  state = ll::advanceMapToOdomStep(state, target, robot, 0.3, params);
++  expect(!state.published_is_target, "0.05 m still remains after three steps");
++  expect(near(ll::pendingMapToOdomStep(state).translation_m, 0.05), "0.05 m remains");
++  state = ll::advanceMapToOdomStep(state, target, robot, 0.4, params);
++  expect(state.published_is_target, "the fourth step ends on the target");
++  expect(sameTransform(state.published, target, 0.0), "the target is published exactly");
++  pending = ll::pendingMapToOdomStep(state);
++  expect(pending.translation_m == 0.0 && pending.yaw_deg == 0.0, "nothing pending at the target");
++}
++
++void test_rotation_turns_about_the_robot()
++{
++  ll::MapToOdomStepParams params;
++  params.max_translation_m = 0.05;
++  params.max_yaw_deg = 0.5;
++  const Eigen::Vector3d robot(30.0, 10.0, 0.0);
++  const Eigen::Isometry3d start = planar(1.0, -2.0, 15.0);
++  ll::MapToOdomStepState state = ll::advanceMapToOdomStep({}, start, robot, 0.0, params);
++  // 1.9 degrees about the robot, which is over 30 m from the odom origin: the
++  // translation part of map -> odom changes by about 1 m, the robot not at all.
++  const Eigen::Isometry3d target = turnedAboutRobot(start, robot, 1.9);
++
++  const Eigen::Vector3d robot_on_map = start * robot;
++  for (int cycle = 1; cycle <= 3; ++cycle) {
++    state = ll::advanceMapToOdomStep(state, target, robot, 0.1 * cycle, params);
++    expect(!state.published_is_target, "a 1.9 degree turn takes four 0.5 degree steps");
++    expect(near((state.published * robot - robot_on_map).norm(), 0.0, 1e-9),
++      "the robot keeps its map position while the heading turns");
++    expect(near(yawDeg(state.published) - yawDeg(start), 0.5 * cycle, 1e-9),
++      "the heading turns 0.5 degrees per step");
++  }
++  expect(near(ll::pendingMapToOdomStep(state).yaw_deg, 0.4, 1e-9), "0.4 degrees remain");
++  expect(near(ll::pendingMapToOdomStep(state).translation_m, 0.0, 1e-9),
++    "no translation remains at the robot");
++  state = ll::advanceMapToOdomStep(state, target, robot, 0.4, params);
++  expect(state.published_is_target, "the fourth step ends on the target");
++}
++
++void test_combined_steps_stay_within_both_limits()
++{
++  ll::MapToOdomStepParams params;
++  params.max_translation_m = 0.04;
++  params.max_yaw_deg = 0.3;
++  Eigen::Vector3d robot(12.0, -7.0, 0.3);
++  const Eigen::Isometry3d start = planar(-3.0, 4.0, -30.0);
++  ll::MapToOdomStepState state = ll::advanceMapToOdomStep({}, start, robot, 0.0, params);
++  const Eigen::Isometry3d target = planar(-2.2, 4.5, -27.5);
++
++  int cycles = 0;
++  do {
++    ++cycles;
++    // The robot drives on; each step turns about where it is now.
++    robot += Eigen::Vector3d(0.05, 0.02, 0.0);
++    const Eigen::Isometry3d before = state.published;
++    state = ll::advanceMapToOdomStep(state, target, robot, 0.1 * cycles, params);
++    const auto step = ll::mapToOdomDifferenceAt(before, state.published, robot);
++    expect(step.translation_m <= params.max_translation_m + 1e-9, "the robot moves at most 0.04 m");
++    expect(step.yaw_deg <= params.max_yaw_deg + 1e-9, "the heading turns at most 0.3 degrees");
++  } while (!state.published_is_target && cycles < 1000);
++  expect(cycles > 1 && cycles < 1000, "the target is reached in finitely many steps");
++  expect(sameTransform(state.published, target, 0.0), "and exactly");
++}
++
++void test_one_step_per_publish_cycle()
++{
++  ll::MapToOdomStepParams params;
++  params.max_translation_m = 0.1;
++  const Eigen::Vector3d robot = Eigen::Vector3d::Zero();
++  ll::MapToOdomStepState state =
++    ll::advanceMapToOdomStep({}, Eigen::Isometry3d::Identity(), robot, 1.0, params);
++
++  // An accepted scan at t = 2 first republishes the frozen anchor (target A)
++  // and then broadcasts the new one (target B) at the same stamp.
++  const Eigen::Isometry3d target_a = planar(1.0, 0.0, 0.0);
++  const Eigen::Isometry3d target_b = planar(0.0, 1.0, 0.0);
++  state = ll::advanceMapToOdomStep(state, target_a, robot, 2.0, params);
++  expect(near(state.published.translation().x(), 0.1), "the republish steps toward A");
++  state = ll::advanceMapToOdomStep(state, target_b, robot, 2.0, params);
++  expect(
++    near(state.published.translation().x(), 0.0) &&
++    near(state.published.translation().y(), 0.1),
++    "the cycle takes one step from where it started, toward the newest target");
++
++  state = ll::advanceMapToOdomStep(state, target_b, robot, 3.0, params);
++  expect(near(state.published.translation().y(), 0.2), "the next cycle steps on from there");
++}
++
++void test_reset_snaps_to_the_target()
++{
++  ll::MapToOdomStepParams params;
++  params.max_translation_m = 0.1;
++  params.max_yaw_deg = 0.5;
++  const Eigen::Vector3d robot(3.0, 0.0, 0.0);
++  ll::MapToOdomStepState state =
++    ll::advanceMapToOdomStep({}, Eigen::Isometry3d::Identity(), robot, 1.0, params);
++  state = ll::advanceMapToOdomStep(state, planar(5.0, 0.0, 20.0), robot, 2.0, params);
++  expect(!state.published_is_target, "a large correction is stepped");
++
++  // An initial pose or a confirmed re-acquisition starts from a default state.
++  const Eigen::Isometry3d reset_anchor = planar(-8.0, 3.0, 90.0);
++  state = ll::advanceMapToOdomStep(ll::MapToOdomStepState{}, reset_anchor, robot, 2.5, params);
++  expect(state.published_is_target, "the first broadcast after a reset is the target");
++  expect(sameTransform(state.published, reset_anchor, 0.0), "exactly the reset anchor");
++}
++
++void test_diagnostic_values()
++{
++  ll::MapToOdomStepParams params;
++  params.max_translation_m = 0.1;
++  const Eigen::Vector3d robot = Eigen::Vector3d::Zero();
++  ll::MapToOdomStepState state;
++  auto values = ll::buildMapToOdomStepDiagnosticValues(state);
++  expect(values.size() == 2, "two diagnostic values");
++  expect(values[0].first == "map_to_odom_pending_translation_m", "pending translation key");
++  expect(values[1].first == "map_to_odom_pending_yaw_deg", "pending yaw key");
++  expect(values[0].second == "0.000000" && values[1].second == "0.000000",
++    "nothing pending before the first broadcast");
++
++  state = ll::advanceMapToOdomStep(state, Eigen::Isometry3d::Identity(), robot, 1.0, params);
++  state = ll::advanceMapToOdomStep(state, planar(0.5, 0.0, 3.0), robot, 2.0, params);
++  values = ll::buildMapToOdomStepDiagnosticValues(state);
++  expect(values[0].second == "0.400000", "0.4 m pending");
++  expect(values[1].second == "0.000000", "the heading has no limit and is applied at once");
++}
++}  // namespace
++
++int main()
++{
++  test_limit_is_off_by_default();
++  test_difference_is_measured_at_the_robot();
++  test_translation_steps_reach_the_target();
++  test_rotation_turns_about_the_robot();
++  test_combined_steps_stay_within_both_limits();
++  test_one_step_per_publish_cycle();
++  test_reset_snaps_to_the_target();
++  test_diagnostic_values();
++  if (failures > 0) {
++    std::fprintf(stderr, "%d check(s) failed\n", failures);
++    return 1;
++  }
++  return 0;
++}
+diff --git a/test/test_motion_gate_policy.cpp b/test/test_motion_gate_policy.cpp
+new file mode 100644
+index 0000000..b17f918
+--- /dev/null
++++ b/test/test_motion_gate_policy.cpp
+@@ -0,0 +1,158 @@
++// Tests for motion_gate_policy.hpp. Failures are counted instead of asserted,
++// so the checks also run where NDEBUG is defined.
++#include <cmath>
++#include <cstdio>
++#include <limits>
++#include <string>
++
++#include <Eigen/Geometry>
++
++#include "lidar_localization/motion_gate_policy.hpp"
++
++namespace ll = lidar_localization;
++
++namespace
++{
++int failures = 0;
++
++void expect(bool condition, const char * what)
++{
++  if (!condition) {
++    std::fprintf(stderr, "FAILED: %s\n", what);
++    ++failures;
++  }
++}
++
++bool near(double a, double b, double tolerance = 1e-9)
++{
++  return std::abs(a - b) <= tolerance;
++}
++
++constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
++
++ll::TimedOdomToBase seed(double stamp_sec, double x, double y, double z, double yaw_deg)
++{
++  ll::TimedOdomToBase timed;
++  timed.stamp_sec = stamp_sec;
++  timed.odom_to_base.translation() = Eigen::Vector3d(x, y, z);
++  timed.odom_to_base.linear() =
++    Eigen::AngleAxisd(yaw_deg * kDegToRad, Eigen::Vector3d::UnitZ()).toRotationMatrix();
++  return timed;
++}
++
++void test_estimate_needs_a_recent_previous_seed()
++{
++  const auto previous = seed(10.0, 0.0, 0.0, 0.0, 0.0);
++  expect(!ll::estimateSeedMotion(previous, seed(10.0, 1.0, 0.0, 0.0, 0.0)).valid,
++    "no estimate over zero time");
++  expect(!ll::estimateSeedMotion(previous, seed(9.9, 1.0, 0.0, 0.0, 0.0)).valid,
++    "no estimate backwards in time");
++  expect(!ll::estimateSeedMotion(previous, seed(11.2, 1.0, 0.0, 0.0, 0.0)).valid,
++    "no estimate across more than 1 s");
++  expect(ll::estimateSeedMotion(previous, seed(11.0, 1.0, 0.0, 0.0, 0.0)).valid,
++    "an estimate across exactly 1 s");
++  ll::TimedOdomToBase unset;
++  expect(!ll::estimateSeedMotion(unset, seed(11.0, 1.0, 0.0, 0.0, 0.0)).valid,
++    "no estimate without a previous stamp");
++  auto broken = seed(10.1, 1.0, 0.0, 0.0, 0.0);
++  broken.odom_to_base.translation().x() = std::numeric_limits<double>::quiet_NaN();
++  expect(!ll::estimateSeedMotion(previous, broken).valid, "no estimate from a non-finite seed");
++
++  const auto invalid = ll::estimateSeedMotion(previous, seed(12.0, 1.0, 0.0, 0.0, 0.0));
++  expect(std::isnan(invalid.yaw_rate_rad_s) && std::isnan(invalid.speed_mps),
++    "an invalid estimate has no rates");
++}
++
++void test_estimate_reads_planar_speed_and_yaw_rate()
++{
++  // 0.3 m forward and 0.4 m sideways in 0.1 s while turning 10 degrees.
++  const auto estimate = ll::estimateSeedMotion(
++    seed(5.0, 1.0, 2.0, 0.0, 30.0), seed(5.1, 1.3, 2.4, 0.5, 40.0));
++  expect(estimate.valid, "valid estimate");
++  expect(near(estimate.speed_mps, 5.0), "planar speed 5 m/s, height ignored");
++  expect(near(estimate.yaw_rate_rad_s, 10.0 * kDegToRad / 0.1), "yaw rate from the yaw change");
++
++  // A turn across +-180 degrees is the short way round, and the rate is absolute.
++  const auto wrapped = ll::estimateSeedMotion(
++    seed(5.0, 0.0, 0.0, 0.0, 179.0), seed(5.1, 0.0, 0.0, 0.0, -179.0));
++  expect(near(wrapped.yaw_rate_rad_s, 2.0 * kDegToRad / 0.1), "2 degrees, not 358");
++  const auto clockwise = ll::estimateSeedMotion(
++    seed(5.0, 0.0, 0.0, 0.0, 20.0), seed(5.2, 0.0, 0.0, 0.0, -40.0));
++  expect(near(clockwise.yaw_rate_rad_s, 60.0 * kDegToRad / 0.2), "clockwise turns count");
++  expect(near(clockwise.speed_mps, 0.0), "turning on the spot");
++}
++
++void test_gate_is_off_by_default()
++{
++  ll::MotionGateParams params;
++  expect(!ll::isMotionGateEnabled(params), "default params disable the gate");
++  const auto fast = ll::estimateSeedMotion(
++    seed(1.0, 0.0, 0.0, 0.0, 0.0), seed(1.1, 0.5, 0.0, 0.0, 30.0));
++  const auto decision = ll::decideMotionGate(params, fast);
++  expect(!decision.active, "never active without limits");
++  expect(near(decision.speed_mps, 5.0) && near(decision.yaw_rate_rad_s, 30.0 * kDegToRad / 0.1),
++    "the estimate is still reported");
++}
++
++void test_gate_trips_above_either_limit()
++{
++  ll::MotionGateParams params;
++  params.max_yaw_rate_rad_s = 2.0;
++  params.max_speed_mps = 3.0;
++  expect(ll::isMotionGateEnabled(params), "limits enable the gate");
++
++  ll::SeedMotionEstimate estimate;
++  estimate.valid = true;
++  estimate.yaw_rate_rad_s = 1.0;
++  estimate.speed_mps = 2.0;
++  expect(!ll::decideMotionGate(params, estimate).active, "slow enough");
++  estimate.yaw_rate_rad_s = 2.0;
++  estimate.speed_mps = 3.0;
++  expect(!ll::decideMotionGate(params, estimate).active, "exactly at the limits passes");
++  estimate.yaw_rate_rad_s = 2.5;
++  expect(ll::decideMotionGate(params, estimate).active, "turning too fast");
++  estimate.yaw_rate_rad_s = 1.0;
++  estimate.speed_mps = 3.5;
++  expect(ll::decideMotionGate(params, estimate).active, "driving too fast");
++
++  params.max_speed_mps = 0.0;
++  expect(!ll::decideMotionGate(params, estimate).active, "a zero limit is off");
++
++  estimate.valid = false;
++  estimate.yaw_rate_rad_s = 10.0;
++  expect(!ll::decideMotionGate(params, estimate).active, "no gate without an estimate");
++}
++
++void test_diagnostic_values()
++{
++  ll::MotionGateDecision decision;
++  auto values = ll::buildMotionGateDiagnosticValues(decision);
++  expect(values.size() == 3, "three diagnostic values");
++  expect(values[0].first == "motion_gate_active" && values[0].second == "false", "inactive");
++  expect(values[1].first == "motion_gate_yaw_rate_rad_s", "yaw rate key");
++  expect(values[2].first == "motion_gate_speed_mps", "speed key");
++  expect(values[1].second.find("nan") != std::string::npos, "no estimate reads as nan");
++
++  decision.active = true;
++  decision.yaw_rate_rad_s = 3.5;
++  decision.speed_mps = 1.25;
++  values = ll::buildMotionGateDiagnosticValues(decision);
++  expect(values[0].second == "true", "active");
++  expect(values[1].second == "3.500000", "yaw rate value");
++  expect(values[2].second == "1.250000", "speed value");
++}
++}  // namespace
++
++int main()
++{
++  test_estimate_needs_a_recent_previous_seed();
++  test_estimate_reads_planar_speed_and_yaw_rate();
++  test_gate_is_off_by_default();
++  test_gate_trips_above_either_limit();
++  test_diagnostic_values();
++  if (failures > 0) {
++    std::fprintf(stderr, "%d check(s) failed\n", failures);
++    return 1;
++  }
++  return 0;
++}
+diff --git a/test/test_relative_fitness_policy.cpp b/test/test_relative_fitness_policy.cpp
+new file mode 100644
+index 0000000..e58b67a
+--- /dev/null
++++ b/test/test_relative_fitness_policy.cpp
+@@ -0,0 +1,102 @@
++// Tests for relative_fitness_policy.hpp. Failures are counted instead of
++// asserted, so the checks also run where NDEBUG is defined.
++#include <cmath>
++#include <cstddef>
++#include <cstdio>
++#include <deque>
++#include <limits>
++
++#include "lidar_localization/relative_fitness_policy.hpp"
++
++namespace ll = lidar_localization;
++
++namespace
++{
++int failures = 0;
++
++void expect(bool condition, const char * what)
++{
++  if (!condition) {
++    std::fprintf(stderr, "FAILED: %s\n", what);
++    ++failures;
++  }
++}
++
++std::deque<double> filled(std::size_t count, double fitness)
++{
++  std::deque<double> recent;
++  for (std::size_t i = 0; i < count; ++i) {
++    recent = ll::appendRecentFitness(recent, fitness);
++  }
++  return recent;
++}
++
++void test_window()
++{
++  auto recent = filled(ll::kRecentFitnessWindow, 0.01);
++  recent = ll::appendRecentFitness(recent, 0.5);
++  expect(recent.size() == ll::kRecentFitnessWindow, "trimmed to the window");
++  expect(recent.back() == 0.5 && recent.front() == 0.01, "the oldest goes first");
++  const auto unchanged = ll::appendRecentFitness(recent, std::numeric_limits<double>::infinity());
++  expect(unchanged == recent, "a non-finite fitness is not kept");
++}
++
++void test_median()
++{
++  expect(!ll::recentFitnessMedian(filled(ll::kRecentFitnessMinSamples - 1, 0.01)),
++    "no median with too few samples");
++  auto recent = filled(ll::kRecentFitnessMinSamples, 0.01);
++  for (int i = 0; i < 5; ++i) {
++    recent = ll::appendRecentFitness(recent, 0.9);
++  }
++  const auto median = ll::recentFitnessMedian(recent);
++  expect(median && std::abs(*median - 0.01) < 1e-12, "a few wrong places do not move the median");
++}
++
++void test_limit()
++{
++  const auto recent = filled(ll::kRecentFitnessMinSamples, 0.01);
++  ll::RelativeFitnessParams params;
++  expect(std::isinf(ll::relativeFitnessLimit(params, recent)), "off by default");
++  params.max_ratio = 5.0;
++  params.floor = 0.0;
++  expect(std::abs(ll::relativeFitnessLimit(params, recent) - 0.05) < 1e-12, "ratio x median");
++  params.floor = 0.2;
++  expect(std::abs(ll::relativeFitnessLimit(params, recent) - 0.2) < 1e-12, "not below the floor");
++  expect(std::isinf(ll::relativeFitnessLimit(params, filled(3, 0.01))),
++    "no limit before the median is known");
++  // The kidnap test in the arena simulation: good matches 0.007, the wrong
++  // place proposed by the re-acquisition 0.77.
++  params = ll::RelativeFitnessParams{5.0, 0.05};
++  const double limit = ll::relativeFitnessLimit(params, filled(50, 0.007));
++  expect(0.0068 <= limit && limit < 0.77, "the right place passes, the wrong one does not");
++}
++
++void test_validation_and_diagnostics()
++{
++  expect(ll::isRelativeFitnessParamsValid(ll::RelativeFitnessParams{}), "defaults are valid");
++  expect(!ll::isRelativeFitnessParamsValid(ll::RelativeFitnessParams{-1.0, 0.05}), "negative ratio");
++  expect(!ll::isRelativeFitnessParamsValid(
++      ll::RelativeFitnessParams{std::numeric_limits<double>::quiet_NaN(), 0.05}), "NaN ratio");
++  expect(!ll::isRelativeFitnessParamsValid(ll::RelativeFitnessParams{1.0, -0.1}), "negative floor");
++  const auto none = ll::buildRecentFitnessDiagnosticValues({});
++  expect(none.size() == 1 && none[0].first == "recent_accepted_fitness_median" &&
++    none[0].second == "nan", "nan before the median is known");
++  const auto some = ll::buildRecentFitnessDiagnosticValues(filled(30, 0.25));
++  expect(some[0].second == "0.250000", "the median once known");
++}
++}  // namespace
++
++int main()
++{
++  test_window();
++  test_median();
++  test_limit();
++  test_validation_and_diagnostics();
++  if (failures > 0) {
++    std::fprintf(stderr, "%d check(s) failed\n", failures);
++    return 1;
++  }
++  std::printf("relative_fitness_policy: all passed\n");
++  return 0;
++}
+diff --git a/test/test_robust_gate_node.cpp b/test/test_robust_gate_node.cpp
+new file mode 100644
+index 0000000..c1229c3
+--- /dev/null
++++ b/test/test_robust_gate_node.cpp
+@@ -0,0 +1,267 @@
++// Node-level checks of the map -> odom step limit and the motion gate: the
++// broadcast map -> odom steps while the seed keeps the target, a reset snaps,
++// and the motion gate reads the odometry seeds. Failures are counted instead
++// of asserted, so the checks also run where NDEBUG is defined.
++#include <lidar_localization/lidar_localization_component.hpp>
++
++#include <cmath>
++#include <cstdint>
++#include <cstdio>
++#include <deque>
++#include <memory>
++
++namespace
++{
++int failures = 0;
++
++void expect(bool condition, const char * what)
++{
++  if (!condition) {
++    std::fprintf(stderr, "FAILED: %s\n", what);
++    ++failures;
++  }
++}
++
++bool near(double a, double b, double tolerance = 1e-6)
++{
++  return std::abs(a - b) <= tolerance;
++}
++
++builtin_interfaces::msg::Time stampAt(double sec)
++{
++  builtin_interfaces::msg::Time stamp;
++  stamp.sec = static_cast<std::int32_t>(std::floor(sec));
++  stamp.nanosec = static_cast<std::uint32_t>(std::llround((sec - std::floor(sec)) * 1e9));
++  return stamp;
++}
++
++void setOdomToBase(PCLLocalization & node, double sec, double x, double y, double yaw_rad)
++{
++  geometry_msgs::msg::TransformStamped tf;
++  tf.header.frame_id = node.odom_frame_id_;
++  tf.child_frame_id = node.base_frame_id_;
++  tf.header.stamp = stampAt(sec);
++  tf.transform.translation.x = x;
++  tf.transform.translation.y = y;
++  tf.transform.rotation.z = std::sin(yaw_rad / 2.0);
++  tf.transform.rotation.w = std::cos(yaw_rad / 2.0);
++  expect(node.tfbuffer_.setTransform(tf, "fixture", false), "odom -> base_link fixture");
++}
++
++geometry_msgs::msg::Pose planarPose(double x, double y)
++{
++  geometry_msgs::msg::Pose pose;
++  pose.position.x = x;
++  pose.position.y = y;
++  pose.orientation.w = 1.0;
++  return pose;
++}
++
++void initialPose(PCLLocalization & node, double sec, double x, double y)
++{
++  auto msg = std::make_shared<geometry_msgs::msg::PoseWithCovarianceStamped>();
++  msg->header.frame_id = node.global_frame_id_;
++  msg->header.stamp = stampAt(sec);
++  msg->pose.pose = planarPose(x, y);
++  node.initialPoseReceived(msg);
++}
++
++// Where the broadcast map -> odom puts the robot at robot_in_odom.
++double publishedRobotX(const PCLLocalization & node, double robot_in_odom_x)
++{
++  return (node.map_to_odom_step_.published * Eigen::Vector3d(robot_in_odom_x, 0.0, 0.0)).x();
++}
++
++void test_step_limit()
++{
++  rclcpp::NodeOptions options;
++  options.parameter_overrides({
++    rclcpp::Parameter("enable_map_odom_tf", true),
++    rclcpp::Parameter("use_odom_tf_prediction", true),
++    rclcpp::Parameter("map_to_odom_max_step_translation_m", 0.1),
++    rclcpp::Parameter("map_to_odom_max_step_yaw_deg", 0.5)});
++  PCLLocalization node(options);
++  node.configure();
++  node.pose_pub_->on_activate();
++  node.tfbuffer_.setUsingDedicatedThread(true);
++  // The robot stands still 20 m from the odom origin.
++  for (int sec = 1; sec <= 6; ++sec) {
++    setOdomToBase(node, sec, 20.0, 0.0, 0.0);
++  }
++
++  initialPose(node, 1.0, 21.0, 0.0);
++  expect(node.has_last_good_map_to_odom_, "the initial pose sets the anchor");
++  expect(node.map_to_odom_step_.published_is_target, "the initial pose is broadcast as is");
++  expect(near(publishedRobotX(node, 20.0), 21.0), "the robot at the initial pose");
++
++  // An accepted registration moves the robot 0.5 m on the map.
++  expect(node.publishPoseTransform(stampAt(2.0), planarPose(21.5, 0.0)), "accept published");
++  expect(near(node.last_good_map_to_odom_.transform.translation.x, 1.5),
++    "the anchor is the accepted map -> odom");
++  expect(near(publishedRobotX(node, 20.0), 21.1), "the broadcast moves the robot by 0.1 m");
++  expect(near(lidar_localization::pendingMapToOdomStep(node.map_to_odom_step_).translation_m, 0.4),
++    "0.4 m pending");
++  Eigen::Matrix4f seed = Eigen::Matrix4f::Identity();
++  expect(node.lookupOdomBridgePoseMatrix(stampAt(2.0), seed), "the seed is available");
++  expect(near(seed(0, 3), 21.5, 1e-4), "the seed uses the accepted map -> odom");
++
++  // The frozen republishes carry the rest over, one step per stamp.
++  node.republishFrozenMapToOdomTransform(stampAt(3.0));
++  expect(near(publishedRobotX(node, 20.0), 21.2), "one step at the next stamp");
++  node.republishFrozenMapToOdomTransform(stampAt(3.0));
++  expect(near(publishedRobotX(node, 20.0), 21.2), "no second step at the same stamp");
++  node.republishFrozenMapToOdomTransform(stampAt(4.0));
++  expect(near(publishedRobotX(node, 20.0), 21.3), "and the next one");
++
++  // A reset snaps to its anchor.
++  initialPose(node, 5.0, 30.0, 0.0);
++  expect(node.map_to_odom_step_.published_is_target, "the reset anchor is broadcast as is");
++  expect(near(publishedRobotX(node, 20.0), 30.0), "the robot jumps to the reset pose");
++
++  node.pose_pub_->on_deactivate();
++  node.cleanup();
++}
++
++void test_step_limit_off_by_default()
++{
++  rclcpp::NodeOptions options;
++  options.parameter_overrides({
++    rclcpp::Parameter("enable_map_odom_tf", true),
++    rclcpp::Parameter("use_odom_tf_prediction", true)});
++  PCLLocalization node(options);
++  node.configure();
++  node.pose_pub_->on_activate();
++  node.tfbuffer_.setUsingDedicatedThread(true);
++  setOdomToBase(node, 1.0, 20.0, 0.0, 0.0);
++  setOdomToBase(node, 2.0, 20.0, 0.0, 0.0);
++  initialPose(node, 1.0, 21.0, 0.0);
++  const auto broadcast = node.stepPublishedMapToOdom(node.last_good_map_to_odom_);
++  expect(broadcast == node.last_good_map_to_odom_, "without a limit the anchor is broadcast");
++  expect(node.publishPoseTransform(stampAt(2.0), planarPose(25.0, 0.0)), "accept published");
++  expect(!node.map_to_odom_step_.initialized, "no step state without a limit");
++  expect(near(node.last_good_map_to_odom_.transform.translation.x, 5.0), "anchor moved at once");
++  node.pose_pub_->on_deactivate();
++  node.cleanup();
++}
++
++void test_motion_gate_reads_the_odometry_seeds()
++{
++  rclcpp::NodeOptions options;
++  options.parameter_overrides({
++    rclcpp::Parameter("enable_map_odom_tf", true),
++    rclcpp::Parameter("use_odom_tf_prediction", true),
++    rclcpp::Parameter("use_imu_preintegration", false),
++    rclcpp::Parameter("motion_gate_max_yaw_rate_rad_s", 2.0)});
++  PCLLocalization node(options);
++  node.configure();
++  node.pose_pub_->on_activate();
++  node.tfbuffer_.setUsingDedicatedThread(true);
++  setOdomToBase(node, 1.0, 0.0, 0.0, 0.0);
++  setOdomToBase(node, 1.1, 0.1, 0.0, 0.5);
++  setOdomToBase(node, 1.2, 0.2, 0.0, 0.55);
++  initialPose(node, 1.0, 0.0, 0.0);
++
++  node.selectRegistrationSeed(stampAt(1.0), 1.0);
++  expect(node.scan_seed_odom_to_base_.has_value(), "the scan has an odometry seed");
++  expect(!node.motion_gate_.active && std::isnan(node.motion_gate_.yaw_rate_rad_s),
++    "no estimate from the first seed");
++
++  node.selectRegistrationSeed(stampAt(1.1), 1.1);
++  expect(node.motion_gate_.active, "5 rad/s is over the 2 rad/s limit");
++  expect(near(node.motion_gate_.yaw_rate_rad_s, 5.0, 1e-3), "yaw rate from the seeds");
++  expect(near(node.motion_gate_.speed_mps, 1.0, 1e-3), "speed from the seeds");
++
++  node.selectRegistrationSeed(stampAt(1.2), 1.2);
++  expect(!node.motion_gate_.active, "0.5 rad/s passes");
++  node.pose_pub_->on_deactivate();
++  node.cleanup();
++}
++
++void test_consistent_release()
++{
++  rclcpp::NodeOptions options;
++  options.parameter_overrides({
++    rclcpp::Parameter("enable_map_odom_tf", true),
++    rclcpp::Parameter("use_odom_tf_prediction", true),
++    rclcpp::Parameter("enable_seed_correction_guard", true),
++    rclcpp::Parameter("seed_correction_guard_translation_m", 0.5),
++    rclcpp::Parameter("seed_correction_guard_release_rejections", 3),
++    rclcpp::Parameter("seed_correction_guard_warmup_accepts", 2),
++    rclcpp::Parameter("seed_correction_guard_release_min_consistent", 2),
++    rclcpp::Parameter("seed_correction_guard_keep_warmup_after_release", true),
++    rclcpp::Parameter("seed_correction_guard_release_max_fitness_ratio", 3.0)});
++  PCLLocalization node(options);
++  node.configure();
++  expect(
++    node.measurement_gate_config_.seed_correction_guard_release_min_consistent == 2,
++    "the consistent release is configured");
++
++  // The scan was seeded with the robot 10 m along odom x; the registration puts
++  // it 1 m further on the map, so it implies map -> odom = 1 m along x.
++  Eigen::Isometry3d odom_to_base = Eigen::Isometry3d::Identity();
++  odom_to_base.translation().x() = 10.0;
++  node.scan_seed_odom_to_base_ = odom_to_base;
++  node.prediction_state_ = lidar_localization::resetPredictionState(
++    Eigen::Matrix4f::Identity(), 1.0);
++  node.prediction_state_.consecutive_rejected_updates = 3;
++  node.settled_accepts_since_reset_ = 4;
++  lidar_localization::AlignmentAttempt attempt;
++  attempt.target_ready = true;
++  attempt.has_converged = true;
++  attempt.fitness_score = 0.5;
++  attempt.correction_translation_m = 1.0;
++  attempt.correction_yaw_deg = 0.0;
++  attempt.final_transformation = Eigen::Matrix4f::Identity();
++  attempt.final_transformation(0, 3) = 11.0;
++  const auto source = lidar_localization::RegistrationSeedSource::kOdomTfPrediction;
++
++  auto gate = node.evaluateMeasurementGateForAttempt(attempt, source);
++  expect(gate.reject_measurement, "no agreeing rejected results yet: the guard holds");
++
++  for (const double x : {0.97, 1.03}) {
++    Eigen::Isometry3d earlier = Eigen::Isometry3d::Identity();
++    earlier.translation().x() = x;
++    node.seed_guard_rejected_candidates_ = lidar_localization::appendRejectedCandidate(
++      node.seed_guard_rejected_candidates_, earlier, node.measurementGateParams());
++  }
++  gate = node.evaluateMeasurementGateForAttempt(attempt, source);
++  expect(!gate.reject_measurement, "two agreeing rejected results release the guard");
++  expect(node.last_gated_seed_guard_released_, "the release is remembered for the accept");
++
++  // With 20 recent accepts scoring 0.01 the release limit is max(0.05, 3 x 0.01):
++  // the same agreeing result at fitness 0.5 now scores like a wrong place.
++  node.recent_accepted_fitness_ = std::deque<double>(20, 0.01);
++  gate = node.evaluateMeasurementGateForAttempt(attempt, source);
++  expect(gate.reject_measurement, "an agreeing result scoring 50x the recent accepts holds");
++  attempt.fitness_score = 0.02;
++  gate = node.evaluateMeasurementGateForAttempt(attempt, source);
++  expect(!gate.reject_measurement, "one scoring like the recent accepts releases");
++
++  node.updatePredictionState(attempt.final_transformation, 2.0);
++  expect(node.settled_accepts_since_reset_ == 4, "the warmup count is kept");
++  expect(node.seed_guard_rejected_candidates_.empty(), "an accept clears the candidates");
++
++  node.scan_seed_odom_to_base_.reset();
++  node.prediction_state_.consecutive_rejected_updates = 3;
++  node.seed_guard_rejected_candidates_ =
++    std::deque<Eigen::Isometry3d>(2, Eigen::Isometry3d::Identity());
++  gate = node.evaluateMeasurementGateForAttempt(attempt, source);
++  expect(gate.reject_measurement, "without an odometry seed there is no candidate: it holds");
++  node.cleanup();
++}
++}  // namespace
++
++int main(int argc, char ** argv)
++{
++  rclcpp::init(argc, argv);
++  test_step_limit();
++  test_step_limit_off_by_default();
++  test_motion_gate_reads_the_odometry_seeds();
++  test_consistent_release();
++  rclcpp::shutdown();
++  if (failures > 0) {
++    std::fprintf(stderr, "%d check(s) failed\n", failures);
++    return 1;
++  }
++  return 0;
++}
+diff --git a/test/test_seed_guard_release_policy.cpp b/test/test_seed_guard_release_policy.cpp
+new file mode 100644
+index 0000000..09d4934
+--- /dev/null
++++ b/test/test_seed_guard_release_policy.cpp
+@@ -0,0 +1,307 @@
++// Tests for seed_guard_release_policy.hpp and the consistent release in
++// measurement_gate_policy.hpp. Failures are counted instead of asserted, so
++// the checks also run where NDEBUG is defined.
++#include <cmath>
++#include <cstddef>
++#include <cstdio>
++#include <deque>
++
++#include <Eigen/Geometry>
++
++#include "lidar_localization/measurement_gate_policy.hpp"
++#include "lidar_localization/seed_guard_release_policy.hpp"
++
++namespace ll = lidar_localization;
++
++namespace
++{
++int failures = 0;
++
++void expect(bool condition, const char * what)
++{
++  if (!condition) {
++    std::fprintf(stderr, "FAILED: %s\n", what);
++    ++failures;
++  }
++}
++
++constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
++
++Eigen::Isometry3d planar(double x, double y, double yaw_deg)
++{
++  Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
++  pose.translation() = Eigen::Vector3d(x, y, 0.0);
++  pose.linear() =
++    Eigen::AngleAxisd(yaw_deg * kDegToRad, Eigen::Vector3d::UnitZ()).toRotationMatrix();
++  return pose;
++}
++
++// map_to_odom changed so that the robot at robot_in_odom turns by yaw_deg in
++// place and moves by (dx, dy) on the map.
++Eigen::Isometry3d movedAtRobot(
++  const Eigen::Isometry3d & map_to_odom, const Eigen::Vector3d & robot_in_odom,
++  double dx, double dy, double yaw_deg)
++{
++  const Eigen::Vector3d robot = map_to_odom * robot_in_odom;
++  Eigen::Isometry3d change = Eigen::Isometry3d::Identity();
++  change.linear() =
++    Eigen::AngleAxisd(yaw_deg * kDegToRad, Eigen::Vector3d::UnitZ()).toRotationMatrix();
++  change.translation() = robot - change.linear() * robot + Eigen::Vector3d(dx, dy, 0.0);
++  return change * map_to_odom;
++}
++
++ll::MeasurementGateParams guardParams(int min_consistent)
++{
++  ll::MeasurementGateParams params;
++  params.score_threshold = 2.0;
++  params.enable_seed_correction_guard = true;
++  params.seed_correction_guard_translation_m = 0.5;
++  params.seed_correction_guard_yaw_deg = 5.0;
++  params.seed_correction_guard_release_rejections = 10;
++  params.seed_correction_guard_warmup_accepts = 5;
++  params.seed_correction_guard_release_min_consistent = min_consistent;
++  params.seed_correction_guard_release_consistency_translation_m = 0.1;
++  params.seed_correction_guard_release_consistency_yaw_deg = 2.0;
++  return params;
++}
++
++ll::MeasurementGateInput guardInput(
++  double correction_translation_m, std::size_t rejected, bool consistent)
++{
++  return ll::makeMeasurementGateInput(
++    1.0, 0.1, 0.0, correction_translation_m, 0.0, rejected, true, 5, consistent);
++}
++
++void test_candidate_is_the_implied_map_to_odom()
++{
++  const Eigen::Isometry3d map_to_odom = planar(3.0, -2.0, 25.0);
++  const Eigen::Isometry3d odom_to_base = planar(14.0, 6.0, -70.0);
++  const Eigen::Isometry3d candidate =
++    ll::candidateMapToOdom(map_to_odom * odom_to_base, odom_to_base);
++  expect((candidate.matrix() - map_to_odom.matrix()).cwiseAbs().maxCoeff() < 1e-12,
++    "registered map -> base times the inverse odom -> base is map -> odom");
++}
++
++void test_consistency_check()
++{
++  const Eigen::Vector3d robot(50.0, 0.0, 0.0);
++  const Eigen::Isometry3d candidate = planar(1.0, 0.0, 0.0);
++  std::deque<Eigen::Isometry3d> history;
++
++  expect(ll::isSeedGuardReleaseConsistent(guardParams(0), history, candidate, robot),
++    "off: always consistent");
++
++  const auto params = guardParams(3);
++  history = {
++    movedAtRobot(candidate, robot, 0.05, 0.0, 0.0),
++    movedAtRobot(candidate, robot, -0.04, 0.02, 1.0)};
++  expect(!ll::isSeedGuardReleaseConsistent(params, history, candidate, robot),
++    "fewer rejected candidates than min_consistent");
++  history.push_back(movedAtRobot(candidate, robot, 0.0, -0.05, -1.5));
++  expect(ll::isSeedGuardReleaseConsistent(params, history, candidate, robot),
++    "three agreeing candidates");
++
++  history.push_back(movedAtRobot(candidate, robot, 0.3, 0.0, 0.0));
++  expect(!ll::isSeedGuardReleaseConsistent(params, history, candidate, robot),
++    "an outlier among the newest three");
++  history.push_back(candidate);
++  history.push_back(candidate);
++  history.push_back(candidate);
++  expect(ll::isSeedGuardReleaseConsistent(params, history, candidate, robot),
++    "an outlier older than the newest three is not read");
++
++  history.back() = movedAtRobot(candidate, robot, 0.0, 0.0, 2.5);
++  expect(!ll::isSeedGuardReleaseConsistent(params, history, candidate, robot),
++    "a heading off by more than 2 degrees");
++
++  // A heading difference about the robot, 50 m from the odom origin, moves
++  // the translation part of map -> odom by almost 1 m but not the robot.
++  history.back() = movedAtRobot(candidate, robot, 0.0, 0.0, 1.0);
++  expect((history.back().translation() - candidate.translation()).norm() > 0.8,
++    "the translation parts differ by over 0.8 m");
++  expect(ll::isSeedGuardReleaseConsistent(params, history, candidate, robot),
++    "consistent where it matters, at the robot");
++  // The same heading difference about the odom origin moves the robot by 0.87 m.
++  history.back() = planar(1.0, 0.0, 1.0);
++  expect(!ll::isSeedGuardReleaseConsistent(params, history, candidate, robot),
++    "a turn about the odom origin moves the robot");
++}
++
++void test_history_keeps_what_the_check_reads()
++{
++  std::deque<Eigen::Isometry3d> history;
++  for (int i = 0; i < 5; ++i) {
++    history = ll::appendRejectedCandidate(history, planar(i, 0.0, 0.0), guardParams(3));
++  }
++  expect(history.size() == 3, "only the newest min_consistent are kept");
++  expect(history.front().translation().x() == 2.0 && history.back().translation().x() == 4.0,
++    "oldest first");
++
++  history = ll::appendRejectedCandidate(history, planar(5.0, 0.0, 0.0), guardParams(0));
++  expect(history.empty(), "nothing is kept while the check is off");
++}
++
++void test_plain_release_is_unchanged()
++{
++  const auto params = guardParams(0);
++  auto gate = ll::evaluateMeasurementGate(params, guardInput(1.0, 9, false));
++  expect(gate.reject_measurement, "held before release_rejections");
++  expect(gate.status_message == "seed_correction_guard_rejected", "guard message");
++  expect(!gate.seed_correction_guard_released, "not released while held");
++  gate = ll::evaluateMeasurementGate(params, guardInput(1.0, 10, false));
++  expect(!gate.reject_measurement, "released after release_rejections, consistent or not");
++  expect(gate.seed_correction_guard_released, "the release is reported");
++
++  gate = ll::evaluateMeasurementGate(params, guardInput(0.2, 10, false));
++  expect(!gate.reject_measurement && !gate.seed_correction_guard_released,
++    "a small correction never needed the release");
++  expect(!ll::makeMeasurementGateInput(1.0, 0.0, 0.0, 0.0, 0.0, 0)
++    .seed_correction_guard_release_consistent,
++    "consistency is not assumed by default");
++}
++
++void test_consistent_release()
++{
++  const auto params = guardParams(3);
++  auto gate = ll::evaluateMeasurementGate(params, guardInput(1.0, 10, false));
++  expect(gate.reject_measurement, "inconsistent results keep the guard holding");
++  expect(gate.status_message == "seed_correction_guard_rejected", "with the guard message");
++  gate = ll::evaluateMeasurementGate(params, guardInput(1.0, 10, true));
++  expect(!gate.reject_measurement, "consistent results release it");
++  expect(gate.seed_correction_guard_released, "the release is reported");
++  gate = ll::evaluateMeasurementGate(params, guardInput(1.0, 3, true));
++  expect(!gate.reject_measurement, "consistency releases without waiting for release_rejections");
++  expect(gate.seed_correction_guard_released, "the early release is reported");
++  gate = ll::evaluateMeasurementGate(params, guardInput(1.0, 30, false));
++  expect(gate.reject_measurement, "the rejection count alone never releases it");
++
++  // The consistent release also needs a fitness like the recent accepted ones.
++  auto worse_than_recent = guardInput(1.0, 3, true);
++  worse_than_recent.seed_correction_guard_release_max_fitness = 0.5;
++  gate = ll::evaluateMeasurementGate(params, worse_than_recent);
++  expect(gate.reject_measurement, "a consistent result scoring worse than the limit is held");
++  expect(gate.status_message == "seed_correction_guard_rejected", "held by the guard");
++  worse_than_recent.seed_correction_guard_release_max_fitness = 1.0;
++  gate = ll::evaluateMeasurementGate(params, worse_than_recent);
++  expect(!gate.reject_measurement, "the limit itself still releases");
++  auto plain = guardInput(1.0, 10, false);
++  plain.seed_correction_guard_release_max_fitness = 0.5;
++  gate = ll::evaluateMeasurementGate(guardParams(0), plain);
++  expect(!gate.reject_measurement, "the plain release does not read the limit");
++
++  // The fitness threshold still applies after the release.
++  auto bad_fitness = guardInput(1.0, 10, true);
++  bad_fitness.fitness_score = 3.0;
++  gate = ll::evaluateMeasurementGate(params, bad_fitness);
++  expect(gate.reject_measurement, "a poor fitness is rejected after the release");
++  expect(gate.status_message == "fitness_score_over_threshold_rejected", "fitness message");
++
++  // During the warmup the guard is not active at all.
++  auto warming_up = guardInput(1.0, 0, false);
++  warming_up.accepted_updates_since_reset = 4;
++  gate = ll::evaluateMeasurementGate(params, warming_up);
++  expect(!gate.reject_measurement && !gate.seed_correction_guard_released,
++    "not guarded during the warmup");
++}
++
++void test_keep_warmup_after_release()
++{
++  auto params = guardParams(3);
++  // Off: an accept through the release restarts the warmup.
++  expect(ll::nextSettledAccepts(7, params, 1.0, 0.0, false, true) == 0, "restart by default");
++  params.seed_correction_guard_keep_warmup_after_release = true;
++  expect(ll::nextSettledAccepts(7, params, 1.0, 0.0, false, true) == 7,
++    "kept after a consistent release");
++  expect(ll::nextSettledAccepts(7, params, 1.0, 0.0, false, false) == 0,
++    "a large accept the guard did not release still restarts");
++  expect(ll::nextSettledAccepts(7, params, 0.1, 0.0, false, false) == 8,
++    "a settled accept still counts");
++
++  auto plain = guardParams(0);
++  plain.seed_correction_guard_keep_warmup_after_release = true;
++  expect(ll::nextSettledAccepts(7, plain, 1.0, 0.0, false, true) == 0,
++    "only the consistent release keeps the warmup");
++}
++
++// A scan loop with the node's bookkeeping: rejected candidates are kept, and
++// an accept clears them.
++struct LoopResult
++{
++  int accepted_scan{-1};
++  std::size_t settled_after_accept{0};
++};
++
++template<typename CandidateFn>
++LoopResult runGuardLoop(const ll::MeasurementGateParams & params, CandidateFn candidate_at)
++{
++  LoopResult result;
++  std::deque<Eigen::Isometry3d> history;
++  std::size_t rejected = 0;
++  const std::size_t settled = 5;
++  for (int scan = 0; scan < 30; ++scan) {
++    const Eigen::Vector3d robot(0.2 * scan, 0.0, 0.0);
++    const Eigen::Isometry3d candidate = candidate_at(scan);
++    // The anchor is the identity, so the correction is the candidate's offset at the robot.
++    const double correction_m = (candidate * robot - robot).norm();
++    const bool consistent =
++      ll::isSeedGuardReleaseConsistent(params, history, candidate, robot);
++    const auto gate = ll::evaluateMeasurementGate(
++      params, ll::makeMeasurementGateInput(
++        1.0, 0.1, 0.0, correction_m, 0.0, rejected, true, settled, consistent));
++    if (gate.reject_measurement) {
++      ++rejected;
++      history = ll::appendRejectedCandidate(history, candidate, params);
++      continue;
++    }
++    result.accepted_scan = scan;
++    result.settled_after_accept = ll::nextSettledAccepts(
++      settled, params, correction_m, 0.0, false, gate.seed_correction_guard_released);
++    return result;
++  }
++  return result;
++}
++
++void test_drift_relocks_and_scatter_holds()
++{
++  auto params = guardParams(3);
++  params.seed_correction_guard_keep_warmup_after_release = true;
++
++  // The odometry drifted 1 m: every scan implies about the same map -> odom.
++  const auto drift = runGuardLoop(params, [](int scan) {
++        return planar(1.0 + (scan % 2 == 0 ? 0.02 : -0.02), 0.0, 0.0);
++      });
++  expect(drift.accepted_scan == 3, "a consistent drift re-locks after min_consistent + 1 scans");
++  expect(drift.settled_after_accept == 5, "and the guard keeps holding afterwards");
++  const auto next = ll::evaluateMeasurementGate(params, guardInput(0.8, 0, false));
++  expect(next.reject_measurement, "so the next aliased jump is rejected right away");
++
++  // Aliased matches scatter between two answers half a metre apart.
++  const auto scatter = runGuardLoop(params, [](int scan) {
++        return scan % 2 == 0 ? planar(1.0, 0.0, 0.0) : planar(1.0, 0.5, 0.0);
++      });
++  expect(scatter.accepted_scan == -1, "scattered results never release the guard");
++
++  // The plain release accepts whatever comes at the 11th rejection.
++  const auto plain = runGuardLoop(guardParams(0), [](int scan) {
++        return scan % 2 == 0 ? planar(1.0, 0.0, 0.0) : planar(1.0, 0.5, 0.0);
++      });
++  expect(plain.accepted_scan == 10, "the plain release lets a scattered result through");
++  expect(plain.settled_after_accept == 0, "and restarts the warmup");
++}
++}  // namespace
++
++int main()
++{
++  test_candidate_is_the_implied_map_to_odom();
++  test_consistency_check();
++  test_history_keeps_what_the_check_reads();
++  test_plain_release_is_unchanged();
++  test_consistent_release();
++  test_keep_warmup_after_release();
++  test_drift_relocks_and_scatter_holds();
++  if (failures > 0) {
++    std::fprintf(stderr, "%d check(s) failed\n", failures);
++    return 1;
++  }
++  return 0;
++}

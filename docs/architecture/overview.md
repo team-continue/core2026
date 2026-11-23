@@ -468,6 +468,101 @@ graph TB
 !!! note "経路追従ノードの使い分け"
     `core_mppi_node` と `core_path_follower_node` はどちらも `/planning/planned_path` と `/localization/odom` を購読する**排他的な選択肢**で、同時には起動しません。速度指令の出力先が異なり `cmd_vel_smoother_node` を経由するかどうかが変わるため、切り替える際は[トピック・メッセージ一覧](topics.md#ナビゲーションパイプライン)で経路を確認してください。
 
+## LiDAR 1台構成のナビゲーション
+
+Livox Mid-360 を 1 台だけ使う自律移動の構成です（ブランチ `feature/single-lidar-nav`）。実機は `core_launch/navigation.launch.py`、シミュレーションは `core_launch/sim_nav.launch.py`（Gazebo）で起動します。破線枠のノードは sim だけで起動し、実機にはまだ入れていません。
+
+```mermaid
+graph LR
+  subgraph SENS1["Sensing　/sensing"]
+    LV["livox_ros_driver2<br>（sim: Gazebo）"]
+  end
+
+  subgraph LOC1["Localization　/localization"]
+    FLIO["fastlio_mapping"]
+    LOA["lio_odom_adapter"]
+    SF["scan_filter"]
+    LL["lidar_localization_node"]
+    LH["localization_health"]
+  end
+
+  subgraph PERC1["Perception　/perception"]
+    PN["perception_node"]
+  end
+
+  subgraph PLAN1["Planning　/planning"]
+    GP["global_planner"]
+    ML["mppi_lite"]
+    SG["safety_gate"]
+    CYH["cmd_yaw_hold<br>（sim のみ）"]
+    CM["contact_monitor"]
+  end
+
+  subgraph CTRL1["Control　/control"]
+    CMM["control_mode_manager"]
+    BC1["body_control_node<br>（sim: Gazebo の駆動）"]
+  end
+
+  subgraph SYS1["System　/system/emergency"]
+    EH1["emergency_handler"]
+  end
+
+  UI1["操縦アプリ / RViz"]
+
+  LV -->|"/sensing/livox/lidar"| FLIO
+  LV -->|"/sensing/livox/lidar"| PN
+  LV -->|"/sensing/livox/imu"| FLIO
+  LV -.->|"/sensing/livox/imu"| CYH
+  FLIO -->|"/localization/Odometry"| LOA
+  FLIO -->|"/localization/cloud_registered_body"| SF
+  SF -->|"/localization/cloud"| LL
+  LL -->|"/localization/alignment_status"| LH
+  LOA -->|"/localization/lio/odom"| LH
+  LOA -->|"/localization/lio/odom"| ML
+  LOA -->|"/localization/lio/odom"| SG
+  LOA -->|"/localization/lio/odom"| PN
+  LH -->|"/localization/health"| ML
+  LH -->|"/localization/health"| SG
+
+  PN -->|"/perception/tracks"| GP
+  PN -->|"/perception/tracks"| ML
+  PN -->|"/perception/tracks"| SG
+
+  UI1 -->|"/ui/auto/start<br>/ui/auto/stop"| CMM
+  UI1 -->|"/control/manual/cmd_vel"| CMM
+  UI1 -->|"/system/emergency/software_emergency"| EH1
+  CMM -->|"/behavior/goal_pose"| GP
+  GP -->|"/planning/plan"| ML
+  GP -->|"/behavior/goal_reached"| CMM
+  ML -->|"/planning/navigation/status"| CMM
+  ML -->|"/planning/cmd_vel_nav"| SG
+  CM -->|"/planning/contact/status"| SG
+  SG -->|"/control/auto/cmd_vel<br>（sim: /control/auto/cmd_vel_raw）"| CMM
+  SG -.->|"/control/auto/cmd_vel_raw"| CYH
+  CYH -.->|"/control/auto/cmd_vel"| CMM
+  EH1 -->|"/system/emergency/hazard_status"| CMM
+  CMM -->|"/control/cmd_vel"| BC1
+  CMM -->|"/control/cmd_vel"| ML
+
+  style CYH stroke-dasharray: 5 4
+```
+
+| ノード | パッケージ | 役割 |
+|--------|-----------|------|
+| `lio_odom_adapter` | core_localization | FAST-LIO の姿勢を `base_link` の odom（`/localization/lio/odom`）に直す |
+| `lidar_localization_node` | lidar_localization_ros2 | 事前地図との照合で `map → odom` を出す |
+| `localization_health` | core_localization | 照合と LIO の状態から自己位置の健全さを判定する |
+| `perception_node` | core_perception | 地図の固定物を除いた点群から相手を検出・追跡する |
+| `global_planner` | core_planning | 格子の経路探索（JPS / Theta*）と、静止物の周りの曲線化 |
+| `mppi_lite` | core_planning | MPPI の局所計画。速度指令を `/planning/cmd_vel_nav` に出す |
+| `safety_gate` | core_planning | 静止物・相手・接触・自己位置の健全さで指令を止める・落とす |
+| `cmd_yaw_hold` | core_planning | **sim のみ**。自動の指令の並進の向きを、IMU（約 200Hz）で世界の座標に保って出し直す。指令は 0.1 秒ごとにしか来ず、その間に機体が回ると向きがずれるため。実機に入れる前に、実機の IMU の周期・遅れ・零点のずれと、足回りの応答を測る |
+| `contact_monitor` | core_planning | 指令と動きの食い違い・IMU の衝撃から接触を検知する |
+| `control_mode_manager` | core_body_controller | 手動と自動のモードを切り替え、今のモードの指令だけを `/control/cmd_vel` へ通す |
+
+!!! note "sim だけの設定"
+    `sim_nav.launch.py` は、計画のノードに `core_launch/config/sim_drive.yaml`（駆動の遅れを見込む `mppi.drive.predict_delay: true`、`dead_time_s: 0.06`）を重ね、`cmd_yaw_hold` を挟みます。どちらも Gazebo の値で、実機の駆動の無駄時間・時定数を測ってから実機に入れます。
+
 ## 敵検出・射撃パイプライン
 
 敵検出は砲塔ごと（`left` / `right`）に独立した `target_detector` + `target_selector` の組が動作します。

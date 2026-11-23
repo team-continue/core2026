@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>core_perception</name>
+  <version>0.0.0</version>
+  <description>生点群から他ロボットと人間を検出して追跡する</description>
+  <maintainer email="yuusk@todo.todo">yuusk</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>eigen</depend>
+  <depend>geometry_msgs</depend>
+  <depend>libpcl-all-dev</depend>
+  <depend>core_nav_common</depend>
+  <depend>core_msgs</depend>
+  <!-- livox_ros_driver2（Livox の点群 CustomMsg）は依存に書かず、各自で入れる（実機は Livox のドライバ本体、sim はメッセージだけのパッケージ）。ビルドと実行には要るので、先にビルドして source しておく -->
+  <depend>nav_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>tf2</depend>
+  <depend>tf2_eigen</depend>
+  <depend>tf2_ros</depend>
+  <depend>visualization_msgs</depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

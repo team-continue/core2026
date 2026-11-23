@@ -54,7 +54,14 @@ public:
     //========================================
     // Initialization
     //========================================
-    RCLCPP_INFO(this->get_logger(), "EmergencyHandlerNode initialized");
+    // 起動時にソフトウェア緊急停止をラッチするか。既定は実機どおり true（解除するまで止める）。
+    // シミュレーションで、操縦の UI を繋がずに走らせる（RViz や試験のスクリプトから目標を送る）ときは false
+    const bool start_latched = this->declare_parameter<bool>("start_latched", true);
+    software_emergency_state_ = start_latched;
+    high_emergency_level_ = start_latched;
+    RCLCPP_INFO(
+      this->get_logger(), "EmergencyHandlerNode initialized (start_latched=%s)",
+      start_latched ? "true" : "false");
     evaluateHazardStates();
   }
 

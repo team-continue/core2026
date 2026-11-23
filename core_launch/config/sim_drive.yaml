@@ -1,0 +1,28 @@
+# sim（sim_nav.launch.py）だけで、計画のノードに既定の設定の後から重ねる設定（駆動の遅れの見込み、経路の曲線化の方法）。実機（navigation.launch.py）では読まない。
+/**:
+  ros__parameters:
+    mppi:
+      # 指令が効き始めるまでの遅れを見込んで計画する（mppi.yaml の drive を参照）。実機は遅れを測るまで false のまま。
+      # Gazebo では、指令から機体の速さが応えるまでの遅れが約 60ms（mppi.yaml の yaw_brake_accel_ratio の記録）。
+      # false では、足回りの加速度の上限（2.0m/s²）と計画の加速度の上限が同じで余裕がなく、遅れの分だけ止まりきれずに
+      # ゴールを行き過ぎていた（Gazebo の core1_goals で最大 0.48m、obstacle_goals で最大 0.73m）。
+      # tracking_bench（駆動の上限 2.0m/s²・指令の遅れ 0.06 秒、各 6 回）で、ゴールの行き過ぎ 平均/最大 は
+      # core1_goals 0.09/0.26→0/0m、obstacle_goals 0.09/0.33→0/0m、曲がりの外 95%/最大 は core1_goals
+      # 0.23/0.48→0.15/0.22m、obstacle_goals の周回 48.1→45.6 秒。core1_goals の静止物の最小距離は 0.63→0.47m
+      drive:
+        predict_delay: true
+        dead_time_s: 0.06
+      # 同じスキャンの追跡結果とみなす時刻の差（mppi.yaml の tracks_stamp_lag_s を参照）。sim の点群（lidar_scan_motion）は
+      # ヘッダが走査の始め、FAST-LIO の姿勢は走査の終わりなので、0 では毎回 20ms 待ち切ってから 1 つ前のスキャンの
+      # 追跡結果で計算していた。走査 100ms + 余裕 5ms。sim（core1、約 110 秒の走行）で、姿勢 → MPPI の指令が
+      # 中央 22.8→1.7ms・95% 点 27.2→5.0ms、姿勢 → 足回りへの指令が中央 23.3→2.6ms。待ち切りは 0 回、MPPI の計算
+      # （1 回 0.76ms）と CPU は同じ。実機は Livox のドライバのヘッダの時刻を確かめてから入れる
+      tracks_stamp_lag_s: 0.105
+    planner:
+      smoothing:
+        # 大域経路の曲線化を、曲げのエネルギーを小さくする方法にする（planner.yaml の mode を参照。実機は laplacian のまま）。
+        # 5 つの場面で最大の曲率が laplacian の 0.42〜1.51/m から 0.10〜0.46/m に下がり、静止物との余裕は同じか広い。
+        # tracking_bench（駆動の上限 2.0m/s²・遅れ 0.06 秒、各 6 回）の周回は obstacle_goals 45.6→42.8 秒、core1_goals
+        # 48.5→45.8 秒、narrow_goals 41.9→43.3 秒、接触 0。計算は 1 回 中央 1.1ms・最大 3.8ms（laplacian 0.7・2.5ms）。
+        # 実機に入れる前に、実機の CPU で計算時間を測る
+        mode: bending

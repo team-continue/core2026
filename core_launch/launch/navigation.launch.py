@@ -6,39 +6,88 @@ control modes, and map presets.
 """
 
 import os
+from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
-    GroupAction,
     IncludeLaunchDescription,
     OpaqueFunction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
-from launch_ros.actions import Node, PushRosNamespace
-from launch_ros.substitutions import FindPackageShare
+from launch.substitutions import Command
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+
+from core_nav_launch.custom_map import available_custom_maps, custom_map_preset, CustomMapError
+from core_nav_launch.livox_driver import livox_driver_node
 
 # ── Map presets ──────────────────────────────────────────────────────
+# map_name で、地図の PCD（core_launch/maps/<pcd>）、初期姿勢（地図上の位置と向き）、
+# フィールドの範囲（config/<field> を config/field.yaml に重ねる）をまとめて選ぶ。
+# image・resolution・origin は占有地図の画像の値（フィールドの範囲の目安）
 MAP_PRESETS = {
     'core1_field': {
+        'pcd': 'core1_field.pcd',
+        'field': 'field_core1_field.yaml',
         'image': 'core1_field.png',
         'resolution': 0.025,
         'origin_x': -13.675,
         'origin_y': -9.15,
         'init_x': -10.7,
         'init_y': 5.9,
+        'init_yaw': 0.0,
+    },
+    # CoRE-1 の試験のフィールド（core_launch/scripts/make_core1_map.py がルールナビの図 3-1 から作る）。
+    # 初期姿勢は赤のスタートゾーンの中
+    'core1_2027': {
+        'pcd': 'core1_2027.pcd',
+        'field': 'field_core1_2027.yaml',
+        'image': 'core1_2027.png',
+        'resolution': 0.05,
+        'origin_x': -13.0,
+        'origin_y': -8.5,
+        'init_x': -10.25,
+        'init_y': -5.5,
+        'init_yaw': 0.0,
+    },
+    # core1_2027 の構造物をフィールドの 3D データ（STL）から作ったもの（make_core1_map.py --mesh
+    # --name core1_2027_mesh）。STL は配布の条件が分からず git に入れないので、STL がある手元でだけ作れる
+    'core1_2027_mesh': {
+        'pcd': 'core1_2027_mesh.pcd',
+        'field': 'field_core1_2027.yaml',
+        'image': 'core1_2027_mesh.png',
+        'resolution': 0.05,
+        'origin_x': -13.0,
+        'origin_y': -8.5,
+        'init_x': -10.25,
+        'init_y': -5.5,
+        'init_yaw': 0.0,
     },
     'curious_house': {
+        'pcd': 'curious_house.pcd',
+        'field': 'field_curious_house.yaml',
         'image': 'curious_house.png',
         'resolution': 0.025,
         'origin_x': -4.5,
         'origin_y': -7.5,
         'init_x': 0.0,
         'init_y': 0.0,
+        'init_yaw': 0.0,
     },
 }
+
+
+def _planning_params_file(core_launch_share, value):
+    """planning_params_file の値。ファイルの場所か、core_launch/config の名前（real_cautious など、.yaml なし）."""
+    if not value or os.path.isfile(value):
+        return value
+    named = os.path.join(core_launch_share, 'config', f'{value}.yaml')
+    if os.path.isfile(named):
+        return named
+    raise RuntimeError(
+        f"planning_params_file '{value}' が見つかりません（ファイルの場所か、core_launch/config の名前を渡してください）")
 
 
 def _launch_nodes(context):
@@ -47,30 +96,29 @@ def _launch_nodes(context):
     env = context.launch_configurations['environment']
     map_name = context.launch_configurations['map_name']
     use_rviz = context.launch_configurations['use_rviz']
-    use_localization = context.launch_configurations.get(
-        'use_localization', 'false').lower() == 'true'
 
     is_real = (env == 'real')
     use_damiao_imu = is_real and context.launch_configurations.get(
         'use_damiao_imu', 'true').lower() == 'true'
 
+    core_launch_share = get_package_share_directory('core_launch')
+
     # ── Map preset ───────────────────────────────────────────────────
+    # プリセットにない名前は、core_launch/maps に作った地図（make_map_files.py。core_nav_launch/custom_map.py）
+    maps_dir = Path(core_launch_share) / 'maps'
     preset = MAP_PRESETS.get(map_name)
     if preset is None:
-        available = ', '.join(MAP_PRESETS.keys())
-        raise RuntimeError(
-            f"Unknown map_name '{map_name}'. Available: {available}")
-
-    core_launch_share = get_package_share_directory('core_launch')
+        try:
+            preset = custom_map_preset(maps_dir, map_name)
+        except CustomMapError as error:
+            available = ', '.join([*MAP_PRESETS.keys(), *available_custom_maps(maps_dir)])
+            raise RuntimeError(
+                f"Unknown map_name '{map_name}'. Available: {available}. {error}") from error
 
     # ── Package directories ──────────────────────────────────────────
     body_ctrl_share = get_package_share_directory('core_body_controller')
 
     rviz_config = os.path.join(core_launch_share, 'config', 'navigation.rviz')
-
-    livox_user_config = PathJoinSubstitution([
-        FindPackageShare('livox_ros_driver2'), 'config', 'MID360_config.json',
-    ])
 
     actions = []
 
@@ -85,95 +133,97 @@ def _launch_nodes(context):
         ))
 
     # ── 2. Livox driver (real only) ──────────────────────────────────
+    # FAST-LIO と検出は CustomMsg（xfer_format 1）を受ける。設定は mapping.launch.py と共通（core_nav_launch/livox_driver.py）
     if is_real:
-        actions.append(GroupAction([
-            PushRosNamespace('sensing'),
-            Node(
-                package='livox_ros_driver2',
-                executable='livox_ros_driver2_node',
-                name='livox_lidar_publisher',
-                output='screen',
-                remappings=[
-                    ('livox/lidar', '/sensing/livox/lidar'),
-                    ('livox/imu', '/sensing/livox/imu'),
-                ],
-                parameters=[{
-                    'xfer_format': 0,  # PointCloud2 (MID-360)
-                    'multi_topic': 0,
-                    'data_src': 0,
-                    'publish_freq': 10.0,
-                    'output_data_type': 0,
-                    'frame_id': 'livox_frame',
-                    'lvx_file_path': '/home/livox/livox_test.lvx',
-                    'user_config_path': livox_user_config,
-                    'cmdline_input_bd_code': 'livox0000000001',
-                }],
-            ),
-        ]))
+        actions.append(livox_driver_node())
 
-    # ── 無効化中のノードについて ─────────────────────────────────────
-    # 以下のコメントアウト済みブロックは名前空間対応済みの形で記述してあります。
-    # そのままコメントを外せば docs/architecture/topics.md のトピック一覧と
-    # 一致した名前空間（localization / map / planning）で起動します。
+    # ── 3. 自律移動（real only） ─────────────────────────────────────
+    # 設計: 1 台構成・コンポーネント版。base_link→センサの固定 TF は URDF から出す
+    if is_real:
+        robot_xacro = os.path.join(core_launch_share, 'urdf', 'core2026.urdf.xacro')
+        actions.append(Node(
+            package='robot_state_publisher',
+            executable='robot_state_publisher',
+            output='screen',
+            parameters=[{
+                'robot_description': ParameterValue(
+                    Command(['xacro ', robot_xacro]), value_type=str),
+            }],
+            # 腰の角度（base_to_chassis）は chassis_joint_state が関節名を付けて出す
+            remappings=[('joint_states', '/control/chassis/joint_states')],
+        ))
 
-    # ── 3. FAST-LIO (when use_fastlio) ──────────────────────────────
-    # if use_fastlio:
-    #     actions.append(GroupAction([
-    #         PushRosNamespace('localization'),
-    #         Node(
-    #             package='fast_lio',
-    #             executable='fastlio_mapping',
-    #             name='fastlio_mapping',
-    #             output='screen',
-    #             parameters=[
-    #                 PathJoinSubstitution([
-    #                     FindPackageShare('fast_lio'), 'config', 'mid360.yaml',
-    #                 ]),
-    #                 {
-    #                     'common.lid_topic': '/sensing/livox/lidar',
-    #                     'common.imu_topic': imu_topic,
-    #                     'preprocess.lidar_type': lidar_type,
-    #                 },
-    #             ],
-    #         ),
-    #     ]))
-
-    # ── 4. Static TF / Localization ──────────────────────────────────
-    if use_localization:
-        # Dynamic map→odom from NDT/ICP localization node
-        localization_share = get_package_share_directory('core_localization')
-        localization_config = os.path.join(
-            localization_share, 'config', 'localization_params.yaml')
-
-        # Resolve PCD map path from map_name → pcd_maps/<map_name>.pcd
-        resolved_pcd_path = os.path.join(
-            localization_share, 'pcd_maps', f'{map_name}.pcd')
-
-        if not os.path.isfile(resolved_pcd_path):
+        map_path = context.launch_configurations.get('map_path', '')
+        if not map_path:
+            map_path = os.path.join(core_launch_share, 'maps', preset['pcd'])
+        if not os.path.isfile(map_path):
             raise RuntimeError(
-                f"PCD map not found: '{resolved_pcd_path}'. "
-                f"Place the PCD file at core_localization/pcd_maps/{map_name}.pcd "
-                f"and rebuild.")
+                f"PCD map not found: '{map_path}'. "
+                f"Place core_launch/maps/{preset['pcd']} or pass map_path:=<pcd>.")
+        field_file = os.path.join(core_launch_share, 'config', preset['field'])
+        # 起動した地図を /map と /map/name に出す（操縦の UI が ros2_ws_bridge 経由で読む）
+        actions.append(Node(
+            package='core_launch',
+            executable='map_publisher_node.py',
+            name='map_publisher',
+            output='screen',
+            parameters=[{
+                'map_name': map_name,
+                'image_path': os.path.join(core_launch_share, 'maps', preset['image']),
+                'resolution': float(preset['resolution']),
+                'origin_x': float(preset['origin_x']),
+                'origin_y': float(preset['origin_y']),
+            }],
+        ))
+        # init_x・init_y・init_yaw を指定しなければ、プリセットの位置と向き
+        init_x = context.launch_configurations['init_x'] or str(preset['init_x'])
+        init_y = context.launch_configurations['init_y'] or str(preset['init_y'])
+        init_yaw = context.launch_configurations['init_yaw'] or str(preset['init_yaw'])
+        composition = context.launch_configurations['composition']
 
-        actions.append(GroupAction([
-            PushRosNamespace('localization'),
-            Node(
-                package='core_localization',
-                executable='localization_node',
-                name='localization_node',
-                output='screen',
-                parameters=[
-                    localization_config,
-                    {
-                        'global_map_path': resolved_pcd_path,
-                        'initial_pose_x': preset['init_x'],
-                        'initial_pose_y': preset['init_y'],
-                    },
-                ],
-            ),
-        ]))
+        def include(name, arguments):
+            return IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(core_launch_share, 'launch', name)),
+                launch_arguments=arguments.items(),
+            )
+
+        actions.append(include('localization_stack.launch.py', {
+            'map_path': map_path,
+            'initial_x': init_x,
+            'initial_y': init_y,
+            'initial_yaw': init_yaw,
+            'field_file': field_file,
+            'composition': composition,
+        }))
+        actions.append(include('perception.launch.py', {
+            'map_path': map_path, 'field_file': field_file, 'composition': composition,
+        }))
+        # 腰のモードは body_controller と同じ値から始める（TURRET の間、局所計画は上半身の向きを指令しない）
+        yaw_mode = context.launch_configurations['yaw_mode']
+        planning_arguments = {
+            'map_path': map_path, 'field_file': field_file, 'composition': composition,
+            'yaw_mode': yaw_mode,
+            'planning_params_file': _planning_params_file(
+                core_launch_share, context.launch_configurations['planning_params_file']),
+        }
+        if context.launch_configurations['cmd_yaw_hold'].lower() == 'true':
+            # 安全停止の出力を cmd_yaw_hold で受け、指令の間に上半身が回った分だけ並進を戻して出し直す。
+            # TURRET では上半身が操作で回るので、指令の並進の向きが世界の座標でずれる。実機の Livox の IMU の
+            # 周期・遅れ・零点のずれと、足回りの応答を測ってから既定にする（要測定）
+            planning_arguments['auto_cmd_topic'] = '/control/auto/cmd_vel_raw'
+            actions.append(Node(
+                package='core_planning', executable='cmd_yaw_hold', name='cmd_yaw_hold',
+                namespace='planning', output='screen',
+                parameters=[{
+                    'input_topic': '/control/auto/cmd_vel_raw',
+                    'output_topic': '/control/auto/cmd_vel',
+                    'imu_topic': '/sensing/livox/imu',
+                }],
+            ))
+        actions.append(include('planning.launch.py', planning_arguments))
     else:
-        # Static identity map→odom (no global localization)
+        # Unity シミュレーションは自律移動を起動しない（Gazebo は sim_nav.launch.py を使う）
         actions.append(Node(
             package='tf2_ros',
             executable='static_transform_publisher',
@@ -185,132 +235,6 @@ def _launch_nodes(context):
                 '--frame-id', 'map', '--child-frame-id', 'odom',
             ],
         ))
-
-    actions.append(Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_base_livox',
-        output='screen',
-        arguments=[
-            '--x', '0', '--y', '0', '--z', '0.5',
-            '--roll', '3.141592653589793', '--pitch', '0', '--yaw', '0',
-            '--frame-id', 'base_link', '--child-frame-id', 'livox_frame',
-        ],
-    ))
-
-    # ── 5. Map server ───────────────────────────────────────────────
-    # ソース内はいずれも絶対名なので PushRosNamespace では移動しない。
-    # /map はグローバル据え置き、グローバルコストマップのみリマップする。
-    # actions.append(GroupAction([
-    #     PushRosNamespace('map'),
-    #     Node(
-    #         package='core_launch',
-    #         executable='map_server_node.py',
-    #         name='map_server_node',
-    #         output='screen',
-    #         remappings=[
-    #             ('/costmap/global', '/map/costmap/global'),
-    #         ],
-    #         parameters=[{
-    #             'image_path': map_image_path,
-    #             'resolution': preset['resolution'],
-    #             'origin_x': preset['origin_x'],
-    #             'origin_y': preset['origin_y'],
-    #             'inflation_radius_m': 0.40,
-    #             'decay_margin_m': 0.20,
-    #         }],
-    #     ),
-    # ]))
-
-    # ── 6. Odom bridge ──────────────────────────────────────────────
-    # 入力（/sim_odom, /Odometry）は外部境界なのでグローバル据え置き。
-    # actions.append(GroupAction([
-    #     PushRosNamespace('localization'),
-    #     Node(
-    #         package='core_launch',
-    #         executable='odom_bridge_node.py',
-    #         name='odom_bridge_node',
-    #         output='screen',
-    #         remappings=[
-    #             ('/odom', '/localization/odom'),
-    #             ('/start_pose', '/localization/start_pose'),
-    #         ],
-    #         parameters=[{
-    #             'odom_source': effective_odom_source,
-    #             'init_x': preset['init_x'],
-    #             'init_y': preset['init_y'],
-    #             'init_yaw': float(init_yaw),
-    #         }],
-    #     ),
-    # ]))
-
-    # ── 7. Path planner ─────────────────────────────────────────────
-    # actions.append(GroupAction([
-    #     PushRosNamespace('planning'),
-    #     Node(
-    #         package='core_path_planner',
-    #         executable='path_planner_node',
-    #         name='core_path_planner_node',
-    #         output='screen',
-    #         parameters=[{
-    #             'goal_topic': '/behavior/goal_pose',
-    #             'start_topic': '/localization/start_pose',
-    #             'path_topic': 'planned_path',
-    #             'local_costmap_topic': 'costmap/local',
-    #             'global_map_topic': '/map',
-    #             'publish_in_global_frame': True,
-    #             'global_frame_id': 'odom',
-    #             'cost_weight': 2.0,
-    #         }],
-    #     ),
-    # ]))
-
-    # ── 8. MPPI controller ──────────────────────────────────────────
-    # use_smoother = context.launch_configurations.get('use_smoother', 'true')
-    # mppi_cmd_vel_topic = (
-    #     'cmd_vel_raw' if use_smoother.lower() == 'true' else '/control/cmd_vel')
-
-    # actions.append(GroupAction([
-    #     PushRosNamespace('planning'),
-    #     Node(
-    #         package='core_mppi',
-    #         executable='core_mppi_node',
-    #         name='core_mppi_node',
-    #         output='screen',
-    #         remappings=[('/goal_reached', '/behavior/goal_reached')],
-    #         parameters=[mppi_params, {'cmd_vel_topic': mppi_cmd_vel_topic}],
-    #     ),
-    # ]))
-
-    # ── 9. cmd_vel smoother ──────────────────────────────────────────
-    # if use_smoother.lower() == 'true':
-    #     actions.append(GroupAction([
-    #         PushRosNamespace('planning'),
-    #         Node(
-    #             package='core_cmd_vel_smoother',
-    #             executable='cmd_vel_smoother_node',
-    #             name='cmd_vel_smoother_node',
-    #             output='screen',
-    #             parameters=[{
-    #                 'alpha': 1.0,
-    #                 'input_topic': 'cmd_vel_raw',
-    #                 'output_topic': '/control/cmd_vel',
-    #                 'timeout_sec': 0.2,
-    #             }],
-    #         ),
-    #     ]))
-
-    # ── 10. Costmap builder ─────────────────────────────────────────
-    # actions.append(GroupAction([
-    #     PushRosNamespace('planning'),
-    #     Node(
-    #         package='core_costmap_builder',
-    #         executable='costmap_build_node',
-    #         name='costmap_build_node',
-    #         output='screen',
-    #         parameters=[costmap_params],
-    #     ),
-    # ]))
 
     # ── 11. Body controller ─────────────────────────────────────────
     actions.append(IncludeLaunchDescription(
@@ -324,6 +248,7 @@ def _launch_nodes(context):
             'imu_frame_id': context.launch_configurations['imu_frame_id'],
             'imu_output_rate_hz': context.launch_configurations[
                 'imu_output_rate_hz'],
+            'yaw_mode': context.launch_configurations['yaw_mode'],
         }.items(),
     ))
 
@@ -347,28 +272,34 @@ def generate_launch_description():
             description="'sim' (Unity simulation) or 'real' (physical robot)",
         ),
         DeclareLaunchArgument(
-            'odom_source', default_value='sim',
-            description="'sim' (/sim_odom) or 'fastlio' (/Odometry). Forced 'fastlio' when real.",
-        ),
-        DeclareLaunchArgument(
             'map_name', default_value='core1_field',
-            description=f"Map preset: {', '.join(MAP_PRESETS.keys())}",
+            description=f"Map preset: {', '.join(MAP_PRESETS.keys())}, "
+                        'or a map made with make_map_files.py in core_launch/maps',
         ),
         DeclareLaunchArgument(
-            'init_yaw', default_value='0.0',
-            description='Initial yaw in odom frame [rad] (FAST-LIO mode)',
+            'init_x', default_value='',
+            description='Initial x on the map [m] (empty: the map preset value)',
+        ),
+        DeclareLaunchArgument(
+            'init_y', default_value='',
+            description='Initial y on the map [m] (empty: the map preset value)',
+        ),
+        DeclareLaunchArgument(
+            'init_yaw', default_value='',
+            description='Initial yaw on the map [rad] (empty: the map preset value)',
         ),
         DeclareLaunchArgument(
             'use_rviz', default_value='true',
             description='Launch RViz2',
         ),
         DeclareLaunchArgument(
-            'use_smoother', default_value='true',
-            description='Enable cmd_vel EMA smoother between MPPI and body_controller',
+            'map_path', default_value='',
+            description='PCD map for localization/perception/planning '
+                        '(empty: core_launch/maps/<map_name>.pcd). Real only',
         ),
         DeclareLaunchArgument(
-            'use_localization', default_value='false',
-            description='Enable NDT/ICP localization (dynamic map→odom TF)',
+            'composition', default_value='true', choices=['true', 'false'],
+            description='Run navigation nodes in per-stage component containers',
         ),
         DeclareLaunchArgument(
             'use_damiao_imu', default_value='true',
@@ -393,6 +324,21 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'imu_output_rate_hz', default_value='200',
             description='DM-IMU-L1 output rate [Hz]',
+        ),
+        DeclareLaunchArgument(
+            'yaw_mode', default_value='1', choices=['0', '1'],
+            description='腰の起動時のモード（0: FRONT、1: TURRET）。body_controller と局所計画に渡す。'
+                        'TURRET の間、局所計画は上半身の向きを指令しない',
+        ),
+        DeclareLaunchArgument(
+            'planning_params_file', default_value='',
+            description='計画のノードに既定の設定の後から重ねる設定（ファイルか core_launch/config の名前）。'
+                        '実機で初めて試すときは real_cautious（壁との間隔を広げ、速さを 1.0m/s までにする）',
+        ),
+        DeclareLaunchArgument(
+            'cmd_yaw_hold', default_value='false', choices=['true', 'false'],
+            description='自動の指令の並進の向きを Livox の IMU で世界の座標に保つ（core_planning の cmd_yaw_hold）。'
+                        'TURRET で上半身を回しながら自動で走るときに要る。実機で IMU と足回りを測ってから既定にする',
         ),
         OpaqueFunction(function=_launch_nodes),
     ])

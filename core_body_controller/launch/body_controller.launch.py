@@ -42,6 +42,15 @@ def generate_launch_description() -> LaunchDescription:
         default_value="0.2",
         description="Maximum accepted age of cmd_vel [s]",
     )
+    acceleration_in_world_frame_arg = DeclareLaunchArgument(
+        "acceleration_in_world_frame",
+        default_value="false",
+        description=(
+            "Apply the linear acceleration limit in the world frame using the upper-body "
+            "IMU (/sensing/imu). Keeps TURRET turns and stops from lagging while the upper "
+            "body rotates"
+        ),
+    )
     imu_timeout_arg = DeclareLaunchArgument(
         "imu_timeout_sec",
         default_value="0.2",
@@ -52,6 +61,18 @@ def generate_launch_description() -> LaunchDescription:
         default_value="0.2",
         description="Maximum accepted age of body_omega feedforward [s]",
     )
+    # sim（core_field_sim の sim_nav.launch.py の waist:=true）から使うときの設定。実機の既定は変えない
+    use_sim_time_arg = DeclareLaunchArgument(
+        "use_sim_time",
+        default_value="false",
+        description="Use the simulation clock (sim only)",
+    )
+    use_control_mode_manager_arg = DeclareLaunchArgument(
+        "use_control_mode_manager",
+        default_value="true",
+        description="Launch control_mode_manager (false when the caller launches its own)",
+    )
+    use_sim_time = ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool)
     waist_front_offset_arg = DeclareLaunchArgument(
         "waist_front_offset",
         default_value="3.7822790145874023",
@@ -128,14 +149,20 @@ def generate_launch_description() -> LaunchDescription:
             ("can/tx", "/hardware/can/tx"),
             ("joint_states", "/hardware/joint_states"),
             ("/rotation", "/control/rotation"),
+            ("imu", "/sensing/imu"),
         ],
         parameters=[
             {
                 "acceleration": LaunchConfiguration("acceleration"),
+                "acceleration_in_world_frame": ParameterValue(
+                    LaunchConfiguration("acceleration_in_world_frame"), value_type=bool
+                ),
+                "imu_timeout_sec": LaunchConfiguration("imu_timeout_sec"),
                 "rotation_acceleration": LaunchConfiguration("rotation_acceleration"),
                 "auto_rotation_velocity": LaunchConfiguration("auto_rotation_velocity"),
                 "high_rotation_velocity": LaunchConfiguration("high_rotation_velocity"),
                 "cmd_vel_timeout_sec": LaunchConfiguration("cmd_vel_timeout_sec"),
+                "use_sim_time": use_sim_time,
                 "waist_front_offset": ParameterValue(
                     LaunchConfiguration("waist_front_offset"), value_type=float
                 ),
@@ -168,6 +195,7 @@ def generate_launch_description() -> LaunchDescription:
                 "body_omega_timeout_sec": LaunchConfiguration(
                     "body_omega_timeout_sec"
                 ),
+                "use_sim_time": use_sim_time,
                 "yaw_mode": ParameterValue(
                     LaunchConfiguration("yaw_mode"), value_type=int
                 ),
@@ -181,6 +209,36 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
+    # 手動（/control/manual/cmd_vel）と自動（/control/auto/cmd_vel）のどちらを
+    # /control/cmd_vel へ通すかを決める。UI の auto で自動に入り、到達・失敗・停止で手動に戻る
+    # 腰の角度に関節名を付けて /control/chassis/joint_states に出す（robot_state_publisher が読む）
+    chassis_joint_state = Node(
+        package="core_body_controller",
+        executable="chassis_joint_state_node",
+        name="chassis_joint_state",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+                "waist_front_offset": ParameterValue(
+                    LaunchConfiguration("waist_front_offset"), value_type=float
+                ),
+                "waist_joint_direction": ParameterValue(
+                    LaunchConfiguration("waist_joint_direction"), value_type=float
+                ),
+            }
+        ],
+    )
+
+    control_mode_manager = Node(
+        package="core_body_controller",
+        executable="control_mode_manager_node",
+        name="control_mode_manager",
+        output="screen",
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(LaunchConfiguration("use_control_mode_manager")),
+    )
+
     return LaunchDescription(
         [
             acceleration_arg,
@@ -190,8 +248,11 @@ def generate_launch_description() -> LaunchDescription:
             auto_rotation_velocity_arg,
             high_rotation_velocity_arg,
             cmd_vel_timeout_arg,
+            acceleration_in_world_frame_arg,
             imu_timeout_arg,
             body_omega_timeout_arg,
+            use_sim_time_arg,
+            use_control_mode_manager_arg,
             waist_front_offset_arg,
             waist_joint_direction_arg,
             yaw_mode_arg,
@@ -208,6 +269,8 @@ def generate_launch_description() -> LaunchDescription:
                 PushRosNamespace("control"),
                 body_control,
                 target_angle,
+                control_mode_manager,
+                chassis_joint_state,
             ]),
         ]
     )

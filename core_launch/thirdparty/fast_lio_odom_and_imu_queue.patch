@@ -1,0 +1,79 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+index e5d9950..9efe7ad 100644
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -73,6 +73,7 @@ double kdtree_incremental_time = 0.0, kdtree_search_time = 0.0, kdtree_delete_ti
+ double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_plot5[MAXN], s_plot6[MAXN], s_plot7[MAXN], s_plot8[MAXN], s_plot9[MAXN], s_plot10[MAXN], s_plot11[MAXN];
+ double match_time = 0, solve_time = 0, solve_const_H_time = 0;
+ int    kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
++double accel_clip = 0.0;
+ bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extrinsic_est_en = true, path_en = true;
+ /**************************/
+ 
+@@ -361,6 +362,20 @@ void imu_cbk(const sensor_msgs::msg::Imu::UniquePtr msg_in)
+         rclcpp::Time(timediff_lidar_wrt_imu + get_time_sec(msg_in->header.stamp));
+     }
+ 
++    // 衝突の瞬間の鋭い加速度をそのまま積分すると、速度が飛んで自己位置を失う
++    if (accel_clip > 0.0)
++    {
++        V3D acceleration(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
++        const double magnitude = acceleration.norm();
++        if (magnitude > accel_clip)
++        {
++            acceleration *= accel_clip / magnitude;
++            msg->linear_acceleration.x = acceleration(0);
++            msg->linear_acceleration.y = acceleration(1);
++            msg->linear_acceleration.z = acceleration(2);
++        }
++    }
++
+     double timestamp = get_time_sec(msg->header.stamp);
+ 
+     mtx_buffer.lock();
+@@ -631,6 +646,18 @@ void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPt
+     odomAftMapped.child_frame_id = "body";
+     odomAftMapped.header.stamp = get_ros_time(lidar_end_time);
+     set_posestamp(odomAftMapped.pose);
++    // 機体の制御と地図照合の予測に使うので、IMU 座標系の速度を出す
++    const V3D velocity_body = state_point.rot.conjugate() * state_point.vel;
++    odomAftMapped.twist.twist.linear.x = velocity_body(0);
++    odomAftMapped.twist.twist.linear.y = velocity_body(1);
++    odomAftMapped.twist.twist.linear.z = velocity_body(2);
++    if (!Measures.imu.empty())
++    {
++        const auto &gyro = Measures.imu.back()->angular_velocity;
++        odomAftMapped.twist.twist.angular.x = gyro.x - state_point.bg(0);
++        odomAftMapped.twist.twist.angular.y = gyro.y - state_point.bg(1);
++        odomAftMapped.twist.twist.angular.z = gyro.z - state_point.bg(2);
++    }
+     pubOdomAftMapped->publish(odomAftMapped);
+     auto P = kf.get_P();
+     for (int i = 0; i < 6; i ++)
+@@ -810,6 +837,7 @@ public:
+         this->declare_parameter<string>("common.imu_topic", "/livox/imu");
+         this->declare_parameter<bool>("common.time_sync_en", false);
+         this->declare_parameter<double>("common.time_offset_lidar_to_imu", 0.0);
++        this->declare_parameter<double>("common.accel_clip", 0.0);
+         this->declare_parameter<double>("filter_size_corner", 0.5);
+         this->declare_parameter<double>("filter_size_surf", 0.5);
+         this->declare_parameter<double>("filter_size_map", 0.5);
+@@ -846,6 +874,7 @@ public:
+         this->get_parameter_or<string>("common.imu_topic", imu_topic,"/livox/imu");
+         this->get_parameter_or<bool>("common.time_sync_en", time_sync_en, false);
+         this->get_parameter_or<double>("common.time_offset_lidar_to_imu", time_diff_lidar_to_imu, 0.0);
++        this->get_parameter_or<double>("common.accel_clip", accel_clip, 0.0);
+         this->get_parameter_or<double>("filter_size_corner",filter_size_corner_min,0.5);
+         this->get_parameter_or<double>("filter_size_surf",filter_size_surf_min,0.5);
+         this->get_parameter_or<double>("filter_size_map",filter_size_map_min,0.5);
+@@ -926,7 +955,9 @@ public:
+         {
+             sub_pcl_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lid_topic, rclcpp::SensorDataQoS(), standard_pcl_cbk);
+         }
+-        sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, 10, imu_cbk);
++        // 1 フレームの処理中は IMU を受け取れない。深さ 10（50ms 分）だと処理が遅れたときに IMU を失い、
++        // 姿勢が数十 cm ずれるので、1 秒分を確保する
++        sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, 200, imu_cbk);
+         pubLaserCloudFull_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered", 20);
+         pubLaserCloudFull_body_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_body", 20);
+         pubLaserCloudEffect_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_effected", 20);

@@ -1,0 +1,9 @@
+# curious_house のフィールドの範囲（navigation.launch.py の map_name:=curious_house で config/field.yaml に重ねる）。
+# 占有地図 curious_house.png（360 x 600 画素、0.025m、原点 -4.5, -7.5）の全体の範囲（暫定）
+/**:
+  ros__parameters:
+    field:
+      x_min: -4.5
+      x_max: 4.5
+      y_min: -7.5
+      y_max: 7.5

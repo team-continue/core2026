@@ -1,0 +1,31 @@
+# 見通しと混雑に応じた速度の上限。
+/**:
+  ros__parameters:
+    speed_limit:
+      enabled: true
+      reaction_time_s: 0.2
+      # core2026 の足回り（body_control_node）は減速も acceleration 2.0m/s² で制限するので、それ以上で止まれる
+      # 前提にしない（lidar_nav では 3.0）
+      max_decel_mps2: 2.0
+      density_radius_m: 3.0
+      # 近くの相手 1 台ごとに掛ける倍率。相手が避けてくれない場合、遅いほど相手の通り道に長く留まり、
+      # 接触が増える。crowd_goals で 0.7→0.9 にすると crowd_stats で約 1.0→約 0.3 回/100秒、
+      # Gazebo で約 2.0→約 1.5 回/100秒（Gazebo の方は他の変更も同時に入っている）
+      density_speed_scale: 0.9
+      min_speed_mps: 0.5
+      stopping_margin_m: 1.0
+      # 人の近くの上限（min_speed_mps より優先）。2026-11-14 のユーザーの判断で、人の中心から 3m 以内を
+      # 一律に human_speed_mps へ下げるのをやめ、次の 3 つにした。
+      # - 機体の外形が人の中心から human_radius_m の領域に入っていれば human_speed_mps 以下
+      # - 人と自機が今の速度のまま進むと human_approach_time_s 以内に領域が機体にかかるなら、かかる時刻までに
+      #   human_speed_mps に落とせる速さ（reaction_time_s のあと max_decel_mps2）に抑える。止まっている人へ
+      #   まっすぐ向かうと、領域の境まで 1m で約 1.9m/s、2m で約 2.7m/s。横を通るだけ、離れていくなら抑えない
+      # - そのうち人が向かってくる（人の速度の自機へ向かう成分が human_approach_speed_mps 以上で、自機が
+      #   止まっていても human_approach_time_s 以内に領域が機体にかかる）なら human_speed_mps 以下
+      # 1.0m/s なら反応 0.2 秒と 3m/s2 の減速で 0.37m で止まれる。よける間は mppi.human_margin_m（人の中心から
+      # 機体の外形まで 1.1m）
+      human_enabled: true
+      human_radius_m: 1.0
+      human_speed_mps: 1.0
+      human_approach_time_s: 2.0
+      human_approach_speed_mps: 0.3
