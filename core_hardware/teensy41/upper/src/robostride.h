@@ -28,6 +28,12 @@
 #define ROBOSTRIDE_RECONNECT_RETRY_MS 200 // ms
 #define ROBOSTRIDE_RECONNECT_STEP_TIMEOUT_MS 100 // ms
 
+// 診断
+#define ROBOSTRIDE_PATTERN_MOTOR 2 // type 2 の CAN ID bit 22〜23 (0: Reset, 1: Cali, 2: Motor)
+#define ROBOSTRIDE_FAULT_FRAME_HOLD_MS 1000 // 故障フレーム (type 21) を受信してから故障扱いにする時間
+#define ROBOSTRIDE_VBUS_REQUEST_INTERVAL_MS 500 // VBUS (母線電圧) の読み出し周期 (2 Hz)
+#define ROBOSTRIDE_VBUS_TIMEOUT_MS 1500 // この時間 VBUS の応答が無ければ電圧は取得できない扱い
+
 // init delay
 #define ROBOSTRIDE_INIT_DELAY_MS 100
 
@@ -166,6 +172,16 @@ FCTP_CLASS class RoboStride : public MotorBase {
 
     uint8_t error_code_ = 0;
     uint8_t pattern_ = 0;
+
+    // 故障フレーム (type 21) の故障値 (0 = 正常) と受信時刻
+    uint32_t fault_bits_ = 0;
+    unsigned long last_fault_frame_ms_ = 0;
+    bool fault_frame_received_ = false;
+
+    // VBUS (0x701C) の読み出し要求・応答の時刻
+    unsigned long last_vbus_request_ms_ = 0;
+    unsigned long last_vbus_recv_ms_ = 0;
+    bool vbus_received_ = false;
 
     Motor_Set Motor_Set_All_ = {0};
 
@@ -439,9 +455,47 @@ public:
             default:
                 break;
         }
+
+        requestVbusIfDue();
+    }
+
+    // 診断情報。error_code_ / pattern_ / 温度は最後に受信した type 2 の値
+    MotorDiag diag() const override {
+        const unsigned long now_ms = millis();
+        MotorDiag d;
+        d.supported = true;
+        d.connected = connect_can;
+        d.enabled = connect_can && pattern_ == ROBOSTRIDE_PATTERN_MOTOR;
+        const bool recent_fault_frame = fault_frame_received_ && fault_bits_ != 0 &&
+                                        (now_ms - last_fault_frame_ms_) < ROBOSTRIDE_FAULT_FRAME_HOLD_MS;
+        d.fault = error_code_ != 0 || recent_fault_frame;
+        d.error_code = error_code_;
+        // 未接続のときの温度・電圧は古い値なので出さない。ローター温度は取得できない
+        if (connect_can) {
+            d.temp = core_hardware::motor_diag::to_temp_i8(feedback.temp_mos);
+            if (vbus_received_ && (now_ms - last_vbus_recv_ms_) < ROBOSTRIDE_VBUS_TIMEOUT_MS) {
+                d.voltage_cv = core_hardware::motor_diag::to_voltage_cv(drw.VBUS.data);
+            }
+        }
+        return d;
     }
 
 private:
+    // VBUS (母線電圧) を一定周期で読む。応答 (type 17) は待たず、setCanFrame で drw.VBUS に入る。
+    // 制御指令の代わりではなく追加で送る (指令を抜かさず、応答が来なくても can2 の応答待ちが止まらないように)。
+    // 再接続の手順は受信したフレームで進むので、未接続・再接続中は送らない
+    void requestVbusIfDue() {
+        if (!connect_can || reconnecting_) {
+            return;
+        }
+        const unsigned long now_ms = millis();
+        if ((now_ms - last_vbus_request_ms_) < ROBOSTRIDE_VBUS_REQUEST_INTERVAL_MS) {
+            return;
+        }
+        last_vbus_request_ms_ = now_ms;
+        Get_RobStrite_Motor_parameter(drw.VBUS.index, false);
+    }
+
     void startReconnect() {
         reconnecting_ = true;
         reconnect_step_ = RECONNECT_SEND_DISABLE;
@@ -605,8 +659,12 @@ private:
         result.extra_data = data_area2;
         result.host_id = id_dst;
 
-        error_code_ = (uint8_t)((can_id >> 16) & 0x3F);
-        pattern_    = (uint8_t)((can_id >> 22) & 0x03);
+        // 故障 (bit 16〜21) とモード状態 (bit 22〜23) が CAN ID に入るのは type 2 だけ。
+        // type 17 / 21 / 0 のフレームで上書きしない
+        if (comm_type == Communication_Type_MotorRequest) {
+            error_code_ = (uint8_t)((can_id >> 16) & 0x3F);
+            pattern_    = (uint8_t)((can_id >> 22) & 0x03);
+        }
 
         memcpy(result.data, r_msg.buf, r_msg.len);
         result.len = r_msg.len;
@@ -681,7 +739,11 @@ private:
                         case 10: drw.mechPos.data = v; break;
                         case 11: drw.iqf.data = v; break;
                         case 12: drw.mechVel.data = v; break;
-                        case 13: drw.VBUS.data = v; break;
+                        case 13:
+                            drw.VBUS.data = v;
+                            last_vbus_recv_ms_ = millis();
+                            vbus_received_ = true;
+                            break;
                         case 14: drw.rotation.data = v; break;
                         case 15: drw.loc_kp.data = v; break;
                         case 16: drw.spd_kp.data = v; break;
@@ -696,6 +758,13 @@ private:
         }
 
         if (result.communication_type == Communication_Type_ErrorFeedback) {
+            // data[0..3]: 故障値 (0 = 正常)、data[4..7]: 警告値。故障値をリトルエンディアンとして保存する
+            fault_bits_ = (uint32_t(result.data[3]) << 24) |
+                          (uint32_t(result.data[2]) << 16) |
+                          (uint32_t(result.data[1]) << 8)  |
+                          (uint32_t(result.data[0]));
+            last_fault_frame_ms_ = millis();
+            fault_frame_received_ = true;
             return true;
         }
 

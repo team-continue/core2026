@@ -4,6 +4,7 @@
 #include "pi.h"
 #include <cstring>
 #include "pin.h"
+#include "core_hardware/motor_diag_layout.h"
 
 #define STS_CONTROL_DT 0.02f
 #define STS_LIMIT_VEL_STS3215 ((67.0f / 60.0f) * 2.0f * M_PI)
@@ -39,6 +40,13 @@ struct STS_SERVO {
 
   uint16_t prev_pos = UINT16_MAX;
   int rotate = 0;
+
+  // 診断 (現在値の読み出しの応答から保存する)
+  bool received = false;      // 一度でも応答を受信したか
+  uint32_t last_recv_ms = 0;  // 最後に応答を受信した時刻
+  uint8_t error = 0;          // 応答のエラーバイト (0 = 正常)
+  uint8_t voltage_dv = 0;     // 電圧 [0.1 V] (レジスタ 62)
+  uint8_t temp_c = 0;         // 温度 [℃] (レジスタ 63)
 };
 
 class STS {
@@ -94,6 +102,27 @@ class STS {
     sts_syncWrite(ids, len_id, 8, 1, status_level);
     sts_syncWrite(ids, len_id, 40, 1, torque_data);
     sts_syncWrite(ids, len_id, 55, 1, lock);
+  }
+
+  // 診断情報。index は servos[] の添字 (範囲外なら supported = false)
+  core_hardware::motor_diag::MotorDiag diag(const int index) const {
+    core_hardware::motor_diag::MotorDiag d;
+    if (index < 0 || index >= LEN_SERVO) {
+      return d;
+    }
+    const STS_SERVO &servo = servos[index];
+    d.supported = true;
+    d.connected = servo.received && (millis() - servo.last_recv_ms) < STS_CONNECT_TIMEOUT_MS;
+    // disable (STS 全体の非常停止) でなく通信できていれば有効とみなす。トルクの実際の状態 (レジスタ 40) は読んでいない
+    d.enabled = d.connected && !disable;
+    d.fault = servo.error != 0;
+    d.error_code = servo.error;
+    // 未接続のときの温度・電圧は古い値なので出さない
+    if (d.connected) {
+      d.temp = core_hardware::motor_diag::to_temp_i8(static_cast<float>(servo.temp_c));
+      d.voltage_cv = static_cast<uint16_t>(servo.voltage_dv * 10U);
+    }
+    return d;
   }
 
   void setRefPos(const int index, const float ref_pos) {
@@ -447,6 +476,13 @@ class STS {
     markSyncReadReceived(id);
 
     if (len > 19) {
+      // data[4]: エラーバイト、data[5] 以降: レジスタ 56 からの値
+      servos[i].received = true;
+      servos[i].last_recv_ms = millis();
+      servos[i].error = data[4];
+      servos[i].voltage_dv = data[11];
+      servos[i].temp_c = data[12];
+
       const uint16_t pos = (uint16_t)(data[6] << 8 | data[5]) & 0x0fff;
       const uint16_t vel = (uint16_t)(data[8] << 8 | data[7]);
       const uint16_t current = (uint16_t)(data[19] << 8 | data[18]);

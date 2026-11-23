@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <FlexCAN_T4.h>
 #include "bottom.h"
+#include "can_bus_diag.h"
 #include "damiao.h"
 #include "robostride.h"
 
@@ -28,6 +29,7 @@ RoboStride<CAN3, RX_SIZE_256, TX_SIZE_16> robostride_can3[CAN3_NUM_ROBOSTRIDE] =
   RoboStride(&can3, 0x01, 0x01, (int)ActuatorType::ROBSTRIDE_06, CAN3_RS5_OFFSET_POSITION)
 };
 Bottom<CAN3, RX_SIZE_256, TX_SIZE_16> bottom_can3(&can3);
+CanBusDiagReader can3_bus_diag_reader;
 
 MotorBase *can3_motor[CAN3_NUM_MOTOR] = {
   &damiao_motor[0],
@@ -116,4 +118,9 @@ void can3_loop() {
   can3_motor[motor_control_i]->writeCanFrame();
   motor_last_send_us = now_us;
   motor_control_i = (motor_control_i + 1) % CAN3_NUM_MOTOR;
+}
+
+// CAN3 の状態 (PDO の bus_diag[0])
+core_hardware::motor_diag::BusDiag can3_bus_diag() {
+  return can3_bus_diag_reader.read(can3);
 }

@@ -3,6 +3,11 @@
 #include <Arduino.h>
 #include <FlexCAN_T4.h>
 
+// 診断情報のビット配置は ROS 層と共有する (core_hardware/include)
+#include "core_hardware/motor_diag_layout.h"
+
+using core_hardware::motor_diag::MotorDiag;
+
 struct MotorRef {
   int mode = 0;
   float position_rad = 3.14f;
@@ -31,6 +36,8 @@ class MotorBase {
   virtual void setPacketFrame(const float *data, int len) = 0;
   virtual void writeCanFrame() = 0;
   virtual bool setCanFrame(const CAN_message_t &msg) = 0;
+  // PDO の motor_diag / motor_voltage に載せる診断情報
+  virtual MotorDiag diag() const = 0;
 
   MotorRef motor_ref;
   MotorState motor_state;
