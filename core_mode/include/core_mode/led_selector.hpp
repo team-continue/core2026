@@ -135,6 +135,8 @@ struct LedInputs
   // /behavior_system/state。途絶していれば nullopt (behavior_system が起動していないときも含む)
   std::optional<int32_t> behavior_state;
   bool rotating = false;  // /control/rotation != 0
+  // UI の test_mode (左右共通)。オンの間は左右の砲塔とも手動 (白) として表示する
+  bool test_mode = false;
   std::array<TurretInputs, 2> turrets{};  // [0] = left, [1] = right
 };
 
@@ -238,10 +240,16 @@ inline LedCommands selectLedCommands(const LedInputs & in, const LedCommandTable
     return all(table.software_emergency);
   }
 
+  // test_mode では砲塔をテスト用の指令で手で動かすので、manual_mode に関係なく手動として扱う
+  const auto turret_command = [&in, &table](const TurretInputs & turret) {
+      TurretInputs effective = turret;
+      effective.manual_mode = turret.manual_mode || in.test_mode;
+      return selectTurretCommand(effective, table);
+    };
   return {
     selectBehaviorCommand(in.behavior_state, table),
-    selectTurretCommand(in.turrets[0], table),
-    selectTurretCommand(in.turrets[1], table),
+    turret_command(in.turrets[0]),
+    turret_command(in.turrets[1]),
     selectChassisCommand(in.behavior_state, in.rotating, table),
   };
 }

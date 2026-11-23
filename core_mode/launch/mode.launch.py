@@ -52,6 +52,7 @@ def generate_launch_description():
             ("hazard_states", "/system/emergency/hazard_states"),
             ("behavior_state", "/behavior_system/state"),
             ("rotation", "/control/rotation"),
+            ("test_mode", "/ui/test_mode"),
             ("led/upper", "/hardware/led/upper"),
             ("led/upper_left", "/hardware/led/upper_left"),
             ("led/upper_right", "/hardware/led/upper_right"),
