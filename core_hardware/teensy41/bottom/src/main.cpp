@@ -13,7 +13,7 @@ void setup() {
   pinMode(PIN_EMERGENCY, OUTPUT);
   // LED
   pinMode(LED_BUILTIN, OUTPUT);
-  bottom_led.init();
+  bottom_led_strip.init();
   // led1.init();
   // led2.init();
   client.init();
@@ -23,7 +23,9 @@ void setup() {
 }
 
 void loop() {
-  bottom_led.update();
+  if (bottom_led.update(millis())) {
+    bottom_led_strip.show();
+  }
   // led1.update();
   // led2.update();
 }

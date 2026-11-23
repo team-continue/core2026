@@ -35,23 +35,50 @@ unsigned long prev_ts = 0;
 int led=0;
 WirelessModule wireless;
 uint16_t upper_led_count = 43;
+// upper テープの区間。先頭 (Teensy の出力側) から 左の砲塔・全体・右の砲塔。境目は実機に合わせる
+constexpr uint16_t UPPER_LED_LEFT_FIRST = 0;
+constexpr uint16_t UPPER_LED_LEFT_COUNT = 14;
+constexpr uint16_t UPPER_LED_OVERALL_FIRST = UPPER_LED_LEFT_FIRST + UPPER_LED_LEFT_COUNT;
+constexpr uint16_t UPPER_LED_OVERALL_COUNT = 15;
+constexpr uint16_t UPPER_LED_RIGHT_FIRST = UPPER_LED_OVERALL_FIRST + UPPER_LED_OVERALL_COUNT;
+constexpr uint16_t UPPER_LED_RIGHT_COUNT = 14;
+// 一方向に流れるパターン (kChase / kRainbowChase) の向き。false = 区間の先頭から末尾へ、true = 末尾から先頭へ
+constexpr bool UPPER_LED_LEFT_REVERSE = false;
+constexpr bool UPPER_LED_OVERALL_REVERSE = false;
+constexpr bool UPPER_LED_RIGHT_REVERSE = false;
 float upper_led_chase_speed_leds_per_sec = 100.0f;
 float upper_led_multi_chase_speed_leds_per_sec = 10.0f;
 float upper_led_blink_period_sec = 0.2f;
 float upper_led_double_flash_period_sec = 0.5f;
 uint8_t upper_led_center_out_multi_base_brightness = 0;
 uint8_t upper_led_brightness = 32;
-Led upper_led(LED_UPPER_SERIAL_PIN, upper_led_count, 20,
-              upper_led_chase_speed_leds_per_sec,
-              upper_led_multi_chase_speed_leds_per_sec,
-              upper_led_blink_period_sec,
-              upper_led_double_flash_period_sec,
-              upper_led_center_out_multi_base_brightness,
-              upper_led_brightness);
+LedStrip upper_led_strip(LED_UPPER_SERIAL_PIN, upper_led_count, upper_led_brightness);
+Led make_upper_led_segment(uint16_t first, uint16_t count, bool reverse) {
+  return Led(upper_led_strip, first, count, 20,
+             upper_led_chase_speed_leds_per_sec,
+             upper_led_multi_chase_speed_leds_per_sec,
+             upper_led_blink_period_sec,
+             upper_led_double_flash_period_sec,
+             upper_led_center_out_multi_base_brightness,
+             reverse);
+}
+Led upper_led_overall = make_upper_led_segment(
+    UPPER_LED_OVERALL_FIRST, UPPER_LED_OVERALL_COUNT, UPPER_LED_OVERALL_REVERSE);
+Led upper_led_left = make_upper_led_segment(
+    UPPER_LED_LEFT_FIRST, UPPER_LED_LEFT_COUNT, UPPER_LED_LEFT_REVERSE);
+Led upper_led_right = make_upper_led_segment(
+    UPPER_LED_RIGHT_FIRST, UPPER_LED_RIGHT_COUNT, UPPER_LED_RIGHT_REVERSE);
 
-// ROS から届いた LED 指令。[0] = upper テープ、[1] = bottom テープ
-uint8_t ros_led_pattern[2] = {Led::kOff, Led::kOff};
-uint8_t ros_led_color[2] = {Led::kWhite, Led::kWhite};
+// ROS から届いた LED 指令の区間
+enum LedSegment : uint8_t {
+  LED_UPPER_OVERALL = 0,  // LED_TAPE[0]
+  LED_BOTTOM = 1,         // LED_TAPE[1]
+  LED_UPPER_LEFT = 2,     // LED_TAPE[2] の下位 8 bit
+  LED_UPPER_RIGHT = 3,    // LED_TAPE[2] の上位 8 bit
+  LED_SEGMENT_NUM = 4,
+};
+uint8_t ros_led_pattern[LED_SEGMENT_NUM] = {Led::kOff, Led::kOff, Led::kOff, Led::kOff};
+uint8_t ros_led_color[LED_SEGMENT_NUM] = {Led::kWhite, Led::kWhite, Led::kWhite, Led::kWhite};
 #define ECAT_LINK_CHECK_INTERVAL_MS 50
 bool ecat_link = false;
 unsigned long prev_ecat_link_check_ms = 0;
@@ -176,18 +203,25 @@ void ecat_PacketCallBack(const uint8_t id, const float *data, const size_t len){
 }
 
 void ecat_PacketCallBack(const uint8_t id, const uint8_t *data, const uint8_t len) {
-  // data は LED_TAPE[0..2] の (パターン, 色) の並び。表示は update_led_outputs() で決める
-  if (id != 100 || data == nullptr || len < 4) {
+  // data は LED_TAPE[0..2] の下位・上位 8 bit の並び。表示は update_led_outputs() で決める
+  //   LED_TAPE[0], [1]: (パターン, 色)
+  //   LED_TAPE[2]: 左右の砲塔 1 byte ずつ。下位 4 bit = パターン、bit 4〜6 = 色
+  if (id != 100 || data == nullptr || len < 6) {
     return;
   }
-  ros_led_pattern[0] = data[0];
-  ros_led_color[0] = data[1];
-  ros_led_pattern[1] = data[2];
-  ros_led_color[1] = data[3];
+  ros_led_pattern[LED_UPPER_OVERALL] = data[0];
+  ros_led_color[LED_UPPER_OVERALL] = data[1];
+  ros_led_pattern[LED_BOTTOM] = data[2];
+  ros_led_color[LED_BOTTOM] = data[3];
+  ros_led_pattern[LED_UPPER_LEFT] = data[4] & 0x0F;
+  ros_led_color[LED_UPPER_LEFT] = (data[4] >> 4) & 0x07;
+  ros_led_pattern[LED_UPPER_RIGHT] = data[5] & 0x0F;
+  ros_led_color[LED_UPPER_RIGHT] = (data[5] >> 4) & 0x07;
 }
 
-// 接続の状態と ROS からの指令から、上下のテープの表示を決める。
+// 接続の状態と ROS からの指令から、各区間の表示を決める。
 // PC 側が表示を決められない段階 (リンクなし・受信なし・指令なし) はここで表示を出す。
+// リンクなし・受信なしは全区間が同じ表示、指令なしは区間ごとに判断する。
 void update_led_outputs(){
   const unsigned long now_ms = millis();
   if (now_ms - prev_ecat_link_check_ms >= ECAT_LINK_CHECK_INTERVAL_MS) {
@@ -195,17 +229,17 @@ void update_led_outputs(){
     ecat_link = ecat_link_up();
   }
 
-  uint8_t pattern[2];
-  uint8_t color[2];
-  for (int i = 0; i < 2; ++i) {
+  uint8_t pattern[LED_SEGMENT_NUM];
+  uint8_t color[LED_SEGMENT_NUM];
+  for (int i = 0; i < LED_SEGMENT_NUM; ++i) {
     if (!ecat_link) {
       // PC が落ちた、またはケーブルが抜けた
-      pattern[i] = Led::kBlinkSlow;
-      color[i] = Led::kBlue;
+      pattern[i] = Led::kRainbowChase;
+      color[i] = Led::kWhite;  // レインボー系は色を使わない
     } else if (!connect_ros2) {
       // PC は起動しているが daemon / core_hardware から受信していない
-      pattern[i] = Led::kFade;
-      color[i] = Led::kBlue;
+      pattern[i] = Led::kRainbowMultiChase;
+      color[i] = Led::kWhite;
     } else if (ros_led_pattern[i] == Led::kOff) {
       // EtherCAT は疎通しているが LED の指令がない (led_manager が未起動・停止)
       pattern[i] = Led::kFade;
@@ -215,8 +249,10 @@ void update_led_outputs(){
       color[i] = ros_led_color[i];
     }
   }
-  upper_led.write(pattern[0], color[0]);
-  bottom_can3.setLedBytes(pattern[1], color[1]);
+  upper_led_overall.write(pattern[LED_UPPER_OVERALL], color[LED_UPPER_OVERALL]);
+  upper_led_left.write(pattern[LED_UPPER_LEFT], color[LED_UPPER_LEFT]);
+  upper_led_right.write(pattern[LED_UPPER_RIGHT], color[LED_UPPER_RIGHT]);
+  bottom_can3.setLedBytes(pattern[LED_BOTTOM], color[LED_BOTTOM]);
 }
 
 void setup(void) {
@@ -225,7 +261,7 @@ void setup(void) {
   digitalWrite(PIN_EMERGENCY, DEFAULT_EMERGENCY_STATE);
   // LED
   pinMode(LED_BUILTIN, OUTPUT);
-  upper_led.init();
+  upper_led_strip.init();
 
   ecat_begin();
   wireless.init();
@@ -257,7 +293,12 @@ void led_timer_cb(){
 
 void loop() {
   update_led_outputs();
-  upper_led.update();
+  const unsigned long led_now_ms = millis();
+  // 3 区間とも描いてから 1 回だけ送る (| は全区間の update を必ず呼ぶため)
+  if (upper_led_overall.update(led_now_ms) | upper_led_left.update(led_now_ms) |
+      upper_led_right.update(led_now_ms)) {
+    upper_led_strip.show();
+  }
   ecat_update();
   sts.loop();
   esc.loop();
