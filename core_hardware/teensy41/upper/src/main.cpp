@@ -44,7 +44,7 @@ constexpr uint16_t UPPER_LED_RIGHT_COUNT = 14;
 // 一方向に流れるパターン (kChase / kRainbowChase) の向き。false = 区間の先頭から末尾へ、true = 末尾から先頭へ
 constexpr bool UPPER_LED_LEFT_REVERSE = false;
 constexpr bool UPPER_LED_OVERALL_REVERSE = false;
-constexpr bool UPPER_LED_RIGHT_REVERSE = false;
+constexpr bool UPPER_LED_RIGHT_REVERSE = true;
 float upper_led_chase_speed_leds_per_sec = 100.0f;
 float upper_led_multi_chase_speed_leds_per_sec = 10.0f;
 float upper_led_blink_period_sec = 0.2f;
