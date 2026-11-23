@@ -82,6 +82,7 @@ nav:
         - packages/core_launch/index.md
         - odom_bridge_node: packages/core_launch/odom_bridge_node.md
         - map_server_node: packages/core_launch/map_server_node.md
+        - debug_log: packages/core_launch/debug_log.md
     - Sensing:
       - core_damiao_imu:
         - packages/core_damiao_imu/index.md

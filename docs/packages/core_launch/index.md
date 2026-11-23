@@ -9,6 +9,7 @@
 | `navigation.launch.py` | ナビゲーションパイプライン全体を起動 |
 | `imu_filter.launch.py` | IMUフィルタリング |
 | `state_publisher.launch.py` | ロボットステートパブリッシャ（URDF/JointState） |
+| `debug_log.launch.py` | 要点のトピックと `/rosout` を ros2 bag で記録する（[debug_log](debug_log.md)）。`core2026_system.xml` から起動 |
 
 ## ノード一覧
 
