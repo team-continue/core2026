@@ -34,6 +34,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PoseWithWeight.msg"
   "msg/Path.msg"
   "msg/LedCommand.msg"
+  "msg/MotorStatus.msg"
+  "msg/CanBusStatus.msg"
+  "msg/MotorStatusArray.msg"
+  "msg/HardwareLinkStatus.msg"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs
 )
 ament_export_dependencies(rosidl_default_runtime)

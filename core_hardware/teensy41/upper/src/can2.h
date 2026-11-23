@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <FlexCAN_T4.h>
+#include "can_bus_diag.h"
 #include "robostride.h"   // あなたの RoboStride クラスが入ってるヘッダ
 
 #define CAN2_NUM_MOTOR 2
@@ -24,6 +25,7 @@ RoboStride<CAN2, RX_SIZE_256, TX_SIZE_16> can2_motor[CAN2_NUM_MOTOR] = {
   RoboStride(&can2, 253, 0x02, (int)ActuatorType::ROBSTRIDE_05, CAN2_RS5_OFFSET_POSITION_2)
 };
 RoboStride<CAN2, RX_SIZE_256, TX_SIZE_16> *can2_robostride = can2_motor;  // backward compatibility
+CanBusDiagReader can2_bus_diag_reader;
 // CAN2 受信割り込み処理
 void can2_cb(const CAN_message_t &msg) {
   for (int i = 0; i < CAN2_NUM_MOTOR; ++i) {
@@ -82,4 +84,9 @@ void can2_loop(){
       robostride_control_i = (robostride_control_i + 1) % CAN2_NUM_MOTOR;
       // can3_damiao0_send_ts = millis();
   }
+}
+
+// CAN2 の状態 (PDO の bus_diag[1])
+core_hardware::motor_diag::BusDiag can2_bus_diag() {
+  return can2_bus_diag_reader.read(can2);
 }
