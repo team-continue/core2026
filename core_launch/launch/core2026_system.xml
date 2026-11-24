@@ -3,6 +3,10 @@
   <arg name="map_name" default="core1_field"/>
   <!-- 計画に重ねる設定（navigation.launch.py の planning_params_file）。実機で初めて試すときは real_cautious -->
   <arg name="planning_params_file" default=""/>
+  <!-- 自律移動のノードをコンテナにまとめるか（navigation.launch.py の composition）。Humble ではプロセス内の通信が
+       transient_local の QoS を扱えず、まとめると地図照合（lidar_localization）が configure で落ちる
+       （intraprocess communication allowed only with volatile durability。2026-11-23 に実機の rosbag で確かめた）ので、既定は false -->
+  <arg name="composition" default="false"/>
 
   <!-- ROS 2 Bridge (Android 操作UI用。/bridge/connected を core_mode の diagnostic が監視する) -->
   <node pkg="ros2_ws_bridge" exec="bridge" name="ros2_websocket_bridge" output="screen">
@@ -12,8 +16,11 @@
   <!-- Navigation -->
   <include file="$(find-pkg-share core_launch)/launch/navigation.launch.py">
     <arg name="environment" value="real"/>
+    <!-- body_controller は下の Body Controller で起動するので、navigation 側では起動しない -->
+    <arg name="use_body_controller" value="false"/>
     <arg name="map_name" value="$(var map_name)"/>
     <arg name="planning_params_file" value="$(var planning_params_file)"/>
+    <arg name="composition" value="$(var composition)"/>
     <!-- <arg name="use_localization" value="true"/> -->
     <!-- <arg name="use_rviz" value="false"/> -->
   </include>

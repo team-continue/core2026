@@ -7,13 +7,16 @@
      実機の robot_state_publisher と Gazebo で同じものを使う。Gazebo は sim（core_field_sim）の core2026_sim.urdf.xacro が
      これを gazebo:=true で読み込み、シミュレーションの定義（センサ・駆動）を足す -->
 <robot name="core2026" xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <!-- Mid-360 の取り付け（base_link から livox_frame）。既定は Unity の機体の Mid-360 の計測点（Mid-360_ros の
-       Sensor）: 前へ 0.132m、床から 0.484m、上下逆さ -->
+  <!-- Mid-360 の取り付け（base_link から livox_frame）。x・y・yaw は Unity の機体の Mid-360 の計測点（Mid-360_ros の
+       Sensor）: 前へ 0.132m、上下逆さ。高さ・roll・pitch は実機で測った値（2026-11-23、研究室の床に止めた
+       rosbag 2 本の、LiDAR から見た床の面）: 床から 0.535m、roll 179.1°（Unity は 180°）、pitch -2.6°
+       （Unity は 0°、LiDAR の前が上を向く）。Unity の値（0.484173, 3.14159, 0.0）のままだと、実機の地図の床が
+       約 2.7° 傾いた。地図の床の傾きは 0.04° になった -->
   <xacro:arg name="lidar_x" default="0.1321"/>
   <xacro:arg name="lidar_y" default="0.000149"/>
-  <xacro:arg name="lidar_height" default="0.484173"/>
-  <xacro:arg name="lidar_roll" default="3.14159"/>
-  <xacro:arg name="lidar_pitch" default="0.0"/>
+  <xacro:arg name="lidar_height" default="0.535"/>
+  <xacro:arg name="lidar_roll" default="3.1263"/>
+  <xacro:arg name="lidar_pitch" default="-0.0455"/>
   <xacro:arg name="lidar_yaw" default="0.00113"/>
   <!-- Damiao IMU の取り付け。既定は Unity の機体の IMU（前へ 0.132m、床から 0.504m、上下逆さ） -->
   <xacro:arg name="damiao_imu_x" default="0.1321"/>

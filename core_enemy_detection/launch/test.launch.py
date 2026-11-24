@@ -26,7 +26,7 @@ def generate_launch_description():
     #       ↓ damage_panels_infomation
     # target_selector
     # =========================================================
-    RIGHT_NS = 'perception/enemy_detection/right'
+    RIGHT_NS = 'perception/enemy_detection/left'
 
     oakd_panel_localizer = Node(
         package='core_enemy_detection',
@@ -46,7 +46,7 @@ def generate_launch_description():
         parameters=[param_file],
         output='screen',
         remappings=[
-            ('color', '/hardware/color'),
+            ('color', '/hardware/color2'),
         ],
     )
 
@@ -78,8 +78,8 @@ def generate_launch_description():
         parameters=[param_file],
         output='screen',
         remappings=[
-            ('raw_image', '/sensing/turret_camera_right/color/image'),
-            ('color', '/hardware/color'),
+            ('raw_image', '/sensing/turret_camera_left/color/image'),
+            ('color', '/hardware/color2'),
         ],
     )
 

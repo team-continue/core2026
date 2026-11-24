@@ -67,10 +67,10 @@ def test_compose_applies_inner_first() -> None:
 
 def test_robot_xacro_gives_lidar_mount() -> None:
     # core2026.urdf.xacro の base_to_livox は (lidar_x, lidar_y, lidar_height)、回転は (lidar_roll, lidar_pitch,
-    # lidar_yaw)。既定は Unity の機体の Mid-360 の計測点（前へ 0.132m、床から 0.484m、上下逆さ）
+    # lidar_yaw)。既定は前へ 0.132m（Unity の機体の計測点）、床から 0.535m、上下逆さで前が 2.6° 上（実機で測った値）
     default = fixed_transform(load_robot_description(ROBOT_XACRO, {}), 'base_link', 'livox_frame')
-    assert_close(default.translation, (0.1321, 0.000149, 0.484173))
-    assert_close(default.rotation, rpy_matrix(3.14159, 0.0, 0.00113))
+    assert_close(default.translation, (0.1321, 0.000149, 0.535))
+    assert_close(default.rotation, rpy_matrix(3.1263, -0.0455, 0.00113))
     front = fixed_transform(load_robot_description(ROBOT_XACRO, FRONT_MOUNT), 'base_link', 'livox_frame')
     assert_close(front.translation, (0.44, 0.0, 0.25))
     assert_close(front.rotation, IDENTITY.rotation)

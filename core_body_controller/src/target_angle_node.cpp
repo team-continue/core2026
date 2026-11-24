@@ -70,7 +70,7 @@ private:
   double latest_waist_position_ = 0.0;
   bool has_received_joint_states_ = false;
   // 腰が車体の正面を向くときの角度 [rad] (実機の値。body_control_node と同じ)
-  double waist_front_offset_ = 3.7822790145874023;
+  double waist_front_offset_ = 3.084347;
   double waist_joint_direction_ = 1.0;
   double joint_states_timeout_sec_ = 0.5;
   // CENTER で正面へ振り向くときの目標の向きの速さ [rad/s] (既定は 1 秒で 1 回転) と、振り向いている途中か

@@ -153,14 +153,14 @@
     image_latency_sec: 0.0 # [s] target_pose に stamp が無いとき、受信時刻からこれだけ前に撮影したとみなす
     joint_state_history_sec: 1.0 # [s] 撮影時刻の関節角を引くために保持する履歴の長さ
     tracking:
-      velocity_ff_gain: 0.0 # 速度FFの掛け率。0で予測なし、1で推定速度そのまま
+      velocity_ff_gain: 1.0 # 速度FFの掛け率。0で予測なし、1で推定速度そのまま
       target_velocity_max:
         yaw_rad_per_sec: 5.0 # [rad/s] 的の角速度推定の上限（モータ角）
         pitch_rad_per_sec: 5.0 # [rad/s]
       measured_velocity_ema_alpha: 0.3 # (0..1] joint_states の角度差分から求める実角速度のEMA係数
       # yaw と pitch はモータもギア比も違うので別々に調整する。左右で変えるときは個別設定で上書き
       yaw:
-        kp: 0.0
+        kp: 0.3
         ki: 0.0
         kd: 0.0
         integral_limit: 0.0 # [rad] I項の出力上限。0でI項無効
@@ -246,16 +246,16 @@
     pitch_max_angle: 3.14
 
     # image target settings
-    image_center_x: 0.4
-    image_center_y: 0.4
+    image_center_x: 0.3
+    image_center_y: 0.5
     image_tolerance_x: 5.0
     image_tolerance_y: 5.0
     image_shoot_tolerance_x_px: 50.0
     image_shoot_tolerance_y_px: 50.0
 
     # image error -> angle command gain
-    yaw_image_gain: 0.0005
-    pitch_image_gain: 0.008
+    yaw_image_gain: 0.003 # 実測 約3.0〜3.5 mrad/px (2026-11-08)。旧 0.000625
+    pitch_image_gain: 0.01 # 0.008 @320px -> x1.25 @256px
 
     # 砲塔回転中心から見たカメラ取付位置[m]（砲塔座標系: y左 / z上）
     # 例: カメラが砲身より 50mm 上なら z_m: 0.05
@@ -300,8 +300,8 @@
     image_shoot_tolerance_y_px: 50.0
 
     # image error -> angle command gain
-    yaw_image_gain: 0.0007
-    pitch_image_gain: 0.01
+    yaw_image_gain: 0.000875 # 0.0007 @320px -> x1.25 @256px
+    pitch_image_gain: 0.0125 # 0.01 @320px -> x1.25 @256px
 
     # 砲塔回転中心から見たカメラ取付位置[m]（砲塔座標系: y左 / z上）
     # 例: カメラが砲身より 50mm 上なら z_m: 0.05

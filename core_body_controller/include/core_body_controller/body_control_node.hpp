@@ -56,7 +56,7 @@ private:
   int rotation_mode_ = 0;
   double latest_body_angle_ = 0;
   // 腰 (joint_states の ID 4) が車体の正面を向くときの角度 [rad] と、回る向き (1 / -1)
-  double waist_front_offset_ = 3.7822790145874023;
+  double waist_front_offset_ = 3.084347;
   double waist_joint_direction_ = 1.0;
   std::chrono::steady_clock::time_point last_cmd_vel_time_;
   // 加速度の制限を世界の座標で効かせる（上半身の IMU で、前の出力を上半身の回った分だけ直してから制限する）。

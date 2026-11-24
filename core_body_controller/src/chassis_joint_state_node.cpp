@@ -25,7 +25,7 @@ public:
   {
     joint_index_ = declare_parameter<int>("joint_index", 4);
     // 腰が車体の正面を向くときのモータの角度と、回る向き（body_control_node と同じ既定値）
-    waist_front_offset_ = declare_parameter<double>("waist_front_offset", 3.7822790145874023);
+    waist_front_offset_ = declare_parameter<double>("waist_front_offset", 3.084347);
     waist_joint_direction_ = declare_parameter<double>("waist_joint_direction", 1.0);
     joint_name_ = declare_parameter<std::string>("joint_name", "base_to_chassis");
     if (joint_index_ < 0 || !std::isfinite(waist_front_offset_) || joint_name_.empty() ||
